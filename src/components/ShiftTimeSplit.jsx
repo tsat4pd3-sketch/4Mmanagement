@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ แถบ "นาทีที่หายไปของกะ" — งาน / หยุดตามแผน / เสียนอกแผน / อธิบายไม่ได้ ═══════════
    ที่มา (user 2026-09-16): "จะรู้ได้ยังไงว่าตอนนี้ดีเลย์ไปแล้วกี่ใบ และต้อง recover ยังไง"
 
@@ -39,7 +40,7 @@ export default function ShiftTimeSplit({ split, compact = false }) {
 
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ display: 'flex', height: compact ? 7 : 9, borderRadius: 4, overflow: 'hidden', background: 'var(--border2)' }}>
+      <div style={{ display: 'flex', height: compact ? 7 : 9, borderRadius: 'var(--r-xs)', overflow: 'hidden', background: 'var(--border2)' }}>
         {SEGS.map(s => {
           const v = Number(split[s.k]) || 0;
           if (v <= 0) return null;
@@ -61,8 +62,8 @@ export default function ShiftTimeSplit({ split, compact = false }) {
           if (v <= 0 && s.k !== 'unknownMin') return null;
           const hot = s.k === 'unknownMin' && v > 0;
           return (
-            <span key={s.k} title={s.label} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
-              {s.icon} {s.label} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> น.
+            <span key={s.k} title={tr(s.label)} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
+              {s.icon} {tr(s.label)} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> น.
             </span>
           );
         })}
@@ -80,7 +81,7 @@ export default function ShiftTimeSplit({ split, compact = false }) {
         </div>
       )}
       {split.noBreakPolicy && (
-        <div style={{ fontSize: fs, color: 'var(--muted)', marginTop: 2 }}>· ยังไม่ได้ตั้งนโยบายเวลาพักของกะนี้ — เทียบกับค่าที่บันทึกตอนปิดกะไม่ได้</div>
+        <div style={{ fontSize: fs, color: 'var(--muted)', marginTop: 2 }}>{tr('· ยังไม่ได้ตั้งนโยบายเวลาพักของกะนี้ — เทียบกับค่าที่บันทึกตอนปิดกะไม่ได้')}</div>
       )}
     </div>
   );

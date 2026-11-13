@@ -29,6 +29,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { visibleInterval } from '../utils/usePolling';
 
+import { tr } from '../utils/i18n';
 const STAGE = {
   first:  { label: 'ชิ้นแรก',      icon: '1️⃣' },
   middle: { label: 'ระหว่างผลิต',  icon: '2️⃣' },
@@ -202,15 +203,15 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
   }, [obs, runs, ctMap, nowMin, breaks, now]);
 
   if (err === 'migration') return (
-    <div style={warnBox}>⚠️ บอร์ดยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_qa_fme_call.sql</code> (แจ้ง admin)</div>
+    <div style={warnBox}>{tr('⚠️ บอร์ดยังใช้ไม่ได้ — ยังไม่ได้ apply migration')} <code>20260819_qa_fme_call.sql</code> {tr('(แจ้ง admin)')}</div>
   );
-  if (err) return <div style={warnBox}>โหลดบอร์ดไม่สำเร็จ: {err}</div>;
+  if (err) return <div style={warnBox}>{tr('โหลดบอร์ดไม่สำเร็จ:')} {err}</div>;
 
   return (
     <>
       <InternalTimeBoard
-        title="🗓️ วันนี้ต้องไปตรวจไลน์ไหน กี่โมง"
-        hint="บล็อกทึบ = งานตรวจจริง · เส้นประ = คาดการณ์จาก CT (ยังไม่ใช่งานตรวจ)"
+        title={tr('วันนี้ต้องไปตรวจไลน์ไหน กี่โมง')}
+        hint={tr('บล็อกทึบ = งานตรวจจริง · เส้นประ = คาดการณ์จาก CT (ยังไม่ใช่งานตรวจ)')}
         groups={groups} nowMin={nowMin} breaks={breaks}
         onItemClick={(d, x, y) => setPopup({ d, x, y })}
       />
@@ -224,7 +225,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
 
       {noCt.length > 0 && (
         <div style={{ ...warnBox, marginTop: 8 }}>
-          ⏱️ คาดการณ์เวลาไม่ได้ <b>{noCt.length} รุ่น</b> (ยังไม่ได้ตั้ง Cycle Time):{' '}
+          ⏱️ คาดการณ์เวลาไม่ได้ <b>{noCt.length} {tr('รุ่น')}</b> {tr('(ยังไม่ได้ตั้ง Cycle Time):')}{' '}
           {noCt.slice(0, 6).map(r => `${r.lineName}·${r.matNo}`).join(' · ')}{noCt.length > 6 ? ` … อีก ${noCt.length - 6}` : ''}
           <div style={{ marginTop: 3, opacity: 0.85 }}>
             ระบบไม่เดาเวลาให้ — ตั้ง CT ที่ <b>Product Master</b> แล้วบล็อกคาดการณ์จะขึ้นเอง
@@ -242,18 +243,18 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (
                   <>
                     <b style={{ fontSize: 13 }}>{d.r.lineName} · {d.r.matNo}</b>
                     <div style={{ color: C.eta, fontWeight: 700, marginTop: 2 }}>
-                      🔮 คาดการณ์ — ยังไม่ใช่งานตรวจจริง
+                      คาดการณ์ — ยังไม่ใช่งานตรวจจริง
                     </div>
-                    <div>น่าจะผลิตครบ ~<b>{hhmm(d.etaMin)}</b></div>
+                    <div>{tr('น่าจะผลิตครบ ~')}<b>{hhmm(d.etaMin)}</b></div>
                     <div style={{ color: 'var(--muted)' }}>
-                      เหลืออีก {d.r.remaining.toLocaleString()} ชิ้น · CT {d.ct} วิ/ชิ้น (หักเวลาพักแล้ว)
+                      เหลืออีก {d.r.remaining.toLocaleString()} {tr('ชิ้น · CT')} {d.ct} วิ/ชิ้น (หักเวลาพักแล้ว)
                     </div>
                     <div style={{ color: 'var(--muted)', marginTop: 5, fontSize: 11.5 }}>
                       เวลานี้ขยับตามจังหวะผลิตจริง · ระบบจะสร้างงานตรวจ “ชิ้นสุดท้าย” ให้เองเมื่อรุ่นนี้จบจริง
@@ -265,11 +266,11 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                     <div>{(STAGE[o.stage] || STAGE.first).icon} {(STAGE[o.stage] || STAGE.first).label}
                       {' · '}{o.shift === 'night' ? 'กะดึก' : 'กะเช้า'}</div>
                     <div style={{ color: 'var(--muted)' }}>
-                      เรียกตอน {hhmm(frameMinFromIso(o.triggered_at))} · ครบกำหนด {hhmm(frameMinFromIso(o.due_at))}
+                      เรียกตอน {hhmm(frameMinFromIso(o.triggered_at))} {tr('· ครบกำหนด')} {hhmm(frameMinFromIso(o.due_at))}
                     </div>
-                    {d.isLate && <div style={{ color: C.late, fontWeight: 700 }}>⚠️ เกินเวลาแล้ว</div>}
+                    {d.isLate && <div style={{ color: C.late, fontWeight: 700 }}>{tr('⚠️ เกินเวลาแล้ว')}</div>}
                     {o.status === 'cancelled' && o.cancel_reason && (
-                      <div style={{ color: 'var(--muted)' }}>ยกเลิก: {o.cancel_reason}</div>
+                      <div style={{ color: 'var(--muted)' }}>{tr('ยกเลิก:')} {o.cancel_reason}</div>
                     )}
                     {!o.part_id && (
                       <div style={{ color: '#f59e0b', fontSize: 11.5 }}>
@@ -279,11 +280,11 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                     {['pending', 'acked'].includes(o.status) && (
                       <button disabled={!o.part_id}
                         onClick={() => { onOpen?.(o); setPopup(null); }}
-                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 7, fontSize: 12,
+                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12,
                           fontWeight: 700, cursor: o.part_id ? 'pointer' : 'not-allowed',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           border: '1px solid var(--border2)', opacity: o.part_id ? 1 : 0.45 }}>
-                        เปิดใบตรวจ
+                        {tr('เปิดใบตรวจ')}
                       </button>
                     )}
                   </>
@@ -305,7 +306,7 @@ const warnBox = {
 function Key({ c, t, dashed }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: dashed ? 'transparent' : `${c}33`,
+      <span style={{ width: 11, height: 11, borderRadius: 'var(--r-xs)', background: dashed ? 'transparent' : `${c}33`,
         border: `1.5px ${dashed ? 'dashed' : 'solid'} ${c}` }} />
       {t}
     </span>

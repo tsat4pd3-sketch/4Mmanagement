@@ -15,6 +15,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useState } from 'react';
 
+import { tr } from '../utils/i18n';
 export default function SelectOrFree({
   value = '', onChange, options = [], disabled, readOnly,
   placeholder = '— เลือก —', freeLabel = '✏️ ระบุเอง…', freePlaceholder = 'ระบุเอง',
@@ -38,18 +39,18 @@ export default function SelectOrFree({
         style={{ flex: 1, minWidth: 0, width: 'auto', padding: pad, fontSize: fs, ...inputStyle }}
         onChange={e => { setFree(true); onChange?.(e.target.value); }} />
       {!readOnly && (
-        <button type="button" disabled={disabled} title="กลับไปเลือกจากลิสต์"
+        <button type="button" disabled={disabled} title={tr('กลับไปเลือกจากลิสต์')}
           onClick={() => { setFree(false); onChange?.(''); }}
-          style={{ padding: compact ? '2px 7px' : '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>↩</button>
+          style={{ padding: compact ? '2px 7px' : '2px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>↩</button>
       )}
     </div>
   );
   return (
     <select value={cur} disabled={disabled || readOnly} style={{ padding: pad, fontSize: fs, ...style, ...selectStyle }}
       onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange?.(''); } else onChange?.(e.target.value); }}>
-      <option value="">{placeholder}</option>
-      {list.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      {allowFree && <option value="__free__">{freeLabel}</option>}
+      <option value="">{tr(placeholder)}</option>
+      {list.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
+      {allowFree && <option value="__free__">{tr(freeLabel)}</option>}
     </select>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 /* ─── ScrollHint — บอก user ว่า "ยังมีเนื้อหาข้างล่าง เลื่อนต่อได้" ──────────────
    ปัญหา: บนมือถือไม่มี scrollbar ให้เห็น → user ไม่รู้ว่าหน้ายังเลื่อนลงได้อีก
    (เคยเกิดจริง: หัวหน้างานไม่เห็นปุ่มบันทึกใน modal เพราะไม่รู้ว่าเลื่อนได้)
@@ -93,10 +94,10 @@ export default function ScrollHint() {
   };
 
   return (
-    <button onClick={jump} aria-label="เลื่อนลงดูเนื้อหาต่อ" style={{
+    <button onClick={jump} aria-label={tr('เลื่อนลงดูเนื้อหาต่อ')} style={{
         position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: `calc(${10 + lift}px + var(--mnav-h, 0px))`, zIndex: 10001,
         display: 'flex', alignItems: 'center', gap: 6,
-        padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
+        padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
         fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
         color: 'var(--text)', background: 'var(--bg3)',
         border: '1px solid var(--border2)', boxShadow: 'var(--shadow-float)',

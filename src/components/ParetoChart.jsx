@@ -4,6 +4,7 @@ import {
   PARETO_CUTOFF, labelWidthPx, pctLabelY,
 } from '../utils/pareto';
 
+import { tr } from '../utils/i18n';
 /* ══ 📊 Pareto มาตรฐานสากล — แท่งตั้ง + เส้น % สะสม 2 แกน (2026-09-22 · คำสั่ง user) ════════
    *"ลองดู pareto ที่เป็นระดับสากล เทียบกับ pareto ในเว็บเรา ยังเทียบกันไม่ติดเลย …
      แนวนอนไม่เวิค เป็นแนวตั้งและเอียง text เอา ให้ 90 องศาก็ได้นะ เอียงอ่านก็ยังได้"*
@@ -105,7 +106,7 @@ export default function ParetoChart({
           stroke="#ef4444" strokeWidth="1.3" strokeDasharray="6 4" opacity="0.8" />
         {/* วางขวา+ใต้เส้น: ฝั่งซ้ายเป็นแท่งสูง (แดงทับแดงอ่านไม่ออก) และชนเลขบนหัวแท่งที่ 1 */}
         <text x={g.padLeft + g.plotW - 6} y={g.cutoffY + 14} fontSize={FONT} fill="#ef4444"
-          fontWeight="700" textAnchor="end">เส้น {cutoff}%</text>
+          fontWeight="700" textAnchor="end">{tr('เส้น')} {cutoff}%</text>
 
         {/* แท่ง — ชิดกันสนิทตามมาตรฐาน (เส้นขอบขาวบางคั่นให้แยกแท่งออก ไม่ใช่ช่องว่าง) */}
         {g.bars.map(b => {
@@ -178,9 +179,9 @@ export default function ParetoChart({
 
         {/* ชื่อแกน */}
         <text x={14} y={g.padTop + g.plotH / 2} fontSize={FONT} fill={mut} textAnchor="middle"
-          transform={`rotate(-90, 14, ${g.padTop + g.plotH / 2})`}>{unit || 'จำนวน'}</text>
+          transform={`rotate(-90, 14, ${g.padTop + g.plotH / 2})`}>{unit || tr('จำนวน')}</text>
         <text x={width - 12} y={g.padTop + g.plotH / 2} fontSize={FONT} fill={LINE_COLOR} textAnchor="middle"
-          transform={`rotate(90, ${width - 12}, ${g.padTop + g.plotH / 2})`}>% สะสม</text>
+          transform={`rotate(90, ${width - 12}, ${g.padTop + g.plotH / 2})`}>{tr('% สะสม')}</text>
       </svg>
 
       {/* คำอธิบาย + ปุ่มปรับมุมป้าย (จอ TV ไม่มีเมาส์ → ต้องกดได้ ไม่ใช่ hover) */}
@@ -196,28 +197,28 @@ export default function ParetoChart({
             (เดิมอยู่ใน ParetoAbcChart แล้วเขียนว่า "แสดง 11 อันดับแรกจาก 46" ทั้งที่จอกางครบ 46 แท่งแล้ว) */}
         {tail && (
           <span style={{ color: 'var(--muted)' }}>
-            แสดง {shown.length - 1} อันดับแรกจาก {rows.length} · ที่เหลือยุบเป็นแท่ง “หางยาว”
+            แสดง {shown.length - 1} {tr('อันดับแรกจาก')} {rows.length} · ที่เหลือยุบเป็นแท่ง “หางยาว”
           </span>
         )}
         {showAll && (
-          <span style={{ color: 'var(--muted)' }}>แสดงครบทั้ง {rows.length} รายการ</span>
+          <span style={{ color: 'var(--muted)' }}>{tr('แสดงครบทั้ง')} {rows.length} {tr('รายการ')}</span>
         )}
         {tiny.length > 0 && (
           <span style={{ color: '#f59e0b', fontWeight: 700 }}>
-            ⚠️ {tiny.length} แท่งท้ายเตี้ยกว่า 1 พิกเซล (ต่ำสุด {fmtV(tinyMin)} {unit}) — <u>ไม่ใช่ 0</u>
+            ⚠️ {tiny.length} {tr('แท่งท้ายเตี้ยกว่า 1 พิกเซล (ต่ำสุด')} {fmtV(tinyMin)} {unit}) — <u>{tr('ไม่ใช่ 0')}</u>
             {showAll ? ' · กด “ย่อหางยาว” เพื่อรวมเป็นแท่งเดียว' : ''}
           </span>
         )}
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
           {tail && showTailToggle && (
             <button type="button" onClick={() => setShowAll(true)} style={miniBtn}>
-              ▸ กางหางยาว {tail.length} รายการ
+              {tr('▸ กางหางยาว')} {tail.length} {tr('รายการ')}
             </button>
           )}
           {showAll && rows.length > maxBars && (
-            <button type="button" onClick={() => setShowAll(false)} style={miniBtn}>◂ ย่อหางยาว</button>
+            <button type="button" onClick={() => setShowAll(false)} style={miniBtn}>{tr('◂ ย่อหางยาว')}</button>
           )}
-          <span style={{ opacity: 0.8 }}>ป้าย:</span>
+          <span style={{ opacity: 0.8 }}>{tr('ป้าย:')}</span>
           {[0, -45, -90].map(a => (
             <button key={a} type="button" onClick={() => setAngOverride(a)} style={{
               ...miniBtn,
@@ -233,7 +234,7 @@ export default function ParetoChart({
 
 const Key = ({ c, t }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-    <span style={{ width: 11, height: 11, background: c, borderRadius: 2, display: 'inline-block' }} />{t}
+    <span style={{ width: 11, height: 11, background: c, borderRadius: 'var(--r-xs)', display: 'inline-block' }} />{t}
   </span>
 );
 

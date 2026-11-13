@@ -5,7 +5,14 @@ import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
-import { can } from '../utils/permissions'
+import { lineScope } from '../utils/sectionScope'   // 🔒 แท็บ AM เห็นเฉพาะไลน์ของตัวเอง (11/11)
+import { can, isActionSeeded } from '../utils/permissions'
+import { positionRank } from '../utils/positions'
+// ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
+import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover, amBadgeGate, amOnSiteApproval, amInspectorIdentity, pmConfirmVerdict, pmConfirmText, PM_HEAD_STEP } from '../utils/amApproval'
+import { findByBadge, normBadgeCode } from '../utils/badgeCheckin'   // 🪪 B4 — รหัสบัตร → พนักงาน (ตรงเป๊ะ · ซ้ำ = ไม่เดา)
+import { moStatusLabel } from '../utils/mtnStepPerm'
+import { amWaiverReasonValid, AM_WAIVER_MIN_LEN } from '../lib/pmDailyStatus'
 import { toast } from '../components/Toast'
 import { getSpcStatus, STATUS_COLOR } from '../lib/spc'
 import { calcOf, calcFormula, pmCalcResults } from '../utils/inspectCalc'
@@ -19,11 +26,13 @@ import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } fro
 import PointZoom, { PointThumb } from '../components/inspect/PointZoom'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam, splitInspByTeam, inspTeamLabel } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
+import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { getWorkDate } from '../utils/workDate'
-import { amShiftInfo } from '../lib/dailyAmBoard'
+import { amShiftInfo, AM_MO_COLS } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -38,12 +47,15 @@ import { filterPlanRows } from '../utils/pmPlanFilter'
 import useIsMobile from '../utils/useIsMobile'
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft'   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar'
+import { loadEmployeeSigners, signatureOfPerson, resolveEmployeeSigner, inspectorForExport } from '../utils/employeeSignature'
+import InspectorCodeField from '../components/InspectorCodeField'   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)   // ✍️ ลายเซ็นในฐานพนักงาน (C1 · 03/11)
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
    หมุดม่วงบนรูปเดียวกัน + แถวกรอก "ค่าชิมรวมที่วัดได้" ท้ายใบ · บันทึกผ่าน recordShimEvent ผูก inspection_id
    ไม่บังคับกรอก (จุดชิมมีความถี่ของตัวเอง — กฎเหล็ก 1 ของโมดูล fixture) · ไม่นับใน isFormReady */
-const SHIM_PIN_COLOR = '#a78bfa'
+const SHIM_PIN_COLOR = 'var(--blue)'
 // ชิปข้อที่ยังไม่ตรวจในแถบความคืบหน้า — เกินนี้พับไว้หลังปุ่ม "+N ▾" (แถบติดบน ห้ามกินจอมือถือ)
 const CHIP_CAP = 20
 // คอลัมน์ jigs ที่หน้านี้ใช้จริง (ลิสต์ · หัวฟอร์ม · resolveJig · ใบซ่อม · Daily PM) — เพิ่มฟิลด์ใหม่ต้องเติมที่นี่
@@ -91,13 +103,13 @@ const S = {
   deptBtn: (active, color) => ({
     padding: '5px 10px', borderRadius: 16, fontSize: 11, fontWeight: 700, cursor: 'pointer',
     border: `1.5px solid ${active ? color : 'var(--border2)'}`,
-    background: active ? `${color}18` : 'var(--bg3)', color: active ? color : 'var(--muted)',
+    background: active ? `${tint(color, 'dim')}` : 'var(--bg3)', color: active ? color : 'var(--muted)',
   }),
   jigList: { flex: 1, overflowY: 'auto', padding: '0 10px 10px' },
   jigItem: (active, color) => ({
     padding: '10px 12px', borderRadius: 8, marginBottom: 6, cursor: 'pointer',
     border: `1.5px solid ${active ? color : 'var(--border)'}`,
-    background: active ? `${color}12` : 'var(--card)',
+    background: active ? `${tint(color, 'dim')}` : 'var(--card)',
   }),
   main: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' },
   header: { padding: '14px 52px 14px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 },
@@ -181,7 +193,24 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
     const t = setInterval(() => setFrameIdx(i => (i + 1) % frames.length), 650)
     return () => clearInterval(t)
   }, [playing, spin, frames.length])
-  const { imgRef, imgBox, recalc } = useImgBox([cur?.url])
+
+  /* 🔍 รูปของ "จุดตรวจ" ขึ้นจอใหญ่  (2026-11-10 · feedback หน้างาน)
+     เดิมรูปเล็กในช่องรายการเป็นทางเดียวที่จะเห็นรูปของจุดนั้น (ต้องกดเปิด overlay)
+     และรูปใหญ่ **ค้างอยู่ที่เฟรมแรกของเครื่องเสมอ** เมื่อจุดนั้นยังไม่ได้ปักหมุด
+     (เอฟเฟกต์ด้านล่าง return ทิ้งเมื่อ `x_pos == null`) ⇒ เลือกข้อไหนรูปก็ไม่เปลี่ยน
+     🔴 **ห้ามวาดหมุดทับรูปของจุดตรวจ** — พิกัดหมุดเป็น % ของ "รูปเครื่อง" คนละรูปกัน
+        (กฎ §5.1 UI-CONVENTIONS: balloon ต้องผูกกับรูปที่มันถูกวาง `image_id`) */
+  const activeCp = checkpoints.find(c => c.id === activeCpId) || null
+  const cpPhotoUrl = activeCp?.image_path ? getPublicUrl(activeCp.image_path) : null
+  const cpPinned = activeCp?.x_pos != null && activeCp?.y_pos != null
+  const [showCpPhoto, setShowCpPhoto] = useState(false)
+  /* ปักหมุดแล้ว = โชว์รูปเครื่องก่อน (ได้เห็นว่าจุดอยู่ตรงไหน) · ยังไม่ปัก = โชว์รูปของจุดเลย
+     (ไม่งั้นรูปใหญ่ไม่มีอะไรเกี่ยวกับข้อที่กำลังตรวจ) · ไม่มีรูปของจุด = รูปเครื่องเหมือนเดิม */
+  useEffect(() => { setShowCpPhoto(!!cpPhotoUrl && !cpPinned) }, [activeCpId, cpPhotoUrl, cpPinned])
+  const onCpPhoto = !!(showCpPhoto && cpPhotoUrl)
+  const shownUrl = onCpPhoto ? cpPhotoUrl : cur?.url
+
+  const { imgRef, imgBox, recalc } = useImgBox([shownUrl])
   useEffect(() => { frames.forEach(f => { if (f.url) { const im = new Image(); im.src = f.url } }) }, [frames])
 
   const firstId0 = frames[0]?.id
@@ -208,7 +237,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
   const frameShimPins = shimPins.filter(sp => (sp.pin.imageId ?? firstId) === cur?.id)
 
   const pointerDown = (e) => {
-    if (!spin) return
+    if (!spin || onCpPhoto) return      // กำลังดูรูปของจุดตรวจ — ลากแล้วหมุนเฟรมที่มองไม่เห็นอยู่ = งง
     setPlaying(false) // ผู้ใช้ลากเอง → หยุด auto-play
     drag.current = { startX: e.clientX, startIdx: frameIdx, moved: false }
     const move = (ev) => {
@@ -232,10 +261,35 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
          ⚠️ `compact` = โหมดแถบติดบนจอแคบ — รูปเตี้ยลงและตัดบรรทัดอธิบายออก เพื่อไม่ให้กินจอ
             เกินครึ่ง (ที่เหลือต้องเป็นของรายการตรวจ) · คำอธิบายเดิมยังอยู่ครบในโหมดปกติ */}
       <div ref={boxRef} onPointerDown={pointerDown}
-        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
-        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
-        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
-        {imgBox && (
+        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
+        <img ref={imgRef} src={shownUrl} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
+        {/* ป้ายบอกว่ากำลังดูรูปอะไรอยู่ + ทางกลับ — ไม่งั้นคนแยกไม่ออกว่ารูปนี้ของเครื่องหรือของจุด */}
+        {onCpPhoto && (
+          <div style={{ position: 'absolute', left: 8, top: 8, display: 'flex', gap: 6, alignItems: 'center', zIndex: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 999,
+                           background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+              🔍 รูปของข้อ {(cpIndex[activeCp.id] ?? 0) + 1}
+            </span>
+            {frames.length > 0 && (
+              <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(false)}
+                style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
+                         border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
+                {tr('ดูรูปเครื่อง')}
+              </button>
+            )}
+          </div>
+        )}
+        {!onCpPhoto && cpPhotoUrl && (
+          <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(true)}
+            style={{ position: 'absolute', left: 8, top: 8, zIndex: 3, fontSize: 11, fontWeight: 700, padding: '3px 9px',
+                     borderRadius: 999, cursor: 'pointer', border: '1px solid var(--accent)',
+                     background: 'var(--card)', color: 'var(--accent)' }}>
+            {tr('🔍 ดูรูปของข้อ')} {(cpIndex[activeCp.id] ?? 0) + 1}
+          </button>
+        )}
+        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้
+            🔴 ตอนโชว์รูปของจุดตรวจ ห้ามวาดหมุด (พิกัดเป็นของรูปเครื่อง คนละรูป) */}
+        {imgBox && !onCpPhoto && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {framePins.map(c => {
               const st = cpCheckStatus(c, results[c.id])
@@ -259,28 +313,32 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             {frameShimPins.map(sp => (
               <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                 label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false} hollow={!sp.done}
-                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                title={`จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
                 onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
             ))}
           </div>
         )}
       </div>
       {/* 🔴 แถบคุมรูปต้องอยู่ **ใต้รูป ไม่ทับรูป** (user 23/09 "ไม่บังรูปได้มั้ย")
-          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 🔄 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
+          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
           ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
-          <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
-            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-            {playing ? '⏸ หยุด' : '▶ หมุนเอง'}
+          <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? tr('หยุดหมุน') : tr('หมุนอัตโนมัติ')}
+            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            {playing ? tr('หยุด') : tr('หมุนเอง')}
           </button>
           <div style={{ display: 'flex', gap: 5 }}>
             {frames.map((f, i) => (
-              <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+              <button key={f.id} onClick={() => { setShowCpPhoto(false); setFrameIdx(i) }} title={`เฟรม ${i + 1}`}
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
             ))}
           </div>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔄 {frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {onCpPhoto
+              ? 'กำลังดูรูปของข้อที่เลือก — กดจุดด้านบนเพื่อกลับไปรูปเครื่อง'
+              : `${frameIdx + 1}/${frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน`}
+          </span>
         </div>
       )}
       {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
@@ -299,7 +357,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
       {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
-          🔍 หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
+          หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
         </div>
       )}
       {zoomCp && <CpZoom cp={zoomCp} idx={cpIndex[zoomCp.id]} onClose={() => setZoomCp(null)} />}
@@ -326,14 +384,18 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
-        <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 4px' }}>{cp.axis}</span>}</p>
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 4px' }}>{cp.axis}</span>}</p>
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       {calcText && (
-        <div style={{ fontSize: 11.5, color: '#4d9fff', fontWeight: 700 }}>🧮 ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
+        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>ค่า = {calcText} {tr('· ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก')}</div>
       )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
@@ -347,7 +409,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
         ))}
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginBottom: 2 }}>Avg</div>
-          <div style={{ ...S.input, padding: '6px 0', borderRadius: 6, border: `1px solid ${c?.border ?? 'var(--border)'}`, color: c?.text ?? 'var(--muted)', fontWeight: 700 }}>{avg != null ? fmt(avg) : '—'}</div>
+          <div style={{ ...S.input, padding: '6px 0', borderRadius: 'var(--r-md)', border: `1px solid ${c?.border ?? 'var(--border)'}`, color: c?.text ?? 'var(--muted)', fontWeight: 700 }}>{avg != null ? fmt(avg) : '—'}</div>
         </div>
         {cp.unit && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{cp.unit}</span>}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
@@ -372,16 +434,20 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
             <button key={v} onClick={() => pickAttr(v)} style={{
-              padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
               // 📱 มือถือ: ปุ่ม OK/NG = คำตอบหลักของใบตรวจ → ใหญ่พอใส่ถุงมือกด (เดิมสูง ~22px · 22/10) · จอคอมเท่าเดิม
-              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 8 } : null),
+              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 'var(--r-md)' } : null),
               border: `1px solid ${value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--border)'}`,
               background: value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--bg3)',
               color: value === v ? '#fff' : 'var(--muted)',
@@ -391,10 +457,10 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
       </div>
       {cp.description && (
         <p style={{ fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'pre-line', margin: '0 0 0 24px', lineHeight: 1.5 }}>
-          📐 {cp.description}
+          {cp.description}
         </p>
       )}
-      {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
+      {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder={tr('หมายเหตุ (ถ้ามี)...')} />}
     </div>
   )
 }
@@ -407,17 +473,21 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '● OK' : '✕ NG'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder="อ่านค่า"
+        <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder={tr('อ่านค่า')}
           style={{ width: 110, textAlign: 'center', fontFamily: 'monospace', border: `1px solid ${c?.border ?? 'var(--border)'}` }} />
         {cp.unit && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{cp.unit}</span>}
-        <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>เกณฑ์: <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
+        <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>{tr('เกณฑ์:')} <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
       </div>
     </div>
   )
@@ -463,7 +533,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
   if (done) {
     return (
-      <div style={{ marginTop: 6, borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)', padding: '8px 12px' }}>
+      <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '8px 12px' }}>
         <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>Action taken</p>
         {result.action_text && <p style={{ fontSize: 12, color: 'var(--text)', margin: '2px 0' }}>{result.action_text}</p>}
         {cp.type === 'variable' && result.recheck_avg != null && (
@@ -478,10 +548,10 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
   if (!canRecord) {
     return (
-      <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
-        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ยังไม่มี action</p>
+      <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
+        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ยังไม่มี action')}</p>
         <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
-          🔒 {deptWrite && !deptWrite.ok
+          {deptWrite && !deptWrite.ok
             ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
             : 'บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้'}
         </p>
@@ -490,12 +560,12 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
   }
 
   return (
-    <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ต้องการ action</p>
-      <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder="อธิบายการแก้ไข..." />
+    <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ต้องการ action')}</p>
+      <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder={tr('อธิบายการแก้ไข...')} />
       {cp.type === 'variable' && (
         <div>
-          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>วัดใหม่ 3 ครั้ง</p>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>{tr('วัดใหม่ 3 ครั้ง')}</p>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {[[rv1, setRv1, '①'], [rv2, setRv2, '②'], [rv3, setRv3, '③']].map(([v, set, label], i) => (
               <div key={i}><div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{label}</div>
@@ -506,15 +576,16 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
           </div>
         </div>
       )}
-      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
-        {saving ? 'กำลังบันทึก...' : 'บันทึก Action'}
+      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
+        {saving ? tr('กำลังบันทึก...') : tr('บันทึก Action')}
       </button>
     </div>
   )
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false }) {
+function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false,
+  isAm = false, inspectorPosition = null, myPosition = null, inspectorIsSelf = null, isShared = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -544,14 +615,30 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const checkpoints = ownCps && ownCps.length ? ownCps : cpsFromPage
   const cpMap = Object.fromEntries(checkpoints.map(c => [c.id, c]))
   /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
-  const canApprove = can('pm', 'approve', userRole) && (deptWrite?.ok !== false)
+  /* ✍️ B2 (02/11) — ใบ AM: ผู้อนุมัติ = ชั้นถัดไปเหนือคนตรวจเท่านั้น (ห้ามข้ามไปผู้จัดการ) · กฎอยู่ `utils/amApproval.js`
+     ใบ PM ของช่าง = พฤติกรรมเดิม (`pm:approve` + ทีม) */
+  /* ✍️ 11/11 — ใบ PM ของช่าง: ขั้น 2 "หัวหน้าผู้ตรวจ ตรวจสอบและยืนยัน" (`pmConfirmVerdict` · utils/amApproval.js)
+     ใช้ตัวแปร `amVerdict` ชุดเดียวกัน (ด่านซ้ำตอนเขียนจริงใน handleApprove/handleReject ทำงานทั้ง 2 สาย)
+     `amApprovalText`/`amApprovalAssumptionText` ของใบ PM ใช้ `pmConfirmText` แทน (ดู verdictText) */
+  const verdictArgs = {
+    inspectorRank: positionRank(inspectorPosition), approverRank: positionRank(myPosition),
+    // 🪪 B4 — ใบที่มีรหัสบัตร: "ใบตัวเอง" = บัตรเป็นของเรา (หน้าแม่คิดผ่าน amInspectorIdentity) ไม่ใช่บัญชีที่บันทึก
+    isSelf: inspectorIsSelf ?? (!!userId && insp.inspector_id === userId),
+  }
+  const amVerdict = isAm ? amApprovalVerdict(verdictArgs) : pmConfirmVerdict({ ...verdictArgs, isShared })
+  const verdictText = (v) => (isAm ? amApprovalText(v) : pmConfirmText(v))
+  const canApprove = (isAm
+    ? amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && !!amVerdict?.ok
+    : can('pm', 'approve', userRole) && !!amVerdict?.ok) && (deptWrite?.ok !== false)
 
   const handleApprove = async () => {
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }   // ด่านซ้ำตอนเขียนจริง (ปุ่มซ่อนอย่างเดียวไม่พอ)
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
     }).eq('id', insp.id).select().single()
+    if (error) toast.error('อนุมัติไม่สำเร็จ: ' + error.message)
     if (!error && data) {
       setInsp(data)
       if (data.inspector_id !== userId) {
@@ -564,10 +651,12 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const handleReject = async () => {
     if (!rejectReason.trim()) return
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
     }).eq('id', insp.id).select().single()
+    if (error) toast.error('ตีกลับไม่สำเร็จ: ' + error.message)
     if (!error && data) {
       setInsp(data); setRejecting(false); setRejectReason('')
       if (data.inspector_id !== userId) {
@@ -586,18 +675,39 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
        โดยไม่มี error เพราะรับแค่ `{ data }` (supabase-js คืน {data,error} ไม่ throw) — audit 2026-09-03
        คลาสเดียวกับ fn_audit ที่อ่าน coalesce(full_name, email) แล้วไม่บันทึกผู้แก้ทั้งระบบ */
     const { data: profs, error: profErr } = await supabase
-      .from('profiles').select('id, full_name, signature_url').in('id', userIds)
+      .from('profiles').select('id, full_name, signature_url, employee_id').in('id', userIds)
     if (profErr) { console.warn('[buildExportArgs] profiles', profErr.message); toast.error('โหลดชื่อ/ลายเซ็นผู้ตรวจไม่สำเร็จ — ใบที่พิมพ์จะไม่มีลายเซ็น') }
     const profMap = Object.fromEntries((profs ?? []).map(p => [p.id, p]))
+    /* ✍️ C1 (03/11): บัญชีที่ยังไม่ตั้งลายเซ็นในโปรไฟล์ → ถอยไปใช้ลายเซ็นในฐานพนักงานที่ผูกไว้
+       (ลำดับอยู่ที่ signatureOfPerson() ที่เดียว · โปรไฟล์ชนะเสมอ) · อ่านไม่ได้ = บอก ไม่เงียบ */
+    const needEmp = (profs ?? []).filter(p => !p.signature_url && p.employee_id).map(p => p.employee_id)
+    const empSig = {}
+    if (needEmp.length) {
+      const er = await loadEmployeeSigners(supabase, { ids: needEmp })
+      if (er.error) toast.error(`โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ — ช่องที่ไม่มีลายเซ็นโปรไฟล์จะเว้นว่าง (${er.error})`)
+      else if (er.sigColumnMissing) toast.info('ฐานพนักงานยังไม่เปิดช่องลายเซ็น — ผู้ที่ไม่มีลายเซ็นในโปรไฟล์จะเว้นช่องให้เซ็นมือ')
+      for (const e of er.rows) empSig[e.id] = e.signature_url || null
+    }
     const sigCache = {}
     const getSig = async (uid) => {
       if (!uid) return null
       if (sigCache[uid] !== undefined) return sigCache[uid]
-      const url = profMap[uid]?.signature_url
+      const p = profMap[uid]
+      const url = signatureOfPerson({ profileSig: p?.signature_url, employeeSig: p?.employee_id ? empSig[p.employee_id] : null })
       sigCache[uid] = url ? await resolveSignatureDataUrl(url) : null
       return sigCache[uid]
     }
-    const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    /* ✍️ C1 (05/11): ใบที่บันทึกรหัสผู้ตรวจไว้ = คนตามรหัสเซ็น (เครื่องหน้างานใช้บัญชีกลาง)
+       หาลายเซ็นไม่ได้ = เว้นช่อง + บอกเหตุผล · ห้ามถอยไปใช้ลายเซ็นบัญชีที่ login (inspectorForExport) */
+    let inspector
+    if (insp.inspector_code) {
+      const signer = await resolveEmployeeSigner(supabase, insp.inspector_code)
+      const who = inspectorForExport({ code: insp.inspector_code, signer })
+      if (who.note) toast.info(`ผู้ตรวจรหัส ${insp.inspector_code}: ${who.note}`)
+      inspector = { email: who.name ?? 'Inspector', signature_data: who.signatureUrl ? await resolveSignatureDataUrl(who.signatureUrl) : null }
+    } else {
+      inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    }
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     // ชื่อใต้ลายเซ็น = ชื่อจริง (profiles.full_name) ไม่ใช่อีเมล — เดิมช่อง APPROVED ขึ้น "tsat4pd3" (20/10)
     const exporter = { email: profMap[userId]?.full_name ?? currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
@@ -633,9 +743,9 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
           <div>
             <p style={{ fontWeight: 700, color: 'var(--text)', margin: 0, fontSize: 14 }}>{formatDate(insp.inspected_at)}</p>
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
-              {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 10 }}>✓ อนุมัติแล้ว</span>}
-              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 10 }}>✕ ตีกลับ</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+              {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✓ อนุมัติแล้ว')}</span>}
+              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✕ ตีกลับ')}</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
@@ -649,10 +759,10 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
             const c = r.status ? STATUS_COLOR[r.status] : null
             return (
               <div key={r.id}>
-                <div style={{ borderRadius: 8, border: `1px solid ${c?.border ?? 'var(--border)'}`, background: c?.bg ?? 'var(--card)', padding: 10 }}>
+                <div style={{ borderRadius: 'var(--r-md)', border: `1px solid ${c?.border ?? 'var(--border)'}`, background: c?.bg ?? 'var(--card)', padding: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                     <div>
-                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 3px' }}>{cp.axis}</span>}</p>
+                      <p style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600, margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 4, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 3px' }}>{cp.axis}</span>}</p>
                       {cp.type === 'variable' ? (
                         <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
                           {fmt(r.value_1)} / {fmt(r.value_2)} / {fmt(r.value_3)}
@@ -662,7 +772,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                       ) : cp.type === 'measure' ? (
                         <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
                           อ่านค่า: <strong style={{ color: 'var(--text2)' }}>{fmt(r.value_1)}</strong>{cp.unit ? ` ${cp.unit}` : ''}
-                          <span style={{ marginLeft: 6 }}>เกณฑ์ {measureStdText(cp)}</span>
+                          <span style={{ marginLeft: 6 }}>{tr('เกณฑ์')} {measureStdText(cp)}</span>
                         </p>
                       ) : (
                         <>
@@ -671,42 +781,53 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                         </>
                       )}
                     </div>
-                    {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{c.label}</span>}
+                    {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{tr(c.label)}</span>}
                   </div>
+                  {/* 📎 รูปหลักฐาน — แตะ = ซูมในแอป (A7 · 03/11) · เดิม <a target=_blank> เด้งออกจากใบที่เปิดอยู่
+                      และรูปกว้างเต็มแถว (maxWidth 100%) ⇒ ใช้กล่องรูปย่อของกลางแบบเดียวกับรูปจุดตรวจ */}
                   {r.evidence_path && (
-                    <a href={getPublicUrl(r.evidence_path)} target="_blank" rel="noreferrer" title="รูปหลักฐาน (สภาพจริงตอนพบผิดปกติ)" style={{ display: 'inline-block', marginTop: 6 }}>
-                      <img loading="lazy" src={getPublicUrl(r.evidence_path)} alt="" style={{ maxHeight: 120, maxWidth: '100%', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', display: 'block' }} />
-                      <span style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>📎 หลักฐานสภาพจริง</span>
-                    </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                      <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="var(--red)"
+                        name={`หลักฐานสภาพจริง · ${cp.name}`} />
+                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('หลักฐานสภาพจริง (แตะเพื่อซูม)')}</span>
+                    </div>
                   )}
                 </div>
                 {isNG && <NgRecheckPanel result={r} cp={cp} onSaved={fetchResults} canRecord={canRecord} deptWrite={deptWrite} />}
               </div>
             )
           })}
-          {insp.notes && <div style={{ borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>หมายเหตุ</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
-          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 8, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: '#e05c4a', margin: 0 }}>เหตุผลที่ตีกลับ</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
+          {insp.notes && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{tr('หมายเหตุ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
+          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: '#e05c4a', margin: 0 }}>{tr('เหตุผลที่ตีกลับ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
         </div>
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
+          {insp.approval_status === 'pending' && amVerdict && (
+            <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : 'var(--amber)', lineHeight: 1.6 }}>
+              {amVerdict.need ? <>{tr('รอ')} <b>{tr(amVerdict.need.label)}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
+              {!amVerdict.ok && <div>{verdictText(amVerdict)}</div>}
+              {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: 'var(--amber)' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
+            </div>
+          )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังอนุมัติ...' : 'อนุมัติ'}</button>
-              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ตีกลับ</button>
+              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : (isAm ? tr('อนุมัติ') : tr('ยืนยันผลตรวจ'))}</button>
+              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('ตีกลับ')}</button>
             </div>
           )}
           {rejecting && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder="ระบุเหตุผลที่ตีกลับ..." />
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder={tr('ระบุเหตุผลที่ตีกลับ...')} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : 'ยืนยันตีกลับ'}</button>
+                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
+                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : tr('ยืนยันตีกลับ')}</button>
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : '⬇ PDF'}</button>
-            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : '⬇ Excel'}</button>
+            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? tr('กำลัง export...') : 'PDF'}</button>
+            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? tr('กำลัง export...') : 'Excel'}</button>
           </div>
         </div>
       </motion.div>
@@ -733,7 +854,7 @@ export default function PMCheckData() {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount, lineId: myLineId, scopeIdx } = useContext(UserContext)
   /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
      เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
      อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
@@ -749,6 +870,19 @@ export default function PMCheckData() {
   const [moTeam, setMoTeam] = useState('maintenance')
   const [moSaving, setMoSaving] = useState(false)
   const [moByInsp, setMoByInsp] = useState({})     // inspection_id → { id, mo_no } (กันเปิดซ้ำ + โชว์ในประวัติ)
+  // 🔧 B3 — AM เจอ NG: "ไว้ก่อน" ต้องมีเหตุผล (เก็บที่ inspections.mo_waived_reason) — ห้ามปิดหน้าต่างเปล่าๆ
+  const [moWaiving, setMoWaiving] = useState(false)
+  const [moWaiveReason, setMoWaiveReason] = useState('')
+  // ✍️ B2 — ใบในประวัติเป็นของทีม AM ไหม (ตาม checklist ของใบ ไม่ใช่แท็บที่เปิด) + ตำแหน่งคนตรวจ (สายอนุมัติ)
+  const [clDeptById, setClDeptById] = useState({})
+  /* 🔀 ประวัติของอุปกรณ์ที่ตรวจหลายทีม — ดู src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม */
+  const [histOther, setHistOther] = useState([])       // ใบของทีมอื่นบนเครื่องเดียวกัน (โหลดเมื่อกดดู)
+  const [histMeta, setHistMeta] = useState(null)       // { otherN, unknownN, otherTeams, teamsKnown }
+  const [showOther, setShowOther] = useState(false)
+  const [inspPosById, setInspPosById] = useState({})   // inspector_id → position · ไม่มีคีย์ = ไม่รู้
+  // 🪪 B4 — ใบที่มีรหัสบัตร: ผู้ตรวจ = คนตามบัตร (normBadgeCode → { id, position }) · พนักงานของบัญชีที่ login (ใบตัวเอง)
+  const [inspEmpByCode, setInspEmpByCode] = useState({})
+  const [myEmployeeId, setMyEmployeeId] = useState(undefined)   // undefined = ยังไม่รู้ · null = บัญชีนี้ไม่ผูกพนักงาน
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
   const canRecord = useMemo(() => {
@@ -819,12 +953,30 @@ export default function PMCheckData() {
     return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
   }, [lineRows])
   const [jigScope, setJigScope] = useState({ section: '', line: '', names: null })
+  /* 🔒 แท็บ AM (ผลิตตรวจเอง) = เห็นเฉพาะไลน์ของตัวเอง (11/11 · คำสั่ง user "ล็อกเห็นเฉพาะไลน์ตัวเอง")
+     เดิมลิสต์ทุกไลน์ที่ลงทะเบียน AM ทั้งโรงงาน ⇒ พนักงานเห็นเครื่องข้ามไลน์ปนกัน
+     แกนเดียวของ "บัญชีนี้เห็นไลน์ไหน" = `lineScope()` (utils/sectionScope.js) ห้ามคิดเองในหน้า
+     · unlimited (admin / ขอบเขตไม่จำกัด) = เห็นทั้งโรงงานเหมือนเดิม · unsure = เขียนบนจอ
+     · แท็บช่าง (PM) ไม่ล็อก — ช่างซ่อมข้ามไลน์เป็นงานปกติ (แกนสิทธิ์ช่าง = ทีม) */
+  const amScope = useMemo(() => lineScope({ role: userRole, lineId: myLineId, sections: mySections, lines: scopeLines, scopeIdx }),
+    [userRole, myLineId, mySections, scopeLines, scopeIdx])
+  const amScopeSet = useMemo(() => (amScope.unlimited ? null : new Set(amScope.names)), [amScope])
   const [chipsAll, setChipsAll] = useState(false)   // ชิปข้อที่ยังไม่ตรวจ: เกิน CHIP_CAP พับไว้ กดขยายได้
   const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
   const [rawResults, setResults] = useState({})   // ที่คนกรอก
   /* 🧮 จุดคำนวณ (A − B) เติมค่า ①②③ จากจุด A/B ให้เอง — ทุกที่ที่อ่าน `results` (ตัดสิน/นับครบ/บันทึก) เห็นค่าชุดเดียวกัน */
   const results = useMemo(() => pmCalcResults(checkpoints, rawResults), [checkpoints, rawResults])
   const [notes, setNotes] = useState('')
+  /* ✍️ รหัสผู้ตรวจจริง — คงค่าข้ามเครื่องในแท็บนี้ (คนเดียวไล่ตรวจหลายเครื่องติดกัน) · ล้างเมื่อปิดแท็บ */
+  const [inspectorCode, setInspectorCodeRaw] = useState(() => { try { return sessionStorage.getItem('pm:inspector_code') || '' } catch { return '' } })
+  const setInspectorCode = (v) => { setInspectorCodeRaw(v); try { v ? sessionStorage.setItem('pm:inspector_code', v) : sessionStorage.removeItem('pm:inspector_code') } catch { /* ไม่มี storage = จำไม่ได้ ไม่พัง */ } }
+  /* 🪪 B4 (10/11) — ใบ AM: เปลี่ยนเครื่อง = ล้างรหัสบัตร · หัวหน้าเดินไล่ทีละเครื่องทีละคน
+     จำข้ามเครื่อง = ลืมสแกนเครื่องถัดไปแล้วชื่อคนก่อนหน้าติดไปทั้งไลน์ (ชื่อผิดคน) · ใบ PM ช่าง = จำต่อเหมือนเดิม */
+  useEffect(() => {
+    if (isAmTeam(department)) setInspectorCode('')
+  }, [selectedJig?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* ผู้ตรวจตัวจริงของใบในประวัติ — มีรหัสบัตร = คนตามบัตร (กฎใน amInspectorIdentity) */
+  const inspectorOf = (insp) => amInspectorIdentity(insp, { empByCode: inspEmpByCode, posByUid: inspPosById, myUid: userId, myEmployeeId: myEmployeeId ?? null })
   const [saving, setSaving] = useState(false)
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ผลตรวจบันทึกทีเดียวตอนท้าย และ "เปลี่ยน/สแกนเครื่องอื่น"
      ล้างทุกช่องที่กรอกทันที ⇒ เก็บร่างต่อ เครื่อง|แผนก|คนกรอก แล้วถามกู้คืนเมื่อกลับมาเครื่องเดิม (utils/formDraft.js) */
@@ -849,6 +1001,15 @@ export default function PMCheckData() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
   }, [])
+  // 🪪 B4 — บัญชีนี้ผูกพนักงานคนไหน (ตัดสิน "สแกนบัตรตัวเอง = ใบตัวเอง") · อ่านไม่ได้ = undefined (ไม่รู้ ห้ามเดาว่าไม่ใช่)
+  useEffect(() => {
+    if (!userId) return undefined
+    let alive = true
+    supabase.from('profiles').select('employee_id').eq('id', userId).maybeSingle().then(({ data, error }) => {
+      if (alive) setMyEmployeeId(error ? undefined : (data?.employee_id ?? null))
+    })
+    return () => { alive = false }
+  }, [userId])
 
   useEffect(() => {
     // เลือกเฉพาะคอลัมน์ที่จอใช้ (กฎ egress ข้อ 11) · อ่านไม่ได้ต้องบอก ห้ามขึ้น "ยังไม่มีอุปกรณ์"
@@ -926,22 +1087,100 @@ export default function PMCheckData() {
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
+  /* 📜 ประวัติการตรวจของเครื่องนี้ — **ของทีมที่กำลังดูเท่านั้น**  (แก้ 2026-11-10 · คำสั่ง user)
+
+     🔴 เดิมดึงด้วย `.eq('jig_id', jigId)` ล้วน + `limit(30)` ⇒ เครื่องที่มี checklist ทั้ง AM และ PM
+        (วัดจริง DR 6 เครื่อง / 112 ใบ) ได้ใบของทั้ง 2 ทีม **ปนกันในลิสต์เดียวโดยไม่มีอะไรบอกว่าใบไหนของใคร**
+        และโควตา 30 ใบถูกใช้ร่วมกัน ⇒ ทีมที่ตรวจถี่กว่ากินช่องจนใบของอีกทีมหลุดหาย
+        (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ใบช่างมีสิทธิ์ไม่โผล่เลย)
+     🔑 ลำดับสำคัญ: **ถามทีมของ checklist ก่อน แล้วจึงดึงใบ** — รู้ทีหลังแก้โควตาที่ถูกกินไปแล้วไม่ได้
+     🔴 อ่านทีมไม่ได้ = ถอยไปพฤติกรรมเดิม (ดึงด้วย jig_id) + `teamsKnown:false` ให้จอเขียนว่าอาจปนทีม
+        **ห้ามโชว์ลิสต์ว่างเงียบๆ** · ใบที่ชี้ทีมไม่ได้นับเป็น `unknownN` เขียนบนจอ ไม่กลืน   */
   const fetchHistory = async (jigId) => {
-    const { data, error: eH } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
+    setShowOther(false); setHistOther([])
+    /* ① ทีมเจ้าของทุก checklist ของเครื่องนี้ (ไม่ใช่แค่ของใบที่ดึงมา) */
+    const clRes = await supabaseDR.from('checklists').select('id, department').eq('equipment_id', jigId).eq('module', 'mtn')
     if (curJigRef.current !== jigId) return // เปลี่ยนเครื่องไปแล้ว — คำตอบนี้เป็นของเครื่องก่อน
+    const teamsKnown = !clRes.error
+    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ — ประวัติอาจปนทีมอื่น: ${clRes.error.message}`)
+    const clRows = clRes.data ?? []
+    setClDeptById(Object.fromEntries(clRows.map(c => [c.id, c.department])))
+    const mineIds = clRows.filter(c => c.department === department).map(c => c.id)
+    const otherIds = clRows.filter(c => c.department !== department).map(c => c.id)
+
+    /* ② ใบของทีมนี้ (โควตา 30 ใบเป็นของทีมนี้คนเดียว) · อ่านทีมไม่ได้ = ถอยไปดึงทั้งเครื่องแบบเดิม */
+    const base = () => supabaseDR.from('inspections').select('*').order('inspected_at', { ascending: false }).limit(30)
+    let data = [], eH = null
+    if (!teamsKnown) ({ data, error: eH } = await base().eq('jig_id', jigId))
+    else if (mineIds.length) ({ data, error: eH } = await base().in('checklist_id', mineIds))
+    if (curJigRef.current !== jigId) return
     if (eH) toast.error(`โหลดประวัติการตรวจไม่สำเร็จ: ${eH.message}`)
     setInspections(data ?? [])
+
+    /* ③ นับใบของทีมอื่น + ใบที่ชี้ทีมไม่ได้ (ไม่ดึงเนื้อถ้าไม่กดดู) — ตัวเลขต้องขึ้นจอ ห้ามเงียบ
+       นับไม่ได้ = `null` ให้จอเขียนว่าไม่รู้ **ห้ามแสดงเป็น 0** (0 = "ไม่มีใบของทีมอื่น" คนละเรื่อง) */
+    if (!teamsKnown) setHistMeta({ otherN: null, unknownN: null, otherTeams: [], teamsKnown: false })
+    else {
+      const headCount = (ids) => (ids.length
+        ? supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).in('checklist_id', ids)
+        : Promise.resolve({ count: 0, error: null }))
+      const [oRes, mRes, allRes] = await Promise.all([
+        headCount(otherIds), headCount(mineIds),
+        supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).eq('jig_id', jigId),
+      ])
+      if (curJigRef.current !== jigId) return
+      const otherN = oRes.error ? null : (oRes.count ?? 0)
+      const mineN = mRes.error ? null : (mRes.count ?? 0)
+      /* ใบของเครื่องนี้ที่ไม่ได้ผูก checklist ของเครื่องนี้เลย = ชี้ทีมไม่ได้ (วัดจริง 10/11 = 0 ใบ) */
+      const unknownN = (allRes.error || otherN === null || mineN === null)
+        ? null : Math.max(0, (allRes.count ?? 0) - otherN - mineN)
+      const oTeams = [...new Set(clRows.filter(c => c.department !== department).map(c => c.department).filter(Boolean))]
+      setHistMeta({ otherN, unknownN, otherTeams: oTeams, otherIds, teamsKnown: true })
+    }
+
+    /* ✍️ B2 — ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
+    const uids = [...new Set((data ?? []).map(i => i.inspector_id).filter(Boolean))]
+    // 🪪 B4 — ใบที่มีรหัสบัตร ตำแหน่งผู้ตรวจ = ของคนตามบัตร (ค้นทั้งค่าดิบ + ค่าที่ปรับรูป แล้วตัดสินด้วย findByBadge)
+    const codes = [...new Set((data ?? []).flatMap(i => i.inspector_code ? [i.inspector_code, normBadgeCode(i.inspector_code)] : []))]
+    const [pRes, eRes] = await Promise.all([
+      uids.length ? supabase.from('profiles').select('id, position').in('id', uids) : Promise.resolve({ data: [] }),
+      codes.length ? supabase.from('employees').select('id, employee_id_code, position').in('employee_id_code', codes) : Promise.resolve({ data: [] }),
+    ])
+    if (curJigRef.current !== jigId) return
+    if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
+    setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
+    if (eRes.error) toast.error(`อ่านตำแหน่งผู้ตรวจตามบัตรไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${eRes.error.message}`)
+    setInspEmpByCode(Object.fromEntries((data ?? []).filter(i => i.inspector_code).map(i => {
+      const e = findByBadge(eRes.data ?? [], i.inspector_code)
+      return [normBadgeCode(i.inspector_code), e ? { id: e.id, position: e.position || null } : null]
+    }).filter(([, v]) => v)))
     /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
        (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
        ⚠️ tolerant กับ 42703 — ยังไม่ apply migration ต้องใช้หน้านี้ได้ตามปกติ */
     const failIds = (data ?? []).filter(i => i.status === 'fail').map(i => i.id)
     if (!failIds.length) { setMoByInsp({}); return }
     const { data: mos, error } = await supabaseDR.from('mtn_orders')
-      .select('id, mo_no, status, source_inspection_id').in('source_inspection_id', failIds)
+      .select(AM_MO_COLS).in('source_inspection_id', failIds)   // คอลัมน์ครบให้ moStatusLabel() ตัดสินได้
     if (curJigRef.current !== jigId) return
     if (error) { setMoByInsp({}); return }
     const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
     setMoByInsp(m)
+  }
+
+  /* 👀 กดดูใบของทีมอื่นบนเครื่องเดียวกัน — โหลดตอนกด ไม่ดึงมาเปล่าๆ (egress · กฎเขียน DB ข้อ 11)
+     ปิดแล้วเปิดใหม่ไม่ดึงซ้ำ · ล้างทุกครั้งที่เปลี่ยนเครื่อง (fetchHistory) */
+  const toggleOtherHist = async () => {
+    if (showOther) { setShowOther(false); return }
+    const ids = histMeta?.otherIds ?? []
+    if (!ids.length) { setShowOther(true); return }
+    if (histOther.length) { setShowOther(true); return }
+    const jigId = curJigRef.current
+    const { data, error } = await supabaseDR.from('inspections').select('*')
+      .in('checklist_id', ids).order('inspected_at', { ascending: false }).limit(30)
+    if (curJigRef.current !== jigId) return
+    if (error) { toast.error(`โหลดใบของทีมอื่นไม่สำเร็จ: ${error.message}`); return }
+    setHistOther(data ?? [])
+    setShowOther(true)
   }
 
   /* ทีมช่างตั้งต้นของใบซ่อมที่จะเปิด
@@ -951,7 +1190,30 @@ export default function PMCheckData() {
     ? (teamForEquipmentKind(selectedJig?.equipment_type) || 'maintenance')
     : (teamKeyOf(department) || 'maintenance'))
 
-  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoPrompt({ insp, ngTopics }) }
+  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoWaiving(false); setMoWaiveReason(''); setMoPrompt({ insp, ngTopics }) }
+
+  /* 🔧 B3 (02/11) — AM เจอผิดปกติ ⇒ ต้องเปิด MO **หรือ** เขียนเหตุผลว่าทำไมไม่เปิด (บอร์ด AM เห็นทั้งคู่)
+     🔴 ยังไม่ apply migration (ไม่มีคอลัมน์ mo_waived_reason) = ข้ามไม่ได้ ต้องเปิด MO (fail-closed + บอกบนจอ) */
+  const isAmPrompt = moPrompt ? isAmTeam(clDeptById[moPrompt.insp?.checklist_id] ?? department) : false
+  const waiveMo = async () => {
+    if (!moPrompt) return
+    const reason = moWaiveReason.trim()
+    if (!amWaiverReasonValid(reason)) { toast.error(`เขียนเหตุผลอย่างน้อย ${AM_WAIVER_MIN_LEN} ตัวอักษร`); return }
+    setMoSaving(true)
+    try {
+      const res = await supabaseDR.from('inspections')
+        .update({ mo_waived_reason: reason, mo_waived_by: userId || null, mo_waived_at: new Date().toISOString() })
+        .eq('id', moPrompt.insp.id).select('id')
+      if (res.error?.code === '42703' || res.error?.code === 'PGRST204') {
+        toast.error('ยังบันทึกเหตุผล "ไม่เปิดใบซ่อม" ไม่ได้ — ยังไม่ได้ apply migration 20261102_am_ng_mo_waiver_dr (แจ้ง admin) · ตอนนี้ต้องเปิดใบแจ้งซ่อม')
+        return
+      }
+      if (!checkWriteRows(res, 'บันทึกเหตุผลที่ไม่เปิดใบซ่อม')) return
+      setInspections(prev => prev.map(i => (i.id === moPrompt.insp.id ? { ...i, mo_waived_reason: reason } : i)))
+      setMoPrompt(null)
+      toast.success('บันทึกเหตุผลแล้ว — บอร์ด AM จะแสดงเหตุผลนี้แทนใบซ่อม')
+    } finally { setMoSaving(false) }
+  }
 
   // เปิดจากแท็บประวัติ (เคสกด "ไว้ก่อน" ตอนบันทึก) — ต้องไปหาชื่อจุดที่ไม่ผ่านของใบนั้นมาก่อน
   const openMoFromHistory = async (insp) => {
@@ -1095,7 +1357,7 @@ export default function PMCheckData() {
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น (โหมดจิ้มหมุดไม่ต้องเลื่อน — ข้อโผล่ใต้รูปอยู่แล้ว)
   /* 🔴 เทียบ "โหมดจิ้มหมุดเปิดจริง" ไม่ใช่แค่ `pinFocus` (20/10) — pinFocus ค่าเริ่ม = true แม้เครื่องไม่มีรูป/ปักไม่ครบ
      ⇒ เดิมกดชิป/หมุดแล้วไม่เลื่อนไปแถวเลย · เงื่อนไขต้องตรงกับ `focusOn` ในส่วนวาด */
-  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0 && checkpoints.every(c => c.x_pos != null)
+  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0   // ต้องตรงกับ `focusOn` ในแท็บบันทึก
   useEffect(() => {
     if (focusOnNow) return
     if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1144,8 +1406,39 @@ export default function PMCheckData() {
     setSaving(true)
     try {
       const overall = computeOverall()
+      /* 🪪 B4 (10/11 · user) — ใบ AM: ต้องสแกนบัตรผู้ตรวจทุกใบ (มาตรฐานเดียว) + คนที่บันทึก = ผู้ทวนสอบหน้าเครื่อง
+         ⇒ ผ่านสายอนุมัติ = "หัวหน้ากลุ่มรับทราบรายวัน" ไปพร้อมกันในแถวเดียว · กฎทั้งหมดอยู่ utils/amApproval.js
+         อ่านพนักงาน "ตอนกด" (ไม่ใช่ค่าที่ช่องโชว์ไว้ก่อนหน้า) — ด่านตอนเขียนจริง */
+      let approvalPatch = {}, onSite = null, badgeEmp = null
+      /* 🪪 11/11 (คำสั่ง user "ใบ PM ของช่าง บังคับสแกนบัตรก่อน") — ด่านบัตรใช้กับ **ทุกใบ** ทั้ง AM และ PM
+         กฎตัดสินบัตรตัวเดียวกัน (`amBadgeGate`) · ส่วน "บันทึกหน้าเครื่อง = รับทราบรายวัน" ยังเป็นของใบ AM เท่านั้น
+         (ใบ PM อนุมัติขั้นเดียวเหมือนเดิม — ไม่แตะ) */
+      {
+        const raw = inspectorCode.trim()
+        let hits = 0, loadError = false
+        if (normBadgeCode(raw)) {
+          const { data: rows, error: eEmp } = await supabase.from('employees')
+            .select('id, employee_id_code, name, position').in('employee_id_code', [...new Set([raw, normBadgeCode(raw)])])
+          loadError = !!eEmp
+          hits = (rows ?? []).filter(e => normBadgeCode(e.employee_id_code) === normBadgeCode(raw)).length
+          badgeEmp = findByBadge(rows ?? [], raw)
+        }
+        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError, kind: isAmTeam(department) ? 'AM' : 'PM' })
+        if (!gate.ok) { toast.error(gate.text); return }
+      }
+      if (isAmTeam(department)) {
+        onSite = amOnSiteApproval({
+          inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
+          isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
+          canApprove: amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && deptWrite?.ok !== false,
+          isShared: !!isSharedAccount,
+        })
+        if (onSite.approve) approvalPatch = { approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString() }
+      }
       const { data: insp, error: e1 } = await supabaseDR.from('inspections').insert({
         jig_id: selectedJig.id, checklist_id: checklistId, inspector_id: userId, status: overall, notes: notes.trim() || null,
+        inspector_code: inspectorCode.trim() || null,
+        ...approvalPatch,
       }).select().single()
       if (e1) throw e1
 
@@ -1191,7 +1484,17 @@ export default function PMCheckData() {
       }
 
       if (overall === 'fail') {
-        notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
+        /* 🔕 ผู้รับ = ทีมเจ้าของอุปกรณ์ + หัวหน้าส่วนงานนั้น (09/11 · คำสั่ง user)
+           เดิมยิง 83 คนข้าม 12 ส่วนงาน · คนกดเองถูกตัดออกที่ edge แล้ว (actor_id) ไม่ต้องส่ง excludeUserId
+           🔴 ทีมใหญ่เกิน 20 คน = รายชื่อช่างถูกตัด ⇒ ต้องเขียนบนจอ ห้ามเงียบ */
+        notifyDepartment(department, {
+          event: 'pm_inspection_ng',
+          title: 'พบผลตรวจไม่ผ่าน (NG)',
+          body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`,
+          type: 'error', refTable: 'inspections', refId: insp.id,
+          lineName: selectedJig.line_name || null,
+        }).then(r => { if (r?.ownersCapped) toast.error(`⚠ ทีม ${deptNameOf(department)} มีช่าง ${r.owners} คน — แจ้งเตือนส่งถึงได้ 20 คนแรกเท่านั้น`) })
+          .catch(() => {})
       }
 
       // ⭐ แผน PM "วิ่งตามผลตรวจ" (feedback ทีมงาน 2026-08-17): ตรวจครบทุกจุด (pass/fail) = ทำ PM จริงแล้ว
@@ -1234,7 +1537,14 @@ export default function PMCheckData() {
       // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
       if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
-      toast.success('บันทึกผลการตรวจสำเร็จ')
+      if (onSite?.approve) {
+        toast.success(`บันทึกแล้ว — ผู้ตรวจ ${badgeEmp?.name || inspectorCode.trim()} · ${fullName || 'คุณ'} ทวนสอบ/รับทราบแล้ว`)
+        const note = amApprovalAssumptionText(onSite.verdict?.assumed)
+        if (note) toast.info(note)
+      } else {
+        toast.success(badgeEmp ? `บันทึกผลการตรวจสำเร็จ — ผู้ตรวจ ${badgeEmp.name}` : 'บันทึกผลการตรวจสำเร็จ')
+        if (onSite) toast.info(onSite.text)
+      }
       if (pmDraftKey) clearDraft(pmDraftKey)
       const init = {}
       checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
@@ -1244,7 +1554,8 @@ export default function PMCheckData() {
       /* 🔧 เจอ NG → เสนอเปิดใบแจ้งซ่อมทันที (ตอนนี้แหละที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง)
          เสนอหลังบันทึกสำเร็จเท่านั้น — ต้องมี inspection id ก่อนถึงผูกที่มาได้
          ข้ามได้ ไม่บล็อก · กด "ไว้ก่อน" แล้วยังกลับมาเปิดจากแท็บประวัติได้ (ไม่เป็นทางตัน) */
-      if (overall === 'fail' && ngTopics.length && can('mtn_repair', 'report', userRole)) {
+      // 🔧 B3 — ใบ AM: เด้งเสมอ (คนที่ไม่มีสิทธิ์เปิด MO ก็ต้องเขียนเหตุผล/ส่งต่อหัวหน้า) · ใบ PM = เดิม
+      if (overall === 'fail' && ngTopics.length && (can('mtn_repair', 'report', userRole) || isAmTeam(department))) {
         openMoPrompt(insp, ngTopics)
       }
     } catch (err) {
@@ -1292,12 +1603,12 @@ export default function PMCheckData() {
   return (
     <Page width="full">
     {/* UI-STANDARD 2026-09-24 — หัวเพจมาตรฐาน (ใน PmHub ชื่อถูกซ่อน เหลือหัวของ hub ชั้นเดียว) */}
-    <PageHeader title="บันทึกผลตรวจ PM" icon="✅" />
+    <PageHeader title={tr('บันทึกผลตรวจ PM')} icon="✅" />
     {/* 🔐 เปิดทีมอื่นอยู่ — ดูได้ แต่ลงผล/อนุมัติ/เลื่อนรอบไม่ได้ (ต้องเขียนบอก ห้ามปุ่มเทาเฉยๆ) */}
     {!deptWrite.ok && (
-      <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid #eab308',
-        background: 'var(--card)', borderRadius: 8, fontSize: 12.5 }}>
-        🔒 {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
+      <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid var(--amber)',
+        background: 'var(--card)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
+        {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
       </div>
     )}
     <div style={S.page}>
@@ -1305,7 +1616,7 @@ export default function PMCheckData() {
       {showSidebar && (
       <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none', position: 'static', height: 'auto' } : null) }}>
         <div style={{ ...S.deptBar, paddingTop: 12 }}>
-          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
+          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{tr(d.label)}</button>)}
         </div>
         {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) เป็นคนละงาน — บอกให้ชัดว่าแท็บที่เลือกอยู่คืออะไร */}
         <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
@@ -1317,8 +1628,8 @@ export default function PMCheckData() {
           {/* 📷 สแกนป้ายที่ติดเครื่อง → เปิดใบตรวจของเครื่องนั้นเลย (2026-10-02 · คำสั่ง user)
               เดิมหน้าพิมพ์ป้ายโฆษณาว่า "สแกนเลือกอุปกรณ์ได้ทันทีใน … ตรวจ PM" แต่หน้านี้ไม่มีปุ่มสแกน
               ⚠️ ป้ายเครื่องจักรเข้ารหัสด้วย machines.id — resolveJig เด้งไป "แถวเงา" ใน jigs ให้เอง */}
-          <button onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง"
-            style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
+          <button onClick={() => setScanOpen(true)} title={tr('สแกน QR ที่ติดเครื่อง')}
+            style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
         {!amTab && (
@@ -1329,32 +1640,41 @@ export default function PMCheckData() {
         )}
         {!amTab && (qWords.length > 0 || jigScope.names?.length) && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>
-            พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง
-            {jigDropped > 0 && <span style={{ color: '#f59e0b' }}> · อีก {jigDropped} เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)</span>}
+            พบ {deptJigs.length} {tr('จาก')} {deptJigsAll.length} เครื่อง
+            {jigDropped > 0 && <span style={{ color: 'var(--amber)' }}> {tr('· อีก')} {jigDropped} {tr('เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)')}</span>}
           </div>
         )}
         {listErr && (
-          <div role="alert" style={{ margin: '0 16px 8px', padding: '8px 10px', borderRadius: 8, fontSize: 12, lineHeight: 1.5,
+          <div role="alert" style={{ margin: '0 16px 8px', padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.5,
             background: 'rgba(224,92,74,0.12)', border: '1px solid rgba(224,92,74,0.4)', color: 'var(--text)' }}>
             ⚠️ โหลดข้อมูลไม่ครบ — รายการ/ป้ายสถานะด้านล่างอาจไม่จริง<br />
             <span style={{ color: 'var(--muted)' }}>{listErr}</span>{' '}
-            <span onClick={() => window.location.reload()} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>โหลดใหม่</span>
+            <span onClick={() => window.location.reload()} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('โหลดใหม่')}</span>
           </div>
         )}
         <div style={S.jigList}>
           {isAmTeam(department) ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
-            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
+            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>{tr('กำลังโหลด...')}</p>
             const lineParam = searchParams.get('line')
             const byLine = {}
+            const hiddenLines = new Set()   // ไลน์ที่ลงทะเบียน AM แต่อยู่นอกขอบเขตของบัญชีนี้ — ต้องเขียนบนจอว่าซ่อนกี่ไลน์
             jigs.forEach(j => {
               const lns = dailyLineByJig[j.id]
               if (!lns || !matchJig(j)) return
               lns.forEach(ln => {
+                if (amScopeSet && !amScopeSet.has(ln)) { hiddenLines.add(ln); return }
                 if (lineParam && ln !== lineParam) return
                 ;(byLine[ln] ||= []).push(j)
               })
             })
+            const scopeNote = (amScopeSet || amScope.unsure) && (
+              <div style={{ padding: '0 4px 6px', fontSize: 11, color: amScope.unsure ? 'var(--amber)' : 'var(--muted)', lineHeight: 1.5 }}>
+                {amScope.unsure
+                  ? '⚠ ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานในโปรไฟล์ไม่ตรงทะเบียน) — ตรวจโปรไฟล์ที่ /add-user'
+                  : `เฉพาะไลน์ในขอบเขตของคุณ${hiddenLines.size ? ` · ซ่อนอีก ${hiddenLines.size} ไลน์` : ''}`}
+              </div>
+            )
             const lineNames = Object.keys(byLine).sort(lineNameCompare)
             // ⚠️ ช่องว่างที่เคยทำให้ 2 หน้าไม่ตรงกัน: PM Setup ลิสต์เครื่องที่ "มีรายการตรวจ AM" (มี checklist
             //    department=production) แต่หน้านี้ลิสต์เฉพาะเครื่องที่ "ลงทะเบียน AM" (pm_daily_line_targets)
@@ -1362,35 +1682,38 @@ export default function PMCheckData() {
             //    ไม่เดาลงทะเบียนให้เอง (เป็นการตัดสินใจว่าไลน์ไหนต้องตรวจอะไร) แต่ต้องไม่ซ่อน
             const pendingReg = jigs.filter(j => hasAmChecklist(j.id) && !dailyLineByJig[j.id])
             const pendingBlock = pendingReg.length > 0 && (
-              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 8, border: '1px dashed #f59e0b55', background: 'rgba(245,158,11,0.08)' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b' }}>⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน · {pendingReg.length} เครื่อง</div>
+              <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px dashed var(--amber)55', background: 'var(--amber-dim)' }}>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--amber)' }}>{tr('⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน ·')} {pendingReg.length} {tr('เครื่อง')}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 6px', lineHeight: 1.5 }}>
                   ลงจุดตรวจไว้ที่ PM Setup แล้ว แต่ยังไม่ถูกติ๊กว่า “ต้องตรวจทุกต้นกะ” จึงยังไม่ขึ้นให้ตรวจที่นี่
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto' }}>
                   {pendingReg.map(j => <div key={j.id}>· {j.machine_no || j.name}{j.line_name ? ` (${j.line_name})` : ''}</div>)}
                 </div>
-                <Link to="/daily-checker?tab=pm" style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, color: '#f59e0b', fontWeight: 800 }}>
+                <Link to="/daily-checker?tab=pm" style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, color: 'var(--amber)', fontWeight: 800 }}>
                   ไปลงทะเบียนที่แท็บ AM →
                 </Link>
               </div>
             )
             if (!lineNames.length) return (<>
+              {scopeNote}
               <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
-                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
-                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่แท็บ AM →</Link>
+                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ${amScopeSet && !amScopeSet.has(lineParam) ? ' (หรืออยู่นอกขอบเขตของคุณ)' : ''}`
+                  : hiddenLines.size ? 'ไลน์ในขอบเขตของคุณยังไม่มีเครื่องที่ลงทะเบียน AM' : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
+                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ไปลงทะเบียนที่แท็บ AM →')}</Link>
               </p>
               {pendingBlock}
             </>)
             return (<>
+              {scopeNote}
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
-                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
+                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ดูทุกไลน์')}</span>
                 </div>
               )}
               {lineNames.map(ln => (
                 <div key={ln} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>🏭 {ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>{ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('· ตรวจแล้ว')} {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
                   {byLine[ln].map(jig => {
                     const st = checkedThisShift[jig.id]
                     return (
@@ -1398,8 +1721,8 @@ export default function PMCheckData() {
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                           <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{jig.name}</p>
                           <span style={{
-                            flexShrink: 0, fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 20,
-                            background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'rgba(245,158,11,0.15)',
+                            flexShrink: 0, fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-pill)',
+                            background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'var(--amber-dim)',
                             color: st === 'fail' ? '#e05c4a' : st ? '#3dd65c' : '#f59e0b',
                           }}>
                             {st === 'fail' ? '✗ NG' : st ? '✓ ตรวจแล้ว' : 'รอตรวจ'}
@@ -1408,7 +1731,7 @@ export default function PMCheckData() {
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
                         {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
                         {!hasAmChecklist(jig.id) && (
-                          <p style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
+                          <p style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, margin: '2px 0 0' }}>{tr('⚠ ยังไม่มีจุดตรวจ AM')}</p>
                         )}
                       </div>
                     )
@@ -1419,13 +1742,13 @@ export default function PMCheckData() {
             </>)
           })() : (<>
             {deptJigs.length === 0 && ((qWords.length || jigScope.names?.length)
-              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างตัวกรอง</span></p>
-              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ไม่พบเครื่องที่ตรงกับ')}{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ล้างตัวกรอง')}</span></p>
+              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ยังไม่มีอุปกรณ์ในทีมนี้')}<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
             {/* จัดกลุ่มตามไลน์ (ทะเบียน ส่วนงาน→แม่→ลูก · ไม่ระบุไลน์ท้ายสุด) — เดิมเรียงตามชื่อยาวเหยียดเป็นแถวเดียว */}
             {jigGroups.map(g => (
               <div key={g.key}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : '#f59e0b', margin: '8px 2px 5px', lineHeight: 1.4 }}>
-                  📍 {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
+                <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : 'var(--amber)', margin: '8px 2px 5px', lineHeight: 1.4 }}>
+                  {tr(g.label)} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
                 </div>
                 {g.rows.map(({ jig }) => (
                   <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
@@ -1445,13 +1768,13 @@ export default function PMCheckData() {
       <div style={S.main}>
         {!selectedJig ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>เลือกอุปกรณ์จากรายการด้านซ้าย</p>
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>{tr('เลือกอุปกรณ์จากรายการด้านซ้าย')}</p>
           </div>
         ) : (
           <>
             <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
               {isNarrow && (
-                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>← อุปกรณ์</button>
+                <button onClick={clearJig} title={tr('กลับไปเลือกอุปกรณ์')} style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
               )}
               {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1459,8 +1782,11 @@ export default function PMCheckData() {
                 <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{selectedJig.jig_no && `No: ${selectedJig.jig_no}`}{selectedJig.process && ` · ${selectedJig.process}`}</p>
               </div>
               <div style={S.tabBar}>
-                <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>📋 บันทึก</button>
-                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>🕐 ประวัติ ({inspections.length})</button>
+                <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>{tr('บันทึก')}</button>
+                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>
+                  {/* 🔀 นับ "ของทีมนี้" เท่านั้น · มีของทีมอื่นบนเครื่องเดียวกัน = ติดจุดไว้ให้รู้ (กดเข้าไปอ่านได้) */}
+                  {tr('ประวัติ (')}{inspections.length}{histMeta?.otherN ? '+' : ''})
+                </button>
               </div>
             </div>
 
@@ -1488,7 +1814,12 @@ export default function PMCheckData() {
                    ⇒ โหมดนี้เปิดเฉพาะตอนปักครบ · ปักไม่ครบ = โชว์ทุกข้อเหมือนเดิม + บอกเหตุผล */
                 const pinnedCps = checkpoints.filter(c => c.x_pos != null)
                 const allPinned = checkpoints.length > 0 && pinnedCps.length === checkpoints.length
-                const focusOn = showPhoto && pinFocus && allPinned
+                /* 🧩 แพทเทินเดียวกันทุกเครื่อง (2026-11-10 · user: "ทำไมแพทเทินไม่เหมือนกัน")
+                   เดิมโหมด "ทีละข้อ" เปิดได้เฉพาะเครื่องที่ **ปักหมุดครบทุกข้อ** ⇒ เครื่องที่ยังไม่ปัก
+                   (เช่น RB-109 ปัก 0/11) ตกไปใช้ลิสต์ยาวทุกข้อแทน = คนละหน้าตากับเครื่องข้างๆ
+                   🔑 การปักหมุดจำเป็นแค่กับ "การแตะหมุดบนรูปเพื่อเลือกข้อ" — ไม่ใช่กับตัวโหมดทีละข้อ
+                      (เลือกข้อด้วยชิปเลข/ข้อก่อน-ข้อถัดไปได้อยู่แล้ว) ⇒ ปลดออกจากกัน */
+                const focusOn = showPhoto && pinFocus && checkpoints.length > 0
                 const doneN = checkpoints.filter(cpFilled).length
                 const todo = checkpoints.filter(c => !cpFilled(c))
                 /* `done` = กรอกค่าชิมในใบนี้แล้วหรือยัง — ใช้ตัดสินสีหมุด (ยังไม่วัด = วงโปร่ง) */
@@ -1512,12 +1843,12 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {cpLoad.status === 'loading' ? (
-                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px' }}>กำลังโหลดรายการตรวจ…</div>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px' }}>{tr('กำลังโหลดรายการตรวจ…')}</div>
                   ) : cpLoad.status === 'error' ? (
                     <div style={{ textAlign: 'center', color: 'var(--red)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       ⚠️ โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{cpLoad.msg}</div>
-                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>↻ ลองใหม่</button>
+                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ลองใหม่')}</button>
                     </div>
                   ) : checkpoints.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
@@ -1525,21 +1856,21 @@ export default function PMCheckData() {
                       <br />
                       <span style={{ fontSize: 12 }}>
                         1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ)
-                        <br />จุดตรวจของแต่ละแผนก<b>ปักอยู่คนละมุมของเครื่องได้</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
+                        <br />{tr('จุดตรวจของแต่ละแผนก')}<b>{tr('ปักอยู่คนละมุมของเครื่องได้')}</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
                       </span>
                       {otherDepts.length > 0 && (
-                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10 }}>
+                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
-                            🔎 เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
+                            เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
                           </div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {otherDepts.map(d => {
                               const t = teams.find(x => x.key === d.department)
                               return (
                                 <button key={d.department} onClick={() => setDept(d.department)}
-                                  style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                  style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                                     border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
-                                  {t?.icon || ''} {t?.label || d.department} · {d.checkpointCount} จุด
+                                  {t?.icon || ''} {tr(t?.label) || d.department} · {d.checkpointCount} จุด
                                 </button>)
                             })}
                           </div>
@@ -1551,8 +1882,8 @@ export default function PMCheckData() {
                       {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
                       {shimPoints.length > 0 && (
                         <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
-                          🔩 เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
-                          <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>ทะเบียนจิ๊ก → 🔧 บันทึกชิม</Link>
+                          เครื่องนี้มีจุดชิม {shimPoints.length} {tr('จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่')}{' '}
+                          <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>{tr('ทะเบียนจิ๊ก → 🔧 บันทึกชิม')}</Link>
                           {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
                         </div>
                       )}
@@ -1570,25 +1901,28 @@ export default function PMCheckData() {
                           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
                             ตรวจแล้ว {doneN}/{checkpoints.length}
-                            {todo.length > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
+                            {todo.length > 0 && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> {tr('· เหลือ')} {todo.length}</span>}
                           </span>
-                          {!showPhoto ? null : allPinned ? (
-                            <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
-                              title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
-                              style={{ padding: '4px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
-                                border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
-                                background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
-                              {pinFocus ? '📍 เฉพาะจุดที่แตะ' : '📋 ทุกข้อ'}
-                            </button>
-                          ) : (
-                            /* ปักไม่ครบ = ซ่อนข้ออื่นไม่ได้ ต้องบอกว่าทำไมโหมดนี้ใช้ไม่ได้ ห้ามเงียบ */
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                              (โหมดแตะหมุดต้องปักจุดบนรูปครบก่อน — ตอนนี้ปักแล้ว {pinnedCps.length}/{checkpoints.length} · ปักที่ PM Setup)
-                            </span>
+                          {!showPhoto ? null : (
+                            <>
+                              <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
+                                title={pinFocus ? tr('สลับเป็นไล่ดูทุกข้อในหน้าเดียว') : (allPinned ? tr('สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น') : tr('สลับเป็นตรวจทีละข้อ'))}
+                                style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                                  border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
+                                  background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
+                                {pinFocus ? (allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ') : 'ทุกข้อ'}
+                              </button>
+                              {/* ปักไม่ครบ = ยังใช้โหมดทีละข้อได้ แค่แตะหมุดบนรูปเลือกข้อไม่ได้ — บอกตามจริง ห้ามเงียบ */}
+                              {!allPinned && (
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                  (ปักหมุดบนรูปแล้ว {pinnedCps.length}/{checkpoints.length} — ปักครบจะแตะหมุดเลือกข้อได้ · ปักที่ PM Setup)
+                                </span>
+                              )}
+                            </>
                           )}
                           {(
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? 'ยังไม่ตรวจ:' : 'ครบแล้ว 🎉'}</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? tr('ยังไม่ตรวจ:') : tr('ครบแล้ว 🎉')}</span>
                               {(chipsAll ? todo : todo.slice(0, CHIP_CAP)).map(c => (
                                 <button key={c.id} onClick={() => { setActiveShimId(null); setActiveCpId(c.id) }}
                                   title={c.name}
@@ -1604,7 +1938,7 @@ export default function PMCheckData() {
                                 <button onClick={() => setChipsAll(v => !v)}
                                   style={{ height: 22, padding: '0 8px', borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
                                     border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--text2)' }}>
-                                  {chipsAll ? 'ย่อ ▴' : `+${todo.length - CHIP_CAP} ▾`}
+                                  {chipsAll ? 'ย่อ ▴' : `+${todo.length - CHIP_CAP} `}
                                 </button>
                               )}
                             </div>
@@ -1614,14 +1948,16 @@ export default function PMCheckData() {
                       {/* ยังไม่ได้แตะหมุด = บอกให้แตะ + ปุ่มลัดไปข้อแรกที่ยังไม่ตรวจ (ห้ามปล่อยจอว่างเฉยๆ) */}
                       {focusOn && !activeCpId && !activeShimId && (
                         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '22px 12px', lineHeight: 1.8,
-                          border: '1px dashed var(--border2)', borderRadius: 12, background: 'var(--bg3)' }}>
-                          👆 แตะหมุดบนรูปเพื่อตรวจจุดนั้น
-                          <div style={{ fontSize: 11.5, marginTop: 2 }}>ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “📍 เฉพาะจุดที่แตะ” เพื่อสลับ</div>
+                          border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', background: 'var(--bg3)' }}>
+                          {allPinned ? 'แตะหมุดบนรูปเพื่อตรวจจุดนั้น' : 'เลือกข้อที่จะตรวจจากชิปเลขด้านบน'}
+                          <div style={{ fontSize: 11.5, marginTop: 2 }}>
+                            ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “{allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ'}” เพื่อสลับ
+                          </div>
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
-                              style={{ marginTop: 10, padding: '7px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
+                              style={{ marginTop: 10, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
                                 border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)' }}>
-                              เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
+                              {tr('เริ่มที่ข้อ')} {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
                             </button>
                           )}
                         </div>
@@ -1638,11 +1974,11 @@ export default function PMCheckData() {
                           const g = (cp.group_name || '').trim()
                           const prevG = ((checkpoints[idx - 1]?.group_name) || '').trim()
                           const header = focusOn ? null : (g && g !== prevG ? (
-                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--accent-dim)', border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
+                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--accent-dim)', border: '1px solid var(--border2)', fontSize: 12.5, fontWeight: 800, color: 'var(--accent)' }}>
                               Item {groupNo[g]} — {g}
                             </div>
                           ) : (!g && prevG ? (
-                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
+                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
                               อื่นๆ
                             </div>
                           ) : null))
@@ -1661,7 +1997,7 @@ export default function PMCheckData() {
                             <div key={cp.id}>
                               {header}
                               <div ref={el => { rowRefs.current[cp.id] = el }} onClick={() => setActiveCpId(cp.id)}
-                                style={{ borderRadius: 10, outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
+                                style={{ borderRadius: 'var(--r-md)', outline: activeCpId === cp.id ? '2px solid var(--accent)' : '2px solid transparent', outlineOffset: 1, transition: 'outline-color .15s',
                                   scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                 {row}
                               </div>
@@ -1676,14 +2012,14 @@ export default function PMCheckData() {
                         const nextTodo = todo.find(c => checkpoints.indexOf(c) > i) || todo.find(c => c.id !== activeCpId)
                         return (
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-                            <button onClick={() => go(-1)} disabled={i <= 0} style={S.navBtn(i <= 0)}>◀ ข้อก่อน</button>
-                            <button onClick={() => go(1)} disabled={i >= checkpoints.length - 1} style={S.navBtn(i >= checkpoints.length - 1)}>ข้อถัดไป ▶</button>
+                            <button onClick={() => go(-1)} disabled={i <= 0} style={S.navBtn(i <= 0)}>{tr('ข้อก่อน')}</button>
+                            <button onClick={() => go(1)} disabled={i >= checkpoints.length - 1} style={S.navBtn(i >= checkpoints.length - 1)}>{tr('ข้อถัดไป ▶')}</button>
                             {nextTodo && (
-                              <button onClick={() => setActiveCpId(nextTodo.id)} style={{ ...S.navBtn(false), borderColor: '#f59e0b', color: '#f59e0b' }}>
-                                ⏭ ข้อที่ยังไม่ตรวจ ({checkpoints.indexOf(nextTodo) + 1})
+                              <button onClick={() => setActiveCpId(nextTodo.id)} style={{ ...S.navBtn(false), borderColor: 'var(--amber)', color: 'var(--amber)' }}>
+                                {tr('ข้อที่ยังไม่ตรวจ (')}{checkpoints.indexOf(nextTodo) + 1})
                               </button>
                             )}
-                            <button onClick={() => setActiveCpId(null)} style={{ ...S.navBtn(false), marginLeft: 'auto' }}>ปิดข้อนี้</button>
+                            <button onClick={() => setActiveCpId(null)} style={{ ...S.navBtn(false), marginLeft: 'auto' }}>{tr('ปิดข้อนี้')}</button>
                           </div>
                         )
                       })()}
@@ -1692,17 +2028,17 @@ export default function PMCheckData() {
                         const dueN = shimPoints.filter(pt => pointDueStatus(pt, { currentShot: null }).due).length
                         return (
                           <div style={{ marginTop: 12 }}>
-                            <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.45)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
-                              🔩 จุดชิม (Shim Record) · {shimPoints.length} จุด{dueN ? <span style={{ color: '#ef4444' }}> · ถึงรอบ {dueN}</span> : null}
+                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
+                              จุดชิม (Shim Record) · {shimPoints.length} {tr('จุด')}{dueN ? <span style={{ color: 'var(--red)' }}> {tr('· ถึงรอบ')} {dueN}</span> : null}
                               <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
                                 วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ)
-                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด</span>}
+                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} {tr('จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด')}</span>}
                               </div>
                             </div>
                             {!canShim && (
-                              <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
-                                🔒 บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
-                              </div>
+                              <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+                                บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
+                              </NoticeBar>
                             )}
                             {shimPoints.filter(pt => !focusOn || pt.id === activeShimId).map(pt => {
                               const st = shimStack(pt)
@@ -1715,28 +2051,28 @@ export default function PMCheckData() {
                               const k = kindOf(pt.kind_code)
                               return (
                                 <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
-                                  style={{ ...S.cpRow(null), borderColor: overMax ? '#ef4444' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
+                                  style={{ ...S.cpRow(null), borderColor: overMax ? 'var(--red)' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 9, background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? 'ปักบนรูปแล้ว' : 'ยังไม่ปักบนรูป'}>{pt.point_no}</span>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
+                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? tr('ปักบนรูปแล้ว') : tr('ยังไม่ปักบนรูป')}>{pt.point_no}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {tr(k.label)}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
                                     <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
-                                      ชิมรวม <b style={{ color: st.level === 'over' ? '#ef4444' : st.level === 'warn' ? '#f59e0b' : 'var(--text)' }}>{st.current ?? '—'}</b> / เพดาน {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
-                                      {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? '#ef4444' : due.level === 'soon' ? '#f59e0b' : 'var(--muted)' }}>· {due.text}</span>}
+                                      ชิมรวม <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> {tr('/ เพดาน')} {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
+                                      {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>· {due.text}</span>}
                                     </span>
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      ค่าชิมรวมที่วัดได้
+                                      {tr('ค่าชิมรวมที่วัดได้')}
                                       <input type="number" step="0.01" inputMode="decimal" value={v.mm} disabled={!canShim} placeholder="mm"
                                         onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, mm: e.target.value } }))}
                                         style={{ width: 84, textAlign: 'center', fontFamily: 'monospace' }} />
                                       <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>mm</span>
                                     </label>
-                                    <input value={v.note} disabled={!canShim} placeholder="หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)"
+                                    <input value={v.note} disabled={!canShim} placeholder={tr('หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)')}
                                       onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, note: e.target.value } }))}
                                       style={{ flex: '1 1 160px', minWidth: 120 }} />
                                     {mm != null && (
-                                      <span style={{ fontSize: 11.5, fontWeight: 700, color: overMax ? '#ef4444' : SHIM_PIN_COLOR }}>
+                                      <span style={{ fontSize: 11.5, fontWeight: 700, color: overMax ? 'var(--red)' : SHIM_PIN_COLOR }}>
                                         {act === 'check' ? '→ ยืนยันเท่าเดิม' : act === 'add' ? `→ เพิ่ม +${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm` : `→ ลด ${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm`}
                                         {overMax && ' · เกินเพดาน — ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วน'}
                                       </span>
@@ -1748,7 +2084,8 @@ export default function PMCheckData() {
                           </div>
                         )
                       })()}
-                      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
+                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
+                      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder={tr('หมายเหตุ (ถ้ามี)...')} style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย
                             ตอนนี้เป็นสีเขียว ถ้าพนักงานกดข้าม จะสามารถบันทึกได้ถึงข้อมูลจะไม่ครบ"*
@@ -1766,7 +2103,7 @@ export default function PMCheckData() {
                           background: isFormReady ? 'var(--accent)' : 'var(--accent2)',
                           color: isFormReady ? 'var(--accent-ink)' : '#1a1a1a',
                           opacity: (saving || !canRecord) ? 0.6 : 1 }}>
-                        {saving ? 'กำลังบันทึก...' : !canRecord ? `🔒 ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `⚠️ บันทึก (ยังไม่ครบ ${nMissing} จุด)`}
+                        {saving ? 'กำลังบันทึก...' : !canRecord ? `ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `บันทึก (ยังไม่ครบ ${nMissing} จุด)`}
                       </button>
                     </>
                   )}
@@ -1790,11 +2127,11 @@ export default function PMCheckData() {
                       }}>
                         {viewerOpen && viewerNode}
                         <button onClick={toggleViewer} style={{
-                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 999, cursor: 'pointer',
+                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                           fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                         }}>
                           {/* พับแล้วต้องยังบอกว่าซ่อนอะไรไว้ + กางคืนได้ ห้ามหายเงียบ */}
-                          {viewerOpen ? '▲ ซ่อนรูปเครื่อง' : '▼ แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)'}
+                          {viewerOpen ? 'ซ่อนรูปเครื่อง' : 'แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)'}
                         </button>
                       </div>
                     )}
@@ -1804,41 +2141,94 @@ export default function PMCheckData() {
                 )
               })()}
 
-              {tab === 'history' && (
+              {tab === 'history' && (() => {
+                /* 🔀 เครื่องเดียวตรวจได้หลายทีม — จัดกลุ่มตาม "เจ้าของใบ" ห้ามปนในลิสต์เดียว
+                   (ของกลาง `splitInspByTeam` · เหตุผล+ตัวเลขใน src/utils/pmTeams.js)
+                   ใบของทีมอื่น/ชี้ทีมไม่ได้ ต้อง **เขียนบนจอ** ไม่ใช่กรองทิ้งเงียบ */
+                const grp = splitInspByTeam([...inspections, ...(showOther ? histOther : [])], { clDeptById, team: department })
+                const otherN = histMeta?.otherN
+                return (
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {inspections.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีประวัติการตรวจ</p>
-                  ) : inspections.map(insp => (
-                    <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  {histMeta && !histMeta.teamsKnown && (
+                    <p style={{ margin: 0, padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 600,
+                                border: '1px solid var(--amber)', background: 'var(--bg3)', color: 'var(--amber)' }}>
+                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>{tr('ทุกทีม')}</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
+                    </p>
+                  )}
+                  {histMeta?.teamsKnown && otherN === null && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ นับใบของทีมอื่นไม่ได้ — อาจมีใบของทีมอื่นบนเครื่องนี้ที่ยังไม่ได้แสดง
+                    </p>
+                  )}
+                  {!!otherN && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--text2)' }}>
+                      <span>{tr('🔀 เครื่องนี้มีใบของทีมอื่นอีก')} <b>{otherN}</b> {tr('ใบ (')}{(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
+                      <button type="button" onClick={toggleOtherHist} style={{
+                        padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                        border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                      }}>{showOther ? tr('ซ่อนใบของทีมอื่น') : tr('ดูใบของทีมอื่นด้วย')}</button>
+                    </div>
+                  )}
+                  {!!histMeta?.unknownN && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ อีก <b>{histMeta.unknownN}</b> ใบของเครื่องนี้ชี้ทีมเจ้าของไม่ได้ (ใบไม่ผูกจุดตรวจของเครื่องนี้) — ไม่ได้แสดงในลิสต์
+                    </p>
+                  )}
+                  {grp.mine.length === 0 && grp.others.length === 0 && grp.unknown.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>
+                      {otherN ? 'ทีมนี้ยังไม่เคยตรวจเครื่องนี้ — มีแต่ใบของทีมอื่น (กดดูได้ด้านบน)' : 'ยังไม่มีประวัติการตรวจ'}
+                    </p>
+                  ) : [...grp.mine, ...grp.others, ...grp.unknown].map(insp => (
+                    <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{formatDate(insp.inspected_at)}</p>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
-                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
-                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
-                          {insp.approval_status === 'pending' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>รออนุมัติ</span>}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+                          {/* 🔀 ใบที่ไม่ใช่ของทีมที่กำลังดู ต้องติดป้ายว่าของใคร — ไม่งั้นปนกันแล้วแยกไม่ออก */}
+                          {(clDeptById[insp.checklist_id] ?? null) !== department && (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
+                                           border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                              {inspTeamLabel(clDeptById[insp.checklist_id])}
+                            </span>
+                          )}
+                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>{isAmTeam(clDeptById[insp.checklist_id] ?? department) ? tr('✓ อนุมัติแล้ว') : tr('✓ หัวหน้ายืนยันแล้ว')}</span>}
+                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>{tr('✕ ตีกลับ')}</span>}
+                          {insp.approval_status === 'pending' && (() => {
+                            // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
+                            const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
+                            const nx = am ? amNextApprover(positionRank(inspectorOf(insp).position)) : null
+                            // ใบช่าง (PM) = รอหัวหน้าผู้ตรวจยืนยัน (ขั้น 2 · 11/11)
+                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : `รอ${PM_HEAD_STEP.label}ยืนยัน`}</span>
+                          })()}
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
                           {moByInsp[insp.id] && (
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
-                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'}
+                              ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'} · {moStatusLabel(moByInsp[insp.id])}
                             </span>
+                          )}
+                          {insp.status === 'fail' && !moByInsp[insp.id] && insp.mo_waived_reason && (
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่เปิดใบซ่อม:')} {insp.mo_waived_reason}</span>
+                          )}
+                          {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && isAmTeam(clDeptById[insp.checklist_id] ?? department) && (
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>{tr('⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล')}</span>
                           )}
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         {/* กด "ไว้ก่อน" ตอนบันทึกแล้วต้องกลับมาเปิดได้ — ไม่งั้นข้ามครั้งเดียว = ทางตัน */}
-                        {insp.status === 'fail' && !moByInsp[insp.id] && can('mtn_repair', 'report', userRole) && (
+                        {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && (can('mtn_repair', 'report', userRole) || isAmTeam(clDeptById[insp.checklist_id] ?? department)) && (
                           <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
-                            padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                            padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                             border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
-                          }}>🔧 เปิดใบแจ้งซ่อม</button>
+                          }}>{tr('เปิดใบแจ้งซ่อม')}</button>
                         )}
                         <span style={{ color: 'var(--muted)' }}>›</span>
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
+                )
+              })()}
             </div>
           </>
         )}
@@ -1849,6 +2239,9 @@ export default function PMCheckData() {
         {viewInspection && (
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
             userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
+            isAm={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department)}
+            inspectorPosition={inspectorOf(viewInspection).position} inspectorIsSelf={inspectorOf(viewInspection).isSelf} myPosition={myPosition}
+            isShared={!!isSharedAccount}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>
@@ -1858,20 +2251,20 @@ export default function PMCheckData() {
              ตอนที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง (ยังกลับมาเปิดจากประวัติได้ แต่คนละจังหวะ) */}
       {moPrompt && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 3100, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>⚠ พบผลตรวจไม่ผ่าน {moPrompt.ngTopics.length} จุด</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>{tr('⚠ พบผลตรวจไม่ผ่าน')} {moPrompt.ngTopics.length} {tr('จุด')}</div>
               <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{selectedJig?.name}</div>
             </div>
-            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 9, padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
+            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
               {moPrompt.ngTopics.map((n, i) => <div key={i}>• {n}</div>)}
             </div>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>แจ้งถึงทีมช่าง</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>{tr('แจ้งถึงทีมช่าง')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoTeam(t)} style={{
-                    padding: '6px 13px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    padding: '6px 13px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${moTeam === t ? 'var(--accent)' : 'var(--border2)'}`,
                     background: moTeam === t ? 'var(--accent-dim)' : 'var(--bg3)', color: moTeam === t ? 'var(--accent)' : 'var(--muted)',
                   }}>{deptNameOf(t)}</button>
@@ -1884,19 +2277,59 @@ export default function PMCheckData() {
                 </div>
               )}
             </div>
+            {/* 🔧 B3 — ใบ AM: ข้ามได้เฉพาะเมื่อเขียนเหตุผล (บันทึกลงผลตรวจ · บอร์ด AM เห็น) */}
+            {isAmPrompt && moWaiving && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>{tr('เหตุผลที่ไม่เปิดใบแจ้งซ่อม')}</div>
+                <textarea value={moWaiveReason} onChange={e => setMoWaiveReason(e.target.value)} rows={2}
+                  placeholder={tr('เช่น แก้ไขเองหน้างานแล้ว / แจ้งหัวหน้าให้เปิดใบแล้ว')} style={{ width: '100%' }} />
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
-                padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
-              }}>ไว้ก่อน</button>
-              <button onClick={createMoFromInspection} disabled={moSaving} style={{
-                padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
-                border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
-              }}>{moSaving ? 'กำลังเปิดใบ...' : '🔧 เปิดใบแจ้งซ่อม'}</button>
+              {!isAmPrompt && (
+                <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                }}>{tr('ไว้ก่อน')}</button>
+              )}
+              {isAmPrompt && !moWaiving && (
+                <button onClick={() => setMoWaiving(true)} disabled={moSaving} style={{
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                }}>{tr('ไม่เปิดใบ (ระบุเหตุผล)')}</button>
+              )}
+              {isAmPrompt && moWaiving && (<>
+                <button onClick={() => setMoWaiving(false)} disabled={moSaving} style={{
+                  padding: '9px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
+                }}>{tr('กลับ')}</button>
+                <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  border: '1px solid var(--amber)', background: 'var(--amber-dim)', color: 'var(--amber)',
+                  opacity: moSaving || !amWaiverReasonValid(moWaiveReason) ? 0.5 : 1,
+                }}>{tr('บันทึกเหตุผล')}</button>
+              </>)}
+              {can('mtn_repair', 'report', userRole) && !moWaiving && (
+                <button onClick={createMoFromInspection} disabled={moSaving} style={{
+                  padding: '9px 20px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                  border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
+                }}>{moSaving ? tr('กำลังเปิดใบ...') : tr('เปิดใบแจ้งซ่อม')}</button>
+              )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
-              กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้
+              {isAmPrompt
+                ? (can('mtn_repair', 'report', userRole)
+                  ? 'ผลตรวจ AM ที่ผิดปกติต้องเปิดใบแจ้งซ่อม หรือระบุเหตุผลที่ไม่เปิด — บอร์ด AM จะติดตามใบซ่อมจนกว่าจะปิด'
+                  : 'บัญชีนี้เปิดใบแจ้งซ่อมไม่ได้ — ระบุเหตุผล (เช่น แจ้งหัวหน้าแล้ว) หรือให้หัวหน้าเปิดจากแท็บ 🕐 ประวัติ')
+                : 'กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้'}
             </div>
+            {/* ปิดหน้าต่างได้ (ไม่ขังคนไว้ในโมดัล) แต่รายการ "ยังไม่จบ" — ค้างเป็น ⚠ บนบอร์ด AM + แท็บประวัติจนกว่าจะเปิดใบ/ให้เหตุผล */}
+            {isAmPrompt && (
+              <button type="button" onClick={() => setMoPrompt(null)} disabled={moSaving}
+                style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--muted)', textAlign: 'center', textDecoration: 'underline' }}>
+                {tr('ปิดหน้าต่าง — รายการนี้จะค้าง “⚠ ยังไม่เปิดใบแจ้งซ่อม” บนบอร์ด AM จนกว่าจะเปิดใบหรือระบุเหตุผล')}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1905,7 +2338,7 @@ export default function PMCheckData() {
     {/* 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์นั้นให้เลย (คืน string = ข้อความ error ให้โชว์ในโมดัล)
         🔴 ไม่พบ/ไม่อยู่ในแผนกนี้ ต้องบอกเหตุผล ห้ามปิดเงียบแล้วไม่เกิดอะไรขึ้น */}
     {scanOpen && (
-      <ScanModal title="สแกนป้ายเครื่อง" hint="ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน"
+      <ScanModal title={tr('สแกนป้ายเครื่อง')} hint={tr('ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน')}
         onScan={(parsed) => {
           const j = resolveJig(parsed, jigs)
           if (!j) return 'ไม่พบอุปกรณ์นี้ในทะเบียน PM — ลงทะเบียนที่แท็บ ⚙️ ตั้งค่าจุดตรวจก่อน'

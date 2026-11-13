@@ -34,7 +34,11 @@
 import { collapsePairShots } from './pairTotals.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
-import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+/* 🏷️ คีย์เลขเครื่อง — `machine_no` เป็นข้อความอิสระ (SW10 vs SW-10 = เครื่องเดียวกัน)
+   ทะเบียน "ครอบกี่เลน" ต้อง join ด้วยคีย์เดียวกับทั้งระบบ ห้ามเทียบสตริงดิบ (utils/machineNo.js) */
+import { machineKey } from './machineNo.js';
+import { applyBreakLineRules, breakLineRuleIndexSync, breakLineRuleIndexOf, breakRulesForLine, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+import { applyHolidayBreaks } from './workingDay.js';
 /* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
    **import จาก `utils/oee` ที่เดียว** คู่กับ `halfDayBreakBands` ที่ผลิต band ให้
    (จอที่ไล่สายไลน์ด้วย `getAncestorNames` เรื่องอื่นอยู่ จะได้ไม่ต้อง import breakLineRules
@@ -288,11 +292,15 @@ export function breakBandsIn({ policies = [], startMs, endMs, workDate, shift, p
     return { s, e, policies: [p], lineRuleMin: lr === undefined ? null : lr,
              centralMin: lr === undefined ? null : (Number(p.line_rule_central_min) || 0) };
   };
-  const applicable = policies.filter(p => {
+  /* 🏖️ วันที่ "ไม่ใช่วันทำงาน" ตามปฏิทินบริษัท ใช้นาทีพักอีกชุด (`duration_min_holiday` · 27/10)
+     เคสจริง: วันหยุดที่คนมาทำ OT พักเที่ยง 50 → 60 นาที (คำสั่ง user)
+     🔴 ทับ **ก่อน** `applyBreakLineRules` เสมอ ⇒ ไลน์ที่ตั้งนาทีของตัวเองยังชนะ (ค่าเจาะจงที่สุด)
+     🔴 ปฏิทินยังไม่โหลด / เป็นวันทำงาน / ไม่ได้ตั้งค่าวันหยุด = คืนชุดเดิมเป๊ะ (ดู utils/workingDay.js) */
+  const applicable = applyHolidayBreaks(policies.filter(p => {
     if (!(p.shift === 'both' || p.shift === shift)) return false;
     const proc = p.process_type;
     return !(proc && proc !== 'common' && proc !== processType);
-  });
+  }), workDate);
   /* ⚠️ นโยบายที่เกิด "เฉพาะตอนทำโอ / เฉพาะตอนไม่ทำโอ" (break_policies.ot_scope · 2026-09-14)
      เคสจริงที่ user จับได้: 5ส. กะเช้ามี 2 แถว — 17:10 (ไม่ทำโอ) กับ 19:40 (ทำโอ) ซึ่งเป็น
      "อย่างใดอย่างหนึ่ง" แต่กะ 08:00-20:00 กวาดทั้งคู่ ⇒ หักพักเกินจริง 20 นาที ทุกกะที่ทำโอ
@@ -312,6 +320,76 @@ export function breakBandsIn({ policies = [], startMs, endMs, workDate, shift, p
     .map(rangeOf).filter(Boolean)
     .sort((a, b) => a.s - b.s);
   return mergeBands(bands);
+}
+
+/* ═══ 📸 snapshot "ของที่ใช้คิด OEE ตอนปิดกะ" (2026-11-11 · คำสั่ง user) ══════════════════
+   ปัญหาที่แก้: %A/%P/%Q ที่ stamp ไว้ คิดจาก **ทะเบียนที่แก้ได้ภายหลัง** — CT (`kanban_standards`
+   /`dr_products`) · นโยบายพัก (`break_policies`) · ข้อยกเว้นพักรายไลน์ (`break_line_rules`) ·
+   ปฏิทินวันหยุด · `process_type` ของไลน์ ⇒ กดคำนวณใหม่คนละวัน **ได้เลขไม่เท่าเดิม**
+   (เคสจริง 10/11: restamp 5 กะ มิ.ย.–ก.ย. ไม่มีกะไหนได้ค่าเดิม เพราะนโยบายพักถูกแก้ 20/10 + 05/11
+    ⇒ ออดิทเทียบ "เลขที่เก็บ" กับ "เลขที่คำนวณได้" ไม่ตรง = ระบบเสียความน่าเชื่อถือ)
+
+   🔴 กฎ: เก็บ **input ไม่ใช่ผลลัพธ์** — เก็บช่วงพักสำเร็จรูปไว้จะแก้เวลาเริ่ม/เลิกกะแล้วคิดใหม่ไม่ได้
+   🔴 กฎ: **ไม่มี snapshot = ถอยไปอ่านทะเบียนสดเหมือนเดิมเป๊ะ** (กะที่ปิดก่อนวันนี้ทั้งหมด)
+          ห้ามบล็อก ห้ามเดา ห้ามเขียน snapshot ย้อนหลังให้กะเก่า (เดาทะเบียนของวันนั้นไม่ได้)
+   🔴 กฎ: กะที่ **มี** snapshot แล้ว คำนวณใหม่ต้องใช้ snapshot เดิมต่อ ห้ามทับด้วยทะเบียนวันนี้
+          (`computeSessionOee` คืน `breakSnapshot` = ตัวที่ใช้คิดรอบนี้ ให้จอ stamp กลับได้ตรงๆ)
+   ⚠️ นาทีพัก "ของวันหยุด" (`duration_min_holiday`) ถูก resolve ลง `duration_min` ตอนทำ snapshot แล้ว
+      (ปฏิทินบริษัทแก้ย้อนหลังได้) · แต่ **กฎรายไลน์เก็บแบบยังไม่ทับ** เพราะ `isOt` ต้องตัดสินจาก
+      ค่ากลางก่อนทับ (ดูหัวข้อ `breakBandsIn`) — ทับไปแล้วจะปลุกนโยบาย `no_ot` กลับมาเงียบๆ */
+export const BREAK_SNAPSHOT_V = 1;
+
+/** สร้าง snapshot นโยบายพักของกะนี้ → เก็บลง `production_sessions.break_snapshot`
+ *  @returns {{v:number,process_type:string|null,policies:Array,line_rules:object}|null}
+ *           `null` = ยังไม่รู้ (ทะเบียนพักยังไม่โหลด) ⇒ อย่าเขียนทับของเดิม */
+export function makeBreakSnapshot({ breakPolicies = [], session = null, processType = null, lineRules = null } = {}) {
+  const pol = (breakPolicies || []).filter(Boolean);
+  if (!pol.length) return null;
+  const shift = session?.shift || 'day';
+  const keep = applyHolidayBreaks(pol.filter(p => {
+    if (!(p.shift === 'both' || p.shift === shift)) return false;
+    const proc = p.process_type;
+    return !(proc && proc !== 'common' && proc !== processType);
+  }), session?.work_date);
+  const rules = breakRulesForLine(lineRules ?? breakLineRuleIndexSync(), session?.line_name ?? null);
+  const line_rules = {};
+  if (rules) for (const [pid, min] of rules) line_rules[String(pid)] = Number(min);
+  return {
+    v: BREAK_SNAPSHOT_V,
+    process_type: processType ?? null,
+    policies: keep.map(p => ({
+      id: p.id ?? null, name: p.name ?? null,
+      shift: p.shift ?? null, process_type: p.process_type ?? null, ot_scope: p.ot_scope ?? null,
+      anchor: p.anchor ?? null, start_time: p.start_time ?? null, offset_min: p.offset_min ?? null,
+      duration_min: Number(p.duration_min) || 0,
+      ...(p.holiday_min != null ? { holiday_min: p.holiday_min, holiday_central_min: p.holiday_central_min } : {}),
+    })),
+    line_rules,
+  };
+}
+
+/** อ่าน snapshot กลับมาเป็น input ของ `breakIntervalsIn` — เวอร์ชันที่ไม่รู้จัก = `null` (ถอยไปทะเบียนสด)
+ *  ⚠️ `policies: []` **ไม่ใช่ null** — แปลว่า "กะนั้นไม่มีพักที่เข้าเงื่อนไขจริงๆ" ต้องเคารพ */
+export function readBreakSnapshot(session) {
+  const s = session?.break_snapshot;
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  if (Number(s.v) !== BREAK_SNAPSHOT_V || !Array.isArray(s.policies)) return null;
+  return {
+    policies: s.policies.filter(Boolean),
+    processType: s.process_type ?? null,
+    lineRules: breakLineRuleIndexOf(session?.line_name ?? null, s.line_rules || {}),
+  };
+}
+
+/** CT ที่ถูกใช้คิด %P ตอนปิดกะ (`production_sessions.ct_snapshot` = `{ MAT: วินาที }`)
+ *  🔴 เก็บเฉพาะตัวที่ **รู้ค่า (> 0)** — MAT ที่ตอนนั้นไม่รู้ CT ไม่ตรึงไว้ ให้ถอยไปทะเบียนสด
+ *     (เติม CT ทีหลังแล้วคำนวณใหม่ได้เลขที่ "ดีกว่า" = ตั้งใจ · ตัวที่ขาดดูได้จาก snapshot เอง) */
+export function readCtSnapshot(session) {
+  const s = session?.ct_snapshot;
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  const out = {};
+  for (const [mat, v] of Object.entries(s)) { const n = Number(v); if (mat && n > 0) out[mat] = n; }
+  return Object.keys(out).length ? out : null;
 }
 
 /** นาทีของช่วง [sMs, eMs] ที่ทับกับ intervals (ผลลัพธ์จาก breakIntervalsIn — merged แล้ว) */
@@ -381,8 +459,72 @@ export function halfDayBreakBands({ policies = [], half, processType = null, lin
 
    ⚠️ หารเฉพาะแถวที่ **ระบุเครื่อง** (`machine_no`) — แถวที่ไม่ระบุเครื่องคือ "หยุดทั้งไลน์"
       (ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์) หารแล้วจะ**ต่ำกว่าจริง** */
-export const laneWeightFn = (parallelN = 1) =>
-  (d) => (Number(parallelN) > 1 && d?.machine_no) ? 1 / Number(parallelN) : 1;
+/* 🔀 "อุปกรณ์ตัวนี้หยุดแล้วกระทบกี่เลน" — ทะเบียน `machines.affects_lanes`  (2026-10-27 · คำสั่ง user)
+
+   ที่มา (คำอธิบายหน้างาน HDF1 → LASER-345): เลเซอร์ 3 เครื่องทำงานขนาน **ไม่รอกัน**
+   เครื่องไหนพังก็ไม่กระทบตัวอื่น ⇒ ครอบ 1 เลน · แต่ **คอนเวเยอร์ที่ลำเลียงงานมาเลี้ยงทั้ง 3 เครื่อง
+   พังเมื่อไหร่ หยุดทันทีทั้ง 3** ⇒ ครอบ 3 เลน · และ **โรบอทตัวกลางป้อนเลเซอร์ 4+5** ⇒ ครอบ 2 เลน
+   ⇒ ธง 2 ค่า (เลน/ของกลาง) ไม่พอ ต้องเป็น **ตัวเลข**
+
+   🔴 **ว่าง/ไม่รู้จัก = 1 เลน = พฤติกรรมเดิมเป๊ะ** ⇒ ทยอยกรอกทีละไลน์ได้ ไม่ต้องมีวัน cut-over
+      (กรอกเฉพาะ "ตัวยกเว้น" ที่ครอบ >1 เลน)
+
+   🏭 **ของกลางของสาย = `stops_whole_line` ไม่ใช่ตัวเลข** (2026-10-28 · user ชี้เพิ่ม)
+      *"conveyor อยู่ไลน์แม่ เป็นเหมือนส่วนกลางที่ใช้ทั้ง hdf1, hdf2, laser345, laser789"*
+      ⇒ อุปกรณ์ตัวเดียวถูกใช้โดยไลน์ที่มีจำนวนเลนไม่เท่ากัน (HDF1 = 1 · LASER-345 = 3)
+      "กระทบกี่เลน" จึงไม่มีคำตอบเป็นเลขเดียว · ธงนี้แปลว่า **ทุกเลนของไลน์ที่ใบนั้นอ้างถึง**
+      เก็บเป็น `Infinity` ในแมป แล้วให้ `laneWeightFn` เพดานที่ `N` เอง (น้ำหนัก = 1 ทุกไลน์) */
+export function affectsLanesMap(machines = []) {
+  const m = {};
+  for (const r of (Array.isArray(machines) ? machines : [])) {
+    const k = machineKey(r?.machine_no);
+    if (!k) continue;
+    /* ของกลางของสาย ชนะตัวเลขเสมอ — ตั้งธงแล้วยังกรอกเลขไว้ = เจตนาคือ "ทั้งไลน์" */
+    if (r?.stops_whole_line === true) { m[k] = Infinity; continue; }
+    const n = Number(r?.affects_lanes);
+    if (n > 1) m[k] = n;   // เก็บเฉพาะตัวยกเว้น — ค่า 1 คือ default อยู่แล้ว
+  }
+  return m;
+}
+
+/**
+ * น้ำหนักของ 1 แถว downtime → "นาทีของไลน์"
+ * @param {number} parallelN  จำนวนเลนของไลน์ (1 = ไม่ใช่ไลน์ขนาน)
+ * @param {Object|null} affectsBy  แมปจาก `affectsLanesMap()` — ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (เดิม)
+ *
+ * น้ำหนัก = (ครอบกี่เลน ÷ จำนวนเลน) · แถวที่ **ไม่ระบุเครื่อง** = หยุดทั้งไลน์ ห้ามหาร
+ * 🔴 เพดานที่ `parallelN` — กรอกเกินจำนวนเลน (พิมพ์ผิด/ไลน์ลดเครื่อง) ต้องไม่ทำให้นาทีบวมเกินจริง
+ */
+export const laneWeightFn = (parallelN = 1, affectsBy = null) => (d) => {
+  const N = Number(parallelN) || 1;
+  if (N <= 1) return 1;            // ไลน์เลนเดียว = ไม่หารอยู่แล้ว
+  if (!d?.machine_no) return 1;    // ไม่ระบุเครื่อง = ไฟดับ/ไม่มีแผนผลิต/เปลี่ยนรุ่นทั้งไลน์
+  const hit = affectsBy ? Number(affectsBy[machineKey(d.machine_no)]) : 0;
+  const affects = Math.min(Math.max(1, hit || 1), N);
+  return affects / N;
+};
+
+/* 🔴 นาที downtime ของ **1 แถว** ในหน่วย "นาทีของไลน์" — จุดเดียวที่จอใช้ตอบ "ไลน์หยุดกี่นาที"
+   (2026-10-27 · คำสั่ง user: *"มันไม่ควรนับรวมเป็น 306 นาที สำหรับไลน์ขนาน เพราะความจริงมันคือ 102 นาที"*)
+
+   เคสจริง LASER-345 22/10 — ราง Conveyor เสีย 1 ครั้ง แต่พนักงานลง downtime **3 แถว** (LS-03/04/05)
+   แถวละ 50 นาที ⇒ ผลรวมดิบ 150 นาที ทั้งที่ไลน์หยุดจริง **50 นาที**
+     3×50 + 3×42 + 1×30 = 306 นาทีดิบ  →  ÷3 = **102 นาทีของไลน์** (= 50 + 42 + 10) ✔ ตรงกับ %A ที่ stamp ไว้
+   วัด 30 วัน (5 ไลน์ที่ตั้ง `parallel_stations`): ดิบ 68,137 → ของไลน์ 21,517 นาที (โป่งเกิน ~777 ชม.)
+
+   ⚠️ **หน่วยคนละตัวกับ "นาที-เครื่อง"** (`dtRawMin`) ที่ตอบว่า *ช่างเสียเวลา/ค่าใช้จ่ายรายเครื่องเท่าไหร่*
+      — จอไหนใช้ตัวไหนต้อง **เขียนหน่วยกำกับเสมอ** ห้ามโชว์เลขลอยๆ ให้คนเดาเอง */
+export const dtLineMin = (d, parallelN = 1, { affectsBy = null, nowMs = null } = {}) =>
+  dtRawMin(d, nowMs) * laneWeightFn(parallelN, affectsBy)(d);
+
+/** แมป `session_id → จำนวนเลน` — จอที่รวมนาที downtime จากหลายกะใช้ตัวนี้คู่กับ `dtLineMin`
+ *  กะที่ไม่รู้ไลน์/ไม่อยู่ในชุดที่ส่งมา = 1 เลน (พฤติกรรมเดิมเป๊ะ — ไม่เดาว่าเป็นไลน์ขนาน) */
+export function laneBySessionId(sessions = [], lines = []) {
+  const laneOf = parallelNBySession(lines);
+  const by = {};
+  for (const s of sessions || []) if (s?.id) by[s.id] = laneOf(s);
+  return by;
+}
 
 /** ทะเบียนไลน์ → ฟังก์ชัน `(session) => จำนวนเลน` สำหรับส่งให้ `dtMinBySession`
  *  รับได้ทั้ง **อาร์เรย์แถวไลน์** และ **แมป `{ [ชื่อไลน์]: แถว }`** (จอที่มีแต่แมปอยู่แล้วจะได้ไม่ต้องแปลง)
@@ -483,7 +625,7 @@ export function sessionDowntimeMin({
  *  🔴 `opts.lines` = ทะเบียนไลน์ (`name`, `flow_mode`, `parallel_stations`) — **จอที่เอาผลไปถ่วง
  *     `wLoad` ต้องส่งเสมอ** ไม่งั้นไลน์เครื่องขนานได้นาทีรวมของทุกเครื่องมาหักจากเวลากะเดียว (§3.2)
  *     ไม่ส่ง = ไม่หารเลน (พฤติกรรมเดิมเป๊ะ สำหรับจอที่โชว์ "เครื่องหยุดกี่นาที" ล้วนๆ) */
-export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null, lineRules = null } = {}) {
+export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = [], { lines = null, lineRules = null, affectsBy = null } = {}) {
   const laneOf = lines ? parallelNBySession(lines) : null;
   const ivBy = {}, wBy = {};
   for (const s of sessions) {
@@ -491,7 +633,7 @@ export function dtMinBySession(sessions = [], downtimes = [], breakPolicies = []
     ivBy[s.id] = (win && breakPolicies.length)
       ? breakIntervalsIn({ policies: breakPolicies, startMs: win.startMs, endMs: win.endMs, workDate: win.workDate, shift: win.shift, lineName: s?.line_name ?? null, lineRules })
       : [];
-    if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s));
+    if (laneOf) wBy[s.id] = laneWeightFn(laneOf(s), affectsBy);
   }
   const out = {};
   for (const d of downtimes) {
@@ -576,7 +718,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null, affectsLanes = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -630,7 +772,10 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
     : [];
   const breakMin = brkIv.reduce((s, [a, b]) => s + (b - a) / 60000, 0);
   // Downtime ที่ยังเปิดค้าง (ไม่มีเวลาจบ/นาที) นับถึงตอนนี้ · นาทีที่ตกในช่วงพักถูกตัดออก (ห้ามหักซ้ำ §3.1)
-  const dtW = d => (parallelN > 1 && d.machine_no) ? 1 / parallelN : 1;
+  /* 🔀 น้ำหนักเลน — **ต้องผ่าน `laneWeightFn` (§3.2) ห้ามเขียนสูตรซ้ำที่นี่**
+     ของกลางของไลน์ (คอนเวเยอร์/ระบบลม) ที่กรอก `machines.affects_lanes` ไว้ ต้องไม่ถูกหารเลน
+     ไม่ส่ง `affectsLanes` = ทุกเครื่องครอบ 1 เลน = พฤติกรรมเดิมเป๊ะ */
+  const dtW = laneWeightFn(parallelN, affectsLanes);
   const dtOne = (d) => dtMinOutsideBreaks(d, brkIv, nowMs) * dtW(d);
   /* แยกหยุดตามแผน (PM/เปลี่ยนรุ่น) ออกจากหยุดนอกแผน — ต้อง join dr_downtime_types(category) มา
      ไม่ได้ join = ทุกแถวถูกนับเป็นนอกแผน (fail-safe ฝั่งเข้มงวด ไม่ใช่ปล่อยผ่าน) */
@@ -954,12 +1099,14 @@ export const isTrialDefect = (d) =>
 
 /** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
 export const QBIN_EMBED =
-  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active)';
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active, qty, qty_ng)';
 
 /** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
 const QA_SCRAP = 'scrap';
-/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" */
-const QA_CLEARED = ['good', 'repair', 'use_as_is'];
+/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" ทันทีที่ตัดสิน
+ *  🔴 `repair` ไม่อยู่ในนี้แล้ว (2026-11-10 · สายใบถังแบบ MO): "ส่งซ่อม" ยังไม่รู้ผล — ซ่อมอาจไม่ผ่าน
+ *     ⇒ เคลียร์เมื่อ QA ตรวจรับ (`return_date`) เท่านั้น ก่อนหน้านั้น = รอ (qualityBin.js `ncStep` ขั้น 3-4) */
+const QA_CLEARED = ['good', 'use_as_is'];
 
 /**
  * สถานะของ "ของสงสัย" ในแถวของเสีย 1 แถว
@@ -996,12 +1143,69 @@ export function suspectState(d) {
 /** ของสงสัยแถวนี้ต้องรอ QA อยู่ไหม (จอต้องเอาไปเขียนว่า "%Q ยังไม่สรุป") */
 export const isSuspectPending = (d) => suspectState(d) === 'pending';
 
+/* ═══ 7.2) 🔴 NG ที่เข้าถังเหลืองแล้ว = ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน (2026-11-10 · คำสั่ง user) ═══
+
+   user: *"ถ้าซ่อมกลับมาเป็นงานดี จะคืน %Q มั้ย … ไม่เกี่ยวกับ FTT นะ"* → ยืนยัน "ลุยเลย":
+     1. NG ที่อยู่ในถังเหลืองรอพิจารณา **ยังไม่หัก %Q** (เหมือนของสงสัย §7.1 — จอเขียนว่ารอกี่ชิ้น)
+     2. QA ตัดสิน งานดี / ซ่อมแล้วดี / ขอใช้ / กลับเข้ากระบวนการ ⇒ **ไม่หัก**
+     3. QA ตัดสิน ทำลาย / ย้ายลงถังแดง / ซ่อมแล้ว NG ⇒ หักเฉพาะชิ้นที่เสียจริง
+   เหตุ: ตั้งแต่ 05/11 ทุกแถวงานเสียถูกตั้งแท็กเหลืองอัตโนมัติ (ทั้ง NG + สงสัย ในใบเดียว)
+         แต่สูตรเดิมนับ NG เป็นของเสียทันที ⇒ ป้ายบอก "รอพิจารณา" ขณะที่ %Q หักไปแล้ว (วัด 10/11: 53 ชิ้น)
+
+   🔴 ใช้เฉพาะแถวที่ "ใบเหลืองครอบ NG" — ผลรวม `qty` ของใบเหลือง ≥ NG + สงสัย **และ** ไม่มีใบแดงตรง
+      (`from_yellow_id` ว่าง = NG ถูกส่งลงแดงตรงจากโมดัลลงถังแบบเก่า) ไม่ครอบ = **พฤติกรรมเดิมเป๊ะ**
+      (NG นับเสมอ + ของสงสัยตาม §7.1) ⇒ แถวก่อน 05/11 / ตั้งแท็กไม่สำเร็จ / ไม่ได้ถาม embed — เลขเท่าเดิม
+   ⚠️ %P ไม่ขยับ (ใช้ `defectQtyAll`) · ชิ้นที่ซ่อมกลับมาดี "ไม่ถูกหัก" แต่ยังไม่ถูกบวกเข้ายอดผลิต */
+const binRows = (d) => {
+  const b = d?.quality_bin_records;
+  if (b === undefined || b === null) return null;
+  return (Array.isArray(b) ? b : [b]).filter(r => r && r.is_active !== false);
+};
+
+/**
+ * แบ่งชิ้นของแถวที่ใบเหลืองครอบ NG → { scrap, cleared, pending } (รวม = NG + สงสัย)
+ * @returns null เมื่อแถวนี้ไม่เข้ากติกา §7.2 (ใช้สูตรเดิม)
+ */
+export function binCoveredSplit(d) {
+  const ng = Number(d?.qty_ng) || 0;
+  const sus = Number(d?.qty_suspect) || 0;
+  if (!(ng > 0)) return null;                          // ไม่มี NG = §7.1 เดิมตอบครบแล้ว
+  const rows = binRows(d);
+  if (!rows) return null;                              // ไม่ได้ถาม = พฤติกรรมเดิม
+  if (rows.some(r => r.bin === 'red' && r.from_yellow_id == null)) return null;   // NG ลงแดงตรง
+  const yellows = rows.filter(r => r.bin === 'yellow');
+  const total = ng + sus;
+  const yQty = yellows.reduce((a, y) => a + (Number(y.qty) || 0), 0);
+  if (!yellows.length || yQty < total) return null;    // ใบเหลืองไม่ครอบ NG
+  let scrap = 0, cleared = 0, pending = 0;
+  for (const y of yellows) {
+    const q = Number(y.qty) || 0;
+    const kids = rows.filter(r => r.bin === 'red' && r.from_yellow_id === y.id);
+    const done = !!y.return_date || QA_CLEARED.includes(y.qa_decision);   // ซ่อม = เคลียร์ตอน QA ตรวจรับ (return_date)
+    if (y.qa_decision === QA_SCRAP || (kids.length && kids.some(k => !(Number(k.qty) > 0)))) {
+      scrap += q;                                      // ทำลายทั้งใบ / ใบแดงไม่รู้จำนวน = เสียทั้งใบ (ปลอดภัยฝั่งลูกค้า)
+      continue;
+    }
+    const red = Math.min(q, kids.reduce((a, k) => a + (Number(k.qty) || 0), 0)
+      || (done && y.qa_decision === 'repair' ? (Number(y.qty_ng) || 0) : 0));
+    scrap += red;
+    if (done) cleared += q - red; else pending += q - red;
+  }
+  /* ใบเหลืองนับเกินชิ้นของแถว (ใบซ้ำ) — ตัดส่วนเกินจาก "รอ" ก่อน แล้ว "ไม่เสีย" ห้ามตัดส่วน "เสีย" ก่อน */
+  let over = scrap + cleared + pending - total;
+  const cut = (v) => { const c = Math.min(v, Math.max(0, over)); over -= c; return v - c; };
+  pending = cut(pending); cleared = cut(cleared); scrap = cut(scrap);
+  return { scrap, cleared, pending };
+}
+
 /**
  * จำนวนของเสียของ 1 แถว — ใช้คิด %Q
  * NG นับเสมอ · ของสงสัยนับเฉพาะที่ QA ตัดสินว่าเสีย (ดู §7.1)
  * ⚠️ ยึด `defect_logs` ไม่ใช่คอลัมน์ rollup ของ session (กฎเดิม)
  */
 export const defectQty = (d) => {
+  const cov = binCoveredSplit(d);          // §7.2 NG ที่อยู่ในถังเหลือง — ตัดสินจากใบถัง
+  if (cov) return cov.scrap;
   const ng = Number(d?.qty_ng) || 0;
   const sus = Number(d?.qty_suspect) || 0;
   if (!sus) return ng;
@@ -1050,9 +1254,13 @@ export function ngByMatFrom(defects = [], orders = []) {
   return { byMat, noMat };
 }
 
-/** จำนวนของสงสัยที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้) */
-export const suspectPendingQty = (d) =>
-  (suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0);
+/** จำนวนชิ้นที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้)
+ *  รวม NG ที่อยู่ในถังเหลืองรอพิจารณาด้วย (§7.2) — ชื่อเดิมคงไว้ เพราะทุกจอเรียกตัวนี้เขียน "รอพิจารณา N ชิ้น" */
+export const suspectPendingQty = (d) => {
+  const cov = binCoveredSplit(d);
+  if (cov) return cov.pending;
+  return suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0;
+};
 
 /** รวมจำนวนของเสีย
  *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE
@@ -1332,6 +1540,8 @@ export function computeSessionOee({
   lineRules = null,
   lineFlow = {},
   machineCount = 0,
+  /* 🔀 แมป "เครื่องไหนครอบกี่เลน" จาก `affectsLanesMap(machines)` — ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (เดิม) */
+  affectsLanes = null,
   startTime = null,
   endTime = null,
   carryQtyActual = {},
@@ -1365,17 +1575,27 @@ export function computeSessionOee({
   const shiftFrame = openedAt ? { startMs: +openedAt, endMs: +closedAt } : null;
 
   const parallelN = parallelUnitsOf(lineFlow, machineCount);
-  const dtW = laneWeightFn(parallelN);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
+  const dtW = laneWeightFn(parallelN, affectsLanes);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
   const sessionShift = session?.shift || 'day';
-  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
+  /* 📸 snapshot ชนะทะเบียนสด — กะที่ปิดพร้อม snapshot ต้องคำนวณซ้ำได้ค่าเดิมเป๊ะ (§snapshot)
+     ไม่มี snapshot (กะเก่า) = ถอยไปทะเบียนสดเหมือนเดิมทุกบรรทัด */
+  const ctSnap = readCtSnapshot(session);
+  const brkSnap = readBreakSnapshot(session);
+  const brkPolicies = brkSnap ? brkSnap.policies  : breakPolicies;
+  const brkLineRules = brkSnap ? brkSnap.lineRules : lineRules;
+  const brkProcessType = brkSnap ? brkSnap.processType : processType;
+  const ctForMatNo = (matNo) => {
+    const snap = ctSnap?.[matNo];
+    return snap > 0 ? snap : ctForMat(matNo, { kanbanStds, products });
+  };
   const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
 
   /* 🔚 กรอบที่ส่งเข้ามาคือ "ช่วงที่ MAT ตัวนี้วิ่ง" ไม่ใช่ทั้งกะ ⇒ ต้องบอก **ปลายกะจริง** ด้วย
      ไม่งั้นพักที่ผูกปลายกะ (5ส.) จะไปเกาะปลายช่วงของแต่ละ MAT = หักพักซ้ำทุกใบ */
   const brkIvIn = (a, b) => breakIntervalsIn({
-    policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
-    workDate, shift: sessionShift, processType, shiftEndMs: shiftFrame?.endMs ?? null,
-    lineName: session?.line_name ?? null, lineRules,
+    policies: brkPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
+    workDate, shift: sessionShift, processType: brkProcessType, shiftEndMs: shiftFrame?.endMs ?? null,
+    lineName: session?.line_name ?? null, lineRules: brkLineRules,
   });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
   const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {
@@ -1550,8 +1770,13 @@ export function computeSessionOee({
   const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
   const ctUsed = {};
   matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
+  /* 📸 "คิดรอบนี้ด้วยอะไร" — ให้จอ stamp กลับลงกะได้ตรงๆ (§snapshot)
+     มี snapshot อยู่แล้ว = คืนตัวเดิม **ห้ามทับด้วยทะเบียนวันนี้** · ไม่มี = ตรึงทะเบียนที่ใช้รอบนี้ */
+  const breakSnapshot = brkSnap
+    ? session.break_snapshot
+    : makeBreakSnapshot({ breakPolicies, session, processType, lineRules });
   return {
-    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
+    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, breakSnapshot,
     totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP, stdMin,
     loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
     pOver: pRawRatio != null && pRawRatio > 1.001,

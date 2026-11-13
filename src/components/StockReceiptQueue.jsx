@@ -7,6 +7,7 @@ import { getActor } from '../utils/actorStamp';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import usePartImages from '../utils/usePartImages';
 import { storeBtn } from '../utils/storeUi';
+import { toneVar } from '../utils/statusTone';
 import { allOf } from '../utils/filterLabels';
 import FilterBar from './FilterBar';
 import Segmented from './Segmented';
@@ -19,6 +20,7 @@ import {
 } from '../utils/stockReceipts';
 import { mergeById } from '../utils/mergeRows';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📥 คิวรอรับเข้าคลัง — ของที่ปิดใบผลิตแล้ว รอคนนับของจริงแล้วกดรับ (2026-10-02 · คำสั่ง user)
 
    ใครทำอะไร:  ไลน์ผลิตสแกนปิดใบ (ผู้ส่ง) → ใบเข้าคิวนี้อัตโนมัติ → คลังปลายทางนับของจริง (ผู้รับ)
@@ -39,7 +41,7 @@ const COLS = 'id, prod_order_id, prod_no, mat_no, part_name, qty_expected, dest_
 
 const ZONES = (withDone) => [
   { key: 'stale', statuses: ['stale'], label: '⏰ ค้างเกินกำหนด', color: '#ef4444', hint: 'ปิดใบผลิตนานแล้วยังไม่มีใครรับ — ตามของก่อน' },
-  { key: 'pending', statuses: ['pending'], label: '📥 รอรับเข้า', color: '#f59e0b', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
+  { key: 'pending', statuses: ['pending'], label: 'รอรับเข้า', color: '#f59e0b', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
   ...(withDone ? [{ key: 'received', statuses: ['received'], label: '✅ รับแล้ว (วันนี้)', color: '#22c55e', hint: '' }] : []),
 ];
 const hhmm = (iso) => {
@@ -162,41 +164,41 @@ export default function StockReceiptQueue() {
     <div style={{ display: 'grid', gap: 12 }}>
       {/* UI-STANDARD §1: แท็บ → แถบกรอง ติดกัน (ห้ามมีคำอธิบายคั่น) · แถบระดับหน้า = แถบมาตรฐาน ไม่ใช่ `bare` (stdsweep 05/10: เดิมห่าง 48px) */}
       <FilterBar>
-        <Segmented value={dest} onChange={setDest} label="คลังปลายทาง"
+        <Segmented value={dest} onChange={setDest} label={tr('คลังปลายทาง')}
           options={[{ value: '', label: allOf('คลัง') }, ...dests.map(d => ({ value: d, label: d }))]} />
         <SearchInput value={q} onChange={setQ} fields="เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์" grow={false} onKeyDown={onSearchKey} />
         <button type="button" onClick={() => { setByGroup(v => !v); setDiffFor(null); setOpenKey(null); }}
           style={storeBtn(byGroup ? 'primary' : 'secondary', { minHeight: 36, padding: '6px 12px', fontSize: 12.5 })}>
-          {byGroup ? '🧺 รวมเป็นกอง' : '📄 ทีละใบ'}
+          {byGroup ? tr('🧺 รวมเป็นกอง') : tr('📄 ทีละใบ')}
         </button>
         {!byGroup && (
           <button type="button" onClick={() => setShowDone(v => !v)} style={storeBtn('secondary', { minHeight: 36, padding: '6px 12px', fontSize: 12.5 })}>
-            {showDone ? '⏳ เฉพาะที่รอรับ' : '✅ รวมที่รับแล้ว 24 ชม.'}
+            {showDone ? tr('⏳ เฉพาะที่รอรับ') : tr('✅ รวมที่รับแล้ว 24 ชม.')}
           </button>
         )}
       </FilterBar>
 
       <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-        📥 ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
-        สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} ใบ · {fmt(pendingQty)} ชิ้น</b>
-        {byGroup && <> · ยุบเป็น <b>{groups.length} กอง</b> (พาร์ท × ต้นทาง × ปลายทาง) — กดรับทั้งกองได้ แต่ระบบยังปิดใบรายตัวให้ครบ</>}
-        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว</span>}
+        {tr('📥 ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง —')} <b>{tr('นับของจริงก่อน')}</b> {tr('ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·')}
+        {tr('สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่')} <b>{pendingCount} {tr('ใบ ·')} {fmt(pendingQty)} {tr('ชิ้น')}</b>
+        {byGroup && <> · {tr('ยุบเป็น')} <b>{groups.length} {tr('กอง')}</b> {tr('(พาร์ท × ต้นทาง × ปลายทาง) — กดรับทั้งกองได้ แต่ระบบยังปิดใบรายตัวให้ครบ')}</>}
+        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> {tr('· บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว')}</span>}
       </div>
 
       {/* 🏬 ของคลังไหนค้างเท่าไหร่ — ขึ้นเสมอแม้กรองอยู่คลังเดียว (คลังที่ไม่ได้เลือกดูจะกองค้างโดยไม่มีใครรู้) */}
       {destLoad.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
-          <span style={{ color: 'var(--muted)', fontWeight: 700 }}>ค้างรายคลัง:</span>
+          <span style={{ color: 'var(--muted)', fontWeight: 700 }}>{tr('ค้างรายคลัง:')}</span>
           {destLoad.map(([name, c]) => (
             <button key={name} type="button" onClick={() => setDest(d => (d === name ? '' : name))}
               style={storeBtn(dest === name ? 'primary' : 'secondary', { minHeight: 28, padding: '3px 10px', fontSize: 12 })}>
-              {name} · <b>{c.slips} ใบ</b> · {fmt(c.pcs)} ชิ้น
+              {name} · <b>{c.slips} {tr('ใบ')}</b> · {fmt(c.pcs)} {tr('ชิ้น')}
             </button>
           ))}
         </div>
       )}
 
-      {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>⚠ โหลดคิวไม่ครบ — {loadErr} · ตัวเลขบนจออาจขาด</div>}
+      {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>{tr('⚠ โหลดคิวไม่ครบ —')} {loadErr} {tr('· ตัวเลขบนจออาจขาด')}</div>}
 
       {byGroup && (groups.length === 0
         ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -214,7 +216,7 @@ export default function StockReceiptQueue() {
             const nPart = prev ? prev.parts.filter(x => x.alloc > 0 && x.alloc < x.expected).length : 0;
             return (
               <PartCard key={g.key} code={g.mat_no} name={g.part_name} img={imgOf(g.mat_no)} alert={stale}
-                status={stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: '📥 รอรับ', color: '#f59e0b' }}
+                status={stale ? { label: tr('⏰ ค้าง'), color: toneVar('bad') } : { label: tr('📥 รอรับ'), color: toneVar('warn') }}
                 metric={{ label: 'ยอดตามใบผลิตรวม', value: fmt(g.expected), unit: 'ชิ้น' }}
                 aside={{ label: 'เข้าคลัง', value: g.dest_line_name }}
                 rows={[
@@ -236,10 +238,10 @@ export default function StockReceiptQueue() {
                         {prev && prev.diff !== 0 && (
                           <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
                             ปันแบบ <b>ใบเก่าก่อน</b>: {nFull} ใบได้เต็ม{nPart ? ` · ${nPart} ใบได้บางส่วน` : ''}
-                            {prev.zeroed ? <> · <b style={{ color: '#f59e0b' }}>{prev.zeroed} ใบได้ 0</b> (ของยังมาไม่ถึง)</> : null}
+                            {prev.zeroed ? <> · <b style={{ color: toneVar('warn') }}>{prev.zeroed} {tr('ใบได้ 0')}</b> {tr('(ของยังมาไม่ถึง)')}</> : null}
                           </div>
                         )}
-                        <input placeholder="เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 24 / ยังมาไม่ครบ" value={form.reason}
+                        <input placeholder={tr('เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 24 / ยังมาไม่ครบ')} value={form.reason}
                           onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                           style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
                         <div style={{ display: 'flex', gap: 8 }}>
@@ -297,7 +299,7 @@ export default function StockReceiptQueue() {
             return (
               <PartCard key={r.id} code={r.mat_no} name={r.part_name} img={imgOf(r.mat_no)} alert={stale}
                 status={pending
-                  ? (stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: '📥 รอรับ', color: '#f59e0b' })
+                  ? (stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: 'รอรับ', color: '#f59e0b' })
                   : { label: '✅ รับแล้ว', color: '#22c55e' }}
                 metric={{ label: pending ? 'ยอดตามใบผลิต' : 'รับเข้าจริง', value: fmt(pending ? r.qty_expected : r.qty_received), unit: 'ชิ้น' }}
                 aside={{ label: 'เข้าคลัง', value: r.dest_line_name }}
@@ -313,21 +315,21 @@ export default function StockReceiptQueue() {
                 footer={pending && canReceive ? (editing ? (
                   <div style={{ display: 'grid', gap: 8 }}>
                     <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-                      ยอดที่นับได้จริง (ใบผลิต {fmt(r.qty_expected)})
+                      {tr('ยอดที่นับได้จริง (ใบผลิต')} {fmt(r.qty_expected)})
                       <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                         onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                         style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', fontSize: 15, fontWeight: 800,
-                          borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
+                          borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
                     </label>
-                    <input placeholder="เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ" value={form.reason}
+                    <input placeholder={tr('เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ')} value={form.reason}
                       onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button type="button" disabled={busy === r.id} style={storeBtn('primary', { flex: 1 })}
                         onClick={async () => { if (await receive(r, form.qty, form.reason.trim())) setDiffFor(null); }}>
                         {busy === r.id ? 'กำลังบันทึก…' : `✅ รับเข้า ${form.qty === '' ? '' : fmt(form.qty)}`}
                       </button>
-                      <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>ยกเลิก</button>
+                      <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>{tr('ยกเลิก')}</button>
                     </div>
                   </div>
                 ) : (

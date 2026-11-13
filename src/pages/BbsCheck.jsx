@@ -18,6 +18,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
@@ -30,13 +31,17 @@ import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
+import { resolveEmployeeSigner, signatureOfPerson } from '../utils/employeeSignature';   // ✍️ รหัสพนักงาน → ลายเซ็น (C1 · 03/11)
 import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import useIsMobile from '../utils/useIsMobile';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
+import NoticeBar from '../components/NoticeBar';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -106,8 +111,10 @@ export default function BbsCheck() {
   /* ── ไลน์ (scope มาตรฐาน: leader = ทั้งครอบครัวไลน์ตัวเอง · อื่น = ตาม sections) ── */
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
-      setLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // ครบ is_active ให้ <LineSelect> (2026-09-07)
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setLines(data || []);
     })();
   }, []);
 
@@ -203,6 +210,19 @@ export default function BbsCheck() {
     } finally { setLoading(false); }
   }, [lineObj, lines, month]);
   useEffect(() => { load(); }, [load]);
+
+  /* ✍️ ผู้ตรวจที่ระบุตัวด้วย "รหัสพนักงาน" (สแกน QR บนบัตร หรือพิมพ์เอง — ผู้รับเหมาไม่มีบัตร/ไม่มีบัญชี)
+     → ชื่อ + ลายเซ็นจากฐานพนักงาน (C1 · 03/11) · ลายเซ็นโปรไฟล์ของคนที่เลือกยังชนะ (signatureOfPerson)
+     · stale guard: เปลี่ยนใบ/รหัสระหว่างโหลด ห้ามเอาผลเก่ามาทับ (กฎเหล็ก DB ข้อ 4) */
+  const [codeSigner, setCodeSigner] = useState(null);
+  const inspCode = sheet?.inspector_code || '';
+  useEffect(() => {
+    let alive = true;
+    if (!inspCode) { setCodeSigner(null); return undefined; }
+    resolveEmployeeSigner(supabase, inspCode).then(r => { if (alive) setCodeSigner(r); });
+    return () => { alive = false; };
+  }, [inspCode]);
+  const shownSig = signatureOfPerson({ profileSig: sheet?.inspector_sig_url, employeeSig: codeSigner?.signatureUrl });
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
   const ensureSheet = useCallback(async () => {
@@ -317,13 +337,20 @@ export default function BbsCheck() {
 
       const from = `${month}-01`;
       const to = `${month}-${String(days).padStart(2, '0')}`;
-      let q = supabase.from('daily_production_logs')
+      /* 🔴 เพดาน 1,000 แถว — ไลน์ใหญ่ 36 คน × 31 วัน ≈ 1,116 แถว (วัดจริง 11/11/26:
+         daily_production_logs สูงสุด 279 แถว/วัน · 4,338/เดือน) ⇒ ชนได้จริง
+         ผล PPE ที่ขาดไป = ช่องว่างบนตาราง ซึ่งหน้านี้อ่านว่า "ไม่ได้ตรวจ" = กล่าวหาหน้างานผิด */
+      const empIds = emps.map(e => e.id);
+      let q = () => supabase.from('daily_production_logs')
         .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves')
         .gte('work_date', from).lte('work_date', to)
-        .in('employee_id', emps.map(e => e.id));
+        .in('employee_id', empIds);
       /* ไม่กรองกะ — BBS ไม่แยกกะแล้ว (ดูหัวบล็อกไฟล์) เอาผลตรวจ PPE ของทั้งวัน */
-      const { data: logs, error } = await q;
-      if (error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${error.message}`); return; }
+      const lp = await fetchAllPages(q, { orderBy: ['work_date', 'employee_id'] });
+      if (lp.error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${lp.error}`); return; }
+      // โหลดไม่ครบ = ช่องที่ขาดจะถูกอ่านว่า "ไม่ได้ตรวจ" ⇒ ห้ามเติมต่อเงียบๆ
+      if (lp.truncated) { toast.error('ผลตรวจ PPE เดือนนี้เยอะเกินกว่าจะโหลดครบ — ยังเติมอัตโนมัติไม่ได้'); return; }
+      const logs = lp.rows;
 
       const rows = []; let skipManual = 0;
       (logs || []).forEach(l => {
@@ -383,10 +410,13 @@ export default function BbsCheck() {
 
   const setInspectorCode = async (code) => {
     const sh = sheet; if (!sh) return;
+    if ((code || null) === (sh.inspector_code || null)) return;
     const { data, error } = await supabase.from('bbs_sheets')
       .update({ inspector_code: code || null, updated_by_name: fullName || null })
       .eq('id', sh.id).select('id');
     if (error || !data?.length) return toast.error('บันทึกรหัสพนักงานไม่สำเร็จ');
+    // ต้องอัปเดต state ด้วย — ไม่งั้นลายเซ็นจากรหัสใหม่ไม่ถูกโหลด (ใบพิมพ์ใช้รหัสเก่า)
+    setSheet(s => (s && s.id === sh.id ? { ...s, inspector_code: code || null } : s));
   };
 
   /* ── สรุปเดือน (นับเฉพาะช่องที่มีข้อมูล — ไม่เดาช่องว่าง) ──
@@ -413,8 +443,14 @@ export default function BbsCheck() {
 
   const doPrint = async () => {
     if (!sheet) return toast.error('ยังไม่มีใบของเดือน/ไลน์นี้ — บันทึกอย่างน้อย 1 ช่องก่อน');
+    /* ✍️ ลายเซ็นผู้ตรวจ: โปรไฟล์ที่เลือก → ฐานพนักงานตามรหัส → เว้นช่องเซ็นมือ (resolve สดตอนกดพิมพ์)
+       ระบุไม่ได้/ยังไม่มีลายเซ็น = บอกเหตุผลบนจอ ห้ามออกใบช่องว่างเงียบๆ */
+    const signer = sheet.inspector_code ? await resolveEmployeeSigner(supabase, sheet.inspector_code) : null;
+    const sigUrl = signatureOfPerson({ profileSig: sheet.inspector_sig_url, employeeSig: signer?.signatureUrl });
+    if (!sigUrl) toast.info(signer?.note || 'ยังไม่ได้ระบุผู้ตรวจ (เลือกชื่อ หรือสแกน/พิมพ์รหัสพนักงาน) — ใบจะเว้นช่องลายเซ็นไว้ให้เซ็นมือ');
     const ok = await printBbsSheet({
-      sheet, days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
+      sheet: { ...sheet, inspector_name: sheet.inspector_name || signer?.name || null, inspector_sig_url: sigUrl },
+      days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
     });
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
@@ -426,54 +462,63 @@ export default function BbsCheck() {
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกผลสังเกต BBS" permKey="bbs:record" />
 
       {loadWarn && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
-          ⚠️ {loadWarn} — ตัวเลขบนหน้านี้อาจไม่ครบ
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>{loadWarn} {tr('— ตัวเลขบนหน้านี้อาจไม่ครบ')}</NoticeBar>
       )}
 
       {/* ── หัว + ปุ่มของใบ (UI-STANDARD 2026-09-24 — ใน /daily-checker หัวชื่อหน้าถูกซ่อนเอง เหลือปุ่ม) ── */}
-      <PageHeader title="สังเกตพฤติกรรมความปลอดภัย (BBS)" icon="🦺"
+      <PageHeader title={tr('สังเกตพฤติกรรมความปลอดภัย (BBS)')} icon="🦺"
         actions={<>
-          <button onClick={() => setShowAgree(true)} style={btn()}>📋 ข้อตกลง ({agreements.length})</button>
+          {/* ปุ่มตายตัว ≤2 (UI §6.35): [เติมจากผลตรวจ PPE] [พิมพ์/PDF] · ข้อตกลง → ⋯ */}
+          <OverflowMenu items={[{ key: 'agree', icon: '📋', label: 'ข้อตกลง', badge: agreements.length, onClick: () => setShowAgree(true) }]} />
           {canRecord && (
-            <button onClick={autoFill} disabled={busy || !emps.length} style={btn('var(--accent)')}>
-              {busy ? 'กำลังเติม…' : '⚡ เติมจากผลตรวจ PPE'}
+            <button type="button" className="pg-btn primary" onClick={autoFill} disabled={busy || !emps.length}>
+              {busy ? tr('กำลังเติม…') : tr('เติมจากผลตรวจ PPE')}
             </button>
           )}
-          <button onClick={doPrint} disabled={!sheet} style={btn()}>🖨️ พิมพ์ / PDF</button>
+          <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>{tr('พิมพ์ / PDF')}</button>
         </>} />
 
       {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
       <FilterBar style={{ marginBottom: 12 }}>
-        <span className="filter-label">พื้นที่ / ไลน์</span>
+        <span className="filter-label">{tr('พื้นที่ / ไลน์')}</span>
         {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
         <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
-        <span className="filter-label">เดือน</span>
+        <span className="filter-label">{tr('เดือน')}</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
       </FilterBar>
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <label style={lbl}>ผู้ตรวจสอบ (ดึงลายเซ็นจากโปรไฟล์)</label>
+            <label style={lbl}>{tr('ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)')}</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
-              placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
+              placeholder={tr('— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —')} style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
               options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
-            <label style={lbl}>รหัสพนักงาน</label>
-            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้ */}
+            <label style={lbl}>{tr('รหัสพนักงาน (สแกนบัตร / พิมพ์)')}</label>
+            {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้
+                เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ ⇒ Enter = ยืนยันรหัส (blur) ไม่ใช่ submit อะไร
+                ผู้รับเหมาที่ไม่มีบัตร = พิมพ์รหัสเอง · ชื่อ/ลายเซ็นดึงจากฐานพนักงานตามรหัส (C1 · 03/11) */}
             <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
-              placeholder="เช่น 61234"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+              placeholder={tr('เช่น 61234')}
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
+            {codeSigner && codeSigner.state !== 'no_code' && (
+              <div style={{ fontSize: 11, marginTop: 3, maxWidth: 220, lineHeight: 1.4,
+                color: codeSigner.state === 'ok' ? 'var(--muted)' : 'var(--amber)' }}>
+                {codeSigner.name ? `👤 ${codeSigner.name}` : ''}
+                {codeSigner.note ? `${codeSigner.name ? ' · ' : ''}${codeSigner.note}` : ''}
+              </div>
+            )}
           </div>
           <div style={{ textAlign: 'center' }}>
-            <label style={lbl}>ลายเซ็น</label>
-            {sheet?.inspector_sig_url
-              ? <img src={sheet.inspector_sig_url} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
+            <label style={lbl}>{tr('ลายเซ็น')}</label>
+            {shownSig
+              ? <img src={shownSig} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
               : <div style={{ fontSize: 11, color: 'var(--muted)', padding: '9px 0' }}>
                   {signers.length ? 'ยังไม่เลือกผู้ตรวจ' : 'ยังไม่มีใครบันทึกลายเซ็นในโปรไฟล์'}
                 </div>}
@@ -482,20 +527,20 @@ export default function BbsCheck() {
 
         {/* ⚠️ ขอบเขตของการเติมอัตโนมัติ — ห้ามถอด (กันใบอ้างเกินจริง) */}
         <div style={{
-          background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8,
+          background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)',
           padding: '8px 12px', fontSize: 12, lineHeight: 1.6, maxWidth: 420,
         }}>
-          ⚡ <b>ระบบเติมให้ได้ {autoAgreements.length} ข้อ จากทั้งหมด {agreements.length} ข้อ</b>
-          {autoAgreements.length > 0 && <> (ข้อ {autoAgreements.map(a => a.seq).join(', ')} — มาจากการตรวจ PPE รายวัน)</>}
+          <b>{tr('ระบบเติมให้ได้')} {autoAgreements.length} {tr('ข้อ จากทั้งหมด')} {agreements.length} {tr('ข้อ')}</b>
+          {autoAgreements.length > 0 && <> {tr('(ข้อ')} {autoAgreements.map(a => a.seq).join(', ')} — มาจากการตรวจ PPE รายวัน)</>}
           <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-            ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>ไม่ทับ</b>ช่องที่กรอกเอง
-            และ<b>ไม่เติม</b>วันที่ไม่มีบันทึกเช็คชื่อ
+            ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>{tr('ไม่ทับ')}</b>ช่องที่กรอกเอง
+            และ<b>{tr('ไม่เติม')}</b>วันที่ไม่มีบันทึกเช็คชื่อ
           </div>
           {/* ⚠️ ข้อความ 13 ข้อในไฟล์ Excel ต้นฉบับฝังเป็น OLE object แกะไม่ได้ → ต้องให้คนกรอกเอง
               ห้ามเดาข้อความ · แต่ต้องบอกว่ายังไม่ครบ ไม่งั้นคนคิดว่าระบบมีแค่นี้ */}
           {agreements.length < 13 && (
-            <div style={{ color: '#f59e0b', marginTop: 3, fontWeight: 700 }}>
-              📋 ยังมีข้อตกลงแค่ {agreements.length} ข้อ — ใบจริงมี 13 ข้อ กด “ข้อตกลง” เพื่อเพิ่มให้ครบ
+            <div style={{ color: 'var(--amber)', marginTop: 3, fontWeight: 700 }}>
+              ยังมีข้อตกลงแค่ {agreements.length} ข้อ — ใบจริงมี 13 ข้อ กด “ข้อตกลง” เพื่อเพิ่มให้ครบ
             </div>
           )}
         </div>
@@ -504,16 +549,16 @@ export default function BbsCheck() {
       {/* ── แปรง (เลือกสัญลักษณ์ แล้วคลิกช่องเพื่อทา) — desktop เท่านั้น (มือถือกดชิปในการ์ดตรงๆ) ── */}
       {canRecord && !isMobile && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ทาช่องด้วย:</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('ทาช่องด้วย:')}</span>
           {MARKS.map(m => {
             const on = brush === m.key;
             return (
-              <button key={m.key} onClick={() => setBrush(m.key)} title={m.label} style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+              <button key={m.key} onClick={() => setBrush(m.key)} title={tr(m.label)} style={{
+                padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${on ? m.color : 'var(--border2)'}`,
                 background: on ? m.color : 'var(--bg3)', color: on ? '#fff' : 'var(--text2)',
               }}>
-                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {m.label.split(' (')[0]}
+                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {tr(m.label).split(' (')[0]}
               </button>
             );
           })}
@@ -522,7 +567,7 @@ export default function BbsCheck() {
               style={{ width: 240, padding: '6px 8px', fontSize: 12.5 }}>
               {agreements.length
                 ? agreements.map(a => <option key={a.seq} value={a.seq}>{a.seq}. {a.text}</option>)
-                : <option value={1}>1. (ยังไม่ได้บันทึกข้อตกลง)</option>}
+                : <option value={1}>{tr('1. (ยังไม่ได้บันทึกข้อตกลง)')}</option>}
             </select>
           )}
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>คลิกช่องเดิมซ้ำด้วยแปรงเดิม = ล้างช่อง</span>
@@ -531,9 +576,9 @@ export default function BbsCheck() {
 
       {/* ── ตาราง ── */}
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !emps.length ? (
-        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8 }}>
+        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
           ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง
         </div>
       ) : isMobile ? (
@@ -551,34 +596,34 @@ export default function BbsCheck() {
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label="วันก่อนหน้า">◀</button>
+                <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label={tr('วันก่อนหน้า')}>◀</button>
                 <div style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: dstr === today ? 'var(--accent)' : 'var(--text)' }}>
-                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>· วันนี้</span>}
+                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>{tr('· วันนี้')}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทาแล้ว {done}/{emps.length} คน</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ทาแล้ว')} {done}/{emps.length} {tr('คน')}</div>
                 </div>
-                <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label="วันถัดไป">▶</button>
+                <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label={tr('วันถัดไป')}>▶</button>
               </div>
               {dstr !== today && today.startsWith(month) && (
-                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>📅 ไปวันนี้</button>
+                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>{tr('ไปวันนี้')}</button>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, alignContent: 'start' }}>
                 {emps.map((e, i) => {
                   const c = cells[cellKey(e.id, day)];
                   const picking = ngPick === e.id;
                   return (
-                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 12, padding: '10px 12px', background: 'var(--card)' }}>
+                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '10px 12px', background: 'var(--card)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 18 }}>{i + 1}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                             {e.employee_id_code}
-                            {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: '#22c55e' }}>⚡ เติมจากผลตรวจ PPE</span>}
+                            {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: 'var(--green)' }}>{tr('เติมจากผลตรวจ PPE')}</span>}
                           </div>
                         </div>
-                        <span style={{ minWidth: 40, height: 40, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
+                        <span style={{ minWidth: 40, height: 40, borderRadius: 'var(--r-md)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
                           background: c ? markColor(c) : 'var(--bg3)', color: c ? '#fff' : 'var(--muted)' }}>{c ? markGlyph(c) : '·'}</span>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -594,14 +639,14 @@ export default function BbsCheck() {
                         })}
                       </div>
                       {picking && (
-                        <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: 'rgba(185,28,28,0.08)', border: '1px solid rgba(185,28,28,0.35)' }}>
-                          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?</div>
+                        <div style={{ marginTop: 8, padding: 8, borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+                          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>{tr('ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?')}</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {(agreements.length ? agreements : [{ seq: 1, text: '(ยังไม่ได้บันทึกข้อตกลง)' }]).map(a => (
                               <button key={a.seq} title={a.text} onClick={() => { setNgPick(null); paint(e, day, 'ng', a.seq); }}
-                                style={{ minWidth: 44, minHeight: 44, borderRadius: 10, fontSize: 15, fontWeight: 800, cursor: 'pointer',
-                                  border: `2px solid ${c?.mark === 'ng' && c.agreement_seq === a.seq ? '#b91c1c' : 'var(--border2)'}`,
-                                  background: c?.mark === 'ng' && c.agreement_seq === a.seq ? '#b91c1c' : 'var(--bg3)',
+                                style={{ minWidth: 44, minHeight: 44, borderRadius: 'var(--r-md)', fontSize: 15, fontWeight: 800, cursor: 'pointer',
+                                  border: `2px solid ${c?.mark === 'ng' && c.agreement_seq === a.seq ? 'var(--red)' : 'var(--border2)'}`,
+                                  background: c?.mark === 'ng' && c.agreement_seq === a.seq ? 'var(--red)' : 'var(--bg3)',
                                   color: c?.mark === 'ng' && c.agreement_seq === a.seq ? '#fff' : 'var(--text)' }}>{a.seq}</button>
                             ))}
                           </div>
@@ -617,15 +662,15 @@ export default function BbsCheck() {
         })()
       ) : (
         // จอแคบเลื่อนแนวนอน (ตาราง 31 คอลัมน์ — ข้อยกเว้นตาม UI-CONVENTIONS §6)
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table className="table-sticky" style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
             <thead>
               <tr>
-                <th style={th(190, 'left')}>พนักงาน</th>
+                <th style={th(190, 'left')}>{tr('พนักงาน')}</th>
                 {Array.from({ length: days }, (_, i) => i + 1).map(d => (
                   <th key={d} style={{ ...th(26), color: `${month}-${String(d).padStart(2, '0')}` === today ? 'var(--accent)' : undefined }}>{d}</th>
                 ))}
-                <th style={th(150, 'left')}>หมายเหตุ</th>
+                <th style={th(150, 'left')}>{tr('หมายเหตุ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -645,7 +690,7 @@ export default function BbsCheck() {
                           ...td(), cursor: canRecord ? 'pointer' : 'default',
                           color: markColor(c), fontWeight: 700,
                           // ช่องที่ระบบเติมให้ = พื้นจาง ๆ แยกจากที่คนกรอกเอง (โปร่งใส ห้ามกลืนกัน)
-                          background: c?.source === 'ppe' ? 'rgba(34,197,94,0.07)' : undefined,
+                          background: c?.source === 'ppe' ? 'var(--green-dim)' : undefined,
                         }}>{markGlyph(c)}</td>
                     );
                   })}
@@ -667,19 +712,19 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, fontSize: 12, alignItems: 'center' }}>
         {MARKS.map(m => (
           <span key={m.key} style={{ color: 'var(--text2)' }}>
-            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {m.label}
+            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {tr(m.label)}
           </span>
         ))}
         <span style={{ flex: 1 }} />
-        <span style={{ color: 'var(--muted)' }}>
-          เดือนนี้: ✓ {stat.ok} · ไม่เหมาะสม {stat.ng} · ปรับแก้ {stat.fixed} · ไม่ได้ตรวจ {stat.na}
-          {' · '}เติมอัตโนมัติ {stat.auto} / กรอกเอง {stat.manual} ช่อง
+        <span role="status" style={{ color: 'var(--muted)' }}>
+          เดือนนี้: ✓ {stat.ok} {tr('· ไม่เหมาะสม')} {stat.ng} {tr('· ปรับแก้')} {stat.fixed} {tr('· ไม่ได้ตรวจ')} {stat.na}
+          {' · '}{tr('เติมอัตโนมัติ')} {stat.auto} {tr('/ กรอกเอง')} {stat.manual} ช่อง
           {/* 🔴 ตัวหาร — ไม่มีแล้วบรรทัดนี้ตอบไม่ได้ว่ากรอกครบแค่ไหน (ดูเหตุผลที่ stat) */}
           {stat.due > 0 && (
             <>
-              {' · '}กรอกแล้ว <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
-              {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>ยังไม่กรอก {stat.blank}</b></>}
-              {' '}(ถึงวันที่ {stat.elapsed} · {emps.length} คน)
+              {' · '}{tr('กรอกแล้ว')} <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
+              {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>{tr('ยังไม่กรอก')} {stat.blank}</b></>}
+              {' '}{tr('(ถึงวันที่')} {stat.elapsed} · {emps.length} คน)
             </>
           )}
         </span>
@@ -739,7 +784,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         ...(r.id ? { id: r.id } : {}),
         seq: r.seq, text: String(r.text).trim(), auto_source: r.auto_source || null, is_active: true,
       }));
-      const { error } = await supabase.from('bbs_agreements').upsert(up).select('id');
+      /* 🔴 `defaultToNull:false` — ปนแถวเดิม (มี id) กับแถวใหม่ (ไม่มี id) ในก้อนเดียว postgrest ส่งคอลัมน์รวม
+         แล้วเติม id = NULL ให้แถวใหม่ ⇒ 23502 ล้มทั้งก้อน (หน้างานแจ้ง 27/10 "เพิ่มหัวข้อ BBS ไม่สำเร็จ")
+         คลาสเดียวกับที่แก้ไปแล้วใน MaterialRequests.jsx (audit 19/10) — ตารางมี default gen_random_uuid()
+         อยู่แล้ว ปัญหาอยู่ที่ postgrest ไม่ใช่ที่ schema ⇒ ห้ามแก้ด้วยการถอด not-null ของ PK */
+      const { error } = await supabase.from('bbs_agreements').upsert(up, { defaultToNull: false }).select('id');
       if (error) {
         // 23505 = ชนกับ unique index ของเลขข้อ (bbs_agree_seq_uniq) — แปลเป็นภาษาคน
         toast.error(error.code === '23505'
@@ -764,8 +813,8 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>📋 ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน</h3>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{tr('ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน')}</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม ·
           ข้อที่ผูกกับ “การตรวจ PPE” ระบบจะเติมช่องให้อัตโนมัติได้
@@ -776,9 +825,9 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead><tr>
-            <th style={{ ...th(46), textAlign: 'center' }}>ข้อ</th>
-            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>สิ่งที่ควรทำ</th>
-            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>เติมอัตโนมัติจาก</th>
+            <th style={{ ...th(46), textAlign: 'center' }}>{tr('ข้อ')}</th>
+            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>{tr('สิ่งที่ควรทำ')}</th>
+            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>{tr('เติมอัตโนมัติจาก')}</th>
             {canManage && <th style={th(40)} />}
           </tr></thead>
           <tbody>
@@ -792,19 +841,19 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <input value={r.text || ''} disabled={!canManage}
                     onChange={e => patch(i, { text: e.target.value })}
-                    placeholder="เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด"
+                    placeholder={tr('เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด')}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12.5 }} />
                 </td>
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <select value={r.auto_source || ''} disabled={!canManage}
                     onChange={e => patch(i, { auto_source: e.target.value || null })}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12 }}>
-                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}
+                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{tr(o.t)}</option>)}
                   </select>
                 </td>
                 {canManage && (
                   <td style={td()}>
-                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)" />
+                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title={tr('เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)')} />
                   </td>
                 )}
               </tr>
@@ -819,11 +868,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-          {canManage && <button onClick={add} style={btn()}>＋ เพิ่มข้อ</button>}
-          <button onClick={onClose} style={btn()}>ปิด</button>
+          {canManage && <button onClick={add} style={btn()}>{tr('＋ เพิ่มข้อ')}</button>}
+          <button onClick={onClose} style={btn()}>{tr('ปิด')}</button>
           {canManage && (
             <button onClick={save} disabled={saving} style={btn('var(--accent)')}>
-              {saving ? 'กำลังบันทึก…' : '💾 บันทึก'}
+              {saving ? tr('กำลังบันทึก…') : tr('บันทึก')}
             </button>
           )}
         </div>

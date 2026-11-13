@@ -7,6 +7,7 @@ import {
   partRowKey, dedupeByKey,
 } from '../utils/monitorBoards';
 
+import { tr } from '../utils/i18n';
 /* ══ 📗 MonitorImport — ยกไฟล์ Excel ของทีมวางแผนเข้าเป็นบอร์ด (2026-10-01) ═══════════════
    🔴 กติกาเดียวกับจอนำเข้าตัวอื่นในระบบ (MonitoringUpload 23/09 วางมาตรฐานไว้แล้ว):
    1. **ดูก่อนเขียนเสมอ** — เลือกไฟล์แล้วขึ้นสรุปว่าจะสร้าง/อัพเดทอะไรกี่แถว ต้องกดยืนยันอีกที
@@ -184,17 +185,17 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
       <div style={{ display: 'grid', gap: 6 }}>
         {made.map((sh) => (
           <div key={sh.name} style={{
-            border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px',
+            border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px',
             background: 'var(--bg2)', fontSize: FS,
           }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
               <b style={{ fontSize: FS + 1 }}>{sh.name}</b>
               <span style={{ color: 'var(--muted)' }}>→ {tabName(sh.kind)}</span>
               {SHEET_LINE_HINT[sh.name.trim()] ? (
-                <span style={{ color: 'var(--accent)' }}>ผูกไลน์ {SHEET_LINE_HINT[sh.name.trim()]}</span>
+                <span style={{ color: 'var(--accent)' }}>{tr('ผูกไลน์')} {SHEET_LINE_HINT[sh.name.trim()]}</span>
               ) : null}
               <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>
-                {sh.parts.length} พาร์ท · {sh.dates.length} คอลัมน์ · {fmt(sh.cellCount)} ช่อง
+                {sh.parts.length} {tr('พาร์ท ·')} {sh.dates.length} {tr('คอลัมน์ ·')} {fmt(sh.cellCount)} ช่อง
               </span>
             </div>
             <div style={{ color: 'var(--muted)', fontSize: FS - 1, marginTop: 2 }}>
@@ -209,7 +210,7 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
 
       {skipped.length ? (
         <div style={{ fontSize: FS, lineHeight: 1.8 }}>
-          <b>ชีทที่ไม่ได้ยกเป็นบอร์ด {skipped.length} ชีท</b>
+          <b>{tr('ชีทที่ไม่ได้ยกเป็นบอร์ด')} {skipped.length} {tr('ชีท')}</b>
           {skipped.map((s) => (
             <div key={s.name} style={{ color: s.intentional ? 'var(--muted)' : '#f87171' }}>
               {s.intentional ? '⏭' : '🔴'} <b>{s.name}</b> — {s.why}
@@ -223,10 +224,10 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
         </div>
       ) : null}
 
-      <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 6, padding: '7px 10px' }}>
-        ℹ️ ช่อง <b>UNBOUND / BALANCE / ค้างที่ร้านชุบ</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
+      <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
+        ℹ️ ช่อง <b>{tr('UNBOUND / BALANCE / ค้างที่ร้านชุบ')}</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
         ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง ·
-        ส่วนนี้ <b>ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า</b> — ยกผิดก็ลบบอร์ดทิ้งได้
+        ส่วนนี้ <b>{tr('ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า')}</b> — ยกผิดก็ลบบอร์ดทิ้งได้
       </div>
     </div>
   );

@@ -133,6 +133,16 @@ migration `20261008_doc_forms_csv_round2_main.sql` (MAIN · **apply แล้ว
 > · เทียบกับคีย์ที่โค้ดอ่านจริง: `grep -rhoE "['\"](csv|xlsx)_[a-z0-9_]+['\"]" src/`
 >   (⚠️ `/daily-report` ประกอบคีย์แบบ `csv_dr_${reportType}` ⇒ grep ตรงๆ ไม่เห็น 4 คีย์นั้น)
 
+**เพิ่ม 05/11:** `xlsx_die_registry` — Excel ทะเบียนแม่พิมพ์ (`/equipment?tab=die` ปุ่ม 📥 · `DieRegistry.jsx` · แถว `src/utils/dieRegistryExport.js`) · migration `20261105b_doc_forms_xlsx_die_registry_main.sql` (MAIN · **apply แล้ว** · `form_code` ว่าง)
+
+**เพิ่ม 05/11:** `qa_inspection_sheet` — ใบตรวจตามมาตรฐาน QA (ปุ่ม 🖨️ ใน `/qa` แท็บใบตรวจ · `src/lib/qaSheetPrint.js` · แถว `src/utils/qaPrintRows.js`)
+· migration `20261105_doc_forms_qa_inspection_sheet_main.sql` (MAIN · **apply แล้ว**) · `form_code` ว่าง — doc_control ตั้งเลข/ช่องเซ็นที่ `/doc-forms` (fallback ช่องเซ็น: ผู้ตรวจ · ผู้ทบทวน)
+· 🔴 จุดที่ยังไม่ตรวจต้องพิมพ์ด้วย (แถว "ยังไม่ตรวจ" + หัวใบ "ตรวจแล้ว X/Y จุด") · ใบที่ยังไม่ปิด = แถบเตือนบนใบ
+
+**เพิ่ม 03/11:** `xlsx_am_monthly` — Excel รายงาน AM รายเดือน (`/daily-checker?tab=pm&sub=monthly` ·
+`components/AmMonthlyReport.jsx`) · migration `20261103_doc_forms_xlsx_am_monthly_main.sql` (MAIN · **ยังไม่ apply** —
+ก่อน apply ได้ชื่อไฟล์เดิม `AM_Monthly_<เดือน>_<กะ>.xlsx` ไม่ล้ม)
+
 🧹 **คีย์ที่ไม่มีโค้ดอ่าน = "คีย์ไร้ปุ่ม" ต้องถอน** — ตั้งเลขฟอร์มแล้วไม่เห็นผล + มี 2 แถวของรายงาน
 เดียวกันให้เลือกผิด · ถอนไป 7 คีย์ 08/10 (`20261008b_doc_forms_drop_dup_csv_keys_main.sql`)
 · **ยังค้าง `csv_attendance`** — รอบ 2 ใช้ชื่อ `csv_attendance_sheet` แทน ⇒ ตัวเดิมไร้ปุ่ม
@@ -190,3 +200,13 @@ user เลือก "ทางเลือก B" หลังเทียบ 3 
 
 **ใบที่แนบแล้ว:** ถังเหลือง/แดง (`qualityBinPrint.js` · 4 ช่อง × 2 แถว แนวนอน) ·
 ใบรายงานของเสีย (`scrapPrint.js` · 3 × 3 แนวตั้ง) · ใบรายงานปัญหาการผลิต (`prodProblemReport.js` · 3 × 3)
+
+---
+
+## 💼 ใบแจ้งจัดทำของ Marketing — `mkt_production_order` (F-MKT-001) · `mkt_production_parts` (F-MKT-002) (2026-10-30)
+
+ฟอร์มจริงที่ Marketing ออกถึง "ผู้จัดการทั่วไปฝ่ายโรงงาน" ตอนได้งาน (พบในชุดตัวอย่าง FORD) = รอยต่อ New Model → โรงงาน
+· seed `form_code` = เลขที่ใช้อยู่จริง (`F-MKT-001`/`F-MKT-002`) · `rev`/`effective_date` = null ให้ doc_control ตั้ง · footer `WIX-030-001` · ช่องเซ็น 3 ช่องตามใบจริง
+· ใบพิมพ์ `src/lib/mktProductionOrderDoc.js` — 2 หน้าในไฟล์เดียว (หน้า 2 = F-MKT-002) อ่าน `docFormSync()` ทั้ง 2 คีย์ + `withDocFoot(html, 'mkt_production_order')`
+· 🔴 **เป็น "บันทึก" ไม่ใช่ใบ generate** — เลขที่ + snapshot อยู่ `mkt_awards.production_order_*` · พิมพ์ซ้ำ = ใบเดิม (กฎเดียวกับ `prod_problem_reports`)
+· migration `20261030b_mkt_rfq_phase1_main.sql` (MAIN · **apply แล้ว 30/10** · ตรวจกลับ: 2 แถว) · 📄 `docs/modules/mkt-rfq.md` §5 ข้อ 4

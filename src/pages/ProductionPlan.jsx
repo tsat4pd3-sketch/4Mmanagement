@@ -4,7 +4,7 @@ import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
@@ -16,8 +16,11 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
-import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import SimpleMasterPanel from '../components/SimpleMasterPanel';
+import { invalidateTrialReasons } from '../utils/useTrialReasons'; // 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง (05/11)
+import { masterDeleteGuard } from '../utils/masterRefs';
+import { canSeeded } from '../utils/permissions';
 import CapacityBoard from '../components/CapacityBoard';
 import CapacityLoadChart from './../components/CapacityLoadChart';
 import ProdLotPlanner from '../components/ProdLotPlanner';
@@ -31,6 +34,11 @@ import { pairLoadTotal } from '../utils/pairTotals';
 import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from '../components/NoticeBar';
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -54,22 +62,22 @@ const CAPACITY_HORIZON = 12; // แท็บ 📊 Capacity มองไกลก
 const OT_SHIFT_FRAC = 0.25;  // OT ต่อท้ายกะเช้า ≈ 25% ของกะ (2-3 ชม.)
 
 const PLAN_META = {
-  day:          { label: 'กะเช้า', color: '#22c55e' },
-  night:        { label: '+กะดึก', color: '#8b5cf6' },
-  ot:           { label: '+OT', color: '#f59e0b' },
+  day:          { label: 'กะเช้า', color: 'var(--green)' },
+  night:        { label: '+กะดึก', color: 'var(--blue)' },
+  ot:           { label: '+OT', color: 'var(--amber)' },
   // ม.75: กำลังไม่พอ → "ยกเลิกหยุด 75%" (เรียกมาทำงาน = ค่าแรงปกติ) ก่อนไปเปิด OT วันหยุดจริง (คำสั่ง user 2026-07-21)
-  recall75:     { label: '⚡ ยกเลิกหยุด75% มาทำงาน', color: '#a78bfa' },
-  holiday_work: { label: '⚠ ทำวันหยุด OT', color: '#ef4444' },
+  recall75:     { label: 'ยกเลิกหยุด75% มาทำงาน', color: 'var(--blue)' },
+  holiday_work: { label: 'ทำวันหยุด OT', color: 'var(--red)' },
 };
 
 export default function ProductionPlan() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const isMobile = useIsMobile();
   /* 📊 ยุบ 3 แท็บแรกเป็นแท็บเดียว (user 06/10: *"3 tab แรกเราว่าฟุ่มเฟือย มันคือเรื่องเดียวกัน
      คนละมุมมอง ซึ่งโรงงานชอบแบบกราฟ"*) — รายวัน/รายเดือนคือ**คำถามเดียวกันคนละหน่วยเวลา**
      ⇒ เป็น "ช่วงเวลา" ของแท็บเดียว ไม่ใช่คนละแท็บ · สไลด์โรงงานเป็น**รูปแบบนำเสนอ** ไม่ใช่การวิเคราะห์ใหม่
      ⇒ เป็นปุ่มสลับโหมด · 🔴 แท็บซ้อนแท็บต้องคนละ query param (UI §6.8 ข้อ 2.4) ⇒ `?cap=` / `?mode=` */
-  const [tab, setTab] = useTabParam(['plan', 'lots'], 'plan');
+  const [tab, setTab] = useTabParam(['plan', 'lots', 'settings'], 'plan');
   const [cap, setCap] = useTabParam(['day', 'month'], 'day', 'cap');
   const [mode, setMode] = useTabParam(['chart', 'slide'], 'chart', 'mode');
 
@@ -110,14 +118,11 @@ export default function ProductionPlan() {
   const today = getWorkDate();
 
   /* ── scope ── */
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set(getLineFamilyNames(allLines, userLineId));
-      return allLines.filter(l => fam.has(l.name));
-    }
-    if (scopeSecs.length) return allLines.filter(l => inSectionScope(scopeSecs, l.section));
-    return allLines;
-  }, [allLines, role, userLineId, scopeSecs]);
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) */
+  const scopedLines = useMemo(
+    () => scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx }),
+    [allLines, role, userLineId, scopeSecs, scopeIdx]);
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {
     const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];
@@ -133,8 +138,10 @@ export default function ProductionPlan() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();
-      setAllLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
       setOrgSections(orgValues(og));
@@ -172,7 +179,7 @@ export default function ProductionPlan() {
               เอาไปหัก = สั่งผลิตน้อยกว่าที่ต้องใช้ = ของขาด (ทิศอันตราย) */
         supabaseDR.from('line_stock_summary').select('mat_no, qty_on_hand').eq('line_name', 'STORE'),
         // เวลาพักตามนโยบาย — ใช้แปลงเวลากะดิบเป็น "นาทีทำงานสุทธิ" ก่อนคิดกำลังทางทฤษฎี
-        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope, anchor, offset_min').eq('is_active', true),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
         fetchAllPages(() => supabaseDR.from('production_sessions').select('id, line_name, shift, oee')
           .eq('status', 'closed').gte('work_date', histStart)),
         fetchAllPages(() => openOnly(supabaseDR.from('customer_shipping_orders').select('id, mat_no, part_name, customer, qty, due_date, status')
@@ -611,12 +618,12 @@ export default function ProductionPlan() {
         // ตัดสิน: ปกติพอ / OT / กะดึก / กะดึก+OT / ยกเลิกหยุด 75% (ก่อน OT วันหยุดเสมอ) / เกินกำลัง
         let verdict, color;
         if (!matCnt) { verdict = '—'; color = 'var(--muted)'; }
-        else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = '#22c55e'; }
-        else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = '#f59e0b'; }
-        else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = '#8b5cf6'; }
-        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
-        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = '#a78bfa'; }
-        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = '#ef4444'; }
+        else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = 'var(--green)'; }
+        else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = 'var(--amber)'; }
+        else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = 'var(--blue)'; }
+        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = 'var(--red)'; }
+        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = 'var(--blue)'; }
+        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = 'var(--red)'; }
         return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: matCnt };
       });
       return { line, rows };
@@ -625,44 +632,44 @@ export default function ProductionPlan() {
 
   /* ── styles ── */
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
-  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 800, color, background: bg || `${color}1f`, border: `1px solid ${color}55`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' });
+  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 800, color, background: bg || `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' });
   const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' };
   const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap', textAlign: 'right' };
-  const confChip = (c) => c === 'high' ? null : <span style={chip(c === 'med' ? '#f59e0b' : '#ef4444')}>{c === 'med' ? 'ข้อมูลปานกลาง' : 'ข้อมูลน้อย'}</span>;
+  const confChip = (c) => c === 'high' ? null : <span style={chip(c === 'med' ? 'var(--amber)' : 'var(--red)')}>{c === 'med' ? tr('ข้อมูลปานกลาง') : tr('ข้อมูลน้อย')}</span>;
 
   return (
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <PageHeader
-        title="วางแผนการผลิต" icon="🗓️"
+        title={tr('วางแผนการผลิต')} icon="🗓️"
         tabs={[
-          { key: 'plan', label: '📊 กำลังการผลิต' },
+          { key: 'plan', label: 'กำลังการผลิต' },
           /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — แท็บกำลังการผลิตวิเคราะห์อย่างเดียว
              (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
-          { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
+          { key: 'lots', label: 'แผนสั่งงาน (ล็อต)' },
+          { key: 'settings', label: 'ตั้งค่า' },
         ]}
         tab={tab} onTab={setTab}
       />
+      {/* ⚙️ แท็บตั้งค่าไม่มีตัวกรอง/คำเตือนของแผน (05/11) */}
+      {tab !== 'settings' && (<>
       {/* UI-STANDARD 2026-09-24 — ตัวกรอง/ตัวเลือกแผนย้ายจาก actions ของหัวเพจมาเป็นแถบกรองเดียว */}
       <FilterBar style={{ marginBottom: 0 }}>
         {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <SectionScopeSelect lines={scopedLines} value={secFilter} onChange={s => setSecFilter(s)} only={sectionOpts} />
         )}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
-          title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
+          title={tr('ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย')}>
           <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
-          🌳 รวมงานจาก BOM
+          {tr('🌳 รวมงานจาก BOM')}
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
-          title="หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)">
+          title={tr('หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)')}>
           <input type="checkbox" checked={useBuffer} onChange={e => setUseBuffer(e.target.checked)} style={{ width: 'auto' }} />
-          📦 หักสต็อก STORE
+          {tr('📦 หักสต็อก STORE')}
         </label>
         <span className="spacer" />
-        <span className="filter-label">วางแผนที่กำลัง:</span>
-        <Segmented value={capMode} onChange={setCapMode} label="วางแผนที่กำลัง" options={[
+        <span className="filter-label">{tr('วางแผนที่กำลัง:')}</span>
+        <Segmented value={capMode} onChange={setCapMode} label={tr('วางแผนที่กำลัง')} options={[
           { value: 'median', label: 'ปกติ (median)', title: 'ใช้ median ของยอดที่เคยทำได้จริง (สมจริง)' },
           { value: 'safe', label: 'ปลอดภัย (P25)', title: 'ใช้ P25 — เผื่อวันที่ทำได้น้อย (ปลอดภัยไว้ก่อน)' },
         ]} />
@@ -670,17 +677,14 @@ export default function ProductionPlan() {
 
       {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
       {planWarn && (
-        <div style={{
-          margin: '0 0 12px', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444',
-        }}>⚠ {planWarn}</div>
+        <NoticeBar tone="bad" style={{ margin: '0 0 12px' }}>{planWarn}</NoticeBar>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-        กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
-        {shiftNet && <> บนฐาน <b>เวลาทำงานสุทธิ {shiftNet.netMin} นาที/กะ</b> (เวลากะ {DEFAULT_SHIFT_MIN} − พักตามนโยบาย {Math.round(shiftNet.brkMin)})
-          {shiftNet.fallback && <span style={{ color: '#f59e0b', fontWeight: 700 }}> ⚠ ใช้ค่าพักสำรอง (อ่านตารางเวลาพักไม่ได้)</span>}</>}
+        กำลังผลิตคำนวณจาก <b>{tr('median ยอดดีจริงต่อกะ')}</b> {tr('ใน')} {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
+        {shiftNet && <> {tr('บนฐาน')} <b>{tr('เวลาทำงานสุทธิ')} {shiftNet.netMin} {tr('นาที/กะ')}</b> {tr('(เวลากะ')} {DEFAULT_SHIFT_MIN} {tr('− พักตามนโยบาย')} {Math.round(shiftNet.brkMin)})
+          {shiftNet.fallback && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> {tr('⚠ ใช้ค่าพักสำรอง (อ่านตารางเวลาพักไม่ได้)')}</span>}</>}
         {pairsCollapsed.length > 0 && (
-          <> · 🔗 <b>งานคู่ {pairsCollapsed.length} คู่</b> ปั๊มทีเดียวได้ 2 ข้าง — ยอด<b>ชิ้น</b>บวกทั้งคู่ แต่<b>ภาระเวลา</b>นับครั้งเดียว
+          <> · 🔗 <b>{tr('งานคู่')} {pairsCollapsed.length} {tr('คู่')}</b> {tr('ปั๊มทีเดียวได้ 2 ข้าง — ยอด')}<b>{tr('ชิ้น')}</b>{tr('บวกทั้งคู่ แต่')}<b>{tr('ภาระเวลา')}</b>นับครั้งเดียว
             <span style={{ marginLeft: 4 }}>({pairsCollapsed.slice(0, 3).map(([a, b]) => `${a}↔${b}`).join(' · ')}{pairsCollapsed.length > 3 ? ' …' : ''})</span></>
         )}
       </div>
@@ -690,29 +694,29 @@ export default function ProductionPlan() {
       {!loading && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           {bomErr ? (
-            <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)</span>
+            <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)')}</span>
           ) : !useBom ? (
-            <span>🌳 ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง</span>
+            <span>{tr('ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง')}</span>
           ) : demandPcs.bom ? (
-            <>🌳 รวมงานที่ระเบิดจาก BOM แล้ว: <b>{Math.round(demandPcs.bom.childPcs).toLocaleString()} ชิ้น</b> จากพาร์ทที่มี BOM {demandPcs.bom.rootsWithBom} ตัว
-              {demandPcs.bom.rootsNoBom > 0 && <span> · ยังไม่มี BOM {demandPcs.bom.rootsNoBom} ตัว (ลูกของพาร์ทเหล่านี้ยังไม่เข้าแผน)</span>}
-              {' · '}⏮️ <b>ไล่ย้อนวันจากดิวลูกค้าแล้ว</b> — lead time ของแต่ละชั้นคิดจากกำลังผลิตจริงของไลน์นั้น
+            <>{tr('🌳 รวมงานที่ระเบิดจาก BOM แล้ว:')} <b>{Math.round(demandPcs.bom.childPcs).toLocaleString()} {tr('ชิ้น')}</b> {tr('จากพาร์ทที่มี BOM')} {demandPcs.bom.rootsWithBom} ตัว
+              {demandPcs.bom.rootsNoBom > 0 && <span> {tr('· ยังไม่มี BOM')} {demandPcs.bom.rootsNoBom} {tr('ตัว (ลูกของพาร์ทเหล่านี้ยังไม่เข้าแผน)')}</span>}
+              {' · '}⏮️ <b>{tr('ไล่ย้อนวันจากดิวลูกค้าแล้ว')}</b> — lead time ของแต่ละชั้นคิดจากกำลังผลิตจริงของไลน์นั้น
               (ถอยวันข้ามวันหยุดตามปฏิทิน + เผื่อขนย้าย 1 วันทำงานต่อชั้น){demandPcs.sched?.maxLevel > 1 ? ` · ลึกสุด ${demandPcs.sched.maxLevel} ชั้น` : ''}
             </>
           ) : null}
           {demandPcs.sched?.noCapMats?.length > 0 && (
             <div style={{ marginTop: 2 }}>
-              ⏱️ พาร์ทที่ <b>ยังไม่รู้กำลังผลิต {demandPcs.sched.noCapMats.length} ตัว</b> — ไล่ย้อนวันให้ที่ 1 วันไว้ก่อน (อาจสั้นกว่าจริง)
+              ⏱️ พาร์ทที่ <b>{tr('ยังไม่รู้กำลังผลิต')} {demandPcs.sched.noCapMats.length} {tr('ตัว')}</b> — ไล่ย้อนวันให้ที่ 1 วันไว้ก่อน (อาจสั้นกว่าจริง)
             </div>
           )}
           {demandPcs.buffer && (
             <div style={{ marginTop: 2 }}>
-              📦 {useBuffer
-                ? <>หักของที่มีใน <b>STORE</b> แล้ว <b>{Math.round(demandPcs.buffer.dailyAbsorbed).toLocaleString()} ชิ้น</b> (รายวัน) ·
-                    <b> {Math.round(demandPcs.buffer.monthlyAbsorbed).toLocaleString()} ชิ้น</b> (รายเดือน) จาก {demandPcs.buffer.mats} พาร์ทที่มีของคงเหลือ
-                    {' · '}<span title="backflush ยังไม่ทำงานครบ (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์สูงกว่าความจริง เอามาหักแล้วจะสั่งผลิตน้อยเกินไป">
+              {useBuffer
+                ? <>{tr('หักของที่มีใน')} <b>STORE</b> {tr('แล้ว')} <b>{Math.round(demandPcs.buffer.dailyAbsorbed).toLocaleString()} {tr('ชิ้น')}</b> (รายวัน) ·
+                    <b> {Math.round(demandPcs.buffer.monthlyAbsorbed).toLocaleString()} {tr('ชิ้น')}</b> {tr('(รายเดือน) จาก')} {demandPcs.buffer.mats} พาร์ทที่มีของคงเหลือ
+                    {' · '}<span title={tr('backflush ยังไม่ทำงานครบ (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์สูงกว่าความจริง เอามาหักแล้วจะสั่งผลิตน้อยเกินไป')}>
                       ⚠️ ไม่หักยอดที่ค้างอยู่ "ที่ไลน์" (เชื่อถือไม่ได้)</span></>
-                : <>ไม่หักสต็อก STORE — ตัวเลขคือความต้องการดิบ (ยังไม่ดูของที่มีอยู่)</>}
+                : <>{tr('ไม่หักสต็อก STORE — ตัวเลขคือความต้องการดิบ (ยังไม่ดูของที่มีอยู่)')}</>}
             </div>
           )}
         </div>
@@ -724,18 +728,18 @@ export default function ProductionPlan() {
         const mine = late.filter(l => lineOfMat(l.mat_no));      // เฉพาะที่เป็นงานของไลน์ใน scope
         const show = (mine.length ? mine : late).slice(0, 6);
         return (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-            🚨 <b style={{ color: '#ef4444' }}>สายแล้ว {late.length} รายการ</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
+          <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+            🚨 <b style={{ color: 'var(--red)' }}>{tr('สายแล้ว')} {late.length} {tr('รายการ')}</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
             <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, display: 'grid', gap: 2 }}>
               {show.map((l, i) => (
                 <div key={`${l.mat_no}-${l.needBy}-${i}`}>
                   <b style={{ color: 'var(--text2)' }}>{l.mat_no}</b> {Math.round(l.qty).toLocaleString()} ชิ้น ·
-                  ต้องเริ่ม <b style={{ color: '#ef4444' }}>{fmtDate(l.needBy)}</b> เพื่อให้ทันดิว {fmtDate(l.dueOfParent)}
-                  {l.days > 1 && <span> · ใช้เวลาผลิต ~{l.days} วัน{l.capped ? ' (ตัดที่เพดาน 60 วัน — กำลังผลิตที่ระบบรู้ต่ำผิดปกติ ตรวจ CT/ประวัติพาร์ทนี้)' : ''}</span>}
-                  {l.root !== l.mat_no && <span> (ของใบ {l.root})</span>}
+                  ต้องเริ่ม <b style={{ color: 'var(--red)' }}>{fmtDate(l.needBy)}</b> {tr('เพื่อให้ทันดิว')} {fmtDate(l.dueOfParent)}
+                  {l.days > 1 && <span> {tr('· ใช้เวลาผลิต ~')}{l.days} {tr('วัน')}{l.capped ? ' (ตัดที่เพดาน 60 วัน — กำลังผลิตที่ระบบรู้ต่ำผิดปกติ ตรวจ CT/ประวัติพาร์ทนี้)' : ''}</span>}
+                  {l.root !== l.mat_no && <span> {tr('(ของใบ')} {l.root})</span>}
                 </div>
               ))}
-              {late.length > show.length && <div>… อีก {late.length - show.length} รายการ</div>}
+              {late.length > show.length && <div>{tr('… อีก')} {late.length - show.length} {tr('รายการ')}</div>}
             </div>
             <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
               → งานพวกนี้ถูกยกมาเป็นยอดค้างของวันแรกในแผนแล้ว (ไม่ได้หายไป) — ต้องเร่ง/เพิ่มกะ หรือเลื่อนดิวกับลูกค้า
@@ -746,11 +750,11 @@ export default function ProductionPlan() {
 
       {/* 🧹 worklist ให้ PE/Planning — ระบบไม่แก้ข้อมูลให้เอง (กฎของ bomTree.js) */}
       {!loading && useBom && demandPcs.bom?.flatDupes?.length > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-          🧹 <b>BOM แบนซ้ำ {demandPcs.bom.flatDupes.length} จุด</b> — ชิ้นเดียวกันถูกใส่ไว้ทั้งชั้น 1 และในชั้นลึกของใบเดียวกัน
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          🧹 <b>{tr('BOM แบนซ้ำ')} {demandPcs.bom.flatDupes.length} {tr('จุด')}</b> — ชิ้นเดียวกันถูกใส่ไว้ทั้งชั้น 1 และในชั้นลึกของใบเดียวกัน
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
-            แผนนี้ <b>ต่อโซ่แบบ SAP</b> (นับครั้งเดียว ไม่นับแถวชั้น 1 ที่ซ้ำ) — ตัวเลขจึงถูกแล้ว
-            แต่ข้อมูลยังซ้ำอยู่ ⇒ ให้ PE/Planning ไปเก็บที่ <b>/products แท็บ BOM</b>
+            แผนนี้ <b>{tr('ต่อโซ่แบบ SAP')}</b> (นับครั้งเดียว ไม่นับแถวชั้น 1 ที่ซ้ำ) — ตัวเลขจึงถูกแล้ว
+            แต่ข้อมูลยังซ้ำอยู่ ⇒ ให้ PE/Planning ไปเก็บที่ <b>{tr('/products แท็บ BOM')}</b>
           </div>
           <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
             {demandPcs.bom.flatDupes.slice(0, 6).map(f => `${f.root} → ${f.mat_no}`).join(' · ')}
@@ -759,18 +763,18 @@ export default function ProductionPlan() {
         </div>
       )}
       {!loading && useBom && demandPcs.bom?.cycles > 0 && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
-          ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+          BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
+        </NoticeBar>
       )}
 
       {!loading && demandGaps.noLine > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-          ⚠️ <b>{demandGaps.noLine} รายการความต้องการยังไม่ถูกนับในแผน</b> — พาร์ท {demandGaps.noLineParts.size} ตัวนี้<b>ยังไม่ได้ผูกไลน์ผลิต</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          ⚠️ <b>{demandGaps.noLine} {tr('รายการความต้องการยังไม่ถูกนับในแผน')}</b> {tr('— พาร์ท')} {demandGaps.noLineParts.size} {tr('ตัวนี้')}<b>{tr('ยังไม่ได้ผูกไลน์ผลิต')}</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
           <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
             {[...demandGaps.noLineParts].slice(0, 8).join(' · ')}{demandGaps.noLineParts.size > 8 ? ' …' : ''}
           </div>
-          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ตั้งไลน์ผลิตให้พาร์ทที่หน้า Product Master (ช่อง “ไลน์”)</div>
+          <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>{tr('→ ตั้งไลน์ผลิตให้พาร์ทที่หน้า Product Master (ช่อง “ไลน์”)')}</div>
         </div>
       )}
       {!loading && demandGaps.outScope > 0 && (
@@ -780,9 +784,9 @@ export default function ProductionPlan() {
       )}
 
       {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-          ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
-          {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>ตัวอย่าง: {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          ⚠️ <b>{tr('ยังจับคู่เลข SAP ไม่ได้')} {unmapped.orders} {tr('ออเดอร์ ·')} {unmapped.parts.size} {tr('พาร์ท')}{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
+          {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>{tr('ตัวอย่าง:')} {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ไปตั้ง p_no ที่หน้า Product Master หรือใช้ปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales</div>
         </div>
       )}
@@ -790,17 +794,17 @@ export default function ProductionPlan() {
       {/* 🌑 ไลน์ที่ไม่มีความต้องการในระบบเลย — เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างอ่านได้ว่า "ไลน์ว่าง"
            ทั้งที่ความจริงคือ "ยังไม่มีทางรับ order ของลูกค้าเจ้านั้นเข้าระบบ" (วัดจริง 22/09: 10 จาก 22 ไลน์) */}
       {!loading && tab === 'plan' && cap === 'day' && mode === 'chart' && silentLines.length > 0 && (
-        <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
-          🌑 <b>{silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ</b> — ไม่ใช่ "ไลน์ว่าง" แต่คือยังไม่มี order/forecast ของพาร์ทในไลน์นี้เข้าระบบ
+        <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
+          🌑 <b>{silentLines.length} {tr('ไลน์ยังไม่มีข้อมูลความต้องการ')}</b> — ไม่ใช่ "ไลน์ว่าง" แต่คือยังไม่มี order/forecast ของพาร์ทในไลน์นี้เข้าระบบ
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 11.5 }}>
             {silentLines.slice(0, 12).map(l => (
               <span key={l.line} style={{ color: 'var(--muted)' }}>
-                <b style={{ color: 'var(--text2)' }}>{l.line}</b> · {l.parts} พาร์ท{l.customers.size ? ` · ${[...l.customers].slice(0, 3).join('/')}` : ''}
+                <b style={{ color: 'var(--text2)' }}>{l.line}</b> · {l.parts} {tr('พาร์ท')}{l.customers.size ? ` · ${[...l.customers].slice(0, 3).join('/')}` : ''}
               </span>
             ))}
-            {silentLines.length > 12 && <span style={{ color: 'var(--muted)' }}>… อีก {silentLines.length - 12} ไลน์</span>}
+            {silentLines.length > 12 && <span style={{ color: 'var(--muted)' }}>{tr('… อีก')} {silentLines.length - 12} {tr('ไลน์')}</span>}
           </div>
-          <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5 }}>→ ลูกค้าที่ยังไม่มีทางเข้า order (ไม่ได้ส่ง EDI 830/862 หรือ e-SMART) ต้องนำเข้าด้วยวิธีอื่นก่อน แผนถึงจะครบทั้งโรงงาน</div>
+          <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5 }}>{tr('→ ลูกค้าที่ยังไม่มีทางเข้า order (ไม่ได้ส่ง EDI 830/862 หรือ e-SMART) ต้องนำเข้าด้วยวิธีอื่นก่อน แผนถึงจะครบทั้งโรงงาน')}</div>
         </div>
       )}
 
@@ -814,25 +818,40 @@ export default function ProductionPlan() {
             value={cap} onChange={setCap}
             options={[
               { value: 'day', label: `📅 รายวัน (${DAILY_HORIZON} วัน · ออเดอร์จริง)` },
-              { value: 'month', label: '📆 รายเดือน (Forecast)' },
+              { value: 'month', label: 'รายเดือน (Forecast)' },
             ]}
           />
           <button type="button" onClick={() => setMode(mode === 'slide' ? 'chart' : 'slide')}
             aria-pressed={mode === 'slide'}
-            title="รูปแบบนำเสนอสำหรับฉายขึ้นจอโรงงาน — เลขชุดเดียวกับกราฟ"
+            title={tr('รูปแบบนำเสนอสำหรับฉายขึ้นจอโรงงาน — เลขชุดเดียวกับกราฟ')}
             style={{
-              marginLeft: 'auto', padding: '6px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
+              marginLeft: 'auto', padding: '6px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
               border: `1px solid ${mode === 'slide' ? 'var(--accent)' : 'var(--border2)'}`,
               background: mode === 'slide' ? 'var(--accent-dim)' : 'var(--bg2)',
               color: mode === 'slide' ? 'var(--accent)' : 'var(--text2)',
             }}>
-            🖥️ {mode === 'slide' ? 'กลับไปดูกราฟ' : 'โหมดสไลด์โรงงาน'}
+            {mode === 'slide' ? 'กลับไปดูกราฟ' : 'โหมดสไลด์โรงงาน'}
           </button>
         </div>
       ) : null}
+      </>)}
 
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
+      {tab === 'settings' ? (
+        /* 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง — ใช้ในหน้าต่าง "จองเครื่องทดลอง" ของแท็บแผนสั่งงาน
+           ปลายทาง production_plan_lots.trial_reason เก็บ label (text) · สิทธิ์เดียวกับคนวางแผน */
+        <SimpleMasterPanel client={supabaseDR} table="trial_reasons" keyCol="code"
+          canManage={canSeeded('production_plan', 'write', role)}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'trial_reasons')}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateTrialReasons}
+          title={tr('เหตุผลจองเครื่องทดลอง')}
+          help={tr('ตัวเลือกในหน้าต่าง 🧪 จองเครื่องทดลอง (แท็บแผนสั่งงาน) — ใบจองเก็บข้อความเหตุผลนี้ · ยังเลือก \'อื่นๆ (พิมพ์เอง)\' ได้เสมอ')}
+          keyFrom={r => String(r.label || '').trim().toUpperCase().replace(/\s+/g, ' ')}
+          fields={[
+            { key: 'label', label: 'เหตุผล', required: true },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      ) : loading ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังวิเคราะห์กำลังผลิต…')}</div>
       ) : tab === 'lots' ? (
         <ProdLotPlanner
           lines={viewLines} demandByDate={demandPcs.byDate} carry={demandPcs.carry}
@@ -851,24 +870,24 @@ export default function ProductionPlan() {
           lineOee={lineOee} estOf={estOf} netMin={shiftNet?.netMin} customerOf={customerOf} nameOfMat={nameOfMat}
         />
       ) : cap === 'day' ? (
-        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีออเดอร์ค้างส่งในช่วง {DAILY_HORIZON} วันข้างหน้า สำหรับไลน์ใน scope{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
+        daily.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีออเดอร์ค้างส่งในช่วง')} {DAILY_HORIZON} {tr('วันข้างหน้า สำหรับไลน์ใน scope')}{silentLines.length > 0 ? ` (และ ${silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ — ดูแถบด้านบน)` : ''}</div> : <>
         {/* สรุปมาตรการ ม.75: ไลน์ไหนหยุดได้ / ไลน์ไหน order ไม่ลงต้องเรียกมา (คำสั่ง user 2026-07-21) */}
         {daily.some(r => r.sd75Total > 0) && (() => {
           const stoppable = daily.filter(r => r.sd75Total > 0 && r.recall75Days === 0);
           const mustWork = daily.filter(r => r.recall75Days > 0);
           return (
-            <div style={{ ...card, borderColor: '#a78bfa66' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
+            <div style={{ ...card, borderColor: 'var(--blue)66' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 6 }}>{tr('มาตรการหยุดจ่าย 75% (ม.75) — ช่วง')} {DAILY_HORIZON} {tr('วันข้างหน้า')}</div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
                 <div style={{ flex: '1 1 260px' }}>
-                  <div style={{ color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
-                  {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
-                    : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>· หยุดได้ทั้ง {r.sd75Total} วัน</span></div>)}
+                  <div style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>{tr('หยุดตามมาตรการได้ (')}{stoppable.length} ไลน์)</div>
+                  {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>{tr('— ไม่มี —')}</div>
+                    : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>{tr('· หยุดได้ทั้ง')} {r.sd75Total} {tr('วัน')}</span></div>)}
                 </div>
                 <div style={{ flex: '1 1 260px' }}>
-                  <div style={{ color: '#a78bfa', fontWeight: 700, marginBottom: 4 }}>⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ ({mustWork.length} ไลน์)</div>
-                  {mustWork.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
-                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: '#a78bfa', fontWeight: 700 }}>· เรียกมา {r.recall75Days}/{r.sd75Total} วัน</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> (อีก {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
+                  <div style={{ color: 'var(--blue)', fontWeight: 700, marginBottom: 4 }}>{tr('⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ (')}{mustWork.length} ไลน์)</div>
+                  {mustWork.length === 0 ? <div style={{ color: 'var(--muted)' }}>{tr('— ไม่มี —')}</div>
+                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--blue)', fontWeight: 700 }}>{tr('· เรียกมา')} {r.recall75Days}/{r.sd75Total} {tr('วัน')}</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> {tr('(อีก')} {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
                 </div>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ตัดสินจาก order ค้างส่งจริง ณ ตอนนี้ + กำลังผลิตของแต่ละไลน์ — มาทำงานวัน ม.75 = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด) · ดูวันไหนต้องมาที่แถบปฏิทินของไลน์ด้านล่าง (⚡)</div>
@@ -879,18 +898,18 @@ export default function ProductionPlan() {
           <div key={line.id} style={card}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
               <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{line.name}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section} · {orderCount} ออเดอร์</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section} · {orderCount} {tr('ออเดอร์')}</span>
               {/* สรุปทั้งช่วง */}
               {endBacklog > 0.05
-                ? <span style={chip('#ef4444')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
+                ? <span style={chip('var(--red)')}>{tr('ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~')}{endBacklog.toFixed(1)} {tr('กะ ณ สิ้นช่วง')}</span>
                 : (otDays + nightDays + recall75Days + holidayDays === 0
-                  ? <span style={chip('#22c55e')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
-                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
+                  ? <span style={chip('var(--green)')}>{tr('✅ กะเช้าปกติพอ ไม่ต้องเปิด OT')}</span>
+                  : <span style={chip('var(--amber)')}>{tr('ต้องเปิด:')} {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
               {sd75Total > 0 && (recall75Days > 0
-                ? <span style={chip('#a78bfa')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
-                : <span style={chip('#22c55e')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
-              {carryPcs > 0 && <span style={chip('#f59e0b')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
-              {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
+                ? <span style={chip('var(--blue)')} title={tr('วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)')}>{tr('⚡ ม.75: หยุดได้')} {sd75Stoppable}/{sd75Total} {tr('วัน — ต้องเรียกมาทำ')} {recall75Days} {tr('วัน')}</span>
+                : <span style={chip('var(--green)')} title={tr('ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้')}>{tr('ม.75: หยุดได้ทั้ง')} {sd75Total} {tr('วัน (order ไม่ชน)')}</span>)}
+              {carryPcs > 0 && <span style={chip('var(--amber)')} title={tr('ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)')}>{tr('⏰ ยกมาจากค้างส่งเก่า')} {Math.round(carryPcs).toLocaleString()} {tr('ชิ้น')}</span>}
+              {unknownCap > 0 && <span style={chip('var(--muted)')} title={tr('พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์')}>{unknownCap.toLocaleString()} {tr('ชิ้นไม่รู้กำลัง')}</span>}
             </div>
             {/* 📊 กราฟก่อน ตารางทีหลัง — โรงงานอ่านกราฟเร็วกว่า (user 06/10)
                 แท่ง = ภาระของวันนั้น (กะ) · เส้น = กำลังที่มี ⇒ แท่งพ้นเส้น = ต้องเปิดเพิ่ม */}
@@ -912,9 +931,9 @@ export default function ProductionPlan() {
                 return (
                   <div key={d.date} title={`${fmtDate(d.date)}${d.sd75 ? ' (หยุดจ่าย 75% — ม.75)' : d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
+                    <div style={{ fontSize: 11, color: d.sd75 ? 'var(--blue)' : d.holiday ? 'var(--red)' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
-                    <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${top.color}33` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+                    <div style={{ height: 26, marginTop: 2, borderRadius: 'var(--r-xs)', background: top ? `${tint(top.color, 'dim')}` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
                       {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
                     </div>
                   </div>
@@ -922,13 +941,13 @@ export default function ProductionPlan() {
               })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)' }}>
-              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#a78bfa' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: '#ef4444' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
+              <span>{tr('กะเช้าพอ')}</span><span>{tr('⏰ ต้องเปิด OT')}</span><span>{tr('ต้องเปิดกะดึก')}</span><span style={{ color: 'var(--blue)' }}>{tr('⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)')}</span><span style={{ color: 'var(--red)' }}>{tr('⚠ ทำวันหยุด OT (×1.5/×2)')}</span>
             </div>
           </div>
         ))}
         </>
       ) : (
-        monthly.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มี forecast สำหรับไลน์ใน scope</div> :
+        monthly.length === 0 ? <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มี forecast สำหรับไลน์ใน scope')}</div> :
         monthly.map(({ line, rows }) => (
           <div key={line.id} style={card}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{line.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{line.section}{hasNightShift(viewLines, line.name) ? ' · มีกะดึก' : ' · กะเช้าอย่างเดียว'}</span></div>
@@ -946,11 +965,11 @@ export default function ProductionPlan() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead><tr>
-                  <th style={{ ...th, textAlign: 'left' }}>เดือน</th>
-                  <th style={th}>ยอดต้องการ (ชิ้น)</th>
-                  <th style={th}>กะที่ต้องใช้</th>
-                  <th style={th}>กะเช้าที่มี</th>
-                  <th style={{ ...th, textAlign: 'left' }}>สรุปแผน</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('เดือน')}</th>
+                  <th style={th}>{tr('ยอดต้องการ (ชิ้น)')}</th>
+                  <th style={th}>{tr('กะที่ต้องใช้')}</th>
+                  <th style={th}>{tr('กะเช้าที่มี')}</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('สรุปแผน')}</th>
                 </tr></thead>
                 <tbody>
                   {rows.map(r => (

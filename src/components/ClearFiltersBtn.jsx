@@ -7,10 +7,12 @@
    ⚠️ หน้าที่เก็บตัวกรองไว้ใน React state (ไม่ขึ้น URL) ส่ง `onClear` มาเพิ่มเพื่อรีเซ็ต state ด้วย */
 import { useLocation, useNavigate } from 'react-router-dom';
 import { clearableParams, resetSearch } from '../utils/filterReset';
+import useLang from '../utils/useLang';   // 🌐 ป้ายปุ่มแปลที่จุดวาด
 
 export default function ClearFiltersBtn({ keep, onClear, label = 'ล้างตัวกรอง' }) {
   const loc = useLocation();
   const nav = useNavigate();
+  const { tr } = useLang();
   const hit = clearableParams(loc.search, keep);
   // `onClear` = หน้ามีตัวกรองใน state ด้วย ⇒ ต้องโชว์ปุ่มแม้ URL ไม่มีอะไรค้าง
   if (!hit.length && !onClear) return null;
@@ -22,12 +24,12 @@ export default function ClearFiltersBtn({ keep, onClear, label = 'ล้าง�
         if (hit.length) nav({ pathname: loc.pathname, search: resetSearch(loc.search, keep) }, { replace: true });
         onClear?.();
       }}
-      title={hit.length ? `ล้าง: ${hit.join(' · ')}` : label}
+      title={hit.length ? `ล้าง: ${hit.join(' · ')}` : tr(label)}
       style={{
         height: 'var(--ctl-h)', padding: '0 10px', fontSize: 'var(--ctl-fs)',
-        borderRadius: 8, border: '1px solid var(--border)',
+        borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
         background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap',
       }}
-    >🧹 {label}</button>
+    >🧹 {tr(label)}</button>
   );
 }

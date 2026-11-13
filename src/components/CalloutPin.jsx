@@ -112,7 +112,7 @@ export default function CalloutPin({
         onPointerDown={e => { startDrag(e); onPointerDown?.(e); }}
         onPointerMove={moveDrag} onPointerUp={endDrag} onPointerCancel={endDrag}
         style={{ position: 'absolute', left: `${(bx / (layerW || 1)) * 100}%`, top: `${(by / (layerH || 1)) * 100}%`, transform: 'translate(-50%,-50%)', zIndex: drag ? 20 : 12, background: 'none', border: 'none', padding: 0, cursor: canDrag ? (drag ? 'grabbing' : 'grab') : ((onClick || onPointerDown) ? 'pointer' : 'default'), pointerEvents: (canDrag || onClick || onPointerDown) ? 'auto' : 'none', opacity: op, touchAction: 'none' }}>
-        <div style={{ position: 'relative', minWidth: size, height: size, padding: `0 ${Math.round(size * 0.15)}px`, borderRadius: 999,
+        <div style={{ position: 'relative', minWidth: size, height: size, padding: `0 ${Math.round(size * 0.15)}px`, borderRadius: 'var(--r-pill)',
           /* ยังไม่ตรวจ = พื้นเข้มโปร่ง + ขอบประสีของสถานะ · ตรวจแล้ว = พื้นทึบสีสถานะ ขอบขาว */
           background: hollow ? 'rgba(12,18,15,0.82)' : color,
           border: hollow

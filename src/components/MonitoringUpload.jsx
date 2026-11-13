@@ -23,6 +23,7 @@ import { refStockOf, inflowDestOf } from '../utils/partRefStock';
 import { buildBoardPlan, writeBoardPlan, BoardPlanPreview } from './MonitorImport';
 import MatLabel from './MatLabel';
 
+import { tr } from '../utils/i18n';
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
    (ยังไม่มี util กลางของ getWorkDate — ทุกหน้าประกาศเองเหมือนกันหมด) */
@@ -278,19 +279,19 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
   const body = (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>📗 ไฟล์ Monitoring ของแพลนนิ่ง</div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{tr('ไฟล์ Monitoring ของแพลนนิ่ง')}</div>
         <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-          ไฟล์ <b>1.Monitoring-&lt;เดือน&gt;.xlsx</b> — ลูกค้าที่ไม่ได้ส่ง EDI (TSPK · TSESA · TSLA · TSRA · GWM · Argen)<br />
-          ระบบจะอ่าน: <b>ตารางบอร์ดของทุกชีท</b> · <b>FC รายเดือน</b> · <b>MIN/MAX</b> ·
-          <b>ออเดอร์ล่วงหน้า</b>ของชีทลูกค้า/Argen · <b>ยอดคงเหลือ</b> · <b>ประวัติการส่ง</b>
+          ไฟล์ <b>1.Monitoring-&lt;เดือน&gt;.xlsx</b> {tr('— ลูกค้าที่ไม่ได้ส่ง EDI (TSPK · TSESA · TSLA · TSRA · GWM · Argen)')}<br />
+          ระบบจะอ่าน: <b>{tr('ตารางบอร์ดของทุกชีท')}</b> · <b>{tr('FC รายเดือน')}</b> · <b>MIN/MAX</b> ·
+          <b>{tr('ออเดอร์ล่วงหน้า')}</b>{tr('ของชีทลูกค้า/Argen ·')} <b>{tr('ยอดคงเหลือ')}</b> · <b>{tr('ประวัติการส่ง')}</b>
           — แล้วขึ้นสรุปให้ตรวจก่อนเขียนเสมอ
           <div style={{ marginTop: 6, color: 'var(--muted)' }}>
-            ⏱️ ยอดคงเหลืออ่าน <b>ณ วันที่ {getWorkDate()}</b> · ช่องวันอนาคตในไฟล์เป็นยอดพยากรณ์ ไม่ใช่ของจริง
+            ⏱️ ยอดคงเหลืออ่าน <b>{tr('ณ วันที่')} {getWorkDate()}</b> · ช่องวันอนาคตในไฟล์เป็นยอดพยากรณ์ ไม่ใช่ของจริง
           </div>
           {/* 🔴 จุดอัพโหลดมีจุดเดียว เขียนครบทุกชั้นในครั้งเดียว (08/10 คำสั่ง user) — ห้ามแยกกลับเป็น 2 ปุ่ม */}
           <div style={{ marginTop: 6, color: 'var(--text2)' }}>
-            ✅ <b>อัพที่นี่ครั้งเดียวจบ</b> — ระบบลงให้ครบทั้ง <b>ตารางบอร์ด 13 ชีท</b> (หน้า Monitoring แผน-สต๊อก)
-            และ <b>ตัวเลขที่เอาไปใช้ต่อ</b> (แผนผลิต · Delivery · คานบัง) ในการกดยืนยันครั้งเดียว
+            ✅ <b>{tr('อัพที่นี่ครั้งเดียวจบ')}</b> {tr('— ระบบลงให้ครบทั้ง')} <b>{tr('ตารางบอร์ด 13 ชีท')}</b> (หน้า Monitoring แผน-สต๊อก)
+            และ <b>{tr('ตัวเลขที่เอาไปใช้ต่อ')}</b> (แผนผลิต · Delivery · คานบัง) ในการกดยืนยันครั้งเดียว
           </div>
         </div>
         {!canUpload && (
@@ -302,7 +303,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
           <input ref={fileRef} type="file" accept=".xlsx,.xlsm,.xlsb,.xls" disabled={!canUpload || busy}
                  onChange={e => handleFile(e.target.files?.[0])}
                  style={{ width: 'auto', fontSize: 13 }} />
-          {busy && <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--muted)' }}>กำลังอ่าน…</span>}
+          {busy && <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังอ่าน…')}</span>}
         </div>
       </div>
 
@@ -319,7 +320,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
       <div className="modal" onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(900px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
+          <button type="button" onClick={onClose} aria-label={tr('ปิด')} title={tr('ปิด')}
             style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1, padding: 2 }}>✕</button>
         </div>
         {body}
@@ -361,7 +362,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
           <thead><tr>
             {['ชีท', 'ชนิด', 'ลูกค้า', 'พาร์ท', 'ออเดอร์', 'ถึงวันที่'].map((h, i) => (
               <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', padding: '4px 8px', fontSize: 11,
-                                   color: 'var(--muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                                   color: 'var(--muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -399,7 +400,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map(([t, v, note]) => (
           <div key={t} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(140px,1fr) 2fr',
-                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 6 }}>
+                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
             <b>{t}</b><span>{v}</span><span style={{ color: 'var(--muted)' }}>{note}</span>
           </div>
         ))}
@@ -408,13 +409,13 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       {/* ── สิ่งที่ "ไม่" เขียน ต้องบอกให้ครบ ห้ามเงียบ ── */}
       {!!parsed.skipped.length && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
-          <b style={{ fontSize: 12 }}>⚠️ ชีทที่อ่านไม่ได้ {parsed.skipped.length} ชีท — ไม่ถูกนำเข้า</b>
+          <b style={{ fontSize: 12 }}>{tr('⚠️ ชีทที่อ่านไม่ได้')} {parsed.skipped.length} {tr('ชีท — ไม่ถูกนำเข้า')}</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{parsed.skipped.join(' · ')}</div>
         </div>
       )}
       {!!parsed.warnings.length && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
-          <b style={{ fontSize: 12 }}>⚠️ ข้อมูลในไฟล์ไม่ครบ</b>
+          <b style={{ fontSize: 12 }}>{tr('⚠️ ข้อมูลในไฟล์ไม่ครบ')}</b>
           <ul style={{ fontSize: 12, color: 'var(--text2)', margin: '4px 0 0', paddingLeft: 18 }}>
             {parsed.warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>
@@ -422,16 +423,16 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       )}
       {!!rec.stockNegative?.length && (
         <div style={warnBox('#7f1d1d22', '#ef4444')}>
-          <b style={{ fontSize: 12, color: '#ef4444' }}>🚫 ยอดคงเหลือติดลบ {rec.stockNegative.length} พาร์ท — ไม่เอาไปตั้งยอดสต็อก</b>
+          <b style={{ fontSize: 12, color: '#ef4444' }}>{tr('ยอดคงเหลือติดลบ')} {rec.stockNegative.length} {tr('พาร์ท — ไม่เอาไปตั้งยอดสต็อก')}</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
-            ในไฟล์นี้ยอดติดลบแปลว่า <b>ความต้องการที่ยังไม่ได้ผลิต</b> ไม่ใช่ของติดลบในคลัง —
+            ในไฟล์นี้ยอดติดลบแปลว่า <b>{tr('ความต้องการที่ยังไม่ได้ผลิต')}</b> ไม่ใช่ของติดลบในคลัง —
             เขียนทับสต็อกจริงไม่ได้ · ตัวอย่าง: {rec.stockNegative.slice(0, 5).map(s => `${s.mat_no} (${fmt(s.qty)})`).join(' · ')}
           </div>
         </div>
       )}
       {!!rec.orderDupes && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
-          <b style={{ fontSize: 12 }}>🔁 บล็อกซ้ำในไฟล์ {rec.orderDupes} แถว — ยุบให้แล้ว</b>
+          <b style={{ fontSize: 12 }}>{tr('บล็อกซ้ำในไฟล์')} {rec.orderDupes} {tr('แถว — ยุบให้แล้ว')}</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             พาร์ทเดียวถูกเขียนไว้หลายบล็อกในชีทเดียวกัน · ถ้าไม่ยุบ ความต้องการจะกลายเป็น 2 เท่า
           </div>
@@ -441,14 +442,14 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       {!!(rec.forecastDupes || rec.levelDupes) && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
           <b style={{ fontSize: 12 }}>
-            🔁 พาร์ทซ้ำ — Forecast {rec.forecastDupes} แถว · MIN/MAX {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
+            พาร์ทซ้ำ — Forecast {rec.forecastDupes} {tr('แถว · MIN/MAX')} {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
           </b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             พาร์ทเดียวเขียนหลายบรรทัด (เช่น 300T MAT 20059152 คว่ำครีบ/หงายครีบ — FC เดือนเป็นของพาร์ทเดียวกัน)
             · ไม่ยุบ = ยอดพยากรณ์ 2 เท่า และ MIN/MAX เขียนไม่ลงทั้งก้อน
             {!!(rec.forecastConflicts || rec.levelConflicts) && (
               <div style={{ color: '#f59e0b', fontWeight: 700, marginTop: 4 }}>
-                ⚠️ ในนั้น <b>ค่าไม่ตรงกัน {rec.forecastConflicts + rec.levelConflicts} คู่</b> — ระบบเลือกค่ามากสุดให้ก่อน
+                ⚠️ ในนั้น <b>{tr('ค่าไม่ตรงกัน')} {rec.forecastConflicts + rec.levelConflicts} {tr('คู่')}</b> — ระบบเลือกค่ามากสุดให้ก่อน
                 แต่ควรไปแก้ไฟล์ต้นทางให้เหลือค่าเดียว
               </div>
             )}
@@ -459,22 +460,22 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
           ห้ามยุบกลับเป็นตารางเดียวที่นับรวม "N พาร์ทไม่ตรง" */}
       {(!!kbDiff.lot.length || !!kbDiff.pack.length || !!kbDiff.noStd.length) && (
         <div style={warnBox('#1e3a8a22', '#60a5fa')}>
-          <b style={{ fontSize: 12 }}>📋 เทียบกับทะเบียน kanban — <u>ระบบไม่แก้ให้</u></b>
+          <b style={{ fontSize: 12 }}>{tr('เทียบกับทะเบียน kanban —')} <u>{tr('ระบบไม่แก้ให้')}</u></b>
           <div style={{ fontSize: 12, color: 'var(--text2)', margin: '4px 0 8px' }}>
             ทะเบียน kanban ใช้ร่วมกับบัตรคานบัง · OEE · Heijunka · ป้าย QR — เขียนทับอัตโนมัติกระทบกว้างเกินไป
             ให้ไปแก้เองที่ <b>/products → 🎴 Kanban Std</b> ถ้ายืนยันว่าค่าในไฟล์ถูกกว่า
           </div>
           <KbDiffTable
-            title={`📦 LOT size ไม่ตรง ${kbDiff.lot.length} พาร์ท`}
+            title={`LOT size ไม่ตรง ${kbDiff.lot.length} พาร์ท`}
             why="ขนาดล็อตผลิต — คุมว่าสะสมครบเท่าไหร่ถึงออกใบสั่งผลิต + เข้าสูตรจำนวนบัตร"
             rows={kbDiff.lot} />
           <KbDiffTable
-            title={`🗳️ Packing ไม่ตรง ${kbDiff.pack.length} พาร์ท`}
+            title={`Packing ไม่ตรง ${kbDiff.pack.length} พาร์ท`}
             why="จำนวนชิ้นต่อกล่อง/ต่อบัตร — คุมการบรรจุและการส่ง ไม่เกี่ยวกับจังหวะเปิดใบผลิต"
             rows={kbDiff.pack} />
           {!!kbDiff.noStd.length && (
             <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 8 }}>
-              ⚪ <b>ยังไม่มีในทะเบียน kanban {kbDiff.noStd.length} พาร์ท</b> —
+              ⚪ <b>{tr('ยังไม่มีในทะเบียน kanban')} {kbDiff.noStd.length} {tr('พาร์ท')}</b> —
               {' '}{kbDiff.noStd.slice(0, 8).map(l => l.mat_no).join(' · ')}
               {kbDiff.noStd.length > 8 ? ` … อีก ${kbDiff.noStd.length - 8}` : ''}
               <div style={{ color: 'var(--muted)' }}>คนละเรื่องกับ "ไม่ตรง" — ตัวนี้คือยังไม่เคยตั้งค่าเลย</div>
@@ -485,30 +486,30 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       {/* 🗂️ ส่วนตารางบอร์ด — รายชีท + ชีทที่ยกไม่ได้ (ตัววาดเดียวกับที่ `MonitorImport` เคยใช้) */}
       {canBoard && !!boardMade.length && (
         <div style={{ ...warnBox('var(--bg2)', 'var(--border)') }}>
-          <b style={{ fontSize: 12 }}>🗂️ ตารางบอร์ด — {boardMade.length} บอร์ด · {fmt(boardParts)} พาร์ท</b>
+          <b style={{ fontSize: 12 }}>{tr('ตารางบอร์ด —')} {boardMade.length} {tr('บอร์ด ·')} {fmt(boardParts)} {tr('พาร์ท')}</b>
           <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px' }}>
-            คือตารางที่เห็นในหน้า <b>Monitoring แผน-สต๊อก</b> · นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
+            คือตารางที่เห็นในหน้า <b>{tr('Monitoring แผน-สต๊อก')}</b> · นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
           </div>
           <BoardPlanPreview made={boardMade} skipped={p.board?.skipped || []} />
         </div>
       )}
       {!!past && (
         <div style={{ ...warnBox('var(--bg2)', 'var(--border)'), fontSize: 12, color: 'var(--text2)' }}>
-          ℹ️ ความต้องการที่ดิวเก่ากว่าวันนี้ <b>{past} แถว</b> ถูกเก็บเป็น<b>ประวัติ</b> ไม่ใช่งานค้างส่ง —
+          ℹ️ ความต้องการที่ดิวเก่ากว่าวันนี้ <b>{past} {tr('แถว')}</b> {tr('ถูกเก็บเป็น')}<b>{tr('ประวัติ')}</b> ไม่ใช่งานค้างส่ง —
           ไม่งั้นแผนรายวันจะขึ้น backlog ปลอมก้อนใหญ่ในวันแรก
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button onClick={onConfirm} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 6,
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--r-md)',
                          background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
-          {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)'}
+          {busy ? tr('กำลังเขียน…') : tr('✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)')}
         </button>
         <button onClick={onCancel} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 6, background: 'var(--bg3)',
+                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                          color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-          ยกเลิก
+          {tr('ยกเลิก')}
         </button>
       </div>
     </div>
@@ -527,19 +528,19 @@ function KbDiffTable({ title, why, rows = [] }) {
         <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
           {/* ลำดับบนจอ = Part No. → Part Name → MAT SAP (UI §ลำดับ MAT · มีด่าน) ⇒ ใช้ <MatLabel> วาดให้ */}
           <thead><tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-            <th>พาร์ท</th><th style={{ textAlign: 'right' }}>ในไฟล์</th><th style={{ textAlign: 'right' }}>ในทะเบียน</th>
+            <th>{tr('พาร์ท')}</th><th style={{ textAlign: 'right' }}>{tr('ในไฟล์')}</th><th style={{ textAlign: 'right' }}>{tr('ในทะเบียน')}</th>
           </tr></thead>
           <tbody>
             {rows.slice(0, 40).map((l, i) => (
               <tr key={i} style={{ borderTop: '1px solid var(--border2)' }}>
                 <td><MatLabel mat={l.mat_no} name={l.part_name} size={11} /></td>
                 <td style={{ textAlign: 'right', fontWeight: 700 }}>{fmt(l.file)}</td>
-                <td style={{ textAlign: 'right' }}>{l.std == null ? '— ยังไม่ตั้ง' : fmt(l.std)}</td>
+                <td style={{ textAlign: 'right' }}>{l.std == null ? tr('— ยังไม่ตั้ง') : fmt(l.std)}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        {rows.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>… อีก {rows.length - 40} พาร์ท</div>}
+        {rows.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{tr('… อีก')} {rows.length - 40} {tr('พาร์ท')}</div>}
       </div>
     </div>
   );

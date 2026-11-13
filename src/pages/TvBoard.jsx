@@ -32,25 +32,32 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import MtnAndonBoard from '../components/MtnAndonBoard';
+import MoTvBoard from '../components/MoTvBoard';
+import { MO_TV_GROUPS } from '../utils/moTvBoard';
 import useIsMobile from '../utils/useIsMobile';
-import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
+import { lineScope, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
-import { ALL } from '../utils/filterLabels';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
-import { getWorkDate } from '../utils/workDate';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอแขวนเปิดค้างข้ามวัน — ต้องอัปเดตวันงานเอง (12/11)
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
 const DEPTS = [
   { key: 'maintenance', icon: '🔧', label: 'ช่างซ่อมบำรุง', sub: 'เครื่องหยุด · PM · ใบซ่อม' },
   { key: 'production', icon: '🏭', label: 'ฝ่ายผลิต', sub: 'เครื่องหยุด · ยอดผลิตเทียบเป้า' },
   { key: 'store', icon: '📦', label: 'สโตร์', sub: 'ไลน์เรียกของ · รอบส่งค้าง · พาร์ทจะขาด' },
+  /* 🧾 ใบแจ้งซ่อม MO ตามขั้น (03/11 · ประชุม 02/11 ข้อ B6 "จอ TV ทีม MTN วนหน้า MO") — `?mo=<กอง>` `?team=`
+     เนื้อใน = `<MoTvBoard>` (โหลดเอง + realtime เอง) · ตั้งรอบวนหลายกองที่ /display-rotation */
+  { key: 'mo', icon: '🧾', label: 'ใบแจ้งซ่อม MO', sub: 'ใบค้างตามขั้น · รอรับงาน · กำลังซ่อม · รอตรวจรับ' },
 ];
 
 export default function TvBoard({ onOpenMenu = null }) {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [sp, setSp] = useSearchParams();
@@ -75,7 +82,9 @@ export default function TvBoard({ onOpenMenu = null }) {
   const [linesTry, setLinesTry] = useState(0);
   const [fs, setFs] = useState(false);
   const [barOpen, setBarOpen] = useState(false);   // แถบตั้งค่า — พับไว้ จอ TV ต้องเป็นเนื้อหาล้วน
-  const workDate = getWorkDate();
+  /* 🔴 ห้ามใช้ `getWorkDate()` ตรงๆ ที่นี่ — จอแขวนเปิดค้างไม่มีอะไรสั่ง re-render
+     ⇒ พอข้าม 08:00 จะยังถามวันงานเมื่อวาน = "ไม่มีไลน์เปิด" เทาทั้งจอ (บั๊กหน้างาน 12/11) */
+  const workDate = useWorkDate();
 
   useEffect(() => {
     /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
@@ -103,15 +112,23 @@ export default function TvBoard({ onOpenMenu = null }) {
     else document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
-  /* ── ขอบเขต: scope ของบัญชี (helper กลาง) แล้วค่อยกรองส่วนงานที่จอนี้เลือกทับ ── */
+  /* ── ขอบเขต: scope ของบัญชี (helper กลาง) แล้วค่อยกรองส่วนงานที่จอนี้เลือกทับ ──
+     🔭 09/11 (user: "จอ TV ต้องโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี" แบบ FactoryMap) — เดิมเรียก
+     `scopedLineNames()` **ไม่ส่ง `scopeIdx`** ⇒ ขอบเขตระดับแผนก/กลุ่ม/ไลน์เดี่ยว (ผังองค์กร) ตกหมด
+     แล้วถอยไปเทียบชื่อ `l.section` ตรงตัว · ตอนนี้ใช้ `lineScope()` ตัวเดียวกับ FactoryMap
+     · `unsure` (ตัดขอบเขตไม่ได้) = แสดงตามเดิม **แต่หัวจอเขียนบอก** ห้ามเงียบ */
+  const acctScope = useMemo(() => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [role, lineId, sections, lines, scopeIdx]);
+  // ไลน์ที่จอนี้ใช้จริงตามบัญชี — ชุดว่าง (ตัดไม่ได้) = ทั้งโรงงาน เหมือน scopeSet ข้างล่าง
+  const acctLines = acctScope.unlimited || !acctScope.lines.length ? lines : acctScope.lines;
   const scopeSet = useMemo(() => {
-    const base = scopedLineNames({ role, lineId, sections, lines });
+    const base = acctScope.unlimited ? null : (acctScope.names.length ? acctScope.names : null);
     if (!secFilter) return base ? new Set(base) : null;
     const inSec = lines.filter(l => inSectionScope([secFilter], l.section)).map(l => l.name);
     // ⚠️ ยังไม่โหลดไลน์เสร็จ = อย่าเพิ่งกรอง (คืนทั้งหมด) ไม่งั้นจอว่างตอนเปิดมาแป๊บนึง
     if (!lines.length) return base ? new Set(base) : null;
     return new Set(base ? inSec.filter(n => base.includes(n)) : inSec);
-  }, [role, lineId, sections, lines, secFilter]);
+  }, [acctScope, lines, secFilter]);
   const inScope = useCallback((name) => !scopeSet || !name || scopeSet.has(name), [scopeSet]);
 
   const ctx = useMemo(() => ({
@@ -124,7 +141,7 @@ export default function TvBoard({ onOpenMenu = null }) {
      (downtime สด + กะที่เปิด บอร์ดโหลดเองพร้อม realtime อยู่แล้ว — ห้ามโหลดซ้ำที่นี่)
      ⚠️ กรองสถานะใบซ่อมฝั่ง server (`OPEN_MO_STATUSES`) แทนดึง 500 ใบล่าสุดมากรองในเบราว์เซอร์ */
   const load = useCallback(async () => {
-    if (!lines.length) return;
+    if (!lines.length || dept === 'mo') return;   // มุมมอง MO โหลดเองใน <MoTvBoard>
     try {
       const needPm = dept === 'maintenance';
       const needMo = dept !== 'store';
@@ -158,10 +175,13 @@ export default function TvBoard({ onOpenMenu = null }) {
      ไม่ว่ามีอะไรเปลี่ยนหรือไม่) · ตารางเพิ่งถูกใส่ publication ในรอบนี้ realtime จึงเพิ่งใช้ได้จริง
      useLiveBoard = realtime หลัก + เพดาน coalesce + poll ข้ามรอบเมื่อไม่มี event
      ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
-  useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC });
+  useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC, enabled: dept !== 'mo' });
 
-  const secOpts = useMemo(
-    () => sortLike(lines.map(l => l.section), []), [lines]);
+  /* ตัวเลือกส่วนงาน = เฉพาะส่วนงานที่มีไลน์อยู่ในขอบเขตบัญชี (จำกัดอยู่) · ไม่จำกัด = ทุกส่วนงานเหมือนเดิม */
+  const secOpts = useMemo(() => {
+    return sortLike(acctLines.map(l => l.section), []);
+  }, [acctLines]);
+  const scopeHiddenLines = lines.length - acctLines.length;
   const cur = DEPTS.find(x => x.key === dept);
 
   return (
@@ -172,73 +192,84 @@ export default function TvBoard({ onOpenMenu = null }) {
           ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อ/มุมมอง/วันงานแทน · index.css) */}
       <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          {cur.icon} Andon Board · {cur.label}
+          {cur.icon} Andon Board · {tr(cur.label)}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          {cur.sub} · วันงาน {workDate}
+          {cur.sub} {tr('· วันงาน')} {workDate}
           {secFilter ? ` · เฉพาะ ${secFilter}` : ''}
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
+          {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่ไลน์ · ตัดขอบเขตไม่ได้ต้องบอกว่ากำลังโชว์ทั้งโรงงาน */}
+          {scopeHiddenLines > 0 && ` · ไม่แสดงไลน์นอกขอบเขตบัญชี ${scopeHiddenLines} ไลน์`}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
-          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">☰ เมนู</button>}
-          <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
-          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>⚙️ ตั้งค่าจอ</button>
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title={tr('เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)')}>{tr('เมนู')}</button>}
+          <button onClick={toggleFs} style={btn(fs)} title={tr('เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง')}>⛶</button>
+          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>{tr('ตั้งค่าจอ')}</button>
         </div>
       </div>
 
       {barOpen && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
-          {DEPTS.map(x => (
-            <button key={x.key} onClick={() => setParam('dept', x.key)} style={btn(dept === x.key)}>
-              {x.icon} {x.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
+          <TabBar size="sm" value={dept} onChange={k => setParam('dept', k)} tabs={DEPTS.map(x => ({ key: x.key, label: x.label }))} />
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
-          <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
-            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">{ALL.section}</option>
-            {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
-            {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
-          </select>
+          <SectionScopeSelect lines={lines} value={secFilter} onChange={s => setParam('sec', s)} only={secOpts} width={220}
+            title={tr('ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น')} />
+          {dept === 'mo' && <>
+            <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
+            {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
+              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {tr(x.label)}</button>
+            ))}
+          </>}
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* 🔊 ขอบเขตเสียง — ตัว <DowntimeSiren> ในบอร์ดอ่าน `?sound=` ตัวเดียวกัน */}
           {/* จอสโตร์เงียบเป็นค่าเริ่มต้น (เสียงเรียกช่างไม่ใช่งานสโตร์ · 12/10) — เปิดได้ด้วย `?sound=all` */}
           <button onClick={() => setParam('sound', sp.get('sound') === 'all' ? '' : 'all')} style={btn(sp.get('sound') === 'all')}>
-            {sp.get('sound') === 'all' ? '🔊 ดังทุกเครื่องหยุด' : dept === 'store' ? '🔕 ไม่มีเสียง' : '🔔 ดังเฉพาะเรียกช่าง'}
+            {sp.get('sound') === 'all' ? tr('ดังทุกเครื่องหยุด') : dept === 'store' ? tr('ไม่มีเสียง') : tr('ดังเฉพาะเรียกช่าง')}
           </button>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            ตั้งเสร็จแล้ว <b>บุ๊กมาร์กหน้านี้ไว้ที่ทีวี</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
+            ตั้งเสร็จแล้ว <b>{tr('บุ๊กมาร์กหน้านี้ไว้ที่ทีวี')}</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
           </span>
         </div>
       )}
 
+      {/* 🔭 ตัดขอบเขตบัญชีไม่ได้ = ต้องเขียนบนจอ (นอก ph-chrome — กรอบจอ TV ซ่อนแถบบน) */}
+      {acctScope.unsure && lines.length > 0 && (
+        <div role="status" style={{ background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 13, fontWeight: 700 }}>
+          {/* ชุดว่าง = scopeSet เป็น null = ทั้งโรงงาน (พฤติกรรมเดิมของ scopedLineNames) — เขียนตามจริง */}
+          {acctLines !== lines
+            ? '⚠ หาไลน์ของบัญชีนี้ไม่เจอ — แสดงตามส่วนงานของบัญชีแทน'
+            : '⚠ ตัดขอบเขตบัญชีไม่ได้ — กำลังแสดงทั้งโรงงาน'}
+        </div>
+      )}
       {err && (
-        <div style={{ background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 10, padding: 12, fontSize: 13 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 13 }}>
           ⚠ โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})
         </div>
       )}
       {linesState !== 'loading' && linesState !== 'ok' && (
-        <div role="alert" style={{ background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444', borderRadius: 10, padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>⚠ {linesState === 'empty'
             ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
             : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
           <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
-            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer' }}>↻ ลองใหม่</button>
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>{tr('ลองใหม่')}</button>
         </div>
       )}
-      {!d && !err && (linesState === 'loading' || linesState === 'ok') && (
-        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
+      {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (
+        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>{tr('กำลังโหลด...')}</div>
       )}
-      {d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />}
+      {dept === 'mo'
+        ? (linesState === 'ok' && <MoTvBoard inScope={inScope} isMobile={isMobile} />)
+        : (d && <MtnAndonBoard d={d} ctx={ctx} cards={dept} />)}
     </div>
   );
 }
 
+/* ปุ่มคำสั่งในแถบตั้งค่าจอ = ทรงเดียวกับ .pg-btn (06/11 · เดิมแคปซูล 999) · on = ขอบ+ตัวอักษร accent */
 const btn = (on) => ({
-  fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
+  height: 30, fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+  background: on ? 'var(--accent-dim)' : 'var(--card)', color: on ? 'var(--accent)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

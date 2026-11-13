@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { loadProductionLines } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -10,6 +11,8 @@ import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
 import { rnd, rint, pick } from '../utils/seededRandom';
 import { groupLean } from '../utils/oee';
+import { tr } from '../utils/i18n';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔮 ภาพเมื่อทุกแผนกใช้ครบ (Full-Adoption Outlook) · 2026-08-13 ═══════════════════════
    ทำอะไร: ตอบผู้บริหารว่า "ถ้าทุกแผนกใช้ระบบเต็มรูปแบบ จะได้อะไร" ด้วย 2 มุม
@@ -570,8 +573,15 @@ async function loadAll() {
   const ents = { lines: eLines, machines: eMachines, products: eProducts, customers: eCustomers, dtTypes: eDt, defTypes: eDef };
 
   /* ── loss ที่วัดได้จริงในหน้าต่าง 30 วัน (ใช้คิดเงินในแท็บ ROI) ── */
-  const { data: winSess } = await supabaseDR.from('production_sessions')
-    .select('id, work_date').gte('work_date', from).lte('work_date', today);
+  /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+     `ids` ชุดนี้เป็นตัวตั้งของ loss/ROI (บาท/เดือน) ⇒ ชนเมื่อไหร่ตัวเลขเงินต่ำกว่าจริงแบบเงียบ
+     (เดิมยัง `const { data } = await …` กลืน error ด้วย — ผิดกฎเขียน DB ข้อ 1) */
+  const winPage = await fetchAllPages(
+    () => supabaseDR.from('production_sessions').select('id, work_date').gte('work_date', from).lte('work_date', today),
+    { orderBy: ['work_date', 'id'] },
+  );
+  const winSess = winPage.rows;
+  const sessLoadErr = winPage.error || (winPage.truncated ? 'กะในหน้าต่าง 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const ids = (winSess || []).map(s => s.id);
 
   const [dts, defs, rates] = await Promise.all([
@@ -787,7 +797,7 @@ const Badge = ({ tone, children }) => {
   const dashed = tone === 'guess' || tone === 'sim';   // ของที่ "ยังไม่จริง" ใช้เส้นประเสมอ
   return <span style={{
     fontSize: 11, fontWeight: 700, color: c, whiteSpace: 'nowrap',
-    border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
+    border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 'var(--r-xs)', padding: '1px 6px',
   }}>{children}</span>;
 };
 
@@ -799,7 +809,7 @@ function SignalRow({ s, navigate }) {
   return (
     <div style={{ padding: '7px 0', borderTop: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <span style={{ flex: 1, minWidth: 140, fontSize: 12.5 }}>{s.label}</span>
+        <span style={{ flex: 1, minWidth: 140, fontSize: 12.5 }}>{tr(s.label)}</span>
         <span style={{ fontSize: 13.5, fontWeight: 800, color: col, fontVariantNumeric: 'tabular-nums' }}>
           {failed ? 'โหลดไม่ได้' : fmtNum(s.now)}{s.total ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> / {fmtNum(s.total)}</span> : null}
           <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> {s.unit}</span>
@@ -807,17 +817,17 @@ function SignalRow({ s, navigate }) {
         {p != null && <span style={{ fontSize: 12, fontWeight: 800, color: col, minWidth: 42, textAlign: 'right' }}>{p.toFixed(0)}%</span>}
       </div>
       {p != null && (
-        <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 999, overflow: 'hidden', marginTop: 4 }}>
-          <div style={{ width: `${p}%`, height: '100%', background: col, borderRadius: 999 }} />
+        <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 'var(--r-pill)', overflow: 'hidden', marginTop: 4 }}>
+          <div style={{ width: `${p}%`, height: '100%', background: col, borderRadius: 'var(--r-pill)' }} />
         </div>
       )}
       {s.gap && !failed && (
-        <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 4 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 4 }}>
           ⚠ {s.gap}
           {s.gapTo && <button onClick={() => navigate(s.gapTo)} style={{
             marginLeft: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
             color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline',
-          }}>ไปจัดการ →</button>}
+          }}>{tr('ไปจัดการ →')}</button>}
         </div>
       )}
     </div>
@@ -832,7 +842,7 @@ function LevelPill({ n, dim }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700,
       color: dim ? 'var(--muted)' : col, border: `1px solid ${dim ? 'var(--border2)' : col}`,
-      borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap', opacity: dim ? 0.75 : 1,
+      borderRadius: 'var(--r-pill)', padding: '2px 9px', whiteSpace: 'nowrap', opacity: dim ? 0.75 : 1,
     }}>{L.icon} {L.name}</span>
   );
 }
@@ -845,22 +855,12 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-        {[{ key: 'all', icon: '🔗', label: allOf('มิติ') }, ...DIMENSIONS].map(d => {
-          const on = only === d.key;
-          return (
-            <button key={d.key} onClick={() => setOnly(d.key)} style={{
-              fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
-              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-            }}>{d.icon} {d.label}</button>
-          );
-        })}
-      </div>
+      <TabBar size="sm" value={only} onChange={setOnly}
+        tabs={[{ key: 'all', label: allOf('มิติ') }, ...DIMENSIONS].map(d => ({ key: d.key, label: d.label }))} />
 
       {dims.map(dim => (
         <div key={dim.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 2 }}>{dim.icon} {dim.label}</div>
+          <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 2 }}>{dim.icon} {tr(dim.label)}</div>
           {dim.qs.map((q, qi) => {
             const missing = q.chain.filter(s => !s.have(c)).length;
             const gained = q.full > q.now;
@@ -870,7 +870,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
                 {/* สายข้อมูล — หัวใจของหน้านี้: ให้เห็นว่าคำตอบต้องต่อจากหลายแผนก และขาดตรงไหน */}
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                  ต้องต่อข้อมูลจาก {q.chain.length} จุด{missing > 0 && <b style={{ color: '#f59e0b' }}> · ยังขาด {missing}</b>}
+                  ต้องต่อข้อมูลจาก {q.chain.length} {tr('จุด')}{missing > 0 && <b style={{ color: 'var(--amber)' }}> {tr('· ยังขาด')} {missing}</b>}
                 </div>
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginBottom: 11 }}>
                   {q.chain.map((s, si) => {
@@ -878,15 +878,15 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                     /* โหมดสาธิต: จุดที่ยังไม่มีข้อมูลจริง แสดงเป็น "ต่อติดแบบจำลอง" (ม่วง)
                        — ห้ามทำให้ดูเหมือนเขียวของจริง ไม่งั้นคนดูแยกไม่ออกว่าอันไหนมีจริง */
                     const sim = !ok && demoOn;
-                    const col = ok ? '#22c55e' : sim ? '#a78bfa' : 'var(--muted)';
+                    const col = ok ? 'var(--green)' : sim ? 'var(--blue)' : 'var(--muted)';
                     return (
                       <span key={si} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         {si > 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>→</span>}
                         <span title={`ข้อมูลจาก: ${s.d}${sim ? ' (จำลองในโหมดสาธิต)' : ''}`} style={{
-                          fontSize: 11.5, fontWeight: 600, borderRadius: 7, padding: '3px 8px', whiteSpace: 'nowrap',
+                          fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
                           color: col,
-                          background: ok ? 'rgba(34,197,94,0.10)' : sim ? 'rgba(167,139,250,0.12)' : 'transparent',
-                          border: `1px ${ok ? 'solid' : 'dashed'} ${ok ? 'rgba(34,197,94,0.5)' : sim ? '#a78bfa' : 'var(--border2)'}`,
+                          background: ok ? 'var(--green-dim)' : sim ? 'var(--blue-dim)' : 'transparent',
+                          border: `1px ${ok ? 'solid' : 'dashed'} ${ok ? 'var(--green-line)' : sim ? 'var(--blue)' : 'var(--border2)'}`,
                         }}>
                           {ok ? '✓' : sim ? '🧪' : '○'} {s.l}
                           <span style={{ opacity: 0.65, marginLeft: 4 }}>· {s.d}</span>
@@ -897,17 +897,17 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                 </div>
 
                 <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
-                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>วันนี้</span>
-                      <LevelPill n={q.now} /><Badge tone="real">วัดจริง</Badge>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{tr('วันนี้')}</span>
+                      <LevelPill n={q.now} /><Badge tone="real">{tr('วัดจริง')}</Badge>
                     </div>
                     <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text2)' }}>{q.nowTxt}</div>
                   </div>
-                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
-                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>เมื่อข้อมูลเชื่อมครบ</span>
-                      <LevelPill n={q.full} /><Badge tone="guess">คาดการณ์</Badge>
+                      <span style={{ fontSize: 12.5, fontWeight: 700 }}>{tr('เมื่อข้อมูลเชื่อมครบ')}</span>
+                      <LevelPill n={q.full} /><Badge tone="guess">{tr('คาดการณ์')}</Badge>
                     </div>
                     <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>{q.fullTxt}</div>
                   </div>
@@ -919,15 +919,15 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                   const tc = dm.tone === 'bad' ? '#ef4444' : dm.tone === 'warn' ? '#f59e0b' : '#22c55e';
                   return (
                     <div style={{
-                      marginTop: 11, borderRadius: 9, padding: '10px 12px',
-                      background: 'rgba(167,139,250,0.07)', border: '1px dashed #a78bfa',
+                      marginTop: 11, borderRadius: 'var(--r-md)', padding: '10px 12px',
+                      background: 'var(--blue-dim)', border: '1px dashed var(--blue)',
                     }}>
                       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 7 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa' }}>🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)' }}>{tr('ตัวอย่างคำตอบเมื่อข้อมูลครบ')}</span>
                         <span style={{
-                          fontSize: 11, fontWeight: 700, color: '#a78bfa',
-                          border: '1px dashed #a78bfa', borderRadius: 4, padding: '1px 6px',
-                        }}>ตัวเลขจำลอง · ชื่อไลน์/เครื่อง/ลูกค้าเป็นของจริง</span>
+                          fontSize: 11, fontWeight: 700, color: 'var(--blue)',
+                          border: '1px dashed var(--blue)', borderRadius: 'var(--r-xs)', padding: '1px 6px',
+                        }}>{tr('ตัวเลขจำลอง · ชื่อไลน์/เครื่อง/ลูกค้าเป็นของจริง')}</span>
                       </div>
                       <div style={{ fontSize: 13.5, fontWeight: 800, color: tc, lineHeight: 1.45, marginBottom: 7 }}>{dm.head}</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -939,7 +939,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                         <div style={{
                           marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--border)',
                           fontSize: 12, lineHeight: 1.55, fontStyle: 'italic',
-                        }}>💡 {dm.note}</div>
+                        }}>{dm.note}</div>
                       )}
                     </div>
                   );
@@ -947,11 +947,11 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
                 {q.need?.length > 0 && (
                   <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-                    <b style={{ color: '#f59e0b' }}>ต้องเติมอะไรถึงจะไปถึง:</b> {q.need.join(' · ')}
+                    <b style={{ color: 'var(--amber)' }}>{tr('ต้องเติมอะไรถึงจะไปถึง:')}</b> {q.need.join(' · ')}
                     <button onClick={() => navigate(q.to)} style={{
                       marginLeft: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                       color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
-                    }}>เปิดหน้าที่เกี่ยวข้อง →</button>
+                    }}>{tr('เปิดหน้าที่เกี่ยวข้อง →')}</button>
                   </div>
                 )}
               </div>
@@ -972,7 +972,7 @@ function LadderTab({ c, navigate, isMobile }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...cardSt, fontSize: 12.5, lineHeight: 1.65 }}>
-        ระดับที่สูงขึ้น <b>ไม่ได้มาจากซอฟต์แวร์เก่งขึ้น</b> แต่มาจาก <b>ข้อมูลครบขึ้นและเชื่อมกัน</b> ·
+        ระดับที่สูงขึ้น <b>{tr('ไม่ได้มาจากซอฟต์แวร์เก่งขึ้น')}</b> {tr('แต่มาจาก')} <b>{tr('ข้อมูลครบขึ้นและเชื่อมกัน')}</b> ·
         ตัวเลขด้านล่างนับจาก {all.length} คำถามในแท็บ “มิติที่มองเห็นได้”
       </div>
 
@@ -984,25 +984,25 @@ function LadderTab({ c, navigate, isMobile }) {
           <div key={L.n} style={{ ...cardSt, borderLeft: `4px solid ${c0}` }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 3 }}>
               <span style={{ fontSize: 22 }}>{L.icon}</span>
-              <span style={{ fontSize: 16, fontWeight: 800 }}>ระดับ {L.n} · {L.name}</span>
+              <span style={{ fontSize: 16, fontWeight: 800 }}>{tr('ระดับ')} {L.n} · {L.name}</span>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{L.en}</span>
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>{L.desc}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>{tr(L.desc)}</div>
 
             <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
-              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+              <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
-                  วันนี้อยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{nowAt.length}</span> คำถาม <Badge tone="real">วัดจริง</Badge>
+                  วันนี้อยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{nowAt.length}</span> {tr('คำถาม')} <Badge tone="real">{tr('วัดจริง')}</Badge>
                 </div>
                 {nowAt.length
                   ? <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 3 }}>
                     {nowAt.map((q, i) => <li key={i} style={{ fontSize: 11.5, lineHeight: 1.5 }}>{q.dim.icon} {q.q}</li>)}
                   </ul>
-                  : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ยังไม่มีคำถามไหนอยู่ระดับนี้</div>}
+                  : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('— ยังไม่มีคำถามไหนอยู่ระดับนี้')}</div>}
               </div>
-              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+              <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
-                  จะขึ้นมาอยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{fullAt.length}</span> คำถาม <Badge tone="guess">เมื่อข้อมูลครบ</Badge>
+                  จะขึ้นมาอยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{fullAt.length}</span> {tr('คำถาม')} <Badge tone="guess">{tr('เมื่อข้อมูลครบ')}</Badge>
                 </div>
                 {fullAt.length
                   ? <ul style={{ margin: 0, paddingLeft: 17, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1016,8 +1016,8 @@ function LadderTab({ c, navigate, isMobile }) {
       })}
 
       {/* กุญแจที่ปลดล็อกได้เยอะที่สุด — นับว่าข้อมูลชิ้นไหนถูกใช้ในหลายคำถามที่สุด แล้วยังไม่มี */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>🔑 ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>{tr('ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           นับจากสายข้อมูลของทุกคำถาม — ชิ้นที่ยังไม่มี และถูกใช้ในหลายคำถามที่สุด ควรทำก่อน
         </div>
@@ -1029,18 +1029,18 @@ function LadderTab({ c, navigate, isMobile }) {
             (tally[k] ||= { l: s.l, d: s.d, n: 0 }).n++;
           }));
           const list = Object.values(tally).sort((a, b) => b.n - a.n);
-          if (!list.length) return <div style={{ fontSize: 13, color: '#22c55e' }}>✅ สายข้อมูลครบทุกจุดแล้ว</div>;
+          if (!list.length) return <div style={{ fontSize: 13, color: 'var(--green)' }}>{tr('✅ สายข้อมูลครบทุกจุดแล้ว')}</div>;
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {list.map((x, i) => (
                 <div key={i} style={{
                   display: 'flex', gap: 9, alignItems: 'center',
-                  background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px',
+                  background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                 }}>
                   <span style={{
-                    fontSize: 13, fontWeight: 800, color: x.n >= 3 ? '#ef4444' : x.n === 2 ? '#f59e0b' : 'var(--muted)',
+                    fontSize: 13, fontWeight: 800, color: x.n >= 3 ? 'var(--red)' : x.n === 2 ? 'var(--amber)' : 'var(--muted)',
                     minWidth: 58, whiteSpace: 'nowrap',
-                  }}>{x.n} คำถาม</span>
+                  }}>{x.n} {tr('คำถาม')}</span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
                     <b>{x.l}</b><span style={{ color: 'var(--muted)' }}> · {x.d}</span>
                   </span>
@@ -1067,26 +1067,26 @@ function DeptTab({ c, navigate, isMobile }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* สรุปความพร้อมรวม — เรียงแผนกที่ห่างเป้าที่สุดขึ้นก่อน (ชี้เป้าให้ลงมือ) */}
       <div style={{ ...cardSt }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>📊 ความครบของข้อมูล — เทียบกันทุกแผนก</div>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>{tr('ความครบของข้อมูล — เทียบกันทุกแผนก')}</div>
         <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(220px,100%),1fr))', alignContent: 'start' }}>
           {[...rows].sort((a, b) => (a.ready ?? 999) - (b.ready ?? 999)).map(r => {
             const col = r.ready == null ? 'var(--muted)' : r.ready >= 80 ? '#22c55e' : r.ready >= 40 ? '#f59e0b' : '#ef4444';
             return (
               <button key={r.key} onClick={() => navigate(r.to)} style={{
                 textAlign: 'left', cursor: 'pointer', background: 'var(--bg3)',
-                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 8, padding: '9px 11px', color: 'var(--text)',
+                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 'var(--r-md)', padding: '9px 11px', color: 'var(--text)',
               }}>
-                <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {r.label}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {tr(r.label)}</div>
                 <div style={{ fontSize: 25, fontWeight: 800, color: col, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                   {r.ready == null ? '—' : `${r.ready.toFixed(0)}%`}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>ข้อมูลที่ระบบต้องใช้ ครบแล้วเท่านี้</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ข้อมูลที่ระบบต้องใช้ ครบแล้วเท่านี้')}</div>
               </button>
             );
           })}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 9 }}>
-          % = ค่าเฉลี่ยของตัวชี้วัดที่มีตัวหารชัดเจนในแผนกนั้น · <b>วัดความครบของข้อมูล ไม่ได้วัดคุณภาพของข้อมูล</b>
+          % = ค่าเฉลี่ยของตัวชี้วัดที่มีตัวหารชัดเจนในแผนกนั้น · <b>{tr('วัดความครบของข้อมูล ไม่ได้วัดคุณภาพของข้อมูล')}</b>
         </div>
       </div>
 
@@ -1094,22 +1094,22 @@ function DeptTab({ c, navigate, isMobile }) {
       {rows.map(r => (
         <div key={r.key} style={cardSt}>
           <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
-            <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {r.label}</span>
+            <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {tr(r.label)}</span>
             <button onClick={() => navigate(r.to)} style={{
-              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
-            }}>เปิด Dashboard →</button>
+            }}>{tr('เปิด Dashboard →')}</button>
           </div>
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
             <div>
               <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 2 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>วันนี้</span><Badge tone="real">วัดจริงจากฐานข้อมูล</Badge>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{tr('วันนี้')}</span><Badge tone="real">{tr('วัดจริงจากฐานข้อมูล')}</Badge>
               </div>
               {r.sigs.map((s, i) => <SignalRow key={i} s={s} navigate={navigate} />)}
             </div>
             <div>
               <div style={{ display: 'flex', gap: 7, alignItems: 'center', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>เมื่อใช้ครบทั้งแผนก</span><Badge tone="guess">ภาพคาดการณ์</Badge>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{tr('เมื่อใช้ครบทั้งแผนก')}</span><Badge tone="guess">{tr('ภาพคาดการณ์')}</Badge>
               </div>
               <ul style={{ margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {r.unlocks.map((u, i) => <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5 }}>{u}</li>)}
@@ -1141,7 +1141,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
   const noNgCost = !c.partsWithCost;          // ไม่มีต้นทุน/ชิ้น = คิดเงินของเสียไม่ได้
 
   const Fact = ({ label, value, unit, sub }) => (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
         {value}{unit && <span style={{ fontSize: 13, fontWeight: 700 }}> {unit}</span>}
@@ -1155,47 +1155,47 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
       {/* 1) ข้อเท็จจริงที่วัดได้ */}
       <div style={cardSt}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 3 }}>
-          <span style={{ fontSize: 14.5, fontWeight: 700 }}>① ความสูญเสียที่ระบบวัดได้แล้ว</span>
-          <Badge tone="real">วัดจริง</Badge>
+          <span style={{ fontSize: 14.5, fontWeight: 700 }}>{tr('① ความสูญเสียที่ระบบวัดได้แล้ว')}</span>
+          <Badge tone="real">{tr('วัดจริง')}</Badge>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-          {WINDOW_DAYS} วันล่าสุด ({loss.from} → {loss.to}) · {fmtNum(loss.sessWin)} กะ
+          {WINDOW_DAYS} {tr('วันล่าสุด (')}{loss.from} → {loss.to}) · {fmtNum(loss.sessWin)} กะ
         </div>
         <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(min(190px,100%),1fr))', alignContent: 'start' }}>
-          <Fact label="เครื่องหยุด นอกแผน" value={fmtNum(dtHours)} unit="ชม." sub={`${fmtNum(loss.unplannedMin)} นาที`} />
-          <Fact label="หยุดตามแผน" value={fmtNum(loss.plannedMin / 60)} unit="ชม." sub="ไม่นับเป็นความสูญเสีย" />
-          <Fact label="ของเสีย + สงสัย" value={fmtNum(loss.ngQty)} unit="ชิ้น" sub={`จาก ${fmtNum(c.sessWithNg)} กะที่มีการบันทึก`} />
-          <Fact label="ใบซ่อมที่เปิดตามมา" value={fmtNum(c.mo)} unit="ใบ" sub="ทั้งระบบตั้งแต่เริ่มใช้" />
+          <Fact label={tr('เครื่องหยุด นอกแผน')} value={fmtNum(dtHours)} unit="ชม." sub={`${fmtNum(loss.unplannedMin)} นาที`} />
+          <Fact label={tr('หยุดตามแผน')} value={fmtNum(loss.plannedMin / 60)} unit="ชม." sub={tr('ไม่นับเป็นความสูญเสีย')} />
+          <Fact label={tr('ของเสีย + สงสัย')} value={fmtNum(loss.ngQty)} unit="ชิ้น" sub={`จาก ${fmtNum(c.sessWithNg)} กะที่มีการบันทึก`} />
+          <Fact label={tr('ใบซ่อมที่เปิดตามมา')} value={fmtNum(c.mo)} unit="ใบ" sub={tr('ทั้งระบบตั้งแต่เริ่มใช้')} />
         </div>
       </div>
 
       {/* 2) สมมติฐานที่ผู้ใช้ปรับเอง — ต้องแยกให้ขาดจากข้อเท็จจริงข้างบน */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #f59e0b' }}>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--amber)' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-          <span style={{ fontSize: 14.5, fontWeight: 700 }}>② สมมติฐาน — ปรับได้</span>
-          {realRate ? <Badge tone="real">rate จากระบบ</Badge> : <Badge tone="guess">ยังไม่มี rate จริงในระบบ</Badge>}
+          <span style={{ fontSize: 14.5, fontWeight: 700 }}>{tr('② สมมติฐาน — ปรับได้')}</span>
+          {realRate ? <Badge tone="real">{tr('rate จากระบบ')}</Badge> : <Badge tone="guess">{tr('ยังไม่มี rate จริงในระบบ')}</Badge>}
         </div>
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
           <label style={{ fontSize: 12.5 }}>
-            ต้นทุนเวลาเดินไลน์ (บาท/ชม.)
+            {tr('ต้นทุนเวลาเดินไลน์ (บาท/ชม.)')}
             <input type="number" min={0} value={rate} onChange={e => setRate(Math.max(0, +e.target.value || 0))}
               style={{ width: 130, marginLeft: 8, padding: '4px 8px', fontSize: 13 }} />
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
               {realRate
-                ? <>ค่าเฉลี่ยจาก <b>cost_center_rates</b> ในระบบ (DL+OH+DP)</>
-                : <>ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น<b style={{ color: '#f59e0b' }}>สมมติฐาน</b> ·{' '}
+                ? <>{tr('ค่าเฉลี่ยจาก')} <b>cost_center_rates</b> {tr('ในระบบ (DL+OH+DP)')}</>
+                : <>{tr('ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น')}<b style={{ color: 'var(--amber)' }}>{tr('สมมติฐาน')}</b> ·{' '}
                   <button onClick={() => navigate('/org-setup')} style={{
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                     color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline',
-                  }}>กรอกค่าจริงที่ผังองค์กร →</button> แล้วตัวเลขนี้จะกลายเป็นของจริงทันที</>}
+                  }}>{tr('กรอกค่าจริงที่ผังองค์กร →')}</button> {tr('แล้วตัวเลขนี้จะกลายเป็นของจริงทันที')}</>}
             </div>
           </label>
           <label style={{ fontSize: 12.5 }}>
-            คาดว่าจะลดเวลาหยุดได้ <b>{cut}%</b>
+            {tr('คาดว่าจะลดเวลาหยุดได้')} <b>{cut}%</b>
             <input type="range" min={0} max={60} value={cut} onChange={e => setCut(+e.target.value)}
               style={{ width: '100%', marginTop: 6 }} />
             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              ระบบ<b>ไม่รับประกัน</b>ตัวเลขนี้ — เลื่อนเพื่อดูว่าถ้าลดได้เท่านี้ จะเป็นเงินเท่าไหร่
+              {tr('ระบบ')}<b>{tr('ไม่รับประกัน')}</b>{tr('ตัวเลขนี้ — เลื่อนเพื่อดูว่าถ้าลดได้เท่านี้ จะเป็นเงินเท่าไหร่')}
             </div>
           </label>
         </div>
@@ -1203,42 +1203,42 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
 
       {/* 3) ผลลัพธ์ */}
       <div style={{ ...cardSt, borderLeft: '4px solid var(--accent)' }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 10 }}>③ เป็นเงินเท่าไหร่</div>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 10 }}>{tr('③ เป็นเงินเท่าไหร่')}</div>
         <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(210px,100%),1fr))', alignContent: 'start' }}>
           <Fact label={`มูลค่าเวลาที่หยุดนอกแผน / ${WINDOW_DAYS} วัน`} value={fmtBaht(dtBaht)} unit="บาท" sub={`${fmtNum(dtHours)} ชม. × ${fmtNum(rate)} บาท`} />
           <Fact label={`ถ้าลดได้ ${cut}%`} value={fmtBaht(cutBaht)} unit="บาท/เดือน" sub={`≈ ${fmtBaht(cutBaht * 12)} บาท/ปี`} />
           {/* โหมดสาธิต: สมมติต้นทุน/ชิ้น เพื่อให้เห็นว่าช่องนี้จะตอบอะไรเมื่อกรอกต้นทุนแล้ว */}
           {noNgCost && demoOn ? (
-            <div style={{ background: 'rgba(167,139,250,0.10)', border: '1px dashed #a78bfa', borderRadius: 8, padding: '10px 12px' }}>
-              <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 700 }}>🧪 ของเสียคิดเป็นเงิน (จำลอง)</div>
+            <div style={{ background: 'var(--blue-dim)', border: '1px dashed var(--blue)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700 }}>{tr('ของเสียคิดเป็นเงิน (จำลอง)')}</div>
               <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
-                {fmtBaht(loss.ngQty * (60 + rnd(`${day}|ngcost`) * 120))}<span style={{ fontSize: 13, fontWeight: 700 }}> บาท</span>
+                {fmtBaht(loss.ngQty * (60 + rnd(`${day}|ngcost`) * 120))}<span style={{ fontSize: 13, fontWeight: 700 }}> {tr('บาท')}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                สมมติต้นทุน ~{Math.round(60 + rnd(`${day}|ngcost`) * 120)} บาท/ชิ้น × {fmtNum(loss.ngQty)} ชิ้น
+                สมมติต้นทุน ~{Math.round(60 + rnd(`${day}|ngcost`) * 120)} {tr('บาท/ชิ้น ×')} {fmtNum(loss.ngQty)} ชิ้น
               </div>
             </div>
           ) : (
-            <Fact label="ของเสียคิดเป็นเงิน" value={noNgCost ? 'ยังคิดไม่ได้' : '—'} unit={noNgCost ? '' : 'บาท'}
+            <Fact label={tr('ของเสียคิดเป็นเงิน')} value={noNgCost ? 'ยังคิดไม่ได้' : '—'} unit={noNgCost ? '' : 'บาท'}
               sub={noNgCost ? `พาร์ท ${fmtNum(c.partsAll)} รายการยังไม่มีต้นทุน/ชิ้น` : ''} />
           )}
         </div>
         {noNgCost && !demoOn && (
-          <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 10 }}>
-            ⚠ ของเสีย {fmtNum(loss.ngQty)} ชิ้นแปลงเป็นบาทไม่ได้ เพราะยังไม่มีต้นทุนต่อชิ้นใน Parts Master ·{' '}
+          <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 10 }}>
+            ⚠ ของเสีย {fmtNum(loss.ngQty)} {tr('ชิ้นแปลงเป็นบาทไม่ได้ เพราะยังไม่มีต้นทุนต่อชิ้นใน Parts Master ·')}{' '}
             <button onClick={() => navigate('/products')} style={{
               background: 'none', border: 'none', padding: 0, cursor: 'pointer',
               color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
-            }}>ไปกรอกต้นทุน →</button>
+            }}>{tr('ไปกรอกต้นทุน →')}</button>
           </div>
         )}
       </div>
 
       {/* 4) ทำไมวันนี้ยังไม่ได้เงินก้อนนี้ — ผูกกลับไปที่ช่องว่างที่วัดได้ */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>④ ทำไมวันนี้ยังไม่ได้เงินก้อนนี้</div>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>{tr('④ ทำไมวันนี้ยังไม่ได้เงินก้อนนี้')}</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>
-          ระบบ<b style={{ color: 'var(--text)' }}>วัดความสูญเสียได้แล้ว</b> แต่ขั้นตอนที่จะแปลงเป็นการแก้จริงยังขาด
+          ระบบ<b style={{ color: 'var(--text)' }}>{tr('วัดความสูญเสียได้แล้ว')}</b> แต่ขั้นตอนที่จะแปลงเป็นการแก้จริงยังขาด
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
           {[
@@ -1249,7 +1249,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           ].map((x, i) => (
             <button key={i} onClick={() => navigate(x.to)} style={{
               display: 'flex', gap: 9, alignItems: 'flex-start', textAlign: 'left', cursor: 'pointer', width: '100%',
-              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px', color: 'var(--text)',
+              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 11px', color: 'var(--text)',
             }}>
               <span style={{ fontSize: 15 }}>{x.icon}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -1270,7 +1270,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
 const StepHead = ({ n, icon, title, sub, tone }) => (
   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
     <div style={{
-      width: 28, height: 28, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
+      width: 28, height: 28, borderRadius: 'var(--r-pill)', flexShrink: 0, display: 'grid', placeItems: 'center',
       background: tone || 'var(--accent)', color: tone ? '#08120a' : 'var(--accent-ink)', fontWeight: 800, fontSize: 13,
     }}>{n}</div>
     <div style={{ minWidth: 0 }}>
@@ -1286,29 +1286,29 @@ const ApqBar = ({ label, val, hint, worst }) => {
   const col = v == null ? 'var(--muted)' : v >= 85 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
   return (
     <div style={{
-      background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px',
-      border: worst ? '1px solid #ef4444' : '1px solid var(--border)',
+      background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px',
+      border: worst ? '1px solid var(--red)' : '1px solid var(--border)',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
         <span style={{ fontSize: 17, fontWeight: 800, color: col }}>{v == null ? '—' : `${v.toFixed(0)}%`}</span>
       </div>
-      <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
+      <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 'var(--r-pill)', overflow: 'hidden', margin: '5px 0 4px' }}>
         <div style={{ width: `${v == null ? 0 : Math.max(0, Math.min(100, v))}%`, height: '100%', background: col }} />
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
-      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
+      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)', marginTop: 3 }}>{tr('◀ ตัวฉุดหลักของกะนี้')}</div>}
     </div>
   );
 };
 
 function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
-  if (err) return <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลกะไม่สำเร็จ: {err}</div>;
-  if (!dd) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังหากะที่ควรเอามาเจาะ…</div>;
+  if (err) return <div style={{ ...cardSt, borderLeft: '4px solid var(--red)', fontSize: 13 }}>{tr('โหลดข้อมูลกะไม่สำเร็จ:')} {err}</div>;
+  if (!dd) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('กำลังหากะที่ควรเอามาเจาะ…')}</div>;
   if (dd.empty) return (
     <div style={{ ...cardSt, fontSize: 13, lineHeight: 1.7 }}>
       ยังไม่มีกะที่ปิดแล้วในช่วง {dd.from} – {dd.to} จึงยังไม่มีอะไรให้เจาะ
-      <div style={{ color: 'var(--muted)', marginTop: 4 }}>แท็บนี้จะมีข้อมูลเองเมื่อมีการปิดกะพร้อมค่า OEE</div>
+      <div style={{ color: 'var(--muted)', marginTop: 4 }}>{tr('แท็บนี้จะมีข้อมูลเองเมื่อมีการปิดกะพร้อมค่า OEE')}</div>
     </div>
   );
 
@@ -1415,20 +1415,20 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {/* ── กะที่ถูกเลือก ── */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>
-              🔬 {S.line_name} · {S.work_date} · {shiftTh}
+              {S.line_name} · {S.work_date} · {shiftTh}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
-              กะที่ <b>OEE ต่ำสุดและมีเนื้อให้เจาะ</b> ในช่วง {dd.from} – {dd.to} —
+              กะที่ <b>{tr('OEE ต่ำสุดและมีเนื้อให้เจาะ')}</b> {tr('ในช่วง')} {dd.from} – {dd.to} —
               ระบบเลือกให้เองทุกครั้งที่เปิดหน้า ไม่ได้ล็อกไว้
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Badge tone="real">วัดจริง</Badge>
-            <div style={{ fontSize: 30, fontWeight: 800, color: '#ef4444', lineHeight: 1 }}>
+            <Badge tone="real">{tr('วัดจริง')}</Badge>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--red)', lineHeight: 1 }}>
               {S.oee == null ? '—' : `${(+S.oee).toFixed(0)}%`}
             </div>
           </div>
@@ -1437,18 +1437,18 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 1 ── */}
       <div style={cardSt}>
-        <StepHead n="1" icon="📉" title="กะนี้เสียหายไปเท่าไหร่"
-          sub="OEE ตัวเดียวบอกแค่ว่าแย่ — ต้องแตกเป็น A/P/Q ก่อนถึงจะรู้ว่าไปแก้ฝั่งไหน" />
+        <StepHead n="1" icon="📉" title={tr('กะนี้เสียหายไปเท่าไหร่')}
+          sub={tr('OEE ตัวเดียวบอกแค่ว่าแย่ — ต้องแตกเป็น A/P/Q ก่อนถึงจะรู้ว่าไปแก้ฝั่งไหน')} />
         <div style={gcol(3)}>
-          {apq.map(x => <ApqBar key={x.k} label={x.label} val={x.v} hint={x.hint} worst={x.k === worstK} />)}
+          {apq.map(x => <ApqBar key={x.k} label={tr(x.label)} val={x.v} hint={tr(x.hint)} worst={x.k === worstK} />)}
         </div>
         <div style={{ ...gcol(3), marginTop: 10 }}>
           {[
             { l: 'เป้าจากใบผลิต', v: tgt ? `${fmtNum(tgt)} ชิ้น` : '—' },
-            { l: 'ทำได้จริง', v: `${fmtNum(act || S.actual_qty)} ชิ้น`, c: tgt && act < tgt ? '#ef4444' : undefined },
+            { l: 'ทำได้จริง', v: `${fmtNum(act || S.actual_qty)} ชิ้น`, c: tgt && act < tgt ? 'var(--red)' : undefined },
             { l: 'เวลาหยุดรวม', v: `${fmtNum(dtMinAll)} นาที`, s: `นอกแผน ${fmtNum(dtUnplanned.reduce((a, d) => a + d.min, 0))} · ตามแผน ${fmtNum(dtPlanned.reduce((a, d) => a + d.min, 0))}` },
           ].map((x, i) => (
-            <div key={i} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+            <div key={i} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.l}</div>
               <div style={{ fontSize: 16, fontWeight: 800, color: x.c }}>{x.v}</div>
               {x.s && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
@@ -1457,30 +1457,30 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         </div>
         {tgt > 0 && act < tgt && (
           <div style={{ marginTop: 9, fontSize: 12.5, lineHeight: 1.6 }}>
-            👉 ขาดเป้า <b style={{ color: '#ef4444' }}>{fmtNum(tgt - act)} ชิ้น</b>
-            {ct ? <> · ที่ CT {ct} วิ/ชิ้น = เวลาที่หายไปราว <b>{fmtNum((tgt - act) * ct / 60)} นาที</b></> : null}
+            ขาดเป้า <b style={{ color: 'var(--red)' }}>{fmtNum(tgt - act)} {tr('ชิ้น')}</b>
+            {ct ? <> {tr('· ที่ CT')} {ct} วิ/ชิ้น = เวลาที่หายไปราว <b>{fmtNum((tgt - act) * ct / 60)} {tr('นาที')}</b></> : null}
           </div>
         )}
       </div>
 
       {/* ── ชั้น 2 ── */}
       <div style={cardSt}>
-        <StepHead n="2" icon="🧩" title="เวลาที่หายไป เป็นความสูญเสียประเภทไหน" tone="#f59e0b"
-          sub="6 Big Losses (TPM) — แกนที่ออกแบบมาสำหรับ “เวลาที่หายไป” โดยเฉพาะ และผูกกลับไปที่ A/P/Q ได้ตรงตัว" />
+        <StepHead n="2" icon="🧩" title={tr('เวลาที่หายไป เป็นความสูญเสียประเภทไหน')} tone="var(--amber)"
+          sub={tr('6 Big Losses (TPM) — แกนที่ออกแบบมาสำหรับ “เวลาที่หายไป” โดยเฉพาะ และผูกกลับไปที่ A/P/Q ได้ตรงตัว')} />
 
         <div style={{
           fontSize: 11.5, lineHeight: 1.6, color: 'var(--text2)', background: 'var(--bg3)',
-          borderRadius: 8, padding: '8px 10px', marginBottom: 10,
+          borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10,
         }}>
-          ✅ จัดกลุ่มจาก<b>ค่าที่หัวหน้าตั้งไว้เองใน master</b> (ประเภท Downtime → 6 Big Losses)
-          <b> ไม่ใช่การเดาจากข้อความ</b> — แก้การจัดหมวดได้ที่ Daily Report → ⚙️ ตั้งค่า
+          ✅ จัดกลุ่มจาก<b>{tr('ค่าที่หัวหน้าตั้งไว้เองใน master')}</b> (ประเภท Downtime → 6 Big Losses)
+          <b> {tr('ไม่ใช่การเดาจากข้อความ')}</b> — แก้การจัดหมวดได้ที่ Daily Report → ⚙️ ตั้งค่า
         </div>
 
         <div style={gcol(isMobile ? 1 : 2)}>
           {known.map(g => (
-            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
+            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {g.meta.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {tr(g.meta.label)}</span>
                 <span style={{ fontSize: 15, fontWeight: 800, color: g.meta.color }}>
                   {g.min > 0 ? `${fmtNum(g.min)} นาที` : `${fmtNum(g.qty)} ชิ้น`}
                 </span>
@@ -1488,10 +1488,10 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 6px', flexWrap: 'wrap' }}>
                 <span style={{
                   fontSize: 11, fontWeight: 800, color: '#08120a', background: g.meta.color,
-                  borderRadius: 4, padding: '1px 7px',
-                }}>ทำให้ {g.meta.oee} ตก</span>
+                  borderRadius: 'var(--r-xs)', padding: '1px 7px',
+                }}>{tr('ทำให้')} {g.meta.oee} {tr('ตก')}</span>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  {g.count} รายการ{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
+                  {g.count} {tr('รายการ')}{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
                 </span>
               </div>
               <div style={{ display: 'grid', gap: 3 }}>
@@ -1505,7 +1505,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.55, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-                💡 แนวทางแก้: {g.meta.fix}
+                แนวทางแก้: {g.meta.fix}
               </div>
             </div>
           ))}
@@ -1515,9 +1515,9 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {unknownLoss && (
           <div style={{
             marginTop: 9, fontSize: 11.5, lineHeight: 1.6, background: 'var(--bg3)',
-            border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', color: 'var(--muted)',
+            border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', color: 'var(--muted)',
           }}>
-            ⚪ <b style={{ color: 'var(--text2)' }}>ยังไม่จัดหมวด {fmtNum(unknownLoss.min)} นาที</b> ({unknownLoss.count} รายการ:{' '}
+            ⚪ <b style={{ color: 'var(--text2)' }}>{tr('ยังไม่จัดหมวด')} {fmtNum(unknownLoss.min)} {tr('นาที')}</b> ({unknownLoss.count} {tr('รายการ:')}{' '}
             {unknownLoss.types.map(t => `“${t.name}”`).join(' · ')}) —
             ไปติ๊ก 6 Big Losses ให้ประเภทนี้ที่ ⚙️ ตั้งค่า แล้วภาพข้างบนจะครบขึ้นเอง
           </div>
@@ -1527,20 +1527,20 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {aMin > 0 && (
           <div style={{
             marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(245,154,63,.09)',
-            border: '1px solid var(--accent2)', borderRadius: 8, padding: '8px 10px',
+            border: '1px solid var(--accent2)', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
-            🔗 <b>ต่อกลับชั้นที่ 1 ได้ทันที</b> — A ที่ตกไป อธิบายได้ด้วยเครื่องเสีย + ตั้งเครื่อง
-            รวม <b>{fmtNum(aMin)} นาที</b> · ส่วน P กับ Q มีก้อนของตัวเองแยกกันชัดเจน
+            🔗 <b>{tr('ต่อกลับชั้นที่ 1 ได้ทันที')}</b> — A ที่ตกไป อธิบายได้ด้วยเครื่องเสีย + ตั้งเครื่อง
+            รวม <b>{fmtNum(aMin)} {tr('นาที')}</b> · ส่วน P กับ Q มีก้อนของตัวเองแยกกันชัดเจน
           </div>
         )}
 
         {/* จุดที่ข้อมูลจริงมักผูกกันเอง — เครื่องเดียวเสียซ้ำ */}
         {Object.entries(machCount).filter(([, n]) => n >= 2).map(([m, n]) => (
           <div key={m} style={{
-            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(239,68,68,0.08)',
-            border: '1px solid #ef4444', borderRadius: 8, padding: '8px 10px',
+            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'var(--red-dim)',
+            border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
-            🔎 <b>{m} เสีย {n} ครั้งในกะเดียว</b> — คนละอาการกัน ({machRows.filter(d => d.machine_no === m).map(d => d.description?.trim() || d.dt_type).join(' / ')})
+            🔎 <b>{m} {tr('เสีย')} {n} {tr('ครั้งในกะเดียว')}</b> {tr('— คนละอาการกัน (')}{machRows.filter(d => d.machine_no === m).map(d => d.description?.trim() || d.dt_type).join(' / ')})
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
               เสียหลายจุดในกะเดียว = มักเป็นเรื่องสภาพเครื่องโดยรวม ไม่ใช่อุบัติเหตุรายครั้ง —
               นี่คือจุดที่ควรถามต่อว่า “เคยคาดไว้ใน FMEA มั้ย”
@@ -1552,46 +1552,46 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้นคุณภาพ: 4M เป็นแกน "หาสาเหตุ" ไม่ใช่แกนจัดประเภทเวลา ── */}
       <div style={cardSt}>
-        <StepHead n="3" icon="🚫" title="ฝั่งคุณภาพ — ของเสียเกิดจากอะไร (4M)" tone="#ec4899"
-          sub="4M คือแกนหาสาเหตุของปัญหาคุณภาพ (คน/เครื่อง/วิธี/วัสดุ) — คนละงานกับ 6 Big Losses ที่ใช้จัดประเภทเวลาที่หาย" />
+        <StepHead n="3" icon="🚫" title={tr('ฝั่งคุณภาพ — ของเสียเกิดจากอะไร (4M)')} tone="#ec4899"
+          sub={tr('4M คือแกนหาสาเหตุของปัญหาคุณภาพ (คน/เครื่อง/วิธี/วัสดุ) — คนละงานกับ 6 Big Losses ที่ใช้จัดประเภทเวลาที่หาย')} />
 
         {dd.def.length > 0 ? (
           <div style={{ display: 'grid', gap: 5 }}>
             {dd.def.map((f, i) => (
               <div key={i} style={{
-                background: 'var(--bg3)', borderLeft: '3px solid #ec4899', borderRadius: 6,
+                background: 'var(--bg3)', borderLeft: '3px solid #ec4899', borderRadius: 'var(--r-md)',
                 padding: '8px 11px', fontSize: 12.5, lineHeight: 1.55,
               }}>
-                <b style={{ color: '#ec4899' }}>{fmtNum(f.qty)} ชิ้น</b> · {f.def_type}
+                <b style={{ color: '#ec4899' }}>{fmtNum(f.qty)} {tr('ชิ้น')}</b> · {f.def_type}
                 {f.description ? <span style={{ color: 'var(--text2)' }}> — “{f.description.trim()}”</span> : null}
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กะนี้ไม่มีการบันทึกของเสีย</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กะนี้ไม่มีการบันทึกของเสีย')}</div>
         )}
 
         {/* A-loss กับ Q-loss ชี้ไปที่อุปกรณ์ตัวเดียวกัน — Machine ใน 4M */}
         {linkedDefs.map(({ f, equip }, i) => (
           <div key={i} style={{
             marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(236,72,153,0.08)',
-            border: '1px solid #ec4899', borderRadius: 8, padding: '8px 10px',
+            border: '1px solid #ec4899', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
-            🔗 <b>4M · Machine — เวลาที่หาย กับ ของเสีย ชี้ไปที่ “{equip}” ตัวเดียวกัน</b>
+            🔗 <b>{tr('4M · Machine — เวลาที่หาย กับ ของเสีย ชี้ไปที่ “')}{equip}{tr('” ตัวเดียวกัน')}</b>
             <div style={{ marginTop: 3 }}>
               ฝั่งเครื่องหยุด: “{machRows.map(r => r.description?.trim()).filter(Boolean)[0] || machRows[0]?.dt_type}” ·
               ฝั่งของเสีย: “{(f.description || f.def_type || '').trim()}” ({fmtNum(f.qty)} ชิ้น)
             </div>
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
-              จับคู่จาก<b>ข้อความที่พนักงานพิมพ์</b> ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน — แต่ถ้าจริง
-              แปลว่า A กับ Q ของกะนี้มี<b>ต้นเหตุเดียวกัน</b> แก้จุดเดียวได้ทั้งสองฝั่ง
+              จับคู่จาก<b>{tr('ข้อความที่พนักงานพิมพ์')}</b> ไม่ใช่ความสัมพันธ์ที่ระบบยืนยัน — แต่ถ้าจริง
+              แปลว่า A กับ Q ของกะนี้มี<b>{tr('ต้นเหตุเดียวกัน')}</b> แก้จุดเดียวได้ทั้งสองฝั่ง
             </div>
           </div>
         ))}
 
         {/* 4M ที่ "เปลี่ยนวันนั้น" — Changing Point คือ 4M ตัวจริงที่โรงงานใช้ */}
         <div style={{ marginTop: 11 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>📝 4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>{tr('4M ที่เปลี่ยนในวันนั้น (Changing Point)')}</div>
           {dd.fourM.length > 0 ? (
             <div style={{ display: 'grid', gap: 4 }}>
               {dd.fourM.slice(0, 6).map((m, i) => (
@@ -1603,7 +1603,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             </div>
           ) : (
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-              ไม่มีการบันทึก 4M ของไลน์นี้ในวันนั้น — <b>ไม่ได้แปลว่าไม่มีอะไรเปลี่ยน</b> อาจแปลว่ายังไม่ได้ลงบันทึก
+              ไม่มีการบันทึก 4M ของไลน์นี้ในวันนั้น — <b>{tr('ไม่ได้แปลว่าไม่มีอะไรเปลี่ยน')}</b> อาจแปลว่ายังไม่ได้ลงบันทึก
             </div>
           )}
         </div>
@@ -1611,36 +1611,36 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 4 ── */}
       <div style={cardSt}>
-        <StepHead n="4" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
-          sub="รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย" />
+        <StepHead n="4" icon="📐" title={tr('ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย')} tone="var(--blue)"
+          sub={tr('รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย')} />
 
         {/* สถานะเอกสารของพาร์ทนี้ — แยก "ยังไม่มีของพาร์ทนี้" ออกจาก "ทั้งระบบยังไม่มีอะไรเลย" */}
         {peSet ? (
           <div style={{
-            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #22c55e', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid var(--green)', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
           }}>
-            <b style={{ color: '#22c55e' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
+            <b style={{ color: 'var(--green)' }}>{tr('พาร์ทนี้มีชุดเอกสารแล้ว')}</b> — {peSet.part_no}
             {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
             <button onClick={() => navigate(peLink)} style={{
-              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
-            }}>เปิดดู →</button>
+            }}>{tr('เปิดดู →')}</button>
           </div>
         ) : !demoOn && (
           <div style={{
-            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #f59e0b', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid var(--amber)', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
           }}>
-            <b style={{ color: '#f59e0b' }}>พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
-            อาการที่เกิดวันนี้ <b>เคยถูกคาดไว้ตอนออกแบบกระบวนการหรือเปล่า</b>
+            <b style={{ color: 'var(--amber)' }}>{tr('พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร')}</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
+            อาการที่เกิดวันนี้ <b>{tr('เคยถูกคาดไว้ตอนออกแบบกระบวนการหรือเปล่า')}</b>
             <div style={{ marginTop: 6, color: 'var(--muted)' }}>
-              โมดูล Flow / PFMEA / Control Plan <b>มีหน้าจอให้กรอกแล้ว</b> และตอนนี้ลงไปแล้ว {fmtNum(dd.pe.totalSets)} พาร์ท —
-              ยังไม่ครอบคลุมพาร์ทนี้ · ตราบใดที่ยังไม่ลง เราจะ<b>วัดความสูญเสียได้ละเอียด แต่เทียบกลับไปที่เจตนาการออกแบบไม่ได้</b>
+              โมดูล Flow / PFMEA / Control Plan <b>{tr('มีหน้าจอให้กรอกแล้ว')}</b> {tr('และตอนนี้ลงไปแล้ว')} {fmtNum(dd.pe.totalSets)} พาร์ท —
+              ยังไม่ครอบคลุมพาร์ทนี้ · ตราบใดที่ยังไม่ลง เราจะ<b>{tr('วัดความสูญเสียได้ละเอียด แต่เทียบกลับไปที่เจตนาการออกแบบไม่ได้')}</b>
               คือตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
             </div>
             <button onClick={() => navigate('/pe-docs')} style={{
-              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
-            }}>📐 ไปลงเอกสารพาร์ทนี้</button>
+            }}>{tr('ไปลงเอกสารพาร์ทนี้')}</button>
           </div>
         )}
 
@@ -1651,14 +1651,14 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             const vc = sim ? (sim.verdict === 'ok' ? '#22c55e' : sim.verdict === 'warn' ? '#f59e0b' : '#ef4444') : null;
             return (
               <div key={d.name} style={{
-                background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px',
-                border: sim ? '1px dashed #a78bfa' : '1px solid var(--border)',
+                background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '10px 11px',
+                border: sim ? '1px dashed var(--blue)' : '1px solid var(--border)',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 13, fontWeight: 800 }}>{d.icon} {d.name}</span>
-                  {d.n == null ? <Badge>โหลดไม่ได้</Badge>
-                    : has ? <Badge tone="real">{fmtNum(d.n)} แถว</Badge>
-                      : sim ? <Badge tone="sim">🧪 จำลอง</Badge> : <Badge tone="guess">0 แถว</Badge>}
+                  {d.n == null ? <Badge>{tr('โหลดไม่ได้')}</Badge>
+                    : has ? <Badge tone="real">{fmtNum(d.n)} {tr('แถว')}</Badge>
+                      : sim ? <Badge tone="sim">{tr('🧪 จำลอง')}</Badge> : <Badge tone="guess">{tr('0 แถว')}</Badge>}
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '5px 0 7px', lineHeight: 1.55 }}>{d.q}</div>
 
@@ -1675,7 +1675,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                   <button onClick={() => navigate(peLink)} style={{
                     fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none',
                     padding: 0, cursor: 'pointer', textAlign: 'left', fontWeight: 700,
-                  }}>เปิดดูรายตัวของพาร์ทนี้ →</button>
+                  }}>{tr('เปิดดูรายตัวของพาร์ทนี้ →')}</button>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                     {peSet ? 'ชุดนี้ยังไม่ได้ลงหัวข้อนี้' : 'พาร์ทนี้ยังไม่มีเอกสาร'} — ตอบคำถามนี้ไม่ได้
@@ -1688,31 +1688,31 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         {demoOn && !peReady && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-            🧪 ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
-            เป็นของจริงจากกะนี้ แต่ค่า S-O-D · RPN · ความถี่ใน Control Plan เป็น<b>ตัวเลขสมมติ</b>
+            ทั้ง 3 การ์ดข้างบนเป็น<b>{tr('ตัวอย่างคำตอบ')}</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
+            เป็นของจริงจากกะนี้ แต่ค่า S-O-D · RPN · ความถี่ใน Control Plan เป็น<b>{tr('ตัวเลขสมมติ')}</b>
           </div>
         )}
       </div>
 
       {/* ── ชั้น 4 ── */}
       <div style={{ ...cardSt, borderLeft: '4px solid var(--accent)' }}>
-        <StepHead n="5" icon="🎯" title="สรุป — กะนี้บอกอะไร และต้องไปทำอะไรต่อ" />
+        <StepHead n="5" icon="🎯" title={tr('สรุป — กะนี้บอกอะไร และต้องไปทำอะไรต่อ')} />
         <div style={{ display: 'grid', gap: 7, fontSize: 12.5, lineHeight: 1.65 }}>
           <div>
-            <b>ตัวฉุดหลัก:</b> {worstK ? `${worstK} (${(+apq.find(a => a.k === worstK).v).toFixed(0)}%)` : '—'}
-            {known[0] ? <> · ความสูญเสียหลักคือ <b>{known[0].meta.icon} {known[0].meta.label}</b> ({fmtNum(known[0].min)} นาที)</> : null}
+            <b>{tr('ตัวฉุดหลัก:')}</b> {worstK ? `${worstK} (${(+apq.find(a => a.k === worstK).v).toFixed(0)}%)` : '—'}
+            {known[0] ? <> {tr('· ความสูญเสียหลักคือ')} <b>{known[0].meta.icon} {tr(known[0].meta.label)}</b> ({fmtNum(known[0].min)} นาที)</> : null}
           </div>
-          {ngTotal > 0 && <div><b>ฝั่งคุณภาพ:</b> ของเสีย {fmtNum(ngTotal)} ชิ้น — {dd.def.map(f => f.def_type).join(' · ')}</div>}
+          {ngTotal > 0 && <div><b>{tr('ฝั่งคุณภาพ:')}</b> {tr('ของเสีย')} {fmtNum(ngTotal)} {tr('ชิ้น —')} {dd.def.map(f => f.def_type).join(' · ')}</div>}
           <div style={{ color: 'var(--muted)' }}>
-            ทั้งหมดข้างบนนี้ระบบ<b>ตอบได้แล้ววันนี้</b> จากข้อมูลที่หน้างานกรอกเองทุกกะ
+            ทั้งหมดข้างบนนี้ระบบ<b>{tr('ตอบได้แล้ววันนี้')}</b> จากข้อมูลที่หน้างานกรอกเองทุกกะ
           </div>
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 7 }}>
-            <b>ที่ยังตอบไม่ได้</b> คือชั้น 3 — ต้องมี 2 อย่าง:
+            <b>{tr('ที่ยังตอบไม่ได้')}</b> คือชั้น 3 — ต้องมี 2 อย่าง:
             <div style={{ marginTop: 4, display: 'grid', gap: 3, color: 'var(--text2)' }}>
-              <div>① เพิ่ม<b>ช่อง 4M ที่ประเภท Downtime</b> เพื่อเลิกเดาจากข้อความ (แก้ที่ Daily Report → ⚙️ ตั้งค่า)</div>
+              <div>{tr('① เพิ่ม')}<b>{tr('ช่อง 4M ที่ประเภท Downtime')}</b> {tr('เพื่อเลิกเดาจากข้อความ (แก้ที่ Daily Report → ⚙️ ตั้งค่า)')}</div>
               <div>
-                ② ลง<b>เอกสาร Flow / PFMEA / Control Plan</b> ให้ครอบคลุมพาร์ทที่ผลิตจริง —
-                หน้าจอมีแล้วที่ <b>/pe-docs</b> ตอนนี้ลงไป {fmtNum(dd.pe.totalSets)} พาร์ท
+                ② ลง<b>{tr('เอกสาร Flow / PFMEA / Control Plan')}</b> ให้ครอบคลุมพาร์ทที่ผลิตจริง —
+                หน้าจอมีแล้วที่ <b>/pe-docs</b> {tr('ตอนนี้ลงไป')} {fmtNum(dd.pe.totalSets)} พาร์ท
                 {peSet ? ' (รวมพาร์ทของกะนี้แล้ว)' : ' แต่ยังไม่มีพาร์ทของกะนี้'}
               </div>
             </div>
@@ -1727,7 +1727,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             { l: '🔧 ใบแจ้งซ่อม', to: '/mtn-repair' },
           ].map(b => (
             <button key={b.to} onClick={() => navigate(b.to)} style={{
-              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
             }}>{b.l}</button>
           ))}
@@ -1756,7 +1756,7 @@ export default function AdoptionOutlook() {
   useEffect(() => {
     let alive = true;
     loadAll().then(r => { if (alive) setD(r); })
-      .catch(e => { if (alive) setErr(e?.message || 'โหลดข้อมูลไม่สำเร็จ'); });
+      .catch(e => { if (alive) setErr(e?.message || tr('โหลดข้อมูลไม่สำเร็จ')); });
     return () => { alive = false; };
   }, []);
 
@@ -1764,42 +1764,42 @@ export default function AdoptionOutlook() {
     if (tab !== 'deep' || dd || ddErr) return;
     let alive = true;
     loadDeepDive().then(r => { if (alive) setDd(r); })
-      .catch(e => { if (alive) setDdErr(e?.message || 'โหลดข้อมูลกะไม่สำเร็จ'); });
+      .catch(e => { if (alive) setDdErr(e?.message || tr('โหลดข้อมูลกะไม่สำเร็จ')); });
     return () => { alive = false; };
   }, [tab, dd, ddErr]);
 
   if (err) return (
     <Page>
-      <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
+      <PageHeader title={tr('ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร')} icon="🔮" />
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)', fontSize: 13 }}>{tr('โหลดข้อมูลไม่สำเร็จ:')} {err}</div>
     </Page>
   );
   if (!d) return (
     <Page>
-      <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
-      <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังนับข้อมูลจากฐานจริง…</div>
+      <PageHeader title={tr('ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร')} icon="🔮" />
+      <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('กำลังนับข้อมูลจากฐานจริง…')}</div>
     </Page>
   );
 
   return (
     <Page>
       <PageHeader
-        title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
+        title={tr('ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร')} icon="🔮"
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
         tabs={[
-          { key: 'dim', label: '🔍 มิติที่มองเห็นได้' },
-          { key: 'deep', label: '🔬 เจาะ 1 กะจริง' },
-          { key: 'ladder', label: '📈 4 ระดับ (ถึง Prescriptive)' },
-          { key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' },
-          { key: 'roi', label: '💰 เงินที่ประหยัดได้' },
+          { key: 'dim', label: 'มิติที่มองเห็นได้' },
+          { key: 'deep', label: 'เจาะ 1 กะจริง' },
+          { key: 'ladder', label: '4 ระดับ (ถึง Prescriptive)' },
+          { key: 'dept', label: 'ก่อน-หลัง รายแผนก' },
+          { key: 'roi', label: 'เงินที่ประหยัดได้' },
         ]}
         tab={tab} onTab={setTab}
         actions={
-          <button onClick={() => setDemoRaw(demoOn ? 'off' : 'on')} title="เติมข้อมูลที่ยังไม่มีด้วยตัวเลขจำลอง เพื่อสาธิตให้เห็นหน้าตาคำตอบ" style={{
+          <button type="button" className="pg-btn" onClick={() => setDemoRaw(demoOn ? 'off' : 'on')} title={tr('เติมข้อมูลที่ยังไม่มีด้วยตัวเลขจำลอง เพื่อสาธิตให้เห็นหน้าตาคำตอบ')} style={{
             fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
-            background: demoOn ? '#a78bfa' : 'var(--bg3)', color: demoOn ? '#12081f' : 'var(--text)',
-            border: `1px ${demoOn ? 'solid' : 'dashed'} ${demoOn ? '#a78bfa' : 'var(--border2)'}`,
-          }}>🧪 โหมดสาธิต {demoOn ? 'เปิดอยู่' : 'ปิด'}</button>
+            background: demoOn ? 'var(--blue)' : 'var(--bg3)', color: demoOn ? '#12081f' : 'var(--text)',
+            border: `1px ${demoOn ? 'solid' : 'dashed'} ${demoOn ? 'var(--blue)' : 'var(--border2)'}`,
+          }}>{tr('โหมดสาธิต')} {demoOn ? 'เปิดอยู่' : 'ปิด'}</button>
         }
       />
 
@@ -1807,32 +1807,32 @@ export default function AdoptionOutlook() {
       <div style={{
         ...cardSt, borderLeft: '4px solid var(--accent2)', marginBottom: 12, fontSize: 12.5, lineHeight: 1.65,
       }}>
-        <b>คำถามของหน้านี้:</b> เมื่อทุกแผนกใช้ระบบจริงและข้อมูลมองเห็นกันหมด —
-        เราจะ<b>ตอบคำถามอะไรได้บ้างที่วันนี้ตอบไม่ได้</b> (สอบกลับ · คุมคุณภาพ · เห็นเครื่องเบี่ยงเบน ·
+        <b>{tr('คำถามของหน้านี้:')}</b> เมื่อทุกแผนกใช้ระบบจริงและข้อมูลมองเห็นกันหมด —
+        เราจะ<b>{tr('ตอบคำถามอะไรได้บ้างที่วันนี้ตอบไม่ได้')}</b> (สอบกลับ · คุมคุณภาพ · เห็นเครื่องเบี่ยงเบน ·
         รู้ผลกระทบต่อการจัดส่ง · พยากรณ์ข้ามแผนก · prescriptive maintenance)
         <div style={{ marginTop: 6 }}>
-          ป้าย <Badge tone="real">วัดจริง</Badge> = นับสดจากฐานข้อมูลตอนเปิดหน้า ·
-          ป้าย <Badge tone="guess">คาดการณ์</Badge> = สิ่งที่<b>ยังไม่เกิด</b> จะเป็นไปได้เมื่อข้อมูลครบ
+          ป้าย <Badge tone="real">{tr('วัดจริง')}</Badge> = นับสดจากฐานข้อมูลตอนเปิดหน้า ·
+          ป้าย <Badge tone="guess">{tr('คาดการณ์')}</Badge> = สิ่งที่<b>{tr('ยังไม่เกิด')}</b> จะเป็นไปได้เมื่อข้อมูลครบ
         </div>
         <div style={{ marginTop: 6, color: 'var(--muted)' }}>
           หน้านี้อ่านอย่างเดียว ไม่แก้ไขข้อมูลใดๆ · ทุกปุ่มคือทางลัดไปหน้าที่ทำงานจริง ·
-          <b> ทุกความสามารถในหน้านี้ใช้ข้อมูลที่ระบบเก็บอยู่แล้ว ไม่ต้องซื้อระบบเพิ่ม</b>
+          <b> {tr('ทุกความสามารถในหน้านี้ใช้ข้อมูลที่ระบบเก็บอยู่แล้ว ไม่ต้องซื้อระบบเพิ่ม')}</b>
         </div>
       </div>
 
       {/* แถบเตือนโหมดสาธิต — ต้องเด่นและอยู่เหนือเนื้อหาเสมอ กันคนเปิดค้างแล้วเข้าใจว่าเป็นของจริง */}
       {demoOn && (
         <div style={{
-          ...cardSt, borderLeft: '4px solid #a78bfa', background: 'rgba(167,139,250,0.08)',
+          ...cardSt, borderLeft: '4px solid var(--blue)', background: 'var(--blue-dim)',
           marginBottom: 12, fontSize: 12.5, lineHeight: 1.6,
         }}>
-          <b style={{ color: '#a78bfa' }}>🧪 โหมดสาธิตเปิดอยู่</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
-          <b> ตัวเลขจำลอง</b> เพื่อให้เห็นว่า “หน้าตาคำตอบ” เป็นยังไงเมื่อทุกแผนกใช้ครบ
+          <b style={{ color: 'var(--blue)' }}>{tr('โหมดสาธิตเปิดอยู่')}</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
+          <b> {tr('ตัวเลขจำลอง')}</b> เพื่อให้เห็นว่า “หน้าตาคำตอบ” เป็นยังไงเมื่อทุกแผนกใช้ครบ
           <div style={{ marginTop: 5, color: 'var(--muted)' }}>
-            ชื่อไลน์ · เครื่องจักร · สินค้า · ลูกค้า = <b>ของจริงจากฐานข้อมูล</b> ·
-            ตัวเลขทั้งหมด = <b>สมมติ</b> (นิ่งไม่ดิ้นตอนรีเฟรช เพื่อให้สาธิตซ้ำได้เหมือนเดิม) ·
-            ชิปสีม่วง 🧪 = จุดข้อมูลที่ยังไม่มีจริง · <b>ปิดโหมดนี้เพื่อกลับไปดูสถานะจริง</b>
-            <br />แท็บ <b>“ก่อน-หลัง รายแผนก”</b> แสดงสถานะจริงเสมอ ไม่ถูกจำลอง (เป็นตัววัดว่าต้องไปลงข้อมูลตรงไหน)
+            ชื่อไลน์ · เครื่องจักร · สินค้า · ลูกค้า = <b>{tr('ของจริงจากฐานข้อมูล')}</b> ·
+            ตัวเลขทั้งหมด = <b>{tr('สมมติ')}</b> (นิ่งไม่ดิ้นตอนรีเฟรช เพื่อให้สาธิตซ้ำได้เหมือนเดิม) ·
+            ชิปสีม่วง 🧪 = จุดข้อมูลที่ยังไม่มีจริง · <b>{tr('ปิดโหมดนี้เพื่อกลับไปดูสถานะจริง')}</b>
+            <br />{tr('แท็บ')} <b>{tr('“ก่อน-หลัง รายแผนก”')}</b> แสดงสถานะจริงเสมอ ไม่ถูกจำลอง (เป็นตัววัดว่าต้องไปลงข้อมูลตรงไหน)
           </div>
         </div>
       )}

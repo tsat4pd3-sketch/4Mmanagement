@@ -18,6 +18,7 @@
    🔴 ไม่รู้ = เทา ไม่ใช่เขียว (เครื่องไม่มีแผน PM ≠ PM ตามกำหนด)
    ══════════════════════════════════════════════════════════════════════════ */
 import { machineKey } from './machineNo.js';
+import { fmtDtElapsed as fmtElapsed } from './downtimeRules.js';
 
 /** หัวข้อของกล่องรายละเอียดไลน์ (key ตรงกับบล็อกใน FactoryMap story modal) */
 export const STORY_SECTIONS = ['summary', 'shifts', 'parts', 'flow', 'dt', 'ng', 'fourm', 'pm', 'mo', 'people', 'energy', 'supply'];
@@ -95,9 +96,10 @@ export function dtByMachine(rows = []) {
   for (const d of Array.isArray(rows) ? rows : []) {
     const k = machineKey(d?.machine);
     if (!k) continue;
-    const g = m.get(k) || { mins: 0, open: false, count: 0 };
+    const g = m.get(k) || { mins: 0, open: false, count: 0, openUnknown: false };
     g.mins += Number(d.mins) || 0;
     g.open = g.open || !!d.open;
+    if (d.open && d.mins == null) g.openUnknown = true;   // ยังหยุดอยู่แต่ไม่รู้เวลาเริ่ม (ห้ามเขียนเป็น 0 นาที)
     g.count += 1;
     m.set(k, g);
   }
@@ -127,7 +129,8 @@ export function markerFor(lens, { checklists = [], dt = null, statusMeta = {} } 
     return { color: statusMeta[w]?.color || NO_DATA_COLOR, state: w || 'unknown', sub: statusMeta[w]?.label || 'ไม่ทราบ', alwaysLabel: w === 'overdue', blink: false };
   };
   const dtPart = () => {
-    if (dt?.open) return { color: DT_COLOR.open, state: 'open', sub: `หยุดอยู่ · ${dt.mins} น.`, alwaysLabel: true, blink: true };
+    // หยุดมาแล้วกี่นาที รูปแบบเดียวกับป้าย/hover บนผัง (fmtDtElapsed: >=60 = N ชม. M น.) · 27/10 user ทัก "ทำไมไม่ตรงกัน"
+    if (dt?.open) return { color: DT_COLOR.open, state: 'open', sub: `หยุดอยู่ · ${dt.openUnknown && !dt.mins ? 'ไม่รู้เวลาเริ่ม' : fmtElapsed(dt.mins)}`, alwaysLabel: true, blink: true };
     if (dt?.mins > 0) return { color: DT_COLOR.had, state: 'had', sub: `หยุดวันนี้ ${dt.mins} น.`, alwaysLabel: true, blink: false };
     return { color: DT_COLOR.none, state: 'none', sub: 'ไม่มีหยุดนอกแผน', alwaysLabel: false, blink: false };
   };

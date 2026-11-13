@@ -97,8 +97,50 @@ export function onMasterLoadFail(fn) { failSink = typeof fn === 'function' ? fn 
       (เคลียร์เมื่อคีย์นั้นโหลดสำเร็จ — ของที่หายไปเองต้องไม่ค้างเป็นคำเตือนถาวร) */
 const failures = new Map();   // key → { at, message, hadFallback }
 
+/* ── 🔔 ทะเบียนนี้ต้อง "บอกต่อ" ได้ (2026-11-09 · หน้างานแจ้ง "โหลดไลน์ไม่ขึ้นหลายหน้า") ──
+   🔴 เดิมมีแต่ `failSink` ตัวเดียว (main.jsx ผูกไว้ยิง toast — ผ่านไปแล้วหาย) และ
+      `useMasterRows` อ่าน `masterLoadState(key)` **แค่ตอน loader ของตัวเองเสร็จ**
+      ⇒ `<LineRegistryAlert />` ที่อยู่เหนือ `<Routes>` ใน App.jsx mount **ครั้งเดียวตอนเปิดแอป**
+        แล้วไม่มีอะไรปลุก ⇒ ทะเบียนล้ม**หลัง**เปิดแอป = dropdown ว่างทั้งแอป **แต่แถบไม่โผล่
+        และไม่มีปุ่มโหลดใหม่** · เหลือทางเดียวคือหน้าที่สร้างปุ่มเองไว้ (/mtn-repair · เปิดกะ)
+   ⇒ ใครก็ subscribe ได้ · ยิงทุกครั้งที่ทะเบียนเปลี่ยน (ล้ม / สำเร็จ / ถูกล้าง)
+   ⚠️ ตัวฟังพังห้ามลาม — ห่อ try/catch รายตัว (ตัวหนึ่งพังต้องไม่ทำให้ตัวอื่นไม่ได้ข่าว) */
+const failListeners = new Set();
+
+/** ฟังความเปลี่ยนแปลงของ "คีย์ไหนโหลดล้ม" — คืนฟังก์ชันเลิกฟัง (ใช้ใน useEffect cleanup) */
+export function onMasterFailChange(fn) {
+  if (typeof fn !== 'function') return () => {};
+  failListeners.add(fn);
+  return () => { failListeners.delete(fn); };
+}
+
+/** แจ้งตัวฟังทุกตัว — `key = null` แปลว่า "เปลี่ยนหลายคีย์" (ล้างทั้งหมด) */
+function notifyFailChange(key) {
+  for (const fn of failListeners) {
+    try { fn(key); } catch (e) { console.warn('[masterCache] ตัวฟังสถานะล้มพัง', e); }
+  }
+}
+
 /** สถานะล้มล่าสุดของคีย์นี้ — `null` = ปกติ (อย่าใช้ตัดสินว่า "มีข้อมูลไหม") */
 export function masterLoadState(key) { return failures.get(key) || null; }
+
+/* ── 🔐 ประตู "ตอนนี้ใคร login อยู่" (2026-11-10 · หน้างานแจ้ง "โหลดไลน์ผลิต dropdown ไม่ขึ้น") ──
+   🔴 ต้นเหตุที่วัดได้จาก log ฝั่ง Main (24 ชม.): `production_lines` ถูกอ่านด้วย role **anon 122 ครั้ง
+      จาก 28 IP** — ทุกครั้งได้ **200 + 0 แถว** (RLS เปิดให้แค่ `authenticated`) แล้วตามด้วย login ภายในไม่กี่วินาที
+      ลูกโซ่: กดออกจากระบบ (สลับบัญชีบนเครื่องกลาง) → `clearAllMasterCache()` → หน้าที่ยัง mount อยู่
+      re-render ตอน role/ขอบเขตถูกล้าง → โหลดทะเบียนใหม่ **ตอนไม่มี token** → ได้ลิสต์ว่าง
+      → `cachedMaster` จดเป็น "สำเร็จ" ลง localStorage 4 ชม. ⇒ **คนถัดไปที่ login เครื่องนั้น dropdown ว่าง**
+      (และ "ออกแล้วเข้าใหม่" ที่เราแนะนำหน้างาน กลับเป็นตัวสร้างปัญหาซ้ำ)
+   ⇒ กติกา: **ผลที่ได้ตอนไม่ได้ login หรือได้มาข้ามการเปลี่ยนผู้ใช้ — ห้ามลง cache** (คืนให้ผู้เรียกเฉยๆ)
+      · `undefined` = ยังไม่รู้ (ก่อน App อ่าน session เสร็จ) = พฤติกรรมเดิม
+      · ตั้งค่าจาก App.jsx ที่เดียว (getSession / onAuthStateChange / handleLogout) */
+let authUid;   // undefined = ยังไม่รู้ · null = ไม่ได้ login · string = uid
+/** App.jsx เรียกทุกครั้งที่สถานะ login เปลี่ยน — `null` = ออกจากระบบแล้ว */
+export function setMasterAuthUser(uid) { authUid = uid === undefined ? undefined : (uid || null); }
+/** ผลที่เริ่มโหลดตอน uid = `startUid` ยังเก็บลง cache ได้ไหม */
+function authOkToStore(startUid) { return authUid !== null && startUid !== null && startUid === authUid; }
+
+const isEmptyList = (d) => Array.isArray(d) && d.length === 0;
 
 const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
@@ -118,7 +160,18 @@ const LS_PREFIX = 'esm_mc_';
    ⚠️ แก้ select ของ cachedMaster แล้วลืมบวกเลขนี้ = เครื่องที่มี cache เก่าอ่านโครงเก่าได้ถึง 4 ชม.
       → **แก้ shape เมื่อไหร่ บวกเลขนี้ในคอมมิทเดียวกันเสมอ**
    (การแก้ "เนื้อข้อมูล" ไม่ต้องแตะเลขนี้ — ใช้ `invalidateTable()` ดู masterInvalidate.js) */
-const CACHE_EPOCH = 'e1';
+const CACHE_EPOCH = 'e3';   // e3 = 10/11 ล้างของพิษรอบ 2 (ทะเบียนไลน์ว่างจาก session ยังไม่พร้อม) · e2 = 28/10 (ดูหมายเหตุใต้)
+
+/* 🔴 e2 → e3 (10/11) — ของพิษรอบ 2 ต้นเหตุคนละจุด: `loadProductionLines` เอง**สำเร็จแต่ว่าง**
+   (RLS `authenticated` + session ยังไม่พร้อม = 200 ไม่มีแถว) ⇒ จด `[]` 4 ชม. · ผังโรงงานกรอบหายทั้งผัง
+   ปิดรูที่ต้นทางแล้ว (ลิสต์ว่าง = throw) · บวกเลขนี้เพื่อล้างของที่ค้างในเครื่องแล้ว 1 รอบ */
+
+/* 🔴 e1 → e2 (28/10) — **ครั้งนี้ไม่ได้เปลี่ยน shape แต่ต้องล้างของพิษ**
+   เครื่องหน้างานจำนวนหนึ่งมี `production_lines:dr` = `[]` ค้างใน localStorage 4 ชม.
+   (ลูกโซ่: `loadLinesRes()` เคยคืน `error:null` เสมอ ⇒ cache ชั้นนอกจด "สำเร็จ แต่ว่าง")
+   ⇒ เปิดกะไม่ได้ทั้งเย็น · ของพิษยังอยู่แม้ deploy ตัวแก้แล้ว เพราะมันอยู่ในเครื่อง ไม่ใช่ในโค้ด
+   บวกเลขนี้ = ทุกเครื่องทิ้ง cache master รอบเดียวตอนโหลดครั้งหน้า แล้วหายเอง
+   ⚠️ มีราคา: โหลด master ใหม่ทั้งชุด (~640 KB) ต่อเครื่อง 1 รอบ — **ใช้เมื่อของพิษกระจายแล้วเท่านั้น** */
 
 const lsKey = (key) => `${LS_PREFIX}${key}`;
 
@@ -165,26 +218,41 @@ function lsWrite(key, data) {
  * @param {Function} loader async () => data   (ต้องคืน "ข้อมูล" ไม่ใช่ response ของ supabase)
  * @param {number}   ttl    อายุ cache (ms)
  */
-export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
+/* @param opts.nonEmpty true = ทะเบียนนี้ "ว่างไม่ได้" ⇒ ลิสต์ว่างที่ค้างใน cache (ของพิษจากรอบก่อน)
+ *                      ถือว่าไม่มี cache แล้วยิงใหม่ · ใช้กับทะเบียนไลน์ (loader โยนเองเมื่อว่าง) */
+export async function cachedMaster(key, loader, ttl = DEFAULT_TTL, { nonEmpty = false } = {}) {
   const hit = cache.get(key);
-  if (hit && hit.data !== undefined && Date.now() - hit.at < ttl) return hit.data;
+  const usable = (d) => d !== undefined && !(nonEmpty && isEmptyList(d));
+  if (hit && usable(hit.data) && Date.now() - hit.at < ttl) return hit.data;
   if (hit?.inflight) return hit.inflight;   // หลายจุดเรียกพร้อมกัน = ยิงจริงครั้งเดียว
 
   // memory ยังไม่มี (เพิ่งเปิดแอป) → ลองของที่ค้างใน localStorage ก่อนยิง DB
   const stored = lsRead(key, ttl);
-  if (stored) {
+  if (stored && usable(stored.data)) {
     cache.set(key, { at: stored.at, data: stored.data });
     return stored.data;
   }
 
+  const startUid = authUid;
   const p = (async () => {
     try {
       const data = await loader();
+      /* 🔐 ได้มาตอนไม่ได้ login / ข้ามการเปลี่ยนผู้ใช้ ⇒ คืนให้ผู้เรียก แต่ห้ามจด (ดู "ประตู" ข้างบน) */
+      if (startUid !== undefined && !authOkToStore(startUid)) {
+        if (cache.get(key)?.inflight === p) cache.delete(key);
+        return data;
+      }
       cache.set(key, { at: Date.now(), data });
       lsWrite(key, data);
-      failures.delete(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
+      if (failures.delete(key)) notifyFailChange(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
       return data;
     } catch (e) {
+      /* 🔐 ล้มตอนไม่ได้ login (เช่นหน้าเดิม re-render ระหว่างกดออกจากระบบ) = ไม่ใช่ข่าวของใคร
+         ห้ามจดเป็นผลล้ม ห้ามยิง toast — คนถัดไปที่ login จะโหลดใหม่เองตามปกติ */
+      if (startUid !== undefined && !authOkToStore(startUid)) {
+        if (cache.get(key)?.inflight === p) cache.delete(key);
+        return hit?.data ?? [];
+      }
       /* 🔴 โหลดพลาด — 3 อย่างที่ "ต้อง" ทำ (ดูรอบ 3 ในหัวไฟล์)
          1. **ไม่ lsWrite** → ของดีที่ค้างใน localStorage ไม่ถูกลิสต์ว่างทับ
          2. `at: 0` → รอบหน้ายิงใหม่ทันที ไม่ต้องรอ TTL 4 ชม.
@@ -194,6 +262,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       const kept = hit?.data ?? lsAny(key)?.data;
       cache.set(key, { at: 0, data: kept });
       failures.set(key, { at: Date.now(), message: e?.message || 'โหลดไม่สำเร็จ', hadFallback: kept !== undefined });
+      notifyFailChange(key);   // 🔔 แถบกลาง/ช่องเลือกทุกหน้าต้องรู้ทันที ไม่ใช่รอ mount รอบหน้า
       try { failSink?.(key, e, { hadFallback: kept !== undefined }); } catch { /* ตัวแจ้งพังห้ามลาม */ }
       return kept ?? [];
     }
@@ -224,6 +293,7 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
     return { data: stored.data, error: null };
   }
 
+  const startUid = authUid;
   const p = (async () => {
     let res;
     try {
@@ -238,6 +308,10 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
     }
     if (err) console.warn('[masterCache] โครงสร้างยังไม่มี —', err.code, err.message, '· ถือว่าว่าง');
     const data = res?.data || [];
+    if (startUid !== undefined && !authOkToStore(startUid)) {   // 🔐 ห้ามจดผลตอนไม่ได้ login
+      if (cache.get(key)?.inflight === p) cache.delete(key);
+      return { data, error: null };
+    }
     cache.set(key, { at: Date.now(), data });
     lsWrite(key, data);
     return { data, error: null };
@@ -249,10 +323,28 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
 
 /** ล้าง cache — ไม่ส่ง key = ล้างทั้งหมด (เรียกหลังแก้ master สำเร็จ)
  *  ⚠️ ต้องล้าง localStorage ด้วยเสมอ ไม่งั้นแก้ master แล้วเปิดแอปใหม่ยังเห็นของเก่า */
+/** 🧹 ทิ้ง cache master ทั้งหมดของเครื่องนี้ (memory + localStorage)
+ *  ใช้ตอน **ออกจากระบบ** — ให้ "logout แล้ว login ใหม่" เป็นทางแก้ที่หน้างานเข้าใจและได้ผลจริง
+ *  (ก่อน 28/10 logout ไม่ล้างอะไรเลย ⇒ ต้องบอกให้เปิด incognito ซึ่งหน้างานไม่เข้าใจ) */
+export function clearAllMasterCache() {
+  cache.clear();
+  const had = failures.size > 0;
+  failures.clear();
+  if (had) notifyFailChange(null);
+  try {
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k?.startsWith(LS_PREFIX)) localStorage.removeItem(k);
+    }
+  } catch { /* private mode / ปิดอยู่ — ล้าง memory ไปแล้วก็พอ */ }
+}
+
 export function invalidateMaster(key) {
   if (key == null) {
     cache.clear();
+    const had = failures.size > 0;
     failures.clear();
+    if (had) notifyFailChange(null);
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
@@ -261,7 +353,7 @@ export function invalidateMaster(key) {
     } catch { /* localStorage ปิดอยู่ */ }
   } else {
     cache.delete(key);
-    failures.delete(key);
+    if (failures.delete(key)) notifyFailChange(key);
     try { localStorage.removeItem(lsKey(key)); } catch { /* localStorage ปิดอยู่ */ }
   }
 }

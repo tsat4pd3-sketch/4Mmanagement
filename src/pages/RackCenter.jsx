@@ -6,6 +6,7 @@ import { urlParam, urlBool } from '../utils/urlInit';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
 import FilterBar from '../components/FilterBar';
 import { ALL } from '../utils/filterLabels';
 
@@ -13,6 +14,7 @@ import { ALL } from '../utils/filterLabels';
 const SCAN_PARAMS_CLEAR = { line: null, ctype: null, qty: null };
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+import { lineScope, filterRowsByLineScope } from '../utils/sectionScope';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
@@ -27,6 +29,8 @@ import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import { storeBtn } from '../utils/storeUi';
+import { tr } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -36,15 +40,15 @@ import { storeBtn } from '../utils/storeUi';
    ─────────────────────────────────────────────────────────────────────────── */
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
-const VIEW_TABS = [{ key: 'board', label: '📋 บอร์ดสถานะ' }, { key: 'time', label: '🕐 บอร์ดเวลา' }, { key: 'sla', label: '⚙️ SLA' }];
+const VIEW_TABS = [{ key: 'board', label: 'บอร์ดสถานะ' }, { key: 'time', label: 'บอร์ดเวลา' }, { key: 'sla', label: 'SLA' }];
 const inputSt = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
 const btn = (bg, color = '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: bg, color, fontFamily: 'var(--font-body)' });
 
 const STATUS_COLS = [
-  { key: 'requested', label: '🔔 เรียกแล้ว',     color: '#f59e0b' },
-  { key: 'preparing', label: '🔧 กำลังเตรียม',   color: '#0ea5e9' },
-  { key: 'delivered', label: '🚚 จัดส่งแล้ว',     color: '#a855f7' },
-  { key: 'received',  label: '✅ รับแล้ว',        color: '#22c55e' },
+  { key: 'requested', label: 'เรียกแล้ว',     color: 'var(--amber)' },
+  { key: 'preparing', label: 'กำลังเตรียม',   color: 'var(--blue)' },
+  { key: 'delivered', label: 'จัดส่งแล้ว',     color: 'var(--blue)' },
+  { key: 'received',  label: 'รับแล้ว',        color: 'var(--green)' },
 ];
 
 function timeAgo(iso) {
@@ -71,8 +75,8 @@ const parseCallQr = (text) => {
 };
 
 export default function RackCenter() {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
-  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
+  const scope = useMemo(() => ({ role, lineId, sections, scopeIdx }), [role, lineId, sections, scopeIdx]);   // scopeIdx = ขยายขอบเขตผ่านผังองค์กร (LineSelect รับแล้ว 09/11)
   const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
@@ -98,7 +102,7 @@ export default function RackCenter() {
   const setParams = useMergeParams();
 
   const load = useCallback(async () => {
-    const [{ data: ln }, { data: ct }, { data: req, error: eReq }, { data: pkg, error: ePkg }, { data: slaRow }] = await Promise.all([
+    const [lnRes, { data: ct }, { data: req, error: eReq }, { data: pkg, error: ePkg }, { data: slaRow }] = await Promise.all([
       // ⚠️ select ให้ครบ — ขาด parent_line_name/section/is_active = dropdown ไม่มีลำดับชั้น/ไม่กรอง scope
       loadLinesRes(),
       supabaseDR.from('container_types').select('*').eq('is_active', true).order('name'),
@@ -112,6 +116,9 @@ export default function RackCenter() {
         () => supabaseDR.from('packaging_withdrawal_requests').select('*').in('status', ['issued', 'cancelled']), 200),
       supabaseDR.from('internal_delivery_sla').select('*').eq('kind', 'rack').maybeSingle(),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setLines(ln || []);
     setContainerTypes(ct || []);
     /* โหลดไม่ครบ = บอก + คงข้อมูลรอบก่อน (เดิมกลืน error แล้วบอร์ดว่าง = "ไม่มีใบค้าง" ทั้งที่คิวรีล่ม) */
@@ -156,9 +163,30 @@ export default function RackCenter() {
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
+  /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+     แกนเดียวกับ FactoryMap — `lineScope()` (sectionScope.js) · `unlimited` (admin/ไม่จำกัด/ทะเบียนยังไม่โหลด)
+     = พฤติกรรมเดิมเป๊ะ · ตัดแล้วต้องเขียนบนจอว่าซ่อนกี่ใบ · แถวไม่ระบุไลน์/ไลน์นอกทะเบียน = คงไว้
+     · `unsure` = เขียนเตือนบนจอ ห้ามเงียบ */
+  const scopeKey = (sections || []).join('|');
+  const viewScope = useMemo(() => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [role, lineId, scopeKey, lines, scopeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scopedNames = useMemo(() => (viewScope.unlimited ? null : viewScope.names), [viewScope]);
+  const scopedLineList = useMemo(() => {
+    if (!scopedNames) return lines;
+    const ok = new Set(scopedNames);
+    return lines.filter(l => ok.has(l.name));
+  }, [lines, scopedNames]);
+  const allLineNames = useMemo(() => lines.map(l => l.name), [lines]);
+  const reqScoped = useMemo(() => filterRowsByLineScope(requests, { scopedNames, lineNames: allLineNames }),
+    [requests, scopedNames, allLineNames]);
+  const pkgScoped = useMemo(() => filterRowsByLineScope(pkgReqs, { scopedNames, lineNames: allLineNames, nameOf: p => p?.source_line }),
+    [pkgReqs, scopedNames, allLineNames]);
+  const scopeLabel = (sections || []).filter(Boolean).join(' · ') || 'ไลน์ของคุณ';
+
   const filtered = useMemo(() => {
-    return lineFilter ? requests.filter(r => r.line_name === lineFilter) : requests;
-  }, [requests, lineFilter]);
+    const rows = reqScoped.rows;
+    return lineFilter ? rows.filter(r => r.line_name === lineFilter) : rows;
+  }, [reqScoped, lineFilter]);
 
   const byStatus = useMemo(() => {
     const m = { requested: [], preparing: [], delivered: [], received: [] };
@@ -214,7 +242,7 @@ export default function RackCenter() {
         <img src="${dataUrl}" />
         <div class="ln">${c.line}</div>
         <div class="ct">${c.ct.code ? c.ct.code + ' · ' : ''}${c.ct.name}</div>
-        <div class="hint">📱 สแกนเพื่อเรียกภาชนะ</div>
+        <div class="hint">{tr('สแกนเพื่อเรียกภาชนะ')}</div>
       </div>`);
     }
     const html = `<style>
@@ -304,42 +332,50 @@ export default function RackCenter() {
       <ReadOnlyNote show={!canOperate} role={role} what="เรียกภาชนะ/รับงาน"
         permKey="rack_center:operate" />
       {/* UI-STANDARD 2026-09-24: หัวเพจ + แท็บ ผ่าน PageHeader (เดิมวาด h1/แถบปุ่มเอง) · แท็บผูก ?tab= */}
-      <PageHeader title="ภาชนะ & Packaging — เรียกภาชนะ" icon="🗃️"
-        sub="ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ"
+      <PageHeader title={tr('ภาชนะ & Packaging — เรียกภาชนะ')} icon="🗃️"
+        sub={tr('ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ')}
         actions={canOperate ? (
           <>
-            <button onClick={() => setScanOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">
-              📷 สแกน
-            </button>
-            <button onClick={() => setQrOpen(true)} style={btn('var(--bg2)', 'var(--text2)')} title="พิมพ์แผ่นป้าย QR ไปแปะหน้างาน">
-              🏷️ ป้าย QR
-            </button>
-            <button onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }} style={btn('#16a34a')}>
-              🔔 เรียกภาชนะ
-            </button>
+            {/* ปุ่มตายตัว ≤2 (UI §6.35): [สแกน] [เรียกภาชนะ] · ป้าย QR → ⋯ */}
+            <OverflowMenu items={[{ key: 'qr', icon: '🏷️', label: 'ป้าย QR', onClick: () => setQrOpen(true), title: 'พิมพ์แผ่นป้าย QR ไปแปะหน้างาน' }]} />
+            <button type="button" className="pg-btn" onClick={() => setScanOpen(true)} title={tr('สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน')}>{tr('สแกน')}</button>
+            <button type="button" className="pg-btn primary" onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }}>{tr('เรียกภาชนะ')}</button>
           </>
         ) : null}
         tabs={VIEW_TABS} tab={view} onTab={setView} />
       <FilterBar>
-        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+        <LineSelect lines={scopedLineList} value={lineFilter} onChange={setLineFilter} {...scope}
           placeholder={ALL.line} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
-          แสดงที่รับแล้ว
+          {tr('แสดงที่รับแล้ว')}
         </label>
       </FilterBar>
+      {(scopedNames || viewScope.unsure) && (reqScoped.hidden + pkgScoped.hidden > 0 || viewScope.unsure) && (
+        <div title={viewScope.unsure ? 'ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง)' : `ขอบเขตของบัญชีนี้: ${scopeLabel}`}
+          style={{ display: 'inline-block', margin: '0 0 12px', padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+            color: viewScope.unsure ? 'var(--amber)' : 'var(--accent)',
+            background: viewScope.unsure ? 'var(--amber-dim)' : 'var(--accent-dim)',
+            border: `1px solid ${viewScope.unsure ? 'var(--amber-line)' : 'var(--accent)'}` }}>
+          {viewScope.unsure
+            ? (scopedNames
+              ? `⚠ ขอบเขตไม่ชัด — แสดงเฉพาะ ${scopeLabel} · ซ่อน ${reqScoped.hidden + pkgScoped.hidden} ใบนอกขอบเขต`
+              : '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน')
+            : `🔭 เฉพาะ ${scopeLabel} · ซ่อน ${reqScoped.hidden} ใบเรียกภาชนะ${pkgScoped.hidden ? ` + ${pkgScoped.hidden} ใบเบิก packaging` : ''} นอกขอบเขต`}
+        </div>
+      )}
 
       {scanOpen && <QrScanModal onClose={() => setScanOpen(false)} onResult={(text) => applyScan(parseCallQr(text))} />}
       {qrOpen && <QrLabelModal lines={lines} containerTypes={containerTypes} onClose={() => setQrOpen(false)} onPrint={printQrLabels} />}
 
       {/* Packaging withdrawal requests (auto จากการผลิต FG) */}
       {(() => {
-        const pending = pkgReqs.filter(p => p.status !== 'issued');
+        const pending = pkgScoped.rows.filter(p => p.status !== 'issued');
         if (pending.length === 0) return null;
         return (
-          <div style={{ ...card, marginBottom: 16, borderColor: 'rgba(245,158,11,0.4)' }}>
-            <div style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
-              📦 ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
+          <div style={{ ...card, marginBottom: 16, borderColor: 'var(--amber-line)' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--amber)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
+              ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
             </div>
             <div style={partCardGrid()}>
               {pending.map(p => (
@@ -347,7 +383,7 @@ export default function RackCenter() {
                    แต่โครงการ์ด/ปุ่ม/ระยะ ใช้ของกลางตัวเดียวกับคิวสโตร์ (UI §6.23) */
                 <PartCard key={p.id}
                   code={p.packaging_code} name={p.packaging_name} showImg={false}
-                  status={{ label: '🆕 รอจ่าย', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)' }}
+                  status={{ label: 'รอจ่าย', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)' }}
                   metric={{ label: 'จำนวนที่ต้องจ่าย', value: p.qty, unit: '' }}
                   aside={p.source_line ? { label: 'ไลน์ที่ขอ', value: p.source_line } : null}
                   rows={[
@@ -358,7 +394,7 @@ export default function RackCenter() {
                     ? (
                       <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
                         style={storeBtn('primary', { width: '100%', opacity: pkgBusy === p.id ? 0.55 : 1 })}>
-                        {pkgBusy === p.id ? 'กำลังบันทึก…' : '✔ จ่าย Packaging'}
+                        {pkgBusy === p.id ? tr('กำลังบันทึก…') : tr('จ่าย Packaging')}
                       </button>
                     ) : null} />
               ))}
@@ -384,8 +420,8 @@ export default function RackCenter() {
         };
         const colorOf = (r) => {
           const b = slaState(r);
-          if (b === 'deliver') return '#ef4444';
-          if (b === 'prepare') return '#f97316';
+          if (b === 'deliver') return 'var(--red)';
+          if (b === 'prepare') return 'var(--amber)';
           return (STATUS_COLS.find(c => c.key === r.status) || STATUS_COLS[0]).color;
         };
         const byLine = {};
@@ -404,7 +440,7 @@ export default function RackCenter() {
         const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
         return (
           <InternalTimeBoard
-            title={`🕐 บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
+            title={`บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
             hint={`SLA: เริ่มเตรียมใน ${sla.prepare_within_min} นาที · ส่งถึงไลน์ใน ${sla.deliver_within_min} นาที (🟠 เลยเตรียม · 🔴 เลยส่ง)`}
             groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
             onItemClick={(r, x, y) => setPopup({ r, x, y })}
@@ -415,16 +451,16 @@ export default function RackCenter() {
       {/* ⚙️ SLA config — ปรับได้เหมือน ship-to config */}
       {view === 'sla' && (
         <div style={{ ...card, maxWidth: 560 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ SLA การส่งภาชนะภายในโรงงาน</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>{tr('SLA การส่งภาชนะภายในโรงงาน')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
             นับจากเวลาที่ไลน์กดเรียก — เกินกำหนดแล้วยังไม่ถึงสถานะ บล็อกบนบอร์ดเวลาจะเปลี่ยนเป็น 🟠/🔴 ให้เห็นทันที
           </div>
           {[
-            { k: 'prepare_within_min', label: '🔧 ต้องเริ่มเตรียมภายใน (นาที)' },
-            { k: 'deliver_within_min', label: '🚚 ต้องส่งถึงไลน์ภายใน (นาที)' },
+            { k: 'prepare_within_min', label: 'ต้องเริ่มเตรียมภายใน (นาที)' },
+            { k: 'deliver_within_min', label: 'ต้องส่งถึงไลน์ภายใน (นาที)' },
           ].map(f => (
             <div key={f.k} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{f.label}</span>
+              <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{tr(f.label)}</span>
               <input type="number" min="1" value={(slaDraft ?? sla)[f.k]} disabled={!canOperate}
                 onChange={e => setSlaDraft(d => ({ ...(d ?? sla), [f.k]: e.target.value }))}
                 style={{ ...inputSt, width: 110, textAlign: 'center', fontWeight: 800 }} />
@@ -440,7 +476,7 @@ export default function RackCenter() {
                 .upsert({ ...payload, kind: 'rack' }, { onConflict: 'kind' });
               if (error) toast.error(error.message);
               else { setSla(x => ({ ...x, ...payload })); setSlaDraft(null); toast.success('บันทึก SLA แล้ว'); }
-            }} style={btn('#16a34a')}>💾 บันทึก SLA</button>
+            }} style={btn('var(--accent)', 'var(--accent-ink)')}>{tr('บันทึก SLA')}</button>
           )}
         </div>
       )}
@@ -450,8 +486,8 @@ export default function RackCenter() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(260px, 100%), 1fr))', gap: 14 }}>
         {STATUS_COLS.map(col => (
           <div key={col.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${col.color}40`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: col.color, fontFamily: 'var(--font-display)' }}>{col.label}</div>
+            <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${tint(col.color, 'line')}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: col.color, fontFamily: 'var(--font-display)' }}>{tr(col.label)}</div>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{(byStatus[col.key] || []).length}</span>
             </div>
             <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 80, maxHeight: 560, overflowY: 'auto' }}>
@@ -459,13 +495,13 @@ export default function RackCenter() {
                 <div style={{ padding: '16px 8px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>—</div>
               ) : (
                 (byStatus[col.key] || []).map(r => (
-                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${col.color}30`, borderRadius: 10, padding: '10px 12px' }}>
+                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${tint(col.color, 'dim')}`, borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>📍 {r.line_name}</div>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>{r.line_name}</div>
                       <span style={{ fontSize: 11, fontWeight: 800, color: col.color }}>×{r.qty}</span>
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{r.container_name}</div>
-                    {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
+                    {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                       {r.requested_by ? `โดย ${r.requested_by} · ` : ''}{timeAgo(r.requested_at)}
                     </div>
@@ -477,7 +513,7 @@ export default function RackCenter() {
                         </button>
                         {col.key !== 'delivered' && (
                           <button className="tbtn" onClick={() => cancel(r)} disabled={busyId === r.id}
-                            style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '6px 10px', fontSize: 12 }}>
+                            style={{ ...btn('var(--red-dim)', 'var(--red)'), border: '1px solid var(--red-line)', padding: '6px 10px', fontSize: 12 }}>
                             ✕
                           </button>
                         )}
@@ -502,17 +538,17 @@ export default function RackCenter() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${col.color}66`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(col.color, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: col.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>📍 {r.line_name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: col.color }}>{col.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.line_name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: col.color }}>{tr(col.label)}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
-                {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
+                {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                  🔔 {r.requested_by || '-'} · {timeAgo(r.requested_at)}
+                  {r.requested_by || '-'} · {timeAgo(r.requested_at)}
                   {r.delivered_by ? ` · 🚚 ${r.delivered_by}` : ''}{r.received_by ? ` · ✅ ${r.received_by}` : ''}
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -524,7 +560,7 @@ export default function RackCenter() {
                   )}
                   {canOperate && ['requested', 'preparing'].includes(r.status) && (
                     <button onClick={() => { cancel(r); setPopup(null); }}
-                      className="tbtn" style={{ ...btn('rgba(239,68,68,0.1)', '#ef4444'), border: '1px solid rgba(239,68,68,0.3)', padding: '7px 10px', fontSize: 11 }}>✕</button>
+                      className="tbtn" style={{ ...btn('var(--red-dim)', 'var(--red)'), border: '1px solid var(--red-line)', padding: '7px 10px', fontSize: 11 }}>✕</button>
                   )}
                 </div>
               </div>
@@ -536,37 +572,37 @@ export default function RackCenter() {
       {/* Request modal */}
       {showForm && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
-              🔔 เรียกภาชนะ
+              เรียกภาชนะ
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์การผลิต *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์การผลิต *')}</label>
                 <LineSelect lines={lines} value={form.line_name} {...scope} style={inputSt}
-                  placeholder="เลือกไลน์..." onChange={v => setForm(f => ({ ...f, line_name: v }))} />
+                  placeholder={tr('เลือกไลน์...')} onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดภาชนะ *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชนิดภาชนะ *')}</label>
                 <select value={form.container_type_id} onChange={e => setForm(f => ({ ...f, container_type_id: e.target.value }))} style={inputSt}>
-                  <option value="">เลือกภาชนะ...</option>
+                  <option value="">{tr('เลือกภาชนะ...')}</option>
                   {containerTypes.map(c => <option key={c.id} value={c.id}>{c.name}{c.capacity ? ` (จุ ${c.capacity})` : ''}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวน (ใบ/ใบ) *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('จำนวน (ใบ/ใบ) *')}</label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, fontSize: 20, fontWeight: 900, textAlign: 'center' }}
                   value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
-                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="เช่น ด่วน, จุดส่ง..." />
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
+                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder={tr('เช่น ด่วน, จุดส่ง...')} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>ยกเลิก</button>
-              <button onClick={handleRequest} disabled={saving} style={{ ...btn('#16a34a'), opacity: saving ? 0.6 : 1 }}>
-                {saving ? '...' : '🔔 เรียกภาชนะ'}
+              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
+              <button onClick={handleRequest} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
+                {saving ? '...' : tr('เรียกภาชนะ')}
               </button>
             </div>
           </div>
@@ -612,16 +648,16 @@ function QrScanModal({ onClose, onResult }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📷 สแกน QR เรียกภาชนะ</span>
-          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('สแกน QR เรียกภาชนะ')}</span>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {camErr
-          ? <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
+          ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
           : <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 10, background: '#000', marginBottom: 10 }} />}
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>🔫 ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr('ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter')}</div>
         <input autoFocus value={manual} onChange={e => setManual(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && manual.trim()) onResult(manual); }}
-          placeholder="ยิงสแกนลงช่องนี้ได้เลย…" style={inputSt} />
+          placeholder={tr('ยิงสแกนลงช่องนี้ได้เลย…')} style={inputSt} />
       </div>
     </div>
   );
@@ -635,32 +671,32 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
   const toggle = (setter) => (v) => setter(prev => { const s = new Set(prev); if (s.has(v)) s.delete(v); else s.add(v); return s; });
   const tgLine = toggle(setSelLines), tgType = toggle(setSelTypes);
   const chip = (on) => ({ padding: '4px 10px', borderRadius: 14, cursor: 'pointer', fontSize: 12, fontWeight: 700,
-    background: on ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
+    background: on ? 'var(--accent-dim, var(--green-dim))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}` });
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏷️ พิมพ์ป้าย QR เรียกภาชนะ</span>
-          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('พิมพ์ป้าย QR เรียกภาชนะ')}</span>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           เลือกไลน์ × ชนิดภาชนะ → ได้แผ่น A4 ป้ายละ 1 คู่ (QR = ลิงก์เปิดฟอร์มกรอกให้ครบ) เอาไปแปะจุดวางภาชนะหน้างาน
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>🏭 ไลน์ ({selLines.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>{tr('ไลน์ (')}{selLines.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
           {lines.map(l => <button key={l.name} onClick={() => tgLine(l.name)} style={chip(selLines.has(l.name))}>{l.name}</button>)}
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>📦 ชนิดภาชนะ ({selTypes.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>{tr('ชนิดภาชนะ (')}{selTypes.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
           {containerTypes.map(c => <button key={c.id} onClick={() => tgType(c.id)} style={chip(selTypes.has(c.id))}>{c.code ? `${c.code} · ` : ''}{c.name}</button>)}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>รวม {selLines.size * selTypes.size} ป้าย</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('รวม')} {selLines.size * selTypes.size} {tr('ป้าย')}</span>
           <button disabled={printing || !selLines.size || !selTypes.size}
             onClick={async () => { setPrinting(true); try { await onPrint([...selLines], [...selTypes]); } finally { setPrinting(false); } }}
-            style={{ ...btn(selLines.size && selTypes.size ? '#16a34a' : 'var(--bg2)', selLines.size && selTypes.size ? '#fff' : 'var(--muted)'), cursor: selLines.size && selTypes.size ? 'pointer' : 'not-allowed' }}>
-            {printing ? '...' : '🖨️ พิมพ์ป้าย'}
+            style={{ ...btn(selLines.size && selTypes.size ? 'var(--accent)' : 'var(--bg2)', selLines.size && selTypes.size ? 'var(--accent-ink)' : 'var(--muted)'), cursor: selLines.size && selTypes.size ? 'pointer' : 'not-allowed' }}>
+            {printing ? '...' : 'พิมพ์ป้าย'}
           </button>
         </div>
       </div>

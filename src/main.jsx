@@ -2,6 +2,7 @@ import { StrictMode, Component } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { LangProvider } from './utils/useLang.js'   // 🌐 ปุ่มสลับ ไทย/English (utils/i18n.js)
 import { onMasterLoadFail } from './utils/masterCache.js'
 import { toast } from './components/Toast'
 
@@ -142,7 +143,12 @@ class RootErrorBoundary extends Component {
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <RootErrorBoundary>
-      <App />
+      <LangProvider><App /></LangProvider>
     </RootErrorBoundary>
   </StrictMode>,
 )
+
+/* 🔴 บอกตาข่ายใน index.html ว่า "โปรแกรมขึ้นแล้ว" — ไม่ตั้งธงนี้ = ขึ้นจอ "เปิดโปรแกรมไม่สำเร็จ"
+   ทับของจริงหลัง 15 วินาที · ตั้งหลัง render() เสมอ (ถึงตรงนี้ = โมดูลโหลดครบและ React เริ่มแล้ว) */
+window.__ESM_MOUNTED = true;
+try { document.getElementById('boot-fallback')?.remove(); } catch { /* ไม่มีตาข่าย (dev) */ }

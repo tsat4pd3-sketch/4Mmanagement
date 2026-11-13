@@ -19,10 +19,11 @@ import SearchSelect from './SearchSelect';
 import useProducts from '../utils/useProducts';
 import { productOptions, appendHistoryOptions } from '../utils/pickerOptions';
 
+import { tr } from '../utils/i18n';
 const up = (s) => String(s ?? '').trim().toUpperCase();
 export { productOptions };
 
-export default function ProductSelect({
+export default function ProductSelect({ scan,
   value = '', onChange, products: given, lines, strict = false, includeOps = false, includeInactive = false,
   extraOptions, allowFree = false, placeholder = 'ค้น MAT / ชื่อ / P/N / ลูกค้า…', freeHint = '',
   history = [],          // MAT ที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — Product Master ไม่มีก็ยังเลือกได้ (กลุ่ม 📜)
@@ -42,8 +43,9 @@ export default function ProductSelect({
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
+      scan={scan === false ? undefined : (scan || 'พาร์ท (MAT / Part No.)')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint}
-      emptyText={failed ? 'โหลด Product Master ไม่สำเร็จ' : 'ไม่พบสินค้าที่ค้นหา — เพิ่มได้ที่ /products'}
+      emptyText={failed ? tr('โหลด Product Master ไม่สำเร็จ') : tr('ไม่พบสินค้าที่ค้นหา — เพิ่มได้ที่ /products')}
       disabled={disabled} inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style} wrapRows={wrapRows} maxRows={maxRows} />
   );
 }

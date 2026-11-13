@@ -115,23 +115,35 @@ test('🔴 D — ไลน์ที่บัญชีนี้ "เคยเป�
   assert.deepEqual(bad, [], `\nบัญชีที่ถูกตัดขาดจากไลน์ที่เคยทำงานจริง ${bad.length} ราย:\n  ${bad.join('\n  ')}\n`);
 });
 
-test('🔴 E — 2 ประตูนี้ "ตั้งใจให้ต่างกัน" ห้าม drift เงียบ', () => {
-  /* `scopedLines()`     = ไลน์ที่ **เห็น** ในตัวกรอง/ทะเบียน/รายงาน → ครอบครัว ∪ ส่วนงาน (แก้ 26/10)
-     `scopedLineNames()` = ไลน์ที่หัวหน้ากลุ่ม **รับผิดชอบ** (เปิดกะ/ลงบันทึก) → ครอบครัวไลน์ล้วน
-     ต่างกันโดยเจตนา — แต่ต้องเขียนไว้ ไม่งั้น session หน้า "แก้ให้เหมือนกัน" แล้วพังอีกฝั่ง
-     🔴 ถ้าจะยุบให้เหมือนกัน = product decision ต้องถาม user ห้ามเงียบ */
-  const leader = REG.profiles.find(p => p.role === 'leader' && p.line_id
+test('🔴 E — 2 ประตูนี้ต้องตอบ "ชุดเดียวกัน" (user เคาะ 29/10) ห้าม drift เงียบ', () => {
+  /* 🔁 **เปลี่ยนเจตนาแล้ว 29/10 — คำสั่ง user: "ให้เห็นส่วนงานตัวเองทุกจอ"**
+     เดิมด่านนี้ล็อกว่า 2 ตัว "ตั้งใจให้ต่างกัน":
+       scopedLines()     = ไลน์ที่ **เห็น**       → ครอบครัว ∪ ส่วนงาน
+       scopedLineNames() = ไลน์ที่ **รับผิดชอบ** → ครอบครัวล้วน
+     แต่ไล่ผู้เรียกจริงแล้ว 22 จอที่เรียก scopedLineNames **ส่วนใหญ่เป็นจอดู/รายงาน**
+     (TvBoard · Obeya · ObeyaKpiBoard · ObeyaSqdcmBoard · DeptDashboard · ScrapReport ·
+      QualityControl · QualityBins · QaCheckSheet · MachineDatabase · DieRegistry · LineStock …)
+     ⇒ เหตุผลเดิมไม่ตรงกับการใช้งาน · วัดแล้วว่าความต่างนี้คือต้นเหตุของอาการที่หน้างานแจ้งซ้ำ
+       *"เห็นของทุกไลน์ แต่เปิดกะเลือกไลน์ตัวเองไม่ได้"*  ⇒ ถาม user แล้ว user สั่งให้ยุบ
+     🔴 ด่านนี้จึงกลับด้าน: **ต้องตรงกัน** · จะแยกกลับเป็น 2 ท่าอีก = ต้องถาม user ใหม่ */
+  const leaders = REG.profiles.filter(p => p.role === 'leader' && p.line_id
     && effOf(p).length && lines.some(l => String(l.id) === String(p.line_id)));
-  assert.ok(leader, 'ทะเบียนไม่มีหัวหน้ากลุ่มที่ผูกไลน์ + มี anchor ส่วนงาน');
-  const eff = effOf(leader);
-  const me = lines.find(l => String(l.id) === String(leader.line_id));
-  const fam = [...getLineFamilyNames(lines, me.name)].sort();
+  assert.ok(leaders.length >= 3, `ทะเบียนมีหัวหน้ากลุ่มที่ผูกไลน์+มี anchor น้อยผิดปกติ (${leaders.length})`);
 
-  assert.deepEqual(
-    [...scopedLineNames({ role: leader.role, lineId: leader.line_id, sections: eff, lines })].sort(),
-    fam, 'scopedLineNames ของหัวหน้ากลุ่มต้องเป็นครอบครัวไลน์ล้วน');
-
-  const seen = new Set(visOf(leader));
-  assert.ok(fam.every(n => seen.has(n)), 'scopedLines ต้องรวมครอบครัวไลน์ตัวเองด้วย');
-  assert.ok(seen.size > fam.length, 'scopedLines ต้องกว้างกว่าครอบครัว (รวมส่วนงานที่ตั้งไว้)');
+  const bad = [];
+  for (const p of leaders) {
+    const args = { role: p.role, lineId: p.line_id, sections: effOf(p), lines };
+    const byObj = visOf(p).slice().sort();
+    const n = scopedLineNames(args);
+    const byName = (n === null ? lines.map(l => l.name) : n).slice().sort();
+    if (JSON.stringify(byObj) !== JSON.stringify(byName)) {
+      bad.push(`${tag(p)}\n      ตัวไลน์: ${byObj.join(' · ')}\n      ชื่อไลน์: ${byName.join(' · ')}`);
+    }
+    // ครอบครัวไลน์ตัวเองต้องอยู่ในชุดเสมอ (ตาข่ายเดิม ห้ามหาย)
+    const me = lines.find(l => String(l.id) === String(p.line_id));
+    for (const f of getLineFamilyNames(lines, me.name)) {
+      if (!byName.includes(f)) bad.push(`${tag(p)}\n      ขาดไลน์ในครอบครัวตัวเอง: ${f}`);
+    }
+  }
+  assert.deepEqual(bad, [], `\n2 ประตูตอบไม่ตรงกัน ${bad.length} ราย:\n  ${bad.join('\n  ')}\n`);
 });

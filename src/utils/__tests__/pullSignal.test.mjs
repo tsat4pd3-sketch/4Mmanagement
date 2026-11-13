@@ -785,15 +785,26 @@ test('⭐ ใบแผนหลายใบในช่วงเดียวก�
   assert.deepEqual(row.merge.map(o => o.id), ['b']);
 });
 
-test('🔴 โหมดช่วงเวลา: ใบคีย์มือ / ใบ dock อื่น / ใบที่ไฟล์อื่นยืนยันแล้ว ห้ามแตะ', () => {
+test('🔴 โหมดช่วงเวลา: ใบคีย์มือ / ใบ dock อื่นที่ยืนยันแล้ว / ใบที่ไฟล์อื่นยืนยันแล้ว ห้ามแตะ', () => {
   const orders = [
     PL('manual', '08:00', 40, { source: 'manual' }),
-    PL('b1', '08:00', 40, { dock_code: 'B1' }),
+    PL('b1', '08:00', 40, { dock_code: 'B1', status: 'confirmed' }),
     PL('taken', '08:00', 30, { status: 'confirmed', pull_batch_id: 'other' }),
   ];
   const [row] = planOrderUpdates(G1, orders, RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`));
   assert.equal(row.action, 'create');
   assert.deepEqual(row.merge, []);
+});
+
+test('⭐ 27/10 ใบแผน 862 pending ของ dock อื่น = แผนรวมของช่วง ไฟล์ B1 รับได้ (dock ตรงยังมาก่อน)', () => {
+  const g1 = [{ ...G1[0], dock_code: 'B1' }];
+  const [row] = planOrderUpdates(g1, [PL('b5', '08:00', 60)], RES1, W(`${D21}T06:00:00`, `${D21}T08:00:00`, { dock: 'B1' }));
+  assert.equal(row.action, 'update');
+  assert.equal(row.order.id, 'b5');
+  const [row2] = planOrderUpdates(g1, [PL('b5', '08:00', 60), PL('b1', '08:30', 20, { dock_code: 'B1' })], RES1,
+    W(`${D21}T06:00:00`, `${D21}T08:00:00`, { dock: 'B1' }));
+  assert.equal(row2.order.id, 'b1', 'ใบ dock ตรงมาก่อน');
+  assert.deepEqual(row2.merge.map(o => o.id), ['b5']);
 });
 
 test('🔴 โหมดช่วงเวลา: อัพไฟล์เดิมซ้ำ = แก้ใบของไฟล์นั้น (แม้เวลาส่งอยู่นอกช่วง)', () => {

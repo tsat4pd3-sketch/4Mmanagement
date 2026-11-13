@@ -18,6 +18,9 @@ import Segmented from '../components/Segmented';
 import { DeleteButton } from '../components/IconButton';
 /* 🔴 "ยังไม่ได้ทดสอบ" ต้องแยกจาก "กะนี้ไม่ได้ผลิต" (13/10 · คำสั่ง user) */
 import { loadRunDays, ranOn } from '../utils/runDays';
+import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const NO_LINES = [];
 
 /* ── Poka-Yoke Check — ทดสอบอุปกรณ์ error-proofing รายวัน/กะ (TPM · 2026-07-23) ──────
@@ -149,54 +152,53 @@ export default function PokaYokeCheck() {
   return (
     <Page>
       <PageHeader title="Poka-Yoke Check" icon="🛡️"
-        sub={`ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]} · ${selDate}`} />
+        sub={`ทดสอบ error-proofing ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]}`} />
 
       {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
       <FilterBar style={{ marginBottom: 12 }}>
-        <span className="filter-label">ไลน์ / พื้นที่</span>
+        <span className="filter-label">{tr('ไลน์ / พื้นที่')}</span>
         {/* <LineSelect> — visibleLines กรอง scope แล้ว (ไม่มี option ว่าง เหมือนเดิม) · 2026-09-07 */}
         <LineSelect lines={visibleLines} value={selLine} onChange={setSelLine} placeholder={null} />
-        <Segmented value={selShift} onChange={setSelShift} label="กะ"
+        <Segmented value={selShift} onChange={setSelShift} label={tr('กะ')}
           options={[{ value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />
-        <span className="filter-label">วันที่</span>
+        <span className="filter-label">{tr('วันที่')}</span>
         <input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} />
-        <span className="filter-label">ผู้ตรวจ</span>
+        <span className="filter-label">{tr('ผู้ตรวจ')}</span>
         {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
         <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ flex: '1 1 180px', maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} />
         <span className="spacer" />
-        {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>➕ เพิ่มอุปกรณ์</button>}
+        {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>{tr('เพิ่มอุปกรณ์')}</button>}
       </FilterBar>
 
       {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
           (หลักเดียวกับ AM ที่แยก notStarted ออกจาก late มาตั้งแต่ 08/10 · utils/dailyCheckDay.js) */}
       {ran === false && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+        <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', marginBottom: 10, fontSize: 12.5,
           background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-          ⚪ <b>{selLine}</b> ไม่ได้เปิดกะใน {SHIFT_LABEL[selShift]} วันที่ {selDate} — <b>ยังไม่ต้องทดสอบ</b> ·
+          ⚪ <b>{selLine}</b> {tr('ไม่ได้เปิดกะใน')} {SHIFT_LABEL[selShift]} {tr('วันที่')} {selDate} — <b>{tr('ยังไม่ต้องทดสอบ')}</b> ·
           อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
         </div>
       )}
       {ran == null && runs && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--amber)' }}>
-          ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+          อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
+        </NoticeBar>
       )}
 
       {/* สรุป */}
       {activeDevs.length > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12, fontWeight: 700 }}>
-          <span style={chip('var(--text2)')}>ทดสอบแล้ว {done}/{activeDevs.length}</span>
-          {failN > 0 && <span style={chip('#ef4444')}>❌ ไม่ผ่าน {failN}</span>}
-          {done - failN > 0 && <span style={chip('#22c55e')}>✅ ผ่าน {done - failN}</span>}
-          {done < activeDevs.length && <span style={chip('#f59e0b')}>รอทดสอบ {activeDevs.length - done}</span>}
+          <span style={chip('var(--text2)')}>{tr('ทดสอบแล้ว')} {done}/{activeDevs.length}</span>
+          {failN > 0 && <span style={chip('var(--red)')}>{tr('❌ ไม่ผ่าน')} {failN}</span>}
+          {done - failN > 0 && <span style={chip('var(--green)')}>{tr('✅ ผ่าน')} {done - failN}</span>}
+          {done < activeDevs.length && <span style={chip('var(--amber)')}>{tr('รอทดสอบ')} {activeDevs.length - done}</span>}
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : activeDevs.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 12 }}>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
           ยังไม่มีอุปกรณ์ poka-yoke ของไลน์ {selLine} — {canManage ? 'กด "➕ เพิ่มอุปกรณ์"' : 'ให้หัวหน้าลงทะเบียนอุปกรณ์ก่อน'}
         </div>
       ) : (
@@ -204,7 +206,7 @@ export default function PokaYokeCheck() {
           {activeDevs.map(d => {
             const c = checks[d.id]; const res = c?.result;
             return (
-              <div key={d.id} style={{ background: 'var(--card)', border: `1px solid ${res === 'fail' ? '#ef4444' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 14px' }}>
+              <div key={d.id} style={{ background: 'var(--card)', border: `1px solid ${res === 'fail' ? 'var(--red)' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{d.code ? `${d.code} · ` : ''}{d.name}</div>
@@ -214,23 +216,23 @@ export default function PokaYokeCheck() {
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'pass', detected: true })}
-                      style={resBtn(res === 'pass', '#22c55e', canRecord)}>✅ ผ่าน (จับ NG ได้)</button>
+                      style={resBtn(res === 'pass', 'var(--green)', canRecord)}>{tr('ผ่าน (จับ NG ได้)')}</button>
                     <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'fail', detected: false })}
-                      style={resBtn(res === 'fail', '#ef4444', canRecord)}>❌ ไม่ผ่าน</button>
+                      style={resBtn(res === 'fail', 'var(--red)', canRecord)}>{tr('ไม่ผ่าน')}</button>
                   </div>
                   {canManage && (
                     <div style={{ display: 'flex', gap: 4 }}>
                       <button className="tbtn" onClick={() => setDEditing({ ...d })} style={{ ...btnGray, padding: '4px 8px', fontSize: 12 }}>✏️</button>
-                      <DeleteButton onClick={() => deleteDevice(d)} title="ลบ" />
+                      <DeleteButton onClick={() => deleteDevice(d)} title={tr('ลบ')} />
                     </div>
                   )}
                 </div>
                 {res && (
                   <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input placeholder="หมายเหตุ / การแก้ไข (ถ้าไม่ผ่าน)" defaultValue={c?.note || ''}
+                    <input placeholder={tr('หมายเหตุ / การแก้ไข (ถ้าไม่ผ่าน)')} defaultValue={c?.note || ''}
                       onBlur={e => { if ((e.target.value || '') !== (c?.note || '')) saveCheck(d, { note: e.target.value }); }}
                       disabled={!canRecord} style={{ flex: 1, minWidth: 200, fontSize: 12 }} />
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ตรวจ: {c?.checker_name || '—'}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ผู้ตรวจ:')} {c?.checker_name || '—'}</span>
                   </div>
                 )}
               </div>
@@ -242,32 +244,32 @@ export default function PokaYokeCheck() {
       {/* modal ทะเบียนอุปกรณ์ */}
       {dEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 560px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 560px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{dEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}อุปกรณ์ Poka-Yoke — {dEditing.line_name}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{dEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}{tr('อุปกรณ์ Poka-Yoke —')} {dEditing.line_name}</div>
               <button onClick={() => setDEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10 }}>
-                <div><div style={lb}>รหัส</div><input value={dEditing.code || ''} onChange={e => setDEditing(p => ({ ...p, code: e.target.value }))} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>ชื่อ/หน้าที่ *</div><input value={dEditing.name || ''} onChange={e => setDEditing(p => ({ ...p, name: e.target.value }))} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('รหัส')}</div><input value={dEditing.code || ''} onChange={e => setDEditing(p => ({ ...p, code: e.target.value }))} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ชื่อ/หน้าที่ *')}</div><input value={dEditing.name || ''} onChange={e => setDEditing(p => ({ ...p, name: e.target.value }))} style={{ width: '100%' }} /></div>
               </div>
-              <div><div style={lb}>จุดงาน/ตำแหน่ง</div>
+              <div><div style={lb}>{tr('จุดงาน/ตำแหน่ง')}</div>
                 {/* เลือกจาก workstations ของไลน์ (ทะเบียนสถานี) — "ระบุเอง" เฉพาะอุปกรณ์ที่ไม่อยู่ประจำสถานี · ค่าเก่าที่ไม่ตรงทะเบียนโชว์ในโหมดระบุเอง · 2026-09-07 */}
-                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder="— ไม่ระบุสถานี —" freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
+                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder={tr('— ไม่ระบุสถานี —')} freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
                   onChange={v => setDEditing(p => ({ ...p, station: v }))} style={{ width: '100%' }} />
               </div>
-              <div><div style={lb}>วิธีทดสอบ</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder="เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน" /></div>
+              <div><div style={lb}>{tr('วิธีทดสอบ')}</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder={tr('เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน')} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>
-                <div><div style={lb}>ชิ้น master NG ที่ใช้</div><input value={dEditing.master_ref || ''} onChange={e => setDEditing(p => ({ ...p, master_ref: e.target.value }))} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>ลำดับ</div><input type="number" value={dEditing.sort ?? 0} onChange={e => setDEditing(p => ({ ...p, sort: e.target.value }))} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ชิ้น master NG ที่ใช้')}</div><input value={dEditing.master_ref || ''} onChange={e => setDEditing(p => ({ ...p, master_ref: e.target.value }))} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ลำดับ')}</div><input type="number" value={dEditing.sort ?? 0} onChange={e => setDEditing(p => ({ ...p, sort: e.target.value }))} style={{ width: '100%' }} /></div>
               </div>
               <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text2)' }}>
-                <input type="checkbox" checked={dEditing.is_active !== false} onChange={e => setDEditing(p => ({ ...p, is_active: e.target.checked }))} style={{ width: 'auto' }} /> ใช้งาน
+                <input type="checkbox" checked={dEditing.is_active !== false} onChange={e => setDEditing(p => ({ ...p, is_active: e.target.checked }))} style={{ width: 'auto' }} /> {tr('ใช้งาน')}
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setDEditing(null)} style={btnGray}>ยกเลิก</button>
-                <button onClick={saveDevice} style={btnAccent}>💾 บันทึก</button>
+                <button onClick={() => setDEditing(null)} style={btnGray}>{tr('ยกเลิก')}</button>
+                <button onClick={saveDevice} style={btnAccent}>{tr('บันทึก')}</button>
               </div>
             </div>
           </div>
@@ -278,7 +280,7 @@ export default function PokaYokeCheck() {
 }
 
 const lb = { fontSize: 11, color: 'var(--muted)', marginBottom: 3, fontWeight: 600 };
-const chip = (c) => ({ display: 'inline-flex', alignItems: 'center', gap: 5, color: c, background: `${c}1a`, border: `1px solid ${c}44`, padding: '3px 10px', borderRadius: 20 });
+const chip = (c) => ({ display: 'inline-flex', alignItems: 'center', gap: 5, color: c, background: `${tint(c, 'dim')}`, border: `1px solid ${tint(c, 'line')}`, padding: '3px 10px', borderRadius: 20 });
 const btnAccent = { padding: '9px 16px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' };
 const btnGray = { padding: '9px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' };
 const resBtn = (on, color, enabled) => ({

@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext, useMemo, useRef } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef, forwardRef, useImperativeHandle } from 'react';
 import { orgValues, orgNodeCompare } from '../utils/listOrder';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { supabase } from '../supabaseClient';
@@ -6,8 +6,12 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { toast } from '../components/Toast';
-import { checkWrite } from '../utils/dbWrite';
-import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { confirmSign } from '../utils/signConfirm';
+import { positionRank } from '../utils/positions';
+import { MANAGER_SIGN_MIN_RANK } from '../utils/signRank';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';
+import { inSectionScope, lineScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
@@ -18,10 +22,15 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import SelectOrFree from '../components/SelectOrFree';
 import { uploadOpts } from '../utils/storageUpload';
+import { uploadAttachmentInfo, removeAttachment, attachFileName, isImageAttachment, ATTACH_MAX_MB } from '../utils/fileAttach';
+import FilePick from '../components/FilePick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import StepFlow from '../components/StepFlow';
+import { ojtFlow } from '../utils/stepFlow';
 
+import { tr } from '../utils/i18n';
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
    Paperless ของฟอร์มกระดาษ FM-HRM-004: บันทึกการอบรมในระบบ + พนักงานเซ็นชื่อบนจอ
@@ -31,6 +40,18 @@ import { DeleteButton } from '../components/IconButton';
    ══════════════════════════════════════════════════════════════ */
 
 const FORM_NO = 'FM-HRM-004';
+/* 📎 ไฟล์แนบใบอบรม (01/11 · หน้างาน PD4 ขอ) — bucket + ตาราง `ojt_training_files`
+   migration `20261101_ojt_attachments_main.sql` · สูตรรับไฟล์อยู่ `utils/fileAttach.js` */
+const OJT_BUCKET = 'ojt-files';
+/* เพดานรูปที่ต่อท้ายใบพิมพ์ — ใบ FM-HRM-004 เป็นเอกสารคุมเล่ม แนบ 40 รูปแล้วพิมพ์ 41 หน้าไม่มีใครอยากได้
+   เกินเพดาน = **เขียนบนใบว่าเหลืออีกกี่ไฟล์** ห้ามตัดทิ้งเงียบ */
+const ATTACH_PRINT_MAX = 10;
+/* 🔴 ลิสต์ใบอบรมต้องรอดแม้ migration ไฟล์แนบยังไม่ลงฐาน (merge กับ apply SQL คนละจังหวะกันเสมอ)
+   embed ตารางที่ไม่มีจริง = PostgREST ตอบ error **ทั้งคิวรี** ⇒ ทั้งหน้าว่างทั้งที่ใบมีครบ
+   ⇒ ล้มแล้วถอยไปชุดไม่มีไฟล์แนบ + ขึ้นแถบเตือนบนจอ (ห้ามเงียบ) */
+const LIST_SELECT_FILES = '*, ojt_training_attendees(id, sign_url), ojt_training_files(id)';
+const LIST_SELECT_BASE  = '*, ojt_training_attendees(id, sign_url)';
+const kbText = (n) => (n == null ? '' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const SCORE_LABELS = ['0', '1', '2', '3', '4'];
 const DEFAULT_SCOPE = `- รู้ความสำคัญของเอกสารแต่ละประเภท
 - รู้วัตถุประสงค์ของเอกสารที่ใช้ในไลน์ผลิต
@@ -57,39 +78,111 @@ async function urlToDataUrl(url) {
   } catch { return null; }
 }
 
-/* ── แผ่นเซ็นชื่อ (canvas → PNG blob) — พนักงานเซ็นบนจอ/แท็บเล็ต ── */
-function SignPadModal({ title, onCancel, onDone }) {
+/* ── แผ่นเซ็นชื่อ (canvas → PNG blob) — ใช้ร่วมกันทั้งเซ็นทีละคนและโหมดวนเซ็น ──
+   🔴 โค้ดวาดเส้นมีชุดเดียวที่นี่ · ห้ามก๊อปไปไว้ในโมดัลใหม่ (ปากกาเพี้ยนทีจะเพี้ยนคนละแบบ) */
+const SignCanvas = forwardRef(function SignCanvas({ height = 160 }, ref) {
   const cvRef = useRef(null);
   const drawing = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const dirty = useRef(false);
 
-  useEffect(() => {
-    const c = cvRef.current;
-    if (c) { const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
-  }, []);
+  const wipe = () => {
+    const c = cvRef.current; if (!c) return;
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    dirty.current = false;
+  };
+  useEffect(wipe, []);
+  useImperativeHandle(ref, () => ({
+    isDirty: () => dirty.current,
+    clear: wipe,
+    /* คืน blob ของลายเซ็น — ยังไม่ได้เซ็น = null (ผู้เรียกเป็นคนตัดสินว่าจะเตือนหรือข้าม) */
+    getBlob: () => new Promise(res => {
+      if (!dirty.current || !cvRef.current) { res(null); return; }
+      cvRef.current.toBlob(b => res(b || null), 'image/png');
+    }),
+  }), []);
 
   const pos = (e) => { const c = cvRef.current, r = c.getBoundingClientRect(), t = e.touches?.[0] || e; return { x: (t.clientX - r.left) * (c.width / r.width), y: (t.clientY - r.top) * (c.height / r.height) }; };
   const down = (e) => { e.preventDefault(); drawing.current = true; last.current = pos(e); };
   const move = (e) => { if (!drawing.current) return; e.preventDefault(); const c = cvRef.current, ctx = c.getContext('2d'), p = pos(e); ctx.strokeStyle = '#111'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(last.current.x, last.current.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last.current = p; dirty.current = true; };
   const up = () => { drawing.current = false; };
-  const clear = () => { const c = cvRef.current, ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); dirty.current = false; };
 
-  const done = () => {
-    if (!dirty.current) { toast.error('ยังไม่ได้เซ็น'); return; }
-    cvRef.current.toBlob(b => b && onDone(b), 'image/png');
+  return (
+    <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
+      style={{ width: '100%', height, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
+  );
+});
+
+const padBtn = (bg, color, border) => ({ padding: '7px 14px', borderRadius: 8, border: border || '1px solid var(--border2)', background: bg, color, cursor: 'pointer', fontSize: 13 });
+
+/* เซ็นทีละคน (กดจากแถวในตาราง) */
+function SignPadModal({ title, onCancel, onDone }) {
+  const pad = useRef(null);
+  const done = async () => {
+    const b = await pad.current?.getBlob();
+    if (!b) { toast.error('ยังไม่ได้เซ็น'); return; }
+    onDone(b);
+  };
+  return (
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
+        <SignCanvas ref={pad} />
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>
+          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>{tr('ใช้ลายเซ็นนี้')}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── 📱 โหมด "ส่งแท็บเล็ตวนเซ็น" (2026-10-28 · คำสั่ง user) ───────────────────────
+   ทำไมต้องมี: ของเดิมเซ็นได้ทีละคน — กดเข้าแถว → เซ็น → **อัปขึ้นเน็ตทันที** → ปิด → กดแถวถัดไป
+   9 คน = กด 9 รอบ รอเน็ต 9 ครั้งบนแท็บเล็ตหน้างาน ⇒ ช้ากว่าส่งกระดาษให้เซ็นต่อๆ กัน
+   (วัดจากของจริง 28/10: ใบในระบบ 72 ใบ · รายชื่อ 524 คน · **เซ็นบนจอจริงแค่ 10 คน = 2%**)
+   ⇒ โหมดนี้: ชื่อขึ้นใหญ่ทีละคน · เซ็นเสร็จกดถัดไป · **เก็บไว้ในเครื่องก่อน อัปทีเดียวตอนจบ**
+   🔴 ปิดกลางคัน = ของที่เซ็นไปแล้วยังอยู่ (ส่งกลับให้ผู้เรียกอัป) ห้ามทิ้งเงียบ */
+function SignQueueModal({ queue, onCancel, onDone }) {
+  const pad = useRef(null);
+  const [pos, setPos] = useState(0);
+  const [done, setDone] = useState(() => new Map());   // idx → blob
+  const cur = queue[pos];
+  const total = queue.length;
+
+  const keep = async () => {
+    const b = await pad.current?.getBlob();
+    if (!b) { toast.error(`${cur.name} ยังไม่ได้เซ็น — ถ้าจะข้ามให้กด "ข้ามคนนี้"`); return null; }
+    const next = new Map(done); next.set(cur.idx, b); setDone(next);
+    return next;
+  };
+  const go = (map) => {
+    if (pos + 1 < total) { pad.current?.clear(); setPos(pos + 1); }
+    else onDone(map);
   };
 
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
-        <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
-          style={{ width: '100%', height: 160, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={clear} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>🗑️ ล้าง</button>
-          <button onClick={onCancel} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={done} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>✔ ใช้ลายเซ็นนี้</button>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 3300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 660px)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 2 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('✍️ ส่งแท็บเล็ตให้เซ็นทีละคน')}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>{tr('คนที่')} {pos + 1} / {total} {tr('· เซ็นแล้ว')} {done.size}</div>
+        </div>
+        {/* ชื่อใหญ่ — คนที่รับแท็บเล็ตต่อต้องรู้ทันทีว่าช่องนี้ของตัวเองหรือเปล่า */}
+        <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', lineHeight: 1.25, marginBottom: 2 }}>{cur.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{tr('รหัส')} {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
+        <SignCanvas ref={pad} height={190} />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>{tr('ข้ามคนนี้')}</button>
+          <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
+            {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
+          </button>
+          <button onClick={async () => { const m = await keep(); if (m) go(m); }}
+            style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 20px', fontWeight: 800 }}>
+            {pos + 1 < total ? 'ถัดไป →' : 'เสร็จสิ้น'}
+          </button>
         </div>
       </div>
     </div>
@@ -97,7 +190,13 @@ function SignPadModal({ title, onCancel, onDone }) {
 }
 
 export default function OjtTraining() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName,
+    position: myPosition, respCostCenters, scopeIdx, allUnits } = useContext(UserContext);
+  /* 🔒 ช่อง "ระดับจัดการอนุมัติ" = ผู้จัดการเซ็นเอง (02/11 · คำสั่ง user เลือกทาง "ข")
+     เดิมเป็น picker: ใครแก้ใบได้ เลือกชื่อคนแล้วดึง signature_url ของคนนั้นมาแปะ
+     ⇒ ธุรการแปะลายเซ็นผู้จัดการได้ (วัด 02/11: 61 จาก 74 ใบที่ชื่อผู้อนุมัติ ≠ คนสร้างใบ)
+     กฎของโมดูลนี้ห้ามอยู่แล้ว (28/10): "ลายเซ็นที่เก็บไว้แล้วเอามาแปะ = ตรายาง ไม่ใช่การลงนาม" */
+  const posRank = positionRank(myPosition);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
   const scopeKey = useMemo(() => [...(scopeSecs || [])].sort().join('|'), [scopeSecs]);
   const canRecord = can('ojt', 'record', role);
@@ -122,28 +221,48 @@ export default function OjtTraining() {
   const [editing, setEditing] = useState(null);   // training draft (มี attendees[])
   const [saving, setSaving] = useState(false);
   const [signTarget, setSignTarget] = useState(null); // { idx, title } — แถวที่กำลังเซ็น
+  const [signQueue, setSignQueue] = useState(null);   // [{ idx, name, code, hadSign }] — โหมดส่งแท็บเล็ตวนเซ็น
+  const [signingQueue, setSigningQueue] = useState(false);
   const [empSearch, setEmpSearch] = useState('');
   const [printing, setPrinting] = useState(null);
+  /* uid ของคนที่ล็อกอิน — ใช้ตอบว่า "ใบนี้เราเป็นคนเปิดเองไหม" (ปุ่มลบใบที่เปิดผิด · ดู canRemoveSheet) */
+  const [uid, setUid] = useState(null);
+  /* ข้อความ = "ฟีเจอร์ไฟล์แนบใช้ไม่ได้ตอนนี้ เพราะ…" · '' = ปกติ (ดู LIST_SELECT_FILES) */
+  const [filesOff, setFilesOff] = useState('');
   const [docReady, setDocReady] = useState(false); // ทะเบียนเอกสารโหลดแล้ว → subtitle ดึงเลขฟอร์มจาก registry
   const ojtFormNo = (docReady ? docFormSync('ojt', { form_code: FORM_NO }).form_code : FORM_NO) || FORM_NO;
 
   /* ── scope มาตรฐาน: leader → section ของไลน์ตัวเอง · role อื่นตาม sections ── */
   const leaderLine = useMemo(() => lines.find(l => String(l.id) === String(userLineId)), [lines, userLineId]);
+  /* 🔴 `scopeSecs` เป็น array ⇒ ใส่ใน deps ตรงๆ ไม่ได้ (ใบใหม่เนื้อเดิมทุกเรนเดอร์ = คิวรีซ้ำ
+     และล้างเพดาน coalesce · กฎเขียน DB ข้อ 9) ⇒ ใช้ `scopeKey` คีย์เนื้อหาที่ประกาศไว้ข้างบนแล้ว
+     (เรียงแล้ว — ลำดับส่วนงานไม่มีผลกับการกรอง) */
+  /* 🔭 ส่วนงานที่เห็นได้ = ส่วนงานของไลน์ที่ของกลางบอกว่าเห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้
+     (QC audit 09/11 · กวาดรอบ 2) — เดิม leader ได้ส่วนงานของไลน์ตัวเองช่องเดียว แม้ profiles
+     กำกับส่วนงานอื่นไว้ด้วย · ว่าง = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
   const effSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return leaderLine?.section ? [leaderLine.section] : [];
-    return scopeSecs;
-  }, [role, userLineId, leaderLine, scopeSecs]);
+    const secs = scopeKey ? scopeKey.split('|') : [];
+    const r = lineScope({ role, lineId: userLineId, sections: secs, lines, scopeIdx });
+    if (r.unlimited) return secs;
+    const fromLines = [...new Set(r.lines.map(l => l.section).filter(Boolean))];
+    return [...new Set([...fromLines, ...secs])];
+  }, [role, userLineId, scopeKey, lines, scopeIdx]);
 
   const load = async () => {
     setLoading(true);
-    const [{ data: tr }, { data: ln }, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
-      supabase.from('ojt_trainings').select('*, ojt_training_attendees(id)').order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
+    const [{ data: tr, error: trErr }, lnRes, { data: org }, { data: profs }, { data: divs }] = await Promise.all([
+      /* `sign_url` ของลูก = ใช้ตอบว่า "ใบนี้มีคนเซ็นแล้วหรือยัง" (ประตูของปุ่มลบใบที่เปิดผิด)
+         `ojt_training_files(id)` = จำนวนไฟล์แนบไว้โชว์ชิป 📎 — ทั้งคู่เป็นคอลัมน์เดียว ไม่ใช่ select('*') */
+      supabase.from('ojt_trainings').select(LIST_SELECT_FILES).order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300),
       loadLinesRes(),
       supabase.from('org_nodes').select('id, code, name, kind, parent_id, sort_order').eq('is_active', true),
       supabase.from('profiles').select('id, full_name, signature_url').order('full_name'),
       // "ฝ่าย" = org_divisions (ชั้นบนสุดของผัง · migration 20260818) — เดิมช่องนี้พิมพ์เอง (2026-09-07)
       supabase.from('org_divisions').select('code, label, is_active').order('sort_order'),
     ]);
+  /* 🔴 30/10 — เดิมแกะแค่ `{ data }` ⇒ ทะเบียนไลน์โหลดไม่สำเร็จแล้วได้ลิสต์ว่าง **เงียบ**
+     (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
+  const ln = lnRes?.error ? null : lnRes.data;
     setLines(ln || []);
     setDivisions((divs || []).filter(d => d.is_active !== false).map(d => d.label).filter(Boolean));
     // ลำดับตามผัง (query .order('sort_order') แล้ว) — ห้าม .sort() ตัวอักษรทับ (QC audit 2026-08-18)
@@ -151,7 +270,19 @@ export default function OjtTraining() {
     setOrgSectionNodes((org || []).filter(n => n.kind === 'section').sort(orgNodeCompare));
     setOrgDeptNodes((org || []).filter(n => n.kind === 'department'));
     setProfiles(profs || []);
-    setTrainings(tr || []);
+    if (trErr) {
+      // ตารางไฟล์แนบยังไม่มีในฐาน (ยังไม่ apply migration) — ถอยไปชุดเดิมแล้วบอกบนจอ ห้ามปล่อยหน้าว่าง
+      const retry = await supabase.from('ojt_trainings').select(LIST_SELECT_BASE)
+        .order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300);
+      setFilesOff(retry.error ? '' : (trErr.message || 'ตารางไฟล์แนบยังไม่พร้อม'));
+      setTrainings(retry.data || []);
+      if (retry.error) toast.error('โหลดรายการใบอบรมไม่สำเร็จ: ' + retry.error.message);
+    } else {
+      setFilesOff('');
+      setTrainings(tr || []);
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    setUid(user?.id || null);
     setLoading(false);
   };
   useEffect(() => { load(); loadDocForms().then(() => setDocReady(true)); }, []);
@@ -208,13 +339,11 @@ export default function OjtTraining() {
   }, [editDate, employees, lines, scopeLineIds, scopeSecs]);
 
   // mandatory scope ก่อนแสดงรายการ (แบบเดียวกับหน้าอื่น) — leader/scoped เห็นเฉพาะ section ตัวเอง
+  /* ขอบเขตเดียวกับ `effSections` — ใบที่ตัวเองสร้างยังเห็นเสมอ (กติกาเดิมของหน้านี้) */
   const visibleTrainings = useMemo(() => trainings.filter(t => {
-    if (role === 'leader' && userLineId) {
-      return !effSections.length || inSectionScope(effSections, t.section) || t.created_by_name === fullName;
-    }
-    if (scopeSecs.length) return inSectionScope(scopeSecs, t.section);
-    return true;
-  }), [trainings, role, userLineId, effSections, scopeSecs, fullName]);
+    if (!effSections.length) return true;
+    return inSectionScope(effSections, t.section) || t.created_by_name === fullName;
+  }), [trainings, effSections, fullName]);
 
   const emptyDraft = () => ({
     id: crypto.randomUUID(),
@@ -232,12 +361,16 @@ export default function OjtTraining() {
     hr_name: '', hr_sig_url: null,
     status: 'open',
     attendees: [],
+    files: [],
   });
 
   const openEdit = async (t) => {
-    const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
+    const [{ data: att }, { data: fls }] = await Promise.all([
+      supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order'),
+      supabase.from('ojt_training_files').select('*').eq('training_id', t.id).order('sort_order'),
+    ]);
     // ใบเก่าที่ section ว่างแต่มีแผนกขึ้นตรงฝ่าย → โชว์เป็น sentinel ให้แก้ต่อได้ (pattern Register 2026-08-06)
-    setEditing({ ...t, isNew: false, attendees: att || [],
+    setEditing({ ...t, isNew: false, attendees: att || [], files: fls || [], _removedFiles: [],
       section: sectionValueForEdit(t.section, t.department, orgDeptNodes, orgSectionNodes) });
   };
 
@@ -261,33 +394,97 @@ export default function OjtTraining() {
 
   const removeAttendee = (idx) => setEditing(prev => ({ ...prev, attendees: prev.attendees.filter((_, i) => i !== idx) }));
 
-  const handleSignDone = async (blob) => {
-    const { idx } = signTarget;
-    setSignTarget(null);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
+  /* ── 📎 ไฟล์แนบ (01/11 · หน้างาน PD4 ขอ "แนบรูปภาพ/เพิ่มเอกสารได้ด้วย") ──────────
+     อัปขึ้น storage ทันทีที่เลือก แต่ **แถวในตารางเขียนตอนกดบันทึก** (เหมือน attendees)
+     — ใบใหม่ยังไม่มีแถวแม่ใน DB ⇒ insert ตอนนี้ติด FK · อัปก่อนเพื่อให้เห็นรูปทันทีบนจอ
+     🔴 ปิดโมดัลทิ้ง = ต้องลบไฟล์ที่เพิ่งอัปออกจาก storage (closeEdit) ไม่งั้นกินที่เก็บโดยไม่มีใครอ้างถึง
+     🔴 สูตรรับไฟล์ (HEIC · GIF · บีบรูป · uploadOpts) อยู่ `utils/fileAttach.js` ห้ามเขียนซ้ำที่นี่ */
+  const addFile = async (f) => {
+    const info = await uploadAttachmentInfo(OJT_BUCKET, `ojt/${editing.id}`, f);
+    if (!info) return;          // ปฏิเสธ/ล้มเหลว — toast ขึ้นให้แล้วใน fileAttach (ห้ามเงียบ)
+    setEditing(prev => ({ ...prev, files: [...(prev.files || []), {
+      file_url: info.url, file_name: info.name, mime_type: info.type, size_bytes: info.size, _new: true,
+    }] }));
+  };
+
+  const removeFile = (idx) => setEditing(prev => {
+    const f = (prev.files || [])[idx];
+    if (!f) return prev;
+    if (f._new) removeAttachment(OJT_BUCKET, f.file_url);   // ยังไม่เคยบันทึก = ไม่มีแถวอ้างถึง ลบได้เลย
+    return {
+      ...prev,
+      files: prev.files.filter((_, i) => i !== idx),
+      // ไฟล์ที่บันทึกไว้แล้ว: ลบแถวตอนกดบันทึก แล้วค่อยแตะ storage (นับแถวก่อน — กฎเขียน DB ข้อ 2)
+      _removedFiles: f._new ? (prev._removedFiles || []) : [...(prev._removedFiles || []), f],
+    };
+  });
+
+  /* ปิดฟอร์ม — ไฟล์ที่อัปไปแล้วแต่ยังไม่ได้บันทึกต้องเก็บกวาด (best-effort)
+     ของที่บันทึกแล้วไม่แตะ · ของที่กดเอาออกแต่ยังไม่บันทึก = ยกเลิกการเอาออกไปในตัว (แถวยังอยู่) */
+  const closeEdit = () => {
+    (editing?.files || []).filter(f => f._new).forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
+    setEditing(null);
+  };
+
+  /* อัปลายเซ็นหลายคนในคราวเดียว — ใช้ร่วมกันทั้งเซ็นทีละคนและโหมดวนเซ็น
+     🔴 โค้ดคิด path / ตามหาไฟล์เก่า มีชุดเดียวที่นี่ · เดิมอยู่ใน handleSignDone ตัวเดียว
+     คืน { urls: Map<idx,url>, oldPaths: [] } — ผู้เรียกเป็นคน setState ทีเดียวจบ */
+  const uploadSignatures = async (entries) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return null; }
+    const urls = new Map(); const oldPaths = []; const failed = [];
+    for (const { idx, blob } of entries) {
       // path ต้องอยู่ในโฟลเดอร์ auth.uid ของคนบันทึก (RLS bucket signatures) — ชื่อไฟล์กันชนด้วย timestamp
-      const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}.png`;
+      const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.png`;
       const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
-      if (error) { toast.error('อัปโหลดลายเซ็นไม่สำเร็จ: ' + error.message); return; }
-      const url = supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl;
+      if (error) { failed.push(editing.attendees[idx]?.emp_name || `คนที่ ${idx + 1}`); continue; }
+      urls.set(idx, supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl);
       /* เซ็นทับของเดิม — **จดไว้ก่อน ลบหลังบันทึกใบสำเร็จ** (QC 05/10)
          เดิมลบไฟล์เก่าทันทีตอนเซ็น ⇒ ยกเลิก/บันทึกล้ม = แถวในฐานยังชี้ไฟล์เก่าที่ถูกลบไปแล้ว = ลายเซ็นหายถาวร
          (best-effort · เฉพาะโฟลเดอร์ตัวเอง ตาม RLS bucket signatures) */
       const old = editing.attendees[idx]?.sign_url;
-      let oldPath = null;
       if (old?.includes('/signatures/')) {
         const p0 = decodeURIComponent(old.split('/signatures/')[1] || '').split('?')[0];
-        if (p0.startsWith(`${user.id}/`)) oldPath = p0;
+        if (p0.startsWith(`${user.id}/`)) oldPaths.push(p0);
       }
-      setEditing(prev => ({
-        ...prev,
-        attendees: prev.attendees.map((a, i) => (i === idx ? { ...a, sign_url: url } : a)),
-        _replacedSigPaths: oldPath ? [...(prev._replacedSigPaths || []), oldPath] : (prev._replacedSigPaths || []),
-      }));
-      toast.success('บันทึกลายเซ็นแล้ว');
+    }
+    /* 🔴 ล้มบางคนต้องบอกเป็นชื่อ — "บันทึกแล้ว" ทั้งที่ขาดไป 3 คน = ต้องมาตามหาทีหลังว่าใคร */
+    if (failed.length) toast.error(`อัปลายเซ็นไม่สำเร็จ ${failed.length} คน: ${failed.join(', ')} — ลองเซ็นใหม่เฉพาะคนนั้น`);
+    return { urls, oldPaths };
+  };
+
+  const applySignUrls = ({ urls, oldPaths }) => {
+    if (!urls.size) return;
+    setEditing(prev => ({
+      ...prev,
+      attendees: prev.attendees.map((a, i) => (urls.has(i) ? { ...a, sign_url: urls.get(i) } : a)),
+      _replacedSigPaths: [...(prev._replacedSigPaths || []), ...oldPaths],
+    }));
+  };
+
+  const handleSignDone = async (blob) => {
+    const { idx } = signTarget;
+    setSignTarget(null);
+    try {
+      const res = await uploadSignatures([{ idx, blob }]);
+      if (!res) return;
+      applySignUrls(res);
+      if (res.urls.size) toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+  };
+
+  /* 📱 จบโหมดวนเซ็น — อัปทุกลายเซ็นรวดเดียว (เน็ต 1 รอบแทน N รอบ) */
+  const handleQueueDone = async (map) => {
+    setSignQueue(null);
+    if (!map?.size) return;
+    setSigningQueue(true);
+    try {
+      const res = await uploadSignatures([...map.entries()].map(([idx, blob]) => ({ idx, blob })));
+      if (!res) return;
+      applySignUrls(res);
+      if (res.urls.size) toast.success(`บันทึกลายเซ็น ${res.urls.size} คนแล้ว — อย่าลืมกดบันทึกใบ`);
+    } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+    finally { setSigningQueue(false); }
   };
 
   const handleSave = async () => {
@@ -305,8 +502,11 @@ export default function OjtTraining() {
         for_new: !!editing.for_new, for_review: !!editing.for_review, for_method_change: !!editing.for_method_change,
         topic: editing.topic || null, scope: editing.scope || null, trainer_name: editing.trainer_name || null,
         maker_name: editing.maker_name || null, maker_sig_url: editing.maker_sig_url || null,
-        approver_name: editing.approver_name || null, approver_sig_url: editing.approver_sig_url || null,
-        hr_name: editing.hr_name || null, hr_sig_url: editing.hr_sig_url || null,
+        /* 🔴 ไม่เขียน `approver_*` ที่นี่ — ช่อง "ระดับจัดการอนุมัติ" ต้องให้ผู้จัดการกดเซ็นเอง
+           (02/11 · ทาง "ข") ปล่อยให้ตัวบันทึกใบเขียนได้ = ธุรการแปะลายเซ็นผู้จัดการเหมือนเดิม
+           ⇒ เขียนผ่าน `signApproveOjt()` ที่เดียว · มีด่าน `ojt-approver-self-sign-only` */
+        /* 🔴 ไม่เขียน `hr_*` ที่นี่เช่นกัน (05/11) — ช่อง "ผู้รับทราบ" ต้องให้เจ้าตัวกดเซ็นเอง
+           ⇒ เขียนผ่าน `signSelfOjt('hr')` ที่เดียว · มีด่าน `ojt-approver-self-sign-only` */
         status: editing.status || 'open',
         updated_at: new Date().toISOString(),
         ...(editing.isNew ? { created_by: user?.id || null, created_by_name: fullName || null } : {}),
@@ -346,6 +546,24 @@ export default function OjtTraining() {
         // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
         if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
       }
+      /* 📎 ไฟล์แนบ — insert เฉพาะตัวใหม่ · ลบเฉพาะตัวที่กดเอาออก (ไฟล์ที่ค้างไว้ไม่มีอะไรให้แก้)
+         ล้มที่ขั้นนี้ **ไม่ล้มทั้งใบ** (ใบ+รายชื่อบันทึกไปแล้ว) แต่ต้องบอกให้ชัดว่าใบผ่าน ไฟล์ไม่ผ่าน */
+      const newFiles = (editing.files || []).filter(f => f._new);
+      if (newFiles.length) {
+        checkWrite(await supabase.from('ojt_training_files').insert(newFiles.map((f, i) => ({
+          training_id: editing.id, file_url: f.file_url, file_name: f.file_name || null,
+          mime_type: f.mime_type || null, size_bytes: f.size_bytes || null,
+          uploaded_by: user?.id || null, uploaded_name: fullName || null,
+          sort_order: (editing.files.length - newFiles.length) + i,
+        }))), 'บันทึกใบแล้ว แต่แนบไฟล์');
+      }
+      const rmFiles = (editing._removedFiles || []).filter(f => f.id);
+      if (rmFiles.length) {
+        /* 🔴 นับแถวก่อนแตะ storage — RLS ปฏิเสธ delete = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2)
+           ไม่นับแล้วลบไฟล์ไปก่อน = แถวยังอยู่แต่ไฟล์หายถาวร ⇒ จอโชว์ไฟล์แนบที่กดแล้ว 404 */
+        const delRes = await supabase.from('ojt_training_files').delete().in('id', rmFiles.map(f => f.id)).select('id');
+        if (checkWriteRows(delRes, 'เอาไฟล์แนบออก')) rmFiles.forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
+      }
       // ใบบันทึกสำเร็จแล้ว ค่อยลบไฟล์ลายเซ็นเก่าที่ถูกเซ็นทับ (best-effort)
       if (editing._replacedSigPaths?.length) {
         supabase.storage.from('signatures').remove(editing._replacedSigPaths).catch(() => {});
@@ -368,9 +586,28 @@ export default function OjtTraining() {
     } finally { setSaving(false); }
   };
 
+  /* ── 🗑️ ใครลบใบได้บ้าง (01/11 · หน้างาน PD4 ขอ "เปิดผิดลบได้ด้วย") ───────────────
+     เดิมมีทางเดียว = สิทธิ์ `ojt:delete` (ระดับจัดการ) ⇒ หัวหน้าที่กด "สร้างใบอบรม" ผิด
+     ต้องรอผู้จัดการมาลบให้ · ใบขยะค้างในทะเบียนเอกสารคุมเล่ม
+     เพิ่มทางที่ 2 ให้แคบที่สุดเท่าที่ตอบคำขอได้: **ใบของเราเอง + ยังไม่มีใครเซ็น**
+     🔴 มีคนเซ็นแล้ว = หลักฐานการอบรมของพนักงานคนนั้น ห้ามให้ใครลบนอกจากระดับจัดการ
+        (FM-HRM-004 เป็นเอกสารที่ auditor ขอดู — ลบทิ้งแล้วกู้ไม่ได้)
+     🔴 อ่านลายเซ็นไม่ได้ = ไม่ลบ (fail-closed) ห้ามเดาว่า "คงยังไม่มีใครเซ็น" */
+  const ownsSheet = (t) => canRecord && uid && t.created_by && String(t.created_by) === String(uid);
+  const sheetSigned = (t) => (t.ojt_training_attendees || []).some(a => a.sign_url);
+  const canRemoveSheet = (t) => mayDelete || (ownsSheet(t) && !sheetSigned(t));
+
   const handleDelete = async (t) => {
     if (!window.confirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
-    const { data: att } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
+    const { data: att, error: attErr } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
+    if (!mayDelete) {
+      // ทางที่ 2 (เจ้าของใบ) — ทวนเงื่อนไขกับข้อมูลสดอีกรอบ ชิปบนจออาจเก่ากว่าความจริง
+      if (!ownsSheet(t)) { toast.error('ลบได้เฉพาะใบที่คุณเป็นคนสร้าง — ใบของคนอื่นต้องให้ระดับจัดการลบ'); return; }
+      if (attErr) { toast.error('ตรวจลายเซ็นในใบไม่สำเร็จ จึงยังไม่ลบ: ' + attErr.message); return; }
+      if ((att || []).some(a => a.sign_url)) { toast.error('ใบนี้มีพนักงานเซ็นแล้ว — ลบได้เฉพาะระดับจัดการ (แก้ไขใบแทนได้)'); return; }
+    }
+    // ไฟล์แนบ: อ่าน URL ไว้ก่อน (แถวจะหายไปกับ cascade) แล้วค่อยลบไฟล์หลังยืนยันว่าใบหายจริง
+    const { data: fls } = await supabase.from('ojt_training_files').select('file_url').eq('training_id', t.id);
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ = 0 แถว ไม่มี error
        ไม่นับ = ใบอบรมยังอยู่ แต่ลายเซ็นพนักงานทุกคนถูกลบ ⇒ ใบเสียถาวร เซ็นใหม่ไม่ได้ */
     const dres = await supabase.from('ojt_trainings').delete().eq('id', t.id).select('id');
@@ -382,6 +619,7 @@ export default function OjtTraining() {
       .map(u => decodeURIComponent(u.split('/signatures/')[1] || '').split('?')[0])
       .filter(p => user?.id && p.startsWith(`${user.id}/`));
     if (paths.length) supabase.storage.from('signatures').remove(paths).catch(() => {});
+    (fls || []).forEach(f => removeAttachment(OJT_BUCKET, f.file_url));
     toast.success('ลบแล้ว');
     load();
   };
@@ -393,12 +631,26 @@ export default function OjtTraining() {
       // เลขฟอร์ม/Rev/ช่องลายเซ็น จากทะเบียนเอกสาร (/doc-forms) — fallback ค่าเดิม
       const df = await getDocForm('ojt', { form_code: FORM_NO, sig_blocks: ['ผู้จัดทำ', 'ระดับจัดการอนุมัติ', 'ผู้รับทราบ'] });
       const sigLabels = df.sig_blocks;
-      const { data: att } = await supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order');
+      const [{ data: att }, { data: fls }] = await Promise.all([
+        supabase.from('ojt_training_attendees').select('*').eq('training_id', t.id).order('sort_order'),
+        supabase.from('ojt_training_files').select('file_url, file_name').eq('training_id', t.id).order('sort_order'),
+      ]);
       const rows = att || [];
-      const [logo, makerSig, apprSig, hrSig, ...attSigs] = await Promise.all([
+      /* 📎 ไฟล์แนบลงใบพิมพ์ (01/11): รูป = ต่อท้ายเป็นหน้าๆ ให้ auditor เห็นหลักฐานในเล่มเดียวกัน
+         ไฟล์ที่พิมพ์ไม่ได้ (PDF/Word/Excel) = ลิสต์ชื่อไว้ท้ายใบ **ห้ามเงียบ** คนอ่านใบกระดาษ
+         ต้องรู้ว่ายังมีไฟล์อะไรอยู่ในระบบอีก · เกินเพดานรูปก็เขียนบอกว่าเหลืออีกกี่รูป */
+      const attachAll = fls || [];
+      const attachImgs = attachAll.filter(f => isImageAttachment(f.file_url));
+      const attachDocs = attachAll.filter(f => !isImageAttachment(f.file_url));
+      const printImgs = attachImgs.slice(0, ATTACH_PRINT_MAX);
+      const sigCount = rows.length;
+      const [logo, makerSig, apprSig, hrSig, ...rest] = await Promise.all([
         urlToDataUrl(df.logo_url || tsLogoUrl), urlToDataUrl(t.maker_sig_url), urlToDataUrl(t.approver_sig_url), urlToDataUrl(t.hr_sig_url),
         ...rows.map(r => urlToDataUrl(r.sign_url)),
+        ...printImgs.map(f => urlToDataUrl(f.file_url)),
       ]);
+      const attSigs = rest.slice(0, sigCount);
+      const attachData = rest.slice(sigCount);
       const cb = (v) => `<span style="display:inline-block;width:11px;height:11px;border:1px solid #000;text-align:center;line-height:10px;font-size:10px;vertical-align:middle">${v ? '✓' : '&nbsp;'}</span>`;
       const tick = (v) => v ? '✓' : '';
       const scoreCells = (score) => SCORE_LABELS.map((_, i) =>
@@ -430,14 +682,14 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
 @media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body style="padding:6mm">
-<div style="font-size:9px;text-align:right">หน้า 1 ของ 1 หน้า</div>
+<div style="font-size:9px;text-align:right">หน้า 1 ของ ${1 + printImgs.length} {tr('หน้า')}</div>
 <table style="width:100%;border:1px solid #000">
   <tr>
     <td style="border:1px solid #000;width:110px;text-align:center;vertical-align:middle;padding:4px">
       ${logo ? `<img src="${logo}" style="width:80px"/>` : '<b>TS AUTOMOTIVE</b>'}
     </td>
     <td style="border:1px solid #000;text-align:center;vertical-align:middle;padding:4px">
-      <div style="font-size:15px;font-weight:bold">ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน</div>
+      <div style="font-size:15px;font-weight:bold">{tr('ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน')}</div>
       <div style="font-size:13px;font-weight:bold">( ON THE JOB TRAINING )</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
@@ -460,24 +712,24 @@ table{border-collapse:collapse}
       <div>แผนก&nbsp;<b>${t.department || ''}</b></div>
     </td>
     <td style="border:1px solid #000;padding:3px 6px" colspan="2">
-      <div>${cb(t.for_new)} สำหรับพนักงานใหม่ / เปลี่ยนงาน</div>
-      <div>${cb(t.for_review)} สำหรับการทบทวน / อบรมซ้ำ</div>
-      <div>${cb(t.for_method_change)} สำหรับการเปลี่ยนแปลงวิธีทำงาน</div>
+      <div>${cb(t.for_new)} {tr('สำหรับพนักงานใหม่ / เปลี่ยนงาน')}</div>
+      <div>${cb(t.for_review)} {tr('สำหรับการทบทวน / อบรมซ้ำ')}</div>
+      <div>${cb(t.for_method_change)} {tr('สำหรับการเปลี่ยนแปลงวิธีทำงาน')}</div>
     </td>
     <td style="border:1px solid #000;padding:3px 6px">
-      <div>วันที่ <b>${thDate(t.train_date)}</b></div>
-      <div>เวลา <b>${t.time_from || '.....'} - ${t.time_to || '.....'}</b> น.</div>
-      <div>สถานที่ <b>${t.location || ''}</b></div>
+      <div>{tr('วันที่')} <b>${thDate(t.train_date)}</b></div>
+      <div>{tr('เวลา')} <b>${t.time_from || '.....'} - ${t.time_to || '.....'}</b> {tr('น.')}</div>
+      <div>{tr('สถานที่')} <b>${t.location || ''}</b></div>
     </td>
   </tr>
 </table>
 
 <table style="width:100%;border:1px solid #000;border-top:none">
   <tr style="background:#f0f0f0">
-    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">หัวข้อและรหัสเอกสารที่สอน</th>
-    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">ผู้สอนงาน</th>
-    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">ระยะเวลา</th>
-    <th style="border:1px solid #000;padding:2px;font-size:10px">ขอบเขตเนื้อหา</th>
+    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">{tr('หัวข้อและรหัสเอกสารที่สอน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">{tr('ผู้สอนงาน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">{tr('ระยะเวลา')}</th>
+    <th style="border:1px solid #000;padding:2px;font-size:10px">{tr('ขอบเขตเนื้อหา')}</th>
   </tr>
   <tr>
     <td style="border:1px solid #000;padding:3px 6px;vertical-align:top">${topicHtml}</td>
@@ -489,17 +741,17 @@ table{border-collapse:collapse}
 
 <table style="width:100%;border:1px solid #000;border-top:none;margin-top:0">
   <tr style="background:#f0f0f0;font-size:10px">
-    <th rowspan="3" style="border:1px solid #000;padding:2px">รายชื่อพนักงาน</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">เลขประจำตัว</th>
-    <th colspan="10" style="border:1px solid #000;padding:2px">ความเข้าใจ</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">พนักงานลงชื่อ</th>
-    <th colspan="2" style="border:1px solid #000;padding:2px">ผลการประเมิน<br/>(ความเข้าใจ)</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px">{tr('รายชื่อพนักงาน')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">{tr('เลขประจำตัว')}</th>
+    <th colspan="10" style="border:1px solid #000;padding:2px">{tr('ความเข้าใจ')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">{tr('พนักงานลงชื่อ')}</th>
+    <th colspan="2" style="border:1px solid #000;padding:2px">{tr('ผลการประเมิน')}<br/>{tr('(ความเข้าใจ)')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:10px">
-    <th colspan="5" style="border:1px solid #000;padding:1px">ก่อนOJT</th>
-    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">หลังOJT</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">เห็นด้วย</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">ไม่เห็นด้วย</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px">{tr('ก่อนOJT')}</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">{tr('หลังOJT')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">{tr('เห็นด้วย')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">{tr('ไม่เห็นด้วย')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:9px">
     ${SCORE_LABELS.map(sl => `<th style="border:1px solid #000;width:16px">${sl}</th>`).join('')}
@@ -512,7 +764,7 @@ table{border-collapse:collapse}
 </div>
 
 <div style="margin-top:4px;font-size:9px;line-height:1.55">
-  <b><u>คำชี้แจง</u></b> 1. กำหนดให้ผู้บังคับบัญชาหรือผู้ที่ได้รับมอบหมายเป็นผู้ทำการอบรมสอนงาน On The Job Training กรณีเริ่มงานใหม่
+  <b><u>{tr('คำชี้แจง')}</u></b> 1. กำหนดให้ผู้บังคับบัญชาหรือผู้ที่ได้รับมอบหมายเป็นผู้ทำการอบรมสอนงาน On The Job Training กรณีเริ่มงานใหม่
   เปลี่ยนหน้าที่ เปลี่ยนวิธีทำงาน ตามเอกสารระบบคุณภาพ คือ Quality Manual (QM), System Procedure (SP), Q.C. Flow Chart, Work Instruction (WI), Flow Process Chart (FPC),
   Operation Procedure Standard (OPS), Inspection Standard (IS) และแบบฟอร์มบันทึกต่างๆ เป็นต้น<br/>
   2. พนักงานประเมินเปรียบเทียบความรู้ความเข้าใจของตนเองก่อนและหลังการอบรมโดยมีเกณฑ์คะแนนดังนี้
@@ -524,7 +776,16 @@ table{border-collapse:collapse}
   3. หัวหน้างานหรือผู้สอนประเมินผู้เข้ารับการอบรมด้วยความเห็นด้วย หรือไม่เห็นด้วย กับผลการประเมินของพนักงาน กรณีไม่เห็นด้วยให้ชี้แจงกับพนักงานเป็นรายบุคคลและวัดผลการปฏิบัติงาน<br/>
   4. กำหนดให้มีการทวนสอบภาคทฤษฎีและปฏิบัติหลังการอบรมสอนงานไม่น้อยกว่า 1 เดือนหลังจากการอบรม 1 ฉบับ
 </div>
+${attachAll.length ? `<div style="margin-top:4px;border:1px solid #000;padding:3px 6px;font-size:9px">
+  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} {tr('รายการ')}</b>${attachImgs.length > printImgs.length ? ` (พิมพ์รูปต่อท้าย ${printImgs.length} รูป · อีก ${attachImgs.length - printImgs.length} รูปดูในระบบ)` : ''}
+  ${attachDocs.length ? `<div>ไฟล์เอกสาร (ดูในระบบ): ${attachDocs.map((f, i) => `${i + 1}. ${f.file_name || attachFileName(f.file_url)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
+</div>` : ''}
 <div style="margin-top:2px;font-size:9px;display:flex;justify-content:space-between"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Effective Date : " + df.effective_date : ""}</span></div>
+${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;padding-top:4mm">
+  <div style="font-size:10px;margin-bottom:3px"><b>เอกสารแนบ ${i + 1}/${printImgs.length}</b> — ${f.file_name || attachFileName(f.file_url)}
+    &nbsp;·&nbsp; ใบอบรม OJT ${thDate(t.train_date)} ${t.topic ? `(${(t.topic || '').split('\n')[0]})` : ''}</div>
+  <img src="${attachData[i]}" style="max-width:100%;max-height:240mm;object-fit:contain;border:1px solid #000"/>
+</div>` : '').join('')}
 <script>window.onload = () => window.print();</script>
 </body></html>`;
       const w = window.open('', '_blank');
@@ -538,6 +799,128 @@ table{border-collapse:collapse}
   /* picker กลาง (UI §5.1.2 — ช่องชื่อคนห้ามเป็น <select> ยาว) · เรียกเป็นฟังก์ชัน ไม่ใช่ <SigPicker/>
      (component ที่ประกาศใน render = remount ทุก render ⇒ ช่องค้นหาเสียโฟกัส/คำค้นหาย)
      allowFree=false = ตรงพฤติกรรมเดิม (เลือกได้เฉพาะบัญชีในระบบ — ลายเซ็นมาจาก profiles.signature_url) */
+  /* ── ✍️ ผู้จัดการเซ็นอนุมัติเอง (02/11 · ทาง "ข") ────────────────────────────
+     ด่าน 3 ชั้นเหมือนใบ MO: ① `ojt:record` (RLS ฝั่ง DB เช็คเอง) · ② ระดับตำแหน่ง ·
+     ③ ใบนี้เป็นของหน่วยงานเราไหม (`canWriteUnit` — รองรับทั้งแกนส่วนงานและ Cost Center)
+     🔴 ไม่รู้ตำแหน่ง = ไม่บล็อก แต่จอเขียนบอก · 🔴 `checkWriteRows` เพราะ RLS ปฏิเสธ
+        UPDATE = "สำเร็จ 0 แถว ไม่มี error" (กฎเขียน DB ข้อ 2) */
+  /* ── ✍️ ช่องที่ "ต้องเซ็นเอง" — สูตรเดียวใช้ทั้ง 2 ช่อง (02/11 อนุมัติ · 05/11 รับทราบ) ──────
+     เดิมทั้งคู่เป็น PersonSelect ที่ดึง `signature_url` ของคนที่เลือกมาแปะ
+     ⇒ ใครแก้ใบได้ ก็ลงลายเซ็นแทนคนอื่นได้ · กฎโมดูลนี้ห้ามอยู่แล้ว (28/10 · คำสั่ง user):
+       "เก็บลายเซ็นเป็นรูปต่อครั้ง ไม่ใช้ลายเซ็นประจำตัวมาแปะ = ตรายาง ไม่ใช่การลงนาม"
+     🔴 ด่านต่างกันตามความหมายของช่อง — **อนุมัติ = การตัดสินใจ · รับทราบ = การลงนามรับรู้**
+        · อนุมัติ: ตำแหน่ง ≥ หัวหน้าแผนก + ต้องเป็นใบในขอบเขตที่รับผิดชอบ
+        · รับทราบ: **ไม่มีด่านตำแหน่ง/ขอบเขต** — HR เป็นหน่วยกลาง ใบอยู่คนละส่วนงานเสมอ
+          ด่านของมันคือ "ต้องเป็นตัวเองเท่านั้น" ซึ่งได้จากการเลิกใช้ picker แล้ว */
+  const SELF_SIGN = {
+    approver: {
+      label: 'ระดับจัดการอนุมัติ', what: 'อนุมัติใบอบรม OJT (ระดับจัดการ)', verb: 'เซ็นอนุมัติ',
+      nameKey: 'approver_name', uidKey: 'approver_uid', sigKey: 'approver_sig_url', atKey: 'approved_at',
+      gated: true,
+    },
+    hr: {
+      label: 'ผู้รับทราบ', what: 'รับทราบใบอบรม OJT', verb: 'เซ็นรับทราบ',
+      nameKey: 'hr_name', uidKey: 'hr_uid', sigKey: 'hr_sig_url', atKey: 'hr_ack_at',
+      gated: false,
+    },
+  };
+
+  const approveCtx = { role, section: editing?.section, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const approveScope = canWriteUnit(approveCtx, sectionValueForSave(editing?.section), { unknownTarget: 'allow' });
+  /** เหตุผลที่เซ็นช่องนี้ไม่ได้ — '' = เซ็นได้ */
+  const signDenyFor = (kind) => {
+    if (!canRecord) return 'ไม่มีสิทธิ์บันทึกใบอบรม';
+    if (!SELF_SIGN[kind].gated) return '';
+    if (posRank != null && posRank < MANAGER_SIGN_MIN_RANK)
+      return 'ช่องนี้ต้องเป็นระดับหัวหน้าแผนกขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)';
+    if (!approveScope.ok)
+      return writeBlockText(approveScope, { what: 'ใบอบรมนี้', unit: editing?.section || '' }) || 'ใบนี้เป็นของหน่วยงานอื่น';
+    return '';
+  };
+
+  const signSelfOjt = async (kind) => {
+    const S = SELF_SIGN[kind];
+    if (!editing?.id || editing.isNew) return toast.info(`บันทึกใบก่อน แล้วจึง${S.verb}ได้`);
+    const deny = signDenyFor(kind);
+    if (deny) return toast.error(deny);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return toast.error('เซสชันหมดอายุ — กรุณา login ใหม่');
+    const mySig = (profiles.find(p => p.id === user.id) || {}).signature_url || null;
+    if (!confirmSign({
+      what: S.what,
+      docLabel: 'ใบอบรม',
+      orderNo: [fmtDate(editing.train_date), editing.topic].filter(Boolean).join(' · ') || editing.id,
+      actor: fullName,
+      as: S.label,
+      effect: mySig ? 'ลงชื่อ + ลายเซ็นของคุณบนใบนี้' : 'ลงชื่อ + เวลาของคุณบนใบนี้ (โปรไฟล์ยังไม่มีลายเซ็น)',
+    })) return;
+    const patch = { [S.nameKey]: fullName || null, [S.uidKey]: user.id, [S.sigKey]: mySig, [S.atKey]: new Date().toISOString() };
+    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), `${S.verb}ใบอบรม`);
+    if (!rows) return;
+    setEditing(prev => ({ ...prev, ...patch }));
+    setTrainings(prev => prev.map(t => (t.id === editing.id ? { ...t, ...patch } : t)));
+    toast.success(`${S.verb}แล้ว`);
+  };
+
+  /* 🔓 ปลดลายเซ็น — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์ที่สูงกว่าปลด (หลักเดียวกับใบ MO) */
+  const clearSelfSignOjt = async (kind) => {
+    const S = SELF_SIGN[kind];
+    if (!mayDelete) return toast.error('ปลดลายเซ็นได้เฉพาะผู้ถือสิทธิ์ลบใบอบรม (ojt:delete)');
+    if (typeof window !== 'undefined'
+      && !window.confirm(`ปลดลายเซ็น "${S.label}" ของ "${editing[S.nameKey] || '—'}" ?\n\nใบจะกลับไปสถานะรอ และต้องให้เจ้าตัวกดเซ็นใหม่`)) return;
+    const patch = { [S.nameKey]: null, [S.uidKey]: null, [S.sigKey]: null, [S.atKey]: null };
+    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), 'ปลดลายเซ็น');
+    if (!rows) return;
+    setEditing(prev => ({ ...prev, ...patch }));
+    setTrainings(prev => prev.map(t => (t.id === editing.id ? { ...t, ...patch } : t)));
+    toast.success('ปลดลายเซ็นแล้ว');
+  };
+
+  /* กล่องช่อง "เซ็นเอง" — วาดจากทะเบียน SELF_SIGN ตัวเดียว ห้ามก๊อปเป็น 2 ก้อน
+     🔴 ลายเซ็นเดิมที่ไม่มี uid = ของก่อนเปลี่ยนกฎ ⇒ เขียนบนจอว่าตรวจย้อนไม่ได้ (ห้ามล้มเหลวเงียบ) */
+  const selfSignBox = (kind) => {
+    const S = SELF_SIGN[kind];
+    const signed = editing[S.nameKey];
+    const deny = signDenyFor(kind);
+    return (
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr(S.label)}</div>
+        {signed ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>
+              ✔ {signed}
+              {editing[S.atKey] && <span style={{ fontWeight: 400, color: 'var(--text2)' }}> · {fmtDate(editing[S.atKey])}</span>}
+            </div>
+            {editing[S.sigKey] && <img src={editing[S.sigKey]} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2, alignSelf: 'flex-start' }} />}
+            {!editing[S.uidKey] && (
+              <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+                ⚠️ ลายเซ็นเดิม — ระบบไม่ได้บันทึกว่าใครกด{editing[S.atKey] ? '' : ' และไม่มีเวลา'} (ใบก่อนเปลี่ยนเป็นเซ็นเอง) ตรวจย้อนไม่ได้
+              </div>
+            )}
+            {mayDelete && (
+              <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
+                {tr('ปลดลายเซ็น')}
+              </button>
+            )}
+          </div>
+        ) : editing.isNew ? (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('บันทึกใบก่อน แล้วเจ้าตัวจึงกด')}{S.verb}{tr('ได้')}</div>
+        ) : deny ? (
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{tr('รอ')}{tr(S.label)} — {deny}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
+              {S.verb} {tr('(ในนาม')} {fullName || 'คุณ'})
+            </button>
+            {S.gated && posRank == null && (
+              <div style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ')}<b>{tr('ไม่ได้ตรวจ')}</b>{tr('ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)')}</div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
@@ -549,9 +932,9 @@ table{border-collapse:collapse}
 
   const scoreSelect = (val, onChange) => (
     <select value={val === null || val === undefined ? '' : val} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
-      style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
+      style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
       <option value="">—</option>
-      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{s}</option>)}
+      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{tr(s)}</option>)}
     </select>
   );
 
@@ -564,27 +947,34 @@ table{border-collapse:collapse}
   return (
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
-        permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
+        permKey="ojt:record" hint={tr('ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ')} />
       {/* PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง — ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
-      <PageHeader title="อบรมสอนงาน OJT" icon="📖"
-        sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
+      <PageHeader title={tr('อบรมสอนงาน OJT')} icon="📖"
+        sub={<>{tr('ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม')} {ojtFormNo}</>}
         actions={canRecord ? (
-          <button onClick={() => setEditing(emptyDraft())}
+          <button type="button" className="pg-btn" onClick={() => setEditing(emptyDraft())}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-            ➕ สร้างใบอบรม
+            {tr('สร้างใบอบรม')}
           </button>
         ) : null} />
 
-      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
+      {filesOff && (
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
+          ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
+          <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
+          <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>{tr('รายละเอียด:')} {filesOff}</div>
+        </div>
+      )}
+      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 760 }}>
             <thead>
               <tr>
-                <th style={{ minWidth: 90 }}>วันที่</th>
-                <th style={{ minWidth: 220, textAlign: 'left' }}>หัวข้อที่สอน</th>
-                <th>ส่วน/แผนก</th>
-                <th>ผู้สอน</th>
-                <th style={{ textAlign: 'center' }}>ผู้เข้าอบรม</th>
+                <th style={{ minWidth: 90 }}>{tr('วันที่')}</th>
+                <th style={{ minWidth: 220, textAlign: 'left' }}>{tr('หัวข้อที่สอน')}</th>
+                <th>{tr('ส่วน/แผนก')}</th>
+                <th>{tr('ผู้สอน')}</th>
+                <th style={{ textAlign: 'center' }}>{tr('ผู้เข้าอบรม')}</th>
                 <th style={{ textAlign: 'center', minWidth: 150 }}></th>
               </tr>
             </thead>
@@ -592,21 +982,30 @@ table{border-collapse:collapse}
               {visibleTrainings.map(t => (
                 <tr key={t.id}>
                   <td style={{ whiteSpace: 'nowrap', fontWeight: 600 }}>{thDate(t.train_date)}</td>
-                  <td style={{ fontSize: 13 }}>{(t.topic || '—').split('\n')[0]}</td>
+                  <td style={{ fontSize: 13 }}>
+                    {(t.topic || '—').split('\n')[0]}
+                    {(t.ojt_training_files?.length ?? 0) > 0 && (
+                      <span title={`มีไฟล์แนบ ${t.ojt_training_files.length} ไฟล์`}
+                        style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        {t.ojt_training_files.length}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ whiteSpace: 'nowrap', fontSize: 12 }}>{[t.section, t.department].filter(Boolean).join(' / ') || '—'}</td>
                   <td style={{ fontSize: 12 }}>{t.trainer_name || '—'}</td>
                   <td style={{ textAlign: 'center', fontWeight: 700 }}>{t.ojt_training_attendees?.length ?? 0}</td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button onClick={() => handlePrint(t)} disabled={printing === t.id}
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', marginRight: 6 }}>
-                      {printing === t.id ? '...' : '🖨️ PDF'}
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', marginRight: 6 }}>
+                      {printing === t.id ? '...' : 'PDF'}
                     </button>
                     {canRecord && (
                       <button onClick={() => openEdit(t)}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
+                        style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
-                    {mayDelete && (
-                      <DeleteButton onClick={() => handleDelete(t)} title="ลบ" />
+                    {canRemoveSheet(t) && (
+                      <DeleteButton onClick={() => handleDelete(t)}
+                        title={mayDelete ? tr('ลบ') : tr('ลบใบที่คุณสร้างเอง (ยังไม่มีใครเซ็น)')} />
                     )}
                   </td>
                 </tr>
@@ -622,58 +1021,60 @@ table{border-collapse:collapse}
       {/* ── modal ฟอร์ม (มี input — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) ── */}
       {editing && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 1150px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📖 {editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
-              <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}{tr('ใบอบรมสอนงาน OJT')}</div>
+              <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
+            {/* 🪜 ถึงขั้นไหน — กฎ ojtFlow() (utils/stepFlow.js · ตัดสินจากช่องเซ็นจริง) · UI §6.30 */}
+            {!editing.isNew && (() => { const f = ojtFlow(editing); return <div style={{ padding: '10px 18px 0' }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
               {/* แถวข้อมูลหลัก */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                <div><div style={lb}>วันที่อบรม</div><input type="date" value={editing.train_date} onChange={e => setF('train_date', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>เวลาเริ่ม</div><input type="time" value={editing.time_from || ''} onChange={e => setF('time_from', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>เวลาจบ</div><input type="time" value={editing.time_to || ''} onChange={e => setF('time_to', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>ระยะเวลา (นาที)</div><input type="number" min="1" value={editing.duration_min || ''} onChange={e => setF('duration_min', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>สถานที่</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('วันที่อบรม')}</div><input type="date" value={editing.train_date} onChange={e => setF('train_date', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('เวลาเริ่ม')}</div><input type="time" value={editing.time_from || ''} onChange={e => setF('time_from', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('เวลาจบ')}</div><input type="time" value={editing.time_to || ''} onChange={e => setF('time_to', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ระยะเวลา (นาที)')}</div><input type="number" min="1" value={editing.duration_min || ''} onChange={e => setF('duration_min', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('สถานที่')}</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                 <div>
-                  <div style={lb}>ฝ่าย</div>
+                  <div style={lb}>{tr('ฝ่าย')}</div>
                   {/* เลือกจาก org_divisions (fallback = รายชื่อ section เมื่อผังยังไม่ตั้งฝ่าย) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (2026-09-07) */}
                   <SelectOrFree value={editing.dept || ''} options={divisions.length ? divisions : orgSections} onChange={v => setF('dept', v)} style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <div style={lb}>ส่วน</div>
+                  <div style={lb}>{tr('ส่วน')}</div>
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
-                    <option value="">— เลือก —</option>
-                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="">{tr('— เลือก —')}</option>
+                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{tr(s)}</option>)}
                     {/* แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN) — เดิม cascade เขียนเองทำให้ออกใบ OJT
                         ให้ช่างระบุแผนกไม่ได้เลย (QC audit 2026-08-18 · sentinel เห็นเฉพาะ user ไม่จำกัด scope) */}
                     {!effSections.length && orphanDepts(orgDeptNodes).length > 0 && (
-                      <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      <option value={ORPHAN_SECTION}>{tr(ORPHAN_SECTION_LABEL)}</option>
                     )}
                   </select>
                 </div>
                 <div>
-                  <div style={lb}>แผนก</div>
+                  <div style={lb}>{tr('แผนก')}</div>
                   {(() => {
                     // cascade ผ่าน helper กลาง (§5.3 ข้อ 7 — ห้ามเขียน parent_id cascade เองในหน้า
                     // เดิมเขียนเอง → แผนกขึ้นตรงฝ่ายไม่มีวันโผล่ · แก้ 2026-08-18)
                     const depOpts = deptOptionsFor(editing.section, orgSectionNodes, orgDeptNodes);
                     return (
                       <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
-                        <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>
-                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        <option value="">{editing.section ? tr('— เลือก —') : tr('เลือกส่วนก่อน')}</option>
+                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
                         {editing.department && !depOpts.some(d => (d.code || d.name) === editing.department) && (
-                          <option value={editing.department}>{editing.department} (นอกผัง — ค่าเดิม)</option>
+                          <option value={editing.department}>{editing.department} {tr('(นอกผัง — ค่าเดิม)')}</option>
                         )}
                       </select>
                     );
                   })()}
                 </div>
                 <div>
-                  <div style={lb}>ผู้สอนงาน</div>
+                  <div style={lb}>{tr('ผู้สอนงาน')}</div>
                   {/* ผู้สอน = user ระบบหรือพนักงาน (หัวหน้าไลน์) → PersonSelect profiles ∪ employees · พิมพ์ลง FM-HRM-004 (2026-09-07) */}
                   <PersonSelect source="both" value={editing.trainer_name || ''} history={trainerHist} onChange={r => setF('trainer_name', r.name)} />
                 </div>
@@ -691,47 +1092,110 @@ table{border-collapse:collapse}
 
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <div style={lb}>หัวข้อและรหัสเอกสารที่สอน (บรรทัดละหัวข้อ)</div>
+                  <div style={lb}>{tr('หัวข้อและรหัสเอกสารที่สอน (บรรทัดละหัวข้อ)')}</div>
                   <textarea rows={4} value={editing.topic || ''} onChange={e => setF('topic', e.target.value)}
                     placeholder={'1. ความรู้พื้นฐานของเอกสารในไลน์ผลิต\n2. ขั้นตอนการลงบันทึกข้อมูลของเอกสารในไลน์ผลิต'}
                     style={{ width: '100%', fontSize: 13 }} />
                 </div>
                 <div>
-                  <div style={lb}>ขอบเขตเนื้อหา (บรรทัดละข้อ)</div>
+                  <div style={lb}>{tr('ขอบเขตเนื้อหา (บรรทัดละข้อ)')}</div>
                   <textarea rows={4} value={editing.scope || ''} onChange={e => setF('scope', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
                 </div>
               </div>
 
+              {/* ── 📎 ไฟล์แนบ (01/11 · หน้างาน PD4 ขอ) ─────────────────────────────
+                  รูป = โชว์ thumbnail กดเปิดใหญ่ได้ · ไฟล์เอกสาร = ชื่อไฟล์ + ขนาด กดเปิดแท็บใหม่
+                  รูปจะถูกต่อท้ายใบพิมพ์เป็นหน้าๆ (ดู handlePrint) — เอกสารแนบลิสต์ชื่อไว้บนใบ */}
+              <div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span>{tr('ไฟล์แนบ (')}{(editing.files || []).length})</span>
+                  {canRecord && !filesOff && <FilePick onFile={addFile} label={tr('แนบรูป / เอกสาร')} />}
+                  <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
+                    รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
+                  </span>
+                </div>
+                {filesOff ? (
+                  <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 2px', fontWeight: 700 }}>{tr('ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ')}</div>
+                ) : (editing.files || []).length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>{tr('ยังไม่มีไฟล์แนบ')}</div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                    {editing.files.map((f, idx) => (
+                      <div key={f.id || f.file_url} style={{ width: 150, border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 7, background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        <a href={f.file_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
+                          {isImageAttachment(f.file_url)
+                            ? <img src={f.file_url} alt={f.file_name || ''} style={{ width: '100%', height: 86, objectFit: 'cover', borderRadius: 6, background: '#fff', display: 'block' }} />
+                            : <div style={{ height: 86, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, background: 'var(--bg)', borderRadius: 'var(--r-md)' }}>📄</div>}
+                          <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4, wordBreak: 'break-word', lineHeight: 1.35 }}>
+                            {f.file_name || attachFileName(f.file_url)}
+                          </div>
+                        </a>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? ' · ยังไม่บันทึก' : ''}</span>
+                          {canRecord && (
+                            <button onClick={() => removeFile(idx)} title={tr('เอาไฟล์นี้ออก')}
+                              style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* ผู้เข้าอบรม */}
               <div>
-                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>👥 พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>{tr('พนักงานผู้เข้าอบรม (')}{editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input type="text" placeholder="🔍 ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
-                    style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+                  <input type="text" placeholder={tr('ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม...')} value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                    style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                   {searchResults.length > 0 && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
+                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
                       {searchResults.map(e => (
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
-                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>
-                            🤝 ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
+                            ยืมจาก {e._helperFrom} {tr('มาช่วย')} {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
                           </span>}
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
+                {/* 📱 ส่งแท็บเล็ตวนเซ็น — ทางเดียวที่เร็วกว่ากระดาษคือไม่ต้องกดกลับมาหาแถวทีละคน
+                    (28/10 · ของเดิมเซ็นได้ทีละคนแล้วอัปทันที ⇒ หน้างานเลยยังปริ้นไปเซ็นมืออยู่ 98%) */}
+                {canRecord && editing.attendees.length > 0 && (() => {
+                  const signed = editing.attendees.filter(a => a.sign_url).length;
+                  const total = editing.attendees.length;
+                  const rest = editing.attendees.map((a, idx) => ({ idx, a })).filter(x => !x.a.sign_url);
+                  const mk = (list) => list.map(({ idx, a }) => ({ idx, name: a.emp_name, code: a.emp_code, hadSign: !!a.sign_url }));
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '10px 0 6px' }}>
+                      <button onClick={() => setSignQueue(mk(rest.length ? rest : editing.attendees.map((a, idx) => ({ idx, a }))))}
+                        disabled={signingQueue}
+                        style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
+                        {signingQueue ? 'กำลังอัปลายเซ็น…' : `ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
+                      </button>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? 'var(--green)' : 'var(--muted)' }}>
+                        เซ็นแล้ว {signed}/{total}{signed < total ? ` · ยังขาด ${total - signed}` : ' ✔ ครบแล้ว'}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                        เซ็นจนครบแล้วค่อยปล่อยเน็ตทีเดียว — เซ็นกลางคันแล้วปิดก็เก็บเท่าที่เซ็นไป
+                      </span>
+                    </div>
+                  );
+                })()}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 780 }}>
                     <thead>
                       <tr style={{ fontSize: 12 }}>
-                        <th style={{ textAlign: 'left' }}>พนักงาน</th>
-                        <th style={{ textAlign: 'center' }}>ก่อน OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>หลัง OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>ลายเซ็น</th>
-                        <th style={{ textAlign: 'center' }}>ผลประเมิน</th>
-                        <th style={{ textAlign: 'left' }}>ผู้ประเมิน</th>
+                        <th style={{ textAlign: 'left' }}>{tr('พนักงาน')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ก่อน OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('หลัง OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ลายเซ็น')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ผลประเมิน')}</th>
+                        <th style={{ textAlign: 'left' }}>{tr('ผู้ประเมิน')}</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -744,17 +1208,17 @@ table{border-collapse:collapse}
                           <td style={{ textAlign: 'center' }}>
                             {a.sign_url
                               ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} เซ็นใหม่` })}
-                                  style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title="คลิกเพื่อเซ็นใหม่" />
+                                  style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title={tr('คลิกเพื่อเซ็นใหม่')} />
                               : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ลงชื่อ` })}
-                                  style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}>✍️ เซ็น</button>}
+                                  style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>{tr('เซ็น')}</button>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <select value={a.eval_agree === null || a.eval_agree === undefined ? '' : (a.eval_agree ? '1' : '0')}
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
-                              style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
+                              style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
                               <option value="">—</option>
-                              <option value="1">✓ เห็นด้วย</option>
-                              <option value="0">✗ ไม่เห็นด้วย</option>
+                              <option value="1">{tr('เห็นด้วย')}</option>
+                              <option value="0">{tr('ไม่เห็นด้วย')}</option>
                             </select>
                           </td>
                           <td>
@@ -762,11 +1226,11 @@ table{border-collapse:collapse}
                             <PersonSelect source="both" value={a.evaluator_name || ''} history={evalHist} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
                               style={{ width: 170 }} inputStyle={{ fontSize: 12, padding: '4px 24px 4px 6px' }} maxRows={20} />
                           </td>
-                          <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
+                          <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
                         </tr>
                       ))}
                       {editing.attendees.length === 0 && (
-                        <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 16, fontSize: 12 }}>ยังไม่มีพนักงาน — ค้นหาด้านบนเพื่อเพิ่ม</td></tr>
+                        <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 16, fontSize: 12 }}>{tr('ยังไม่มีพนักงาน — ค้นหาด้านบนเพื่อเพิ่ม')}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -776,15 +1240,15 @@ table{border-collapse:collapse}
               {/* ลายเซ็นหัวเอกสาร */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                 {sigPicker('ผู้จัดทำ', 'maker_name', 'maker_sig_url')}
-                {sigPicker('ระดับจัดการอนุมัติ', 'approver_name', 'approver_sig_url')}
-                {sigPicker('ผู้รับทราบ', 'hr_name', 'hr_sig_url')}
+                {selfSignBox('approver')}
+                {selfSignBox('hr')}
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={() => setEditing(null)} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกใบอบรม'}
+                  style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                  {saving ? tr('กำลังบันทึก...') : tr('บันทึกใบอบรม')}
                 </button>
               </div>
             </div>
@@ -793,6 +1257,7 @@ table{border-collapse:collapse}
       )}
 
       {signTarget && <SignPadModal title={signTarget.title} onCancel={() => setSignTarget(null)} onDone={handleSignDone} />}
+      {signQueue && <SignQueueModal queue={signQueue} onCancel={() => setSignQueue(null)} onDone={handleQueueDone} />}
     </Page>
   );
 }

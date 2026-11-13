@@ -270,11 +270,16 @@ const LBL = ['0.6', '0.8', '1', '1.2', '1.4', '1.6'].map(v => opt(v, `${Math.rou
 export const DISPLAY_PAGE_PARAMS = Object.freeze({
   '/tv': [
     { key: 'dept', label: 'มุมมอง', kind: 'select', options: [
-      opt('maintenance', '🔧 ช่างซ่อมบำรุง'), opt('production', '🏭 ฝ่ายผลิต'), opt('store', '📦 สโตร์')] },
+      opt('maintenance', '🔧 ช่างซ่อมบำรุง'), opt('production', '🏭 ฝ่ายผลิต'), opt('store', '📦 สโตร์'),
+      opt('mo', '🧾 ใบแจ้งซ่อม MO (ตามขั้น)')] },
+    /* 🧾 กองใบ MO (03/11 · ประชุม 02/11 ข้อ B6) — ค่าตรงกับ MO_TV_GROUPS ใน utils/moTvBoard.js (อ่านโดย MoTvBoard) */
+    { key: 'mo', label: 'กองใบ MO', kind: 'select', showIf: { dept: ['mo'] }, options: [
+      opt('approve', '🔒 รอผู้จัดการอนุมัติ (ก่อนเริ่มงาน)'), opt('accept', '📣 รอช่างรับงาน'), opt('repair', '🛠 กำลังซ่อม'),
+      opt('check', '☑️ รอตรวจรับงาน / ตรวจคุณภาพ'), opt('close', '✅ รอรับมอบ / อนุมัติปิดใบ'), opt('other', '📤 นอกลำดับขั้น (ตีกลับ / ส่งซ่อมภายนอก)')] },
     { key: 'sec', label: 'ส่วนงาน', kind: 'section' },
-    { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { dept: ['', 'maintenance'] }, options: [
+    { key: 'team', label: 'ทีมช่าง', kind: 'select', showIf: { dept: ['', 'maintenance', 'mo'] }, options: [
       opt('all', 'ทุกทีม'), opt('maintenance', 'ช่างซ่อมบำรุง'), opt('die_maintenance', 'ซ่อมแม่พิมพ์'), opt('jig_maintenance', 'ซ่อม JIG'), opt('production', '🏭 ทีมผลิต (AM)')] },
-    { key: 'sound', label: 'เสียงเตือน', kind: 'select', options: [opt('all', '🔊 ทุกเครื่องหยุด')] },
+    { key: 'sound', label: 'เสียงเตือน', kind: 'select', showIf: { dept: ['', 'maintenance', 'production', 'store'] }, options: [opt('all', '🔊 ทุกเครื่องหยุด')] },
   ],
   '/factory-map': [
     { key: 'metric', label: 'มุมมอง (metric)', kind: 'select', options: FM_METRICS },
@@ -419,7 +424,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'state', label: 'สถานะ', kind: 'select', showIf: { tab: ['', 'doc'] }, options: [opt('current', 'Current state'), opt('future', '🎯 Future state')] },
   ],
   '/energy': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('mqtt', '📡 มิเตอร์ / MQTT'), opt('setup', '⚙️ ตั้งค่า')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('setup', '⚙️ ตั้งค่า')] },
     { key: 'unmet', label: 'แสดงจุดที่ยังไม่ได้แยกมิเตอร์', kind: 'bool', showIf: { tab: ['', 'input'] } },
   ],
   '/report': [
@@ -452,6 +457,17 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'open', label: 'รวมใบที่ยังผลิตอยู่', kind: 'bool', showIf: { tab: ['', 'order'] } },
   ],
 });
+
+/* ── 🧾 ชุดสำเร็จรูป "ใบ MO ตามขั้น" สำหรับจอห้องช่าง (03/11 · ประชุม 02/11 ข้อ B6) ──
+   กดเดียวเติม 4 รายการ `/tv?dept=mo&mo=<กอง>&team=<ทีม>` ต่อท้ายรอบ — แก้/ลบทีละรายการได้ตามปกติ
+   (เป็นแค่ตัวช่วยพิมพ์ลิงก์ ไม่ใช่โหมดพิเศษ · ค่าทุกตัวอยู่ในทะเบียน `/tv` ข้างบน) */
+export const MO_ROTATION_GROUPS = Object.freeze(['accept', 'repair', 'check', 'close']);
+export function moRotationItems(team = '', sec = null) {
+  return MO_ROTATION_GROUPS.map(g => ({
+    path: withQueryParams('/tv', { dept: 'mo', mo: g, team: team || 'all' }),
+    sec: sec == null || sec === '' ? null : clampInt(sec, ROT_LIMITS.minSec, ROT_LIMITS.maxSec),
+  }));
+}
 
 /** ช่องนี้ควรโชว์ไหม ตามค่าที่ตั้งอยู่ (showIf: { key: [ค่าที่อนุญาต · '' = ยังไม่ตั้ง] }) */
 export function paramVisible(def, params) {

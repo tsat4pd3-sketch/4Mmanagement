@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   isBelowMin, suggestReorderQty, openPrQtyByPart, prNumbersOf, prPlacement,
   assignedTechsOf, joinTechs, defaultGlFor, glCategoryForPr, isPrOpen, repairPathMeta,
+  holdsMttrPath, REPAIR_PATHS, NEEDS_PR_PATHS,
 } from '../mtnPurchase.js';
 
 test('Min ไม่ได้ตั้ง = ไม่ติด Min (ไม่รู้ ≠ ขาด)', () => {
@@ -111,8 +112,49 @@ test('สถานะงาน PR ของใบ MO — ตัวกรอง�
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, []), 'need');
   assert.equal(prQueueStateOf({ repair_path: 'outsource' }, [{ status: 'cancelled' }]), 'need');
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: null }, { status: 'ordered', pr_no: '1000' }]), 'no_no');
-  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000' }]), 'open');
+  /* 🔴 ขั้น ② จบที่ **เลข PO** ไม่ใช่เลข PR (04/11 · หน้างานแจ้ง
+     "กรอกเลข PR แล้วมันเด้งข้ามไปหัวข้อ 3 · ต้องอยู่ช่อง 2 ก่อน พอใส่เลข PO ถึงเด้งลงช่อง 3")
+     เลข PR = "ขอซื้อแล้ว" · เลข PO = "สั่งแล้ว" — คนละขั้น · คง 3 ถังตามที่ทีม MTN สั่ง (02/11) */
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000', po_no: 'PO-1' }]), 'open');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'requested', pr_no: '1000' }]), 'no_no',
+    'มีเลข PR แล้วแต่ยังไม่มี PO = ยังไม่ได้สั่ง — ต้องค้างขั้น ② ห้ามเด้งไปขั้น ③');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'ordered', pr_no: '1000', po_no: '  ' }]), 'no_no',
+    'สถานะ ordered แต่เลข PO ยังว่าง = ยังไม่ใช่ "สั่งแล้ว" (เลขมาจาก SAP ทีหลังเหมือน pr_no)');
+  assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [
+    { status: 'ordered', pr_no: '1000', po_no: 'PO-1' }, { status: 'requested', pr_no: '2000' }]), 'no_no',
+    'ใบเดียวตอบค่าเดียว — ขั้นที่ค้างที่สุดชนะ');
   assert.equal(prQueueStateOf({ repair_path: 'inhouse_pr' }, [{ status: 'received', pr_no: '1000' }]), null);
   assert.equal(prQueueStateOf({ repair_path: 'inhouse' }, []), null);
   assert.equal(prQueueStateOf({ repair_path: null }, [{ status: 'requested', pr_no: '' }]), 'no_no');   // เปิดจากคลังโดยไม่ตั้งเส้นทาง ก็ยังรอเลข
+});
+
+/* ═══ 4 เส้นทางงานซ่อม — แกน "ซ่อมได้/ซ่อมไม่ได้" (02/11 · ทีม MTN) ═══════════════════ */
+test('holdsMttr แยกจาก needsPr — เส้นทางที่ "ซ่อมได้" ห้ามหยุดนับ MTTR', () => {
+  // ซ่อมเสร็จแล้วเปิด PR ซื้ออะไหล่มาเติมสต็อก = เครื่องเดินแล้ว ไม่ได้รอ
+  assert.equal(holdsMttrPath('inhouse_pr'), false);
+  assert.equal(repairPathMeta('inhouse_pr').needsPr, true, 'ยังต้องเปิด PR เหมือนเดิม');
+  // ส่งของไปซ่อมนอก = มีนาฬิกา supplier ของตัวเอง (vendor_sent→back) ไม่ต้องหยุดซ้ำ
+  assert.equal(holdsMttrPath('outsource'), false);
+  assert.equal(repairPathMeta('outsource').needsPr, true);
+  // ซ่อมเองได้ จบงานเลย — ไม่มีทั้ง PR และการหยุด
+  assert.equal(holdsMttrPath('inhouse'), false);
+  assert.equal(repairPathMeta('inhouse').needsPr, false);
+});
+
+test('🔴 "ซ่อมไม่ได้ — รออะไหล่/รอจ้าง Vendor" = เส้นทางเดียวที่หยุดนับ MTTR', () => {
+  assert.equal(holdsMttrPath('blocked'), true);
+  assert.equal(repairPathMeta('blocked').needsPr, true, 'รออะไหล่/จ้าง vendor = ต้องเปิด PR');
+  assert.equal(REPAIR_PATHS.filter(p => p.holdsMttr).length, 1,
+    'มีได้เส้นทางเดียวที่หยุด — เพิ่มตัวที่ 2 ต้องทบทวนกฎกับ user ก่อน');
+});
+
+test('เส้นทางที่ไม่รู้จัก / ว่าง = ไม่หยุด (ใบเก่าไม่เดาให้)', () => {
+  assert.equal(holdsMttrPath(null), false);
+  assert.equal(holdsMttrPath(''), false);
+  assert.equal(holdsMttrPath('ไม่มีคีย์นี้'), false);
+});
+
+test('ทุกเส้นทางที่ต้องเปิด PR ต้องอยู่ใน NEEDS_PR_PATHS (คิวแอดมินช่างห้ามตกหล่น)', () => {
+  const keys = NEEDS_PR_PATHS();
+  assert.deepEqual([...keys].sort(), ['blocked', 'inhouse_pr', 'outsource']);
 });

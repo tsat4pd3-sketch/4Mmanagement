@@ -9,6 +9,7 @@
  * of the permissions page (or any other page) via a misconfigured table.
  */
 import { supabase } from '../supabaseClient';
+import { inEdition } from '../appEdition';
 
 let cache = null; // Map<`${role}:${permission_key}`, boolean>
 let loadingPromise = null;
@@ -84,6 +85,13 @@ export function hasPermission(permissionKey, role) {
 }
 
 export function canAccessPage(path, role) {
+  /* 🏷️ ด่านที่ 0 — "เว็บรุ่นนี้มีหน้านี้ไหม" (2026-10-29 · แยก frontend ของ New Model)
+     🔴 **อยู่ก่อน admin bypass โดยตั้งใจ** — edition ตอบคนละคำถามกับสิทธิ์:
+        สิทธิ์ = "คนนี้เข้าได้ไหม" (admin ข้ามได้) · edition = "เว็บนี้มีหน้านี้ไหม" (ไม่มีใครข้ามได้)
+        ถ้าให้ admin ข้าม = เว็บ New Model เปิดจอของระบบแมสได้ = หมดเหตุผลที่แยกเว็บ
+     รุ่นเต็ม (ทุก build ยกเว้น NM) `inEdition` คืนจริงเสมอ ⇒ พฤติกรรมเดิมเป๊ะ
+     📄 `src/appEdition.js` */
+  if (!inEdition(path)) return false;
   // ⚠️ ตัด query/hash ออกก่อนเสมอ — สิทธิ์ผูกกับ "หน้า" ไม่ใช่แท็บ
   //    ผู้เรียกที่ส่ง deep-link มา (`/qa?tab=ncr`, `/pm?tab=check`) เดิมจะได้ `page:/qa?tab=ncr`
   //    ซึ่งไม่มีวันตรงกับคีย์ใดเลย → คืน false เงียบๆ = ปุ่ม/ลิงก์หายไปทั้งที่ผู้ใช้มีสิทธิ์จริง
@@ -112,6 +120,13 @@ export function canAccessPage(path, role) {
      คนที่มีสิทธิ์แค่ page:/dept-dashboard ยังเข้า /obeya ได้ (เห็นเฉพาะแท็บ 📌 · Obeya.jsx กรองแท็บด้วย hasPermission) */
   if (path === '/obeya') {
     return hasPermission('page:/obeya', role) || hasPermission('page:/dept-dashboard', role);
+  }
+  /* 👥 ฐานข้อมูลพนักงานรับแท็บ ➕ เพิ่มพนักงาน (หน้า /register เดิม · 13/11 · คำสั่ง user)
+     piggyback สิทธิ์หน้าเดิม — คนที่มีแค่ `page:/register` ยังเข้า /operator ได้ (เห็นเฉพาะแท็บ ➕
+     · operator.jsx กรองแท็บด้วย hasPermission ซ้ำอีกชั้น) ⇒ ไม่ต้อง seed อะไรใหม่ ไม่มีใครหลุดสิทธิ์
+     (ตรวจทะเบียนจริง 13/11: ทุก role ที่มี page:/register มี page:/operator อยู่แล้ว) */
+  if (path === '/operator') {
+    return hasPermission('page:/operator', role) || hasPermission('page:/register', role);
   }
   /* 🧰 ศูนย์ทะเบียนอุปกรณ์ = ศูนย์รวมแท็บทะเบียนของช่าง (เครื่อง/แม่พิมพ์/JIG/อะไหล่)
      piggyback สิทธิ์หน้าเดิมทั้งหมด — ไม่ต้อง seed page:/equipment

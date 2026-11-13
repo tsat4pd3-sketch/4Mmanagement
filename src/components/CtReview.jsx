@@ -21,7 +21,9 @@ import LineSelect from './LineSelect';
 import { summarizeObservedCt, FLAG_TEXT, SAMPLE_RULES } from '../utils/ctReview';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { fetchByIds } from '../utils/fetchByIds';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
+import { tr } from '../utils/i18n';
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
 const th = { textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', whiteSpace: 'nowrap' };
@@ -66,7 +68,7 @@ export default function CtReview({ lines = [] }) {
           .eq('line_name', line).eq('status', 'closed').gte('work_date', since)
           .order('work_date', { ascending: false }).limit(400),
         supabaseDR.from('dr_products').select('mat_no, name, cycle_time_sec, process_type').eq('line_name', line),
-        supabaseDR.from('break_policies').select('shift, start_time, duration_min, process_type, ot_scope, anchor, offset_min'),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS),
       ]);
       if (!alive) return;
       const bad = [sRes, pRes, bRes].find(r => r.error);
@@ -194,26 +196,26 @@ export default function CtReview({ lines = [] }) {
           ⏱ ทบทวน Cycle Time — ระบบเสนอ วิศวกรตัดสิน
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-          เทียบ <b>CT มาตรฐาน</b> (ที่ใช้คิด %P) กับ <b>CT ที่สังเกตได้จริง</b> จากใบผลิตย้อนหลัง {DAYS_BACK} วัน ·
-          <b> ระบบไม่แก้ CT เอง</b> — ต้องมีคนกดอนุมัติเท่านั้น และ %P ยังหารด้วย CT มาตรฐานเสมอ<br />
+          เทียบ <b>{tr('CT มาตรฐาน')}</b> {tr('(ที่ใช้คิด %P) กับ')} <b>{tr('CT ที่สังเกตได้จริง')}</b> {tr('จากใบผลิตย้อนหลัง')} {DAYS_BACK} วัน ·
+          <b> {tr('ระบบไม่แก้ CT เอง')}</b> {tr('— ต้องมีคนกดอนุมัติเท่านั้น และ %P ยังหารด้วย CT มาตรฐานเสมอ')}<br />
           คัดเฉพาะใบที่เชื่อได้: ปิดใบครบ · ≥ {SAMPLE_RULES.MIN_QTY_PER_ORDER} ชิ้น · หัก downtime + เวลาพักแล้ว ·
-          ตัดใบที่ได้ผลเป็นไปไม่ได้ทิ้ง (มักมาจาก<b>ลง downtime เกินจริง</b>) · ใช้<b>มัธยฐาน</b>ไม่ใช่ค่าเฉลี่ย
+          ตัดใบที่ได้ผลเป็นไปไม่ได้ทิ้ง (มักมาจาก<b>{tr('ลง downtime เกินจริง')}</b>) · ใช้<b>{tr('มัธยฐาน')}</b>ไม่ใช่ค่าเฉลี่ย
         </div>
       </div>
 
       {queue.length > 0 && (
         <div style={{ ...card, borderColor: '#f59e0b' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 8 }}>
-            📋 รออนุมัติ {queue.length} รายการ {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)</span>}
+            รออนุมัติ {queue.length} {tr('รายการ')} {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)')}</span>}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr>
-                <th style={th}>MAT.NO</th><th style={th}>ชิ้นงาน</th><th style={th}>ไลน์</th>
-                <th style={{ ...th, textAlign: 'right' }}>มาตรฐาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>เสนอ</th>
-                <th style={{ ...th, textAlign: 'right' }}>อ้างอิง</th>
-                <th style={th}>ผู้เสนอ</th><th style={th} />
+                <th style={th}>MAT.NO</th><th style={th}>{tr('ชิ้นงาน')}</th><th style={th}>{tr('ไลน์')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('มาตรฐาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('เสนอ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('อ้างอิง')}</th>
+                <th style={th}>{tr('ผู้เสนอ')}</th><th style={th} />
               </tr></thead>
               <tbody>
                 {queue.map(q => (
@@ -224,8 +226,8 @@ export default function CtReview({ lines = [] }) {
                     <td style={{ ...td, textAlign: 'right' }}>{fmt(q.ct_standard)}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{fmt(q.ct_observed)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>
-                      {q.sample_orders} ใบ{q.dropped_orders ? ` · ตัดทิ้ง ${q.dropped_orders}` : ''}<br />
-                      <span style={{ color: 'var(--muted)' }}>{fmt(q.p25)}–{fmt(q.p75)} วิ</span>
+                      {q.sample_orders} {tr('ใบ')}{q.dropped_orders ? ` · ตัดทิ้ง ${q.dropped_orders}` : ''}<br />
+                      <span style={{ color: 'var(--muted)' }}>{fmt(q.p25)}–{fmt(q.p75)} {tr('วิ')}</span>
                     </td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--text2)' }}>{q.created_by_name || '—'}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -233,9 +235,9 @@ export default function CtReview({ lines = [] }) {
                         <>
                           <button className="tbtn" disabled={busy === q.id} onClick={() => approve(q)}
                             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', marginRight: 6 }}>
-                            ✓ อนุมัติ
+                            {tr('✓ อนุมัติ')}
                           </button>
-                          <button className="tbtn" disabled={busy === q.id} onClick={() => reject(q)}>✕ ปฏิเสธ</button>
+                          <button className="tbtn" disabled={busy === q.id} onClick={() => reject(q)}>{tr('✕ ปฏิเสธ')}</button>
                         </>
                       )}
                     </td>
@@ -249,33 +251,33 @@ export default function CtReview({ lines = [] }) {
 
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>ไลน์</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{tr('ไลน์')}</span>
           <LineSelect lines={lines} value={line} onChange={setLine}
             role={role} lineId={lineId} sections={sections} style={{ width: 260 }} />
           {span && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              จาก {span.sessions} กะที่ปิดแล้ว · {span.from} → {span.to}
+              จาก {span.sessions} {tr('กะที่ปิดแล้ว ·')} {span.from} → {span.to}
             </span>
           )}
         </div>
 
         {err && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>⚠ {err}</div>}
-        {!line && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกไลน์เพื่อดูว่าพาร์ทไหน CT ควรทบทวน</div>}
-        {line && loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>⏳ กำลังคำนวณจากใบผลิตจริง…</div>}
+        {!line && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('เลือกไลน์เพื่อดูว่าพาร์ทไหน CT ควรทบทวน')}</div>}
+        {line && loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('⏳ กำลังคำนวณจากใบผลิตจริง…')}</div>}
         {line && !loading && !err && rows.length === 0 &&
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไลน์นี้ยังไม่มีใบผลิตที่ปิดครบในช่วง {DAYS_BACK} วัน</div>}
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไลน์นี้ยังไม่มีใบผลิตที่ปิดครบในช่วง')} {DAYS_BACK} {tr('วัน')}</div>}
 
         {rows.length > 0 && (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
               <thead><tr>
-                <th style={th}>MAT.NO</th><th style={th}>ชิ้นงาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>CT มาตรฐาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>สังเกตได้ (กลาง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>กระจาย p25–p75</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบที่ใช้</th>
-                <th style={{ ...th, textAlign: 'right' }}>ต่าง</th>
-                <th style={th}>ข้อสังเกต</th><th style={th} />
+                <th style={th}>MAT.NO</th><th style={th}>{tr('ชิ้นงาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('CT มาตรฐาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('สังเกตได้ (กลาง)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('กระจาย p25–p75')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบที่ใช้')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ต่าง')}</th>
+                <th style={th}>{tr('ข้อสังเกต')}</th><th style={th} />
               </tr></thead>
               <tbody>
                 {rows.map(r => (
@@ -283,11 +285,11 @@ export default function CtReview({ lines = [] }) {
                     <td style={{ ...td, fontWeight: 700 }}>{r.matNo}</td>
                     <td style={{ ...td, color: 'var(--text2)', maxWidth: 230 }}>{r.name || '—'}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.ctStd == null
-                      ? <span style={{ color: '#f59e0b' }}>ยังไม่ตั้ง</span> : fmt(r.ctStd)}</td>
+                      ? <span style={{ color: '#f59e0b' }}>{tr('ยังไม่ตั้ง')}</span> : fmt(r.ctStd)}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmt(r.p50)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5, color: 'var(--muted)' }}>{fmt(r.p25)}–{fmt(r.p75)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5 }}>
-                      {r.n}{r.nDropped ? <span style={{ color: '#f59e0b' }}> (ตัด {r.nDropped})</span> : ''}
+                      {r.n}{r.nDropped ? <span style={{ color: '#f59e0b' }}> {tr('(ตัด')} {r.nDropped})</span> : ''}
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: gapColor(r.gapPct) }}>
                       {r.gapPct == null ? '—' : `${r.gapPct > 0 ? '+' : ''}${Math.round(r.gapPct)}%`}
@@ -297,9 +299,9 @@ export default function CtReview({ lines = [] }) {
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {inQueue.has(r.matNo)
-                        ? <span style={{ fontSize: 11, color: '#f59e0b' }}>อยู่ในคิวแล้ว</span>
+                        ? <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('อยู่ในคิวแล้ว')}</span>
                         : r.canPropose
-                          ? <button className="tbtn" disabled={busy === r.matNo} onClick={() => propose(r)}>เสนอปรับ</button>
+                          ? <button className="tbtn" disabled={busy === r.matNo} onClick={() => propose(r)}>{tr('เสนอปรับ')}</button>
                           : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
                     </td>
                   </tr>

@@ -10,6 +10,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { toast } from './Toast';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 export const NOTE_KINDS = [
   { key: 'remark', icon: '💬', label: 'Remark',  hint: 'เกิดอะไรขึ้นเดือนนี้' },
   { key: 'action', icon: '🛠', label: 'Action',  hint: 'ทำอะไรไปแล้ว / จะทำอะไร' },
@@ -57,9 +58,9 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{icon} {title} · {monthText}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>ค่าเดือนนี้ {valueText || '—'} · หมายเหตุ {notes.length} รายการ · ขอบเขต {ctx.scopeText}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ค่าเดือนนี้')} {valueText || '—'} {tr('· หมายเหตุ')} {notes.length} {tr('รายการ · ขอบเขต')} {ctx.scopeText}</div>
           </div>
-          <button onClick={onClose} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 18, color: 'var(--muted)' }} title="ปิด">✕</button>
+          <button onClick={onClose} style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 18, color: 'var(--muted)' }} title={tr('ปิด')}>✕</button>
         </div>
         <div style={{ padding: 14, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minHeight: 0 }}>
           {notes.length === 0 && (
@@ -70,13 +71,13 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
           {notes.map((n) => {
             const m = noteKindMeta(n.kind);
             return (
-              <div key={n.id} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--bg3)', borderLeft: `3px solid ${n.kind === 'action' ? '#f59e0b' : n.kind === 'note' ? '#38bdf8' : '#a78bfa'}` }}>
-                <div style={{ fontSize: 16, lineHeight: 1 }} title={m.label}>{m.icon}</div>
+              <div key={n.id} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `3px solid ${n.kind === 'action' ? '#f59e0b' : n.kind === 'note' ? '#38bdf8' : '#a78bfa'}` }}>
+                <div style={{ fontSize: 16, lineHeight: 1 }} title={tr(m.label)}>{m.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.text}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{m.label} · {n.created_by_name || 'ไม่ระบุผู้บันทึก'} · {fmtWhen(n.created_at)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr(m.label)} · {n.created_by_name || 'ไม่ระบุผู้บันทึก'} · {fmtWhen(n.created_at)}</div>
                 </div>
-                {canEdit && <DeleteButton onClick={() => remove(n)} title="ลบ" />}
+                {canEdit && <DeleteButton onClick={() => remove(n)} title={tr('ลบ')} />}
               </div>
             );
           })}
@@ -85,19 +86,19 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
           <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {NOTE_KINDS.map(k => (
-                <button key={k.key} onClick={() => setKind(k.key)} title={k.hint}
-                  style={chip(kind === k.key, k.key === 'action' ? '#f59e0b' : k.key === 'note' ? '#38bdf8' : '#a78bfa')}>{k.icon} {k.label}</button>
+                <button key={k.key} onClick={() => setKind(k.key)} title={tr(k.hint)}
+                  style={chip(kind === k.key, k.key === 'action' ? '#f59e0b' : k.key === 'note' ? '#38bdf8' : '#a78bfa')}>{k.icon} {tr(k.label)}</button>
               ))}
             </div>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder={noteKindMeta(kind).hint}
               style={{ width: '100%', resize: 'vertical', fontSize: 13.5 }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ปิด</button>
-              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>{tr('ปิด')}</button>
+              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
             </div>
           </div>
         ) : (
-          <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--muted)' }}>ดูอย่างเดียว — เพิ่ม/ลบหมายเหตุต้องมีสิทธิ์ kpi:manage</div>
+          <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border)', fontSize: 11.5, color: 'var(--muted)' }}>{tr('ดูอย่างเดียว — เพิ่ม/ลบหมายเหตุต้องมีสิทธิ์ kpi:manage')}</div>
         )}
       </div>
     </div>

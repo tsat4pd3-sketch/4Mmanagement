@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   isOpenDT, isPlannedDT, isAlarmingDT, dtElapsedMin, fmtDtElapsed,
   isOverDtThreshold, DT_OPEN_ALERT_MIN_DEFAULT,
+  dtOpenKind, isForgottenDT, DT_OPEN_META,
 } from '../downtimeRules.js';
 
 const NOW = Date.parse('2026-08-26T10:00:00+07:00');
@@ -55,4 +56,28 @@ test('รูปแบบเวลาเดียวกันทุกจอ', ()
 
 test('dtElapsedMin ใช้ created_at เมื่อไม่มี started_at', () => {
   assert.equal(dtElapsedMin({ created_at: new Date(NOW - 30 * 60000).toISOString() }, NOW), 30);
+});
+
+/* ── dtOpenKind — "ยังหยุดอยู่" ต้องมีกะที่ยังเปิดรองรับ (2026-11-09 · เคสจริงไลน์ D4) ── */
+test('dtOpenKind — แยก "เครื่องยังหยุด" ออกจาก "ลืมปิดรายการ"', () => {
+  const open = { ended_at: null, duration_min: null };
+  const done = { ended_at: '2026-11-03T10:00:00Z', duration_min: 57 };
+
+  assert.equal(dtOpenKind(open, 'open'), 'open');
+  assert.equal(dtOpenKind(open, 'pending_close'), 'open');       // ยังไม่อนุมัติ = ยังเดินอยู่
+  assert.equal(dtOpenKind(open, 'closed'), 'forgotten');         // 🔴 เคสที่ทำให้ Alarm ค้าง
+  assert.equal(dtOpenKind(open, 'void'), 'forgotten');
+  assert.equal(dtOpenKind(open, null), 'unknown');               // ไม่รู้ = ห้ามเดาทั้ง 2 ทาง
+  assert.equal(dtOpenKind(done, 'closed'), 'done');
+  assert.equal(dtOpenKind(done, 'open'), 'done');                // ปิดรายการแล้วแม้กะยังเปิด
+
+  assert.equal(isForgottenDT(open, 'closed'), true);
+  assert.equal(isForgottenDT(open, 'open'), false);
+  assert.equal(isForgottenDT(done, 'closed'), false);
+  assert.equal(isForgottenDT(open, null), false);                // unknown ≠ forgotten
+
+  // ป้ายต้องไม่ยืมคำกัน (กฎ "สัญลักษณ์สถานะห้ามยืมคำของสถานะอื่น")
+  assert.notEqual(DT_OPEN_META.open.text, DT_OPEN_META.forgotten.text);
+  assert.equal(DT_OPEN_META.forgotten.blink, false);
+  assert.equal(DT_OPEN_META.open.blink, true);
 });

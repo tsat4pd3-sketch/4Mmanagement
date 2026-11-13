@@ -18,14 +18,15 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, QBIN_EMBED } from '../utils/oee';
 import { qaViewScope, qaWriteCtx } from '../utils/qaViewScope';
 import { checkWriteRows } from '../utils/dbWrite';
-import { isOpenQaDoc, QA_DONE_IN, qaDocInFilter } from '../utils/qaDocStatus';
+import { isOpenQaDoc, QA_DONE_IN, qaDocInFilter, ncrFlow, capaFlow } from '../utils/qaDocStatus';
+import StepFlow from '../components/StepFlow';
 import { canWriteLine, writableRows, writeBlockText } from '../utils/writeScope';
 import LineSelect from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -62,6 +63,8 @@ import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 import { DeleteButton } from '../components/IconButton';
+import { tr as trI18n } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -221,8 +224,8 @@ const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', border
 function Chip({ label, color }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-      color, background: `${color}1f`, border: `1px solid ${color}55`, whiteSpace: 'nowrap',
+      display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
+      color, background: `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, whiteSpace: 'nowrap',
     }}>{label}</span>
   );
 }
@@ -255,7 +258,7 @@ function Modal({ title, onClose, children, width = 560 }) {
       /* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — กันเผลอกดแล้วข้อมูลในฟอร์มหาย ปิดได้จากปุ่ม ✕/ยกเลิกเท่านั้น */
     >
       <div style={{
-        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -355,11 +358,19 @@ function QualityDashboard() {
     (async () => {
       setLoading(true);
       if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoadErr([]); setLoading(false); return; }
-      let ssQ = supabaseDR.from('production_sessions')
-        .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
-        .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
-      if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
-      const { data: ss, error: ssErr } = await ssQ.order('work_date');
+      /* 🔴 เพดาน 1,000 แถว — กะปิดแล้ว 30 วัน = 968 แถว (วัดจริง 11/11/26) เหลือที่แค่ 32
+         60 วัน = 1,406 · ปีนี้ = 2,514 ⇒ กดปุ่มย้อนหลัง/"ปีนี้" แล้วเดือนล่าสุดหายทันที
+         (เรียง work_date ขึ้น ⇒ ตัดท้าย = ตัดเดือนที่คนเปิดดูพอดี) ⇒ ต้องแบ่งหน้า */
+      const ssRun = () => {
+        let q = supabaseDR.from('production_sessions')
+          .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
+          .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
+        if (scopedLineNames) q = q.in('line_name', scopedLineNames);
+        return q;
+      };
+      const ssPage = await fetchAllPages(ssRun, { orderBy: ['work_date', 'id'] });
+      const ss = ssPage.rows;
+      const ssErr = ssPage.error ? { message: ssPage.error } : (ssPage.truncated ? { message: 'กะเยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่' } : null);
       const ids = (ss || []).map(s => s.id);
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
       //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)
@@ -510,19 +521,19 @@ function QualityDashboard() {
         {/* ตัวเลือก = ชื่อไลน์ที่มีกะในช่วงนี้ — วาดผ่าน <LineSelect> ให้ได้ลำดับ/หัวกลุ่มส่วนงานชุดเดียวกับทุกหน้า
             (2026-10-01 · เดิม select ธรรมดาเรียง localeCompare = คนละลำดับกับหน้าอื่น)
             · ไลน์ปลดระวางที่ยังมีกะในช่วงนี้ต้องเลือกได้ (includeRetired) · ชื่อที่ไม่อยู่ในทะเบียน = กลุ่มท้าย ห้ามหาย */}
-        <span className="filter-label">ไลน์</span>
+        <span className="filter-label">{trI18n('ไลน์')}</span>
         <LineSelect lines={allLines.filter(l => lineOptions.includes(l.name))} includeRetired
           value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} extraAt="end"
-          extraGroups={[{ label: '⚠ ไม่อยู่ในทะเบียนไลน์', options: lineOptions.filter(n => !allLines.some(l => l.name === n)).map(n => ({ value: n })) }]} />
-        <span className="filter-label">ชิ้นงาน</span>
+          extraGroups={[{ label: 'ไม่อยู่ในทะเบียนไลน์', options: lineOptions.filter(n => !allLines.some(l => l.name === n)).map(n => ({ value: n })) }]} />
+        <span className="filter-label">{trI18n('ชิ้นงาน')}</span>
         <SearchSelect value={productFilter || ''} placeholder={allOf('ชิ้นงาน')} style={{ minWidth: 200, maxWidth: 320 }}
           options={productOptions.map(p => ({ id: p.key, label: p.label, sub: p.key !== p.label ? p.key : '', keywords: p.key }))}
           onChange={({ id }) => setProductFilter(id)} />
-        {loading && <span className="filter-count">กำลังโหลด…</span>}
+        {loading && <span className="filter-count">{trI18n('กำลังโหลด…')}</span>}
       </TimeRangeBar>
 
       {loadErr.length > 0 && (
-        <div role="alert" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e05252', color: '#e05252', fontSize: 12.5, fontWeight: 700 }}>
+        <div role="alert" style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid #e05252', color: '#e05252', fontSize: 12.5, fontWeight: 700 }}>
           ⚠️ ข้อมูลบางส่วนโหลดไม่สำเร็จ — ตัวเลขด้านล่างอาจต่ำกว่าจริง: {loadErr.join(' · ')}
         </div>
       )}
@@ -531,43 +542,43 @@ function QualityDashboard() {
             และ **ยอดผลิต/NG ถูกทาเขียวเมื่อ 0** ทั้งที่ "ผลิต 0 ชิ้น" ไม่ใช่เรื่องดี
             (0 ของ NG = ดีจริง · 0 ของยอดผลิต = ยังไม่มีข้อมูล ⇒ คนละเรื่อง ห้ามใช้สีเดียวกัน)
             เกณฑ์ PPM/FTT ที่หน้านี้ตั้งเอง เขียนกำกับไว้ใน `sub` แล้ว (UI §6.18 ข้อ 5) */}
-        <KpiCard label="ยอดผลิตรวม" value={stat.total.toLocaleString()} unit="ชิ้น"
+        <KpiCard label={trI18n('ยอดผลิตรวม')} value={stat.total.toLocaleString()} unit="ชิ้น"
           sub={productFilter ? `ชิ้นงาน: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} กะที่ปิดแล้ว${lineFilter ? ` · ${lineFilter}` : ''}`} />
-        <KpiCard label="ของเสียรวม (NG)" value={stat.ng.toLocaleString()} unit="ชิ้น"
+        <KpiCard label={trI18n('ของเสียรวม (NG)')} value={stat.ng.toLocaleString()} unit="ชิ้น"
           color={statusColor(toneOf({ value: stat.ng, zeroIsGood: true }))}
           sub={`${stat.total + stat.ng > 0 ? `จากผลิตจริง ${(stat.total + stat.ng).toLocaleString()} ชิ้น` : 'ยังไม่มีข้อมูล'}${stat.pendingSuspect ? ` · ⏳ ของสงสัยรอ QA ${stat.pendingSuspect.toLocaleString()} ชิ้น (ยังไม่นับ — PPM/FTT ยังไม่สรุป)` : ''}`} />
-        <KpiCard primary label="PPM — ของเสียต่อล้านชิ้น" value={stat.ppm != null ? stat.ppm.toLocaleString() : null}
+        <KpiCard primary label={trI18n('PPM — ของเสียต่อล้านชิ้น')} value={stat.ppm != null ? stat.ppm.toLocaleString() : null}
           color={stat.ppm == null ? 'var(--text)'
             : statusColor(stat.ppm <= 500 ? 'good' : stat.ppm <= 3000 ? 'warn' : 'bad')}
-          sub="เกณฑ์จอนี้: เขียว ≤ 500 · เหลือง ≤ 3,000" />
+          sub={trI18n('เกณฑ์จอนี้: เขียว ≤ 500 · เหลือง ≤ 3,000')} />
         <KpiCard label="FTT (First Time Through)" value={stat.ftt != null ? `${stat.ftt}%` : null}
           color={stat.ftt == null ? 'var(--text)'
             : statusColor(stat.ftt >= 99 ? 'good' : stat.ftt >= 97 ? 'warn' : 'bad')}
-          sub="เกณฑ์จอนี้: เขียว ≥ 99% · เหลือง ≥ 97%" />
-        <KpiCard label="NCR เปิดค้าง" value={ncrOpen} unit="ใบ"
-          color={statusColor(toneOf({ value: ncrOpen, zeroIsGood: true, over: 'warn' }))} sub="ยังไม่ปิดรายการ" />
-        <KpiCard label="CAPA เกินกำหนด" value={capaOverdue} unit="ใบ"
-          color={statusColor(toneOf({ value: capaOverdue, zeroIsGood: true }))} sub="เลย due date" />
+          sub={trI18n('เกณฑ์จอนี้: เขียว ≥ 99% · เหลือง ≥ 97%')} />
+        <KpiCard label={trI18n('NCR เปิดค้าง')} value={ncrOpen} unit="ใบ"
+          color={statusColor(toneOf({ value: ncrOpen, zeroIsGood: true, over: 'warn' }))} sub={trI18n('ยังไม่ปิดรายการ')} />
+        <KpiCard label={trI18n('CAPA เกินกำหนด')} value={capaOverdue} unit="ใบ"
+          color={statusColor(toneOf({ value: capaOverdue, zeroIsGood: true }))} sub={trI18n('เลย due date')} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 14 }}>
         <div style={cardSt}>
-          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📈 แนวโน้ม PPM รายวัน</div>
+          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>{trI18n('แนวโน้ม PPM รายวัน')}</div>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={stat.ppmTrend} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
               <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
               <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
-              <Line type="monotone" dataKey="ppm" name="PPM" stroke="#ef4444" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
+              <Line type="monotone" dataKey="ppm" name="PPM" stroke="var(--red)" strokeWidth={2} dot={{ r: 2.5 }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         <div style={cardSt}>
-          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>🏭 ของเสียรายไลน์ (Top 12)</div>
+          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>{trI18n('ของเสียรายไลน์ (Top 12)')}</div>
           {stat.lineRows.length === 0 ? (
-            <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูล</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{trI18n('ไม่มีข้อมูล')}</div>
           ) : (
             <ResponsiveContainer width="100%" height={240}>
               <BarChart data={stat.lineRows} margin={{ top: 14, right: 12, left: 4, bottom: 0 }}>
@@ -576,7 +587,7 @@ function QualityDashboard() {
                 <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                   formatter={(v, name) => [name === 'PPM' ? Number(v).toLocaleString() : v, name]} />
-                <Bar dataKey="ng" name="NG (ชิ้น)" fill="#ef4444" opacity={0.85} radius={[3, 3, 0, 0]}>
+                <Bar dataKey="ng" name="NG (ชิ้น)" fill="var(--red)" opacity={0.85} radius={[3, 3, 0, 0]}>
                   <LabelList dataKey="ppm" position="top" formatter={v => v ? `${Number(v).toLocaleString()} ppm` : ''} style={{ fontSize: 11, fill: 'var(--muted)' }} />
                 </Bar>
               </BarChart>
@@ -590,9 +601,9 @@ function QualityDashboard() {
           ⚠️ ห้ามย้ายกลับเข้ากริดแล้วใส่ `gridColumn: '1 / -1'` — auto-fit จะดันมันลงบรรทัดใหม่
           แล้ว**เหลือช่องว่างครึ่งแถวข้างบน** (ลองแล้ว 23/09 · ผิดกฎ "ห้ามเหลือขอบข้างว่างเยอะ") */}
       <div style={{ ...cardSt, marginTop: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📊 Pareto ของเสียตามประเภท (NG + Suspect)</div>
+        <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>{trI18n('Pareto ของเสียตามประเภท (NG + Suspect)')}</div>
         {stat.pareto.length === 0 ? (
-          <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูลของเสียในช่วงนี้</div>
+          <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{trI18n('ไม่มีข้อมูลของเสียในช่วงนี้')}</div>
         ) : (
           <ParetoChart rows={stat.pareto} unit="ชิ้น" height={300} />
         )}
@@ -739,7 +750,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const dot = (key) => (props) => {
     const { cx, cy, payload } = props;
     const bad = key === 'xbar' ? (payload.oocX || payload.run) : payload.oocR;
-    return <circle key={props.index} cx={cx} cy={cy} r={bad ? 4.5 : 2.8} fill={bad ? '#ef4444' : '#4d9fff'} stroke={bad ? '#fff' : 'none'} strokeWidth={bad ? 1 : 0} />;
+    return <circle key={props.index} cx={cx} cy={cy} r={bad ? 4.5 : 2.8} fill={bad ? 'var(--red)' : 'var(--blue)'} stroke={bad ? '#fff' : 'none'} strokeWidth={bad ? 1 : 0} />;
   };
 
   const violations = spc ? spc.points.filter(p => p.oocX || p.oocR || p.run) : [];
@@ -748,9 +759,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* เลือกจุดควบคุม */}
       <div style={{ ...cardSt, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label="จุดควบคุม (Part / Characteristic)">
+        <Field label={trI18n('จุดควบคุม (Part / Characteristic)')}>
           <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} style={{ ...inputSt, minWidth: 'min(320px, 100%)' }}>
-            {chars.length === 0 && <option value="">— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —</option>}
+            {chars.length === 0 && <option value="">{trI18n('— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —')}</option>}
             {chars.map(c => (
               <option key={c.id} value={c.id}>
                 {c.part_no} · {c.characteristic}{c.unit ? ` (${c.unit})` : ''}{c.is_active ? '' : ' [ปิดใช้งาน]'}
@@ -758,33 +769,33 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
             ))}
           </select>
         </Field>
-        <Field label="ใช้ subgroup ล่าสุด">
+        <Field label={trI18n('ใช้ subgroup ล่าสุด')}>
           <select value={limitN} onChange={e => setLimitN(Number(e.target.value))} style={inputSt}>
-            {[25, 50, 100].map(n => <option key={n} value={n}>{n} กลุ่ม</option>)}
+            {[25, 50, 100].map(n => <option key={n} value={n}>{n} {trI18n('กลุ่ม')}</option>)}
           </select>
         </Field>
         {canManage && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button style={btnSt()} onClick={() => setCharModal({ ...EMPTY_CHAR })}>+ เพิ่มจุดควบคุม</button>
+            <button style={btnSt()} onClick={() => setCharModal({ ...EMPTY_CHAR })}>{trI18n('+ เพิ่มจุดควบคุม')}</button>
             {sel && <button style={ghostBtn} onClick={() => setCharModal({
               ...sel,
               nominal: sel.nominal ?? '', usl: sel.usl ?? '', lsl: sel.lsl ?? '',
               part_name: sel.part_name || '', line_name: sel.line_name || '', unit: sel.unit || '',
               gauge: sel.gauge || '', control_method: sel.control_method || '',
-            })}>✏️ แก้ไข</button>}
+            })}>{trI18n('แก้ไข')}</button>}
           </div>
         )}
       </div>
 
       {sel && spcExcluded > 0 && (
-        <div style={{ ...cardSt, borderColor: 'rgba(245,158,11,0.45)', background: 'rgba(245,158,11,0.07)' }}>
-          <div style={{ fontWeight: 800, fontSize: 13, color: '#f59e0b', marginBottom: 4 }}>
+        <div style={{ ...cardSt, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)' }}>
+          <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber)', marginBottom: 4 }}>
             ⚠️ ตัดออก {spcExcluded} กลุ่มที่จำนวนค่าวัดไม่ตรง n={sel.subgroup_size}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
             ค่าคงที่ control chart (A2/D3/D4/d2) ผูกกับขนาด subgroup คงที่ — กลุ่มที่กรอกไม่ครบ/เกินจะทำ Cpk เพี้ยน จึงไม่ถูกนำมาคำนวณ
             {spc ? ` (คำนวณจาก ${spc.points.length} กลุ่มที่ครบ n)` : ' — ทุกกลุ่มถูกตัดออก จึงยังคำนวณไม่ได้'}
-            {' '}· แก้โดยกรอกค่าวัดให้ครบ {sel.subgroup_size} ค่าต่อกลุ่ม หรือปรับ n ของจุดควบคุมให้ตรงกับที่วัดจริง
+            {' '}{trI18n('· แก้โดยกรอกค่าวัดให้ครบ')} {sel.subgroup_size} ค่าต่อกลุ่ม หรือปรับ n ของจุดควบคุมให้ตรงกับที่วัดจริง
           </div>
         </div>
       )}
@@ -798,12 +809,12 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
             <KpiCard label="Cp" value={fmtNum(spc?.cp, 2)} color={cpkColor(spc?.cp)} />
             <KpiCard label="Cpk" value={fmtNum(spc?.cpk, 2)} color={cpkColor(spc?.cpk)} sub={cpkVerdict(spc?.cpk)} />
             <KpiCard label="Pp / Ppk" value={`${fmtNum(spc?.pp, 2)} / ${fmtNum(spc?.ppk, 2)}`} color={cpkColor(spc?.ppk)} sub="performance (overall σ)" />
-            <KpiCard label="ค่าออกนอก Spec" value={spc ? `${spc.oos} / ${spc.all.length}` : '—'} color={spc?.oos ? '#ef4444' : '#22c55e'} sub="จำนวนค่าวัดเกิน USL/LSL" />
+            <KpiCard label={trI18n('ค่าออกนอก Spec')} value={spc ? `${spc.oos} / ${spc.all.length}` : '—'} color={spc?.oos ? 'var(--red)' : 'var(--green)'} sub={trI18n('จำนวนค่าวัดเกิน USL/LSL')} />
           </div>
 
           {violations.length > 0 && (
-            <div style={{ ...cardSt, borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.06)' }}>
-              <div style={{ fontWeight: 800, fontSize: 13, color: '#ef4444', marginBottom: 4 }}>⚠️ พบสัญญาณผิดปกติบน control chart {violations.length} จุด</div>
+            <div style={{ ...cardSt, borderColor: 'var(--red-line)', background: 'var(--red-dim)' }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--red)', marginBottom: 4 }}>{trI18n('⚠️ พบสัญญาณผิดปกติบน control chart')} {violations.length} {trI18n('จุด')}</div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 {violations.slice(0, 6).map(p =>
                   `กลุ่ม #${p.idx} (${fmtD(p.date)}): ${[p.oocX && 'X̄ เกิน control limit', p.oocR && 'R เกิน control limit', p.run && 'run ≥7 จุดข้างเดียวของ CL'].filter(Boolean).join(', ')}`
@@ -825,15 +836,15 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <YAxis width="auto" domain={['auto', 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
-                    <ReferenceLine y={spc.uclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclX)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />
-                    <ReferenceLine y={spc.xbarbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.xbarbar)}`, fontSize: 11, fill: '#22c55e', position: 'right' }} />
-                    <ReferenceLine y={spc.lclX} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `LCL ${fmtNum(spc.lclX)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />
-                    {spc.usl != null && <ReferenceLine y={spc.usl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'USL', fontSize: 11, fill: '#f59e0b', position: 'right' }} />}
-                    {spc.lsl != null && <ReferenceLine y={spc.lsl} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'LSL', fontSize: 11, fill: '#f59e0b', position: 'right' }} />}
-                    <Line type="monotone" dataKey="xbar" name={sel.subgroup_size === 1 ? 'X' : 'X̄'} stroke="#4d9fff" strokeWidth={2} dot={dot('xbar')} isAnimationActive={false} />
+                    <ReferenceLine y={spc.uclX} stroke="var(--red)" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclX)}`, fontSize: 11, fill: 'var(--red)', position: 'right' }} />
+                    <ReferenceLine y={spc.xbarbar} stroke="var(--green)" label={{ value: `CL ${fmtNum(spc.xbarbar)}`, fontSize: 11, fill: 'var(--green)', position: 'right' }} />
+                    <ReferenceLine y={spc.lclX} stroke="var(--red)" strokeDasharray="5 3" label={{ value: `LCL ${fmtNum(spc.lclX)}`, fontSize: 11, fill: 'var(--red)', position: 'right' }} />
+                    {spc.usl != null && <ReferenceLine y={spc.usl} stroke="var(--amber)" strokeDasharray="2 3" label={{ value: 'USL', fontSize: 11, fill: 'var(--amber)', position: 'right' }} />}
+                    {spc.lsl != null && <ReferenceLine y={spc.lsl} stroke="var(--amber)" strokeDasharray="2 3" label={{ value: 'LSL', fontSize: 11, fill: 'var(--amber)', position: 'right' }} />}
+                    <Line type="monotone" dataKey="xbar" name={sel.subgroup_size === 1 ? 'X' : 'X̄'} stroke="var(--blue)" strokeWidth={2} dot={dot('xbar')} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
-              ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{loading ? 'กำลังโหลด…' : 'ยังไม่มีผลวัด'}</div>}
+              ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{loading ? trI18n('กำลังโหลด…') : trI18n('ยังไม่มีผลวัด')}</div>}
             </div>
 
             {/* R chart */}
@@ -847,9 +858,9 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <YAxis width="auto" domain={[0, 'auto']} tick={{ fontSize: 11, fill: 'var(--muted)' }} tickFormatter={v => Number(v).toFixed(2)} />
                     <Tooltip contentStyle={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }}
                       labelFormatter={i => `กลุ่ม #${i}`} />
-                    {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="#ef4444" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 11, fill: '#ef4444', position: 'right' }} />}
-                    {spc.rbar != null && <ReferenceLine y={spc.rbar} stroke="#22c55e" label={{ value: `CL ${fmtNum(spc.rbar)}`, fontSize: 11, fill: '#22c55e', position: 'right' }} />}
-                    <Line type="monotone" dataKey="range" name="R" stroke="#a78bfa" strokeWidth={2} dot={dot('range')} isAnimationActive={false} connectNulls />
+                    {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="var(--red)" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 11, fill: 'var(--red)', position: 'right' }} />}
+                    {spc.rbar != null && <ReferenceLine y={spc.rbar} stroke="var(--green)" label={{ value: `CL ${fmtNum(spc.rbar)}`, fontSize: 11, fill: 'var(--green)', position: 'right' }} />}
+                    <Line type="monotone" dataKey="range" name="R" stroke="var(--blue)" strokeWidth={2} dot={dot('range')} isAnimationActive={false} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>—</div>}
@@ -857,7 +868,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
             {/* Histogram */}
             <div style={cardSt}>
-              <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>📊 Histogram เทียบ Spec</div>
+              <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>{trI18n('Histogram เทียบ Spec')}</div>
               {hist.length ? (
                 <ResponsiveContainer width="100%" height={230}>
                   <BarChart data={hist} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
@@ -870,12 +881,12 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <Bar dataKey="count" name="จำนวนค่า" fill={CELL_BAR_FILL} radius={[3, 3, 0, 0]}>
                       {hist.map((b, i) => {
                         const bad = (spc.usl != null && b.from >= spc.usl) || (spc.lsl != null && b.to <= spc.lsl);
-                        return <Cell key={i} fill={bad ? '#ef4444' : '#4d9fff'} opacity={0.85} />;
+                        return <Cell key={i} fill={bad ? 'var(--red)' : 'var(--blue)'} opacity={0.85} />;
                       })}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-              ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ต้องมีผลวัดอย่างน้อย 2 ค่า</div>}
+              ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{trI18n('ต้องมีผลวัดอย่างน้อย 2 ค่า')}</div>}
             </div>
 
             {/* บันทึกผลวัด + ตาราง */}
@@ -888,15 +899,15 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                       onChange={e => setReadings(r => r.map((x, j) => j === i ? e.target.value : x))}
                       style={{ ...inputSt, width: 86 }} />
                   ))}
-                  <button style={btnSt()} onClick={saveMeasurement}>บันทึก</button>
+                  <button style={btnSt()} onClick={saveMeasurement}>{trI18n('บันทึก')}</button>
                 </div>
-              ) : <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>คุณไม่มีสิทธิ์บันทึกผลวัด (qa:record)</div>}
+              ) : <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{trI18n('คุณไม่มีสิทธิ์บันทึกผลวัด (qa:record)')}</div>}
 
               <div style={{ maxHeight: 250, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse' }}>
                   <thead><tr>
-                    <th style={thSt}>วันที่</th><th style={thSt}>กะ</th><th style={thSt}>ค่าวัด</th>
-                    <th style={thSt}>X̄</th><th style={thSt}>ผู้วัด</th>{canManage && <th style={thSt}></th>}
+                    <th style={thSt}>{trI18n('วันที่')}</th><th style={thSt}>{trI18n('กะ')}</th><th style={thSt}>{trI18n('ค่าวัด')}</th>
+                    <th style={thSt}>X̄</th><th style={thSt}>{trI18n('ผู้วัด')}</th>{canManage && <th style={thSt}></th>}
                   </tr></thead>
                   <tbody>
                     {[...rows].reverse().map(r => {
@@ -909,12 +920,12 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                           <td style={{ ...tdSt, fontWeight: 700 }}>{fmtNum(mean(vals))}</td>
                           <td style={tdSt}>{r.operator_name || '—'}</td>
                           {canManage && <td style={tdSt}>
-                            <DeleteButton onClick={() => delMeasurement(r.id)} title="ลบ" />
+                            <DeleteButton onClick={() => delMeasurement(r.id)} title={trI18n('ลบ')} />
                           </td>}
                         </tr>
                       );
                     })}
-                    {rows.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>ยังไม่มีผลวัด</span></td></tr>}
+                    {rows.length === 0 && <tr><td style={tdSt} colSpan={6}><span style={{ color: 'var(--muted)' }}>{trI18n('ยังไม่มีผลวัด')}</span></td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -924,7 +935,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
       )}
 
       {charModal && (
-        <Modal title={charModal.id ? '✏️ แก้ไขจุดควบคุม' : '➕ เพิ่มจุดควบคุม SPC'} onClose={() => setCharModal(null)}>
+        <Modal title={charModal.id ? trI18n('✏️ แก้ไขจุดควบคุม') : trI18n('➕ เพิ่มจุดควบคุม SPC')} onClose={() => setCharModal(null)}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {/* part_no = คีย์จัดกลุ่มลิสต์ SPC — อ่านจากทะเบียนพาร์ท (<PartSelect>) แทนพิมพ์เอง (2026-09-07) */}
             <Field label="Part No. *">
@@ -932,37 +943,37 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                 onChange={({ part_no, part_name }) => setCharModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
-            <Field label="จุดควบคุม / Characteristic *" span><input style={inputSt} placeholder="เช่น ความกว้างร่อง A หลังตัด" value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
-            <Field label="ไลน์ผลิต">
+            <Field label={trI18n('จุดควบคุม / Characteristic *')} span><input style={inputSt} placeholder={trI18n('เช่น ความกว้างร่อง A หลังตัด')} value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
+            <Field label={trI18n('ไลน์ผลิต')}>
               {/* dropdown ไลน์ = <LineSelect> เท่านั้น (ปลดระวาง/scope/ลำดับชั้นเหมือนทุกหน้า · 2026-09-07) */}
-              <LineSelect lines={lineObjs} value={charModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={charModal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setCharModal(f => ({ ...f, line_name: v }))} />
             </Field>
-            <Field label="หน่วย"><input style={inputSt} value={charModal.unit} onChange={e => setCharModal(f => ({ ...f, unit: e.target.value }))} /></Field>
+            <Field label={trI18n('หน่วย')}><input style={inputSt} value={charModal.unit} onChange={e => setCharModal(f => ({ ...f, unit: e.target.value }))} /></Field>
             <Field label="LSL"><input style={inputSt} type="number" step="any" value={charModal.lsl} onChange={e => setCharModal(f => ({ ...f, lsl: e.target.value }))} /></Field>
             <Field label="Nominal"><input style={inputSt} type="number" step="any" value={charModal.nominal} onChange={e => setCharModal(f => ({ ...f, nominal: e.target.value }))} /></Field>
             <Field label="USL"><input style={inputSt} type="number" step="any" value={charModal.usl} onChange={e => setCharModal(f => ({ ...f, usl: e.target.value }))} /></Field>
-            <Field label="ขนาด subgroup (n)">
+            <Field label={trI18n('ขนาด subgroup (n)')}>
               <select style={inputSt} value={charModal.subgroup_size} onChange={e => setCharModal(f => ({ ...f, subgroup_size: e.target.value }))}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={n} value={n}>{n}{n === 1 ? ' (I-MR)' : ''}</option>)}
               </select>
             </Field>
             {/* gauge เก็บรหัสจากทะเบียน qa_instruments (แท็บ 📏) — โยงจุดควบคุมกับสถานะสอบเทียบ (2026-09-07) */}
-            <Field label="เครื่องมือวัด">
+            <Field label={trI18n('เครื่องมือวัด')}>
               <InstrumentSelect value={charModal.gauge} instruments={instruments} history={gaugeHist} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
             </Field>
-            <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder="เช่น CP-HDF-001 ข้อ 12" value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
+            <Field label={trI18n('อ้างอิง Control Plan')} span><input style={inputSt} placeholder={trI18n('เช่น CP-HDF-001 ข้อ 12')} value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
             {charModal.id && (
-              <Field label="สถานะ">
+              <Field label={trI18n('สถานะ')}>
                 <select style={inputSt} value={charModal.is_active ? '1' : '0'} onChange={e => setCharModal(f => ({ ...f, is_active: e.target.value === '1' }))}>
-                  <option value="1">ใช้งาน</option><option value="0">ปิดใช้งาน</option>
+                  <option value="1">{trI18n('ใช้งาน')}</option><option value="0">{trI18n('ปิดใช้งาน')}</option>
                 </select>
               </Field>
             )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setCharModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={saveChar}>บันทึก</button>
+            <button style={ghostBtn} onClick={() => setCharModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt()} onClick={saveChar}>{trI18n('บันทึก')}</button>
           </div>
         </Modal>
       )}
@@ -974,10 +985,10 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
    TAB 3 — NCR (Nonconformance Report)
    ════════════════════════════════════════════════════════════════════════ */
 const NCR_STATUS = {
-  open:        { label: 'เปิดใหม่',        color: '#ef4444' },
-  containment: { label: 'กักกันแล้ว',      color: '#f59e0b' },
-  disposition: { label: 'ตัดสินแล้ว',      color: '#4d9fff' },
-  closed:      { label: 'ปิดรายการ',       color: '#22c55e' },
+  open:        { label: 'เปิดใหม่',        color: 'var(--red)' },
+  containment: { label: 'กักกันแล้ว',      color: 'var(--amber)' },
+  disposition: { label: 'ตัดสินแล้ว',      color: 'var(--blue)' },
+  closed:      { label: 'ปิดรายการ',       color: 'var(--green)' },
   cancelled:   { label: 'ยกเลิก (เปิดผิด)', color: '#6b7280' },
 };
 const NCR_SOURCE = { incoming: 'รับเข้า (Incoming)', inprocess: 'ในกระบวนการ', final: 'ตรวจสุดท้าย (Final)', customer: 'ลูกค้าเคลม' };
@@ -1108,16 +1119,16 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <FilterBar>
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={NCR_STATUS_SEG} />
+        <Segmented label={trI18n('สถานะ')} value={filter} onChange={setFilter} options={NCR_STATUS_SEG} />
         <span className="spacer" />
-        {canRecord && <button style={btnSt('#ef4444')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>🚨 เปิด NCR ใหม่</button>}
+        {canRecord && <button style={btnSt('var(--red)')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>{trI18n('เปิด NCR ใหม่')}</button>}
       </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr>
-            <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th><th style={thSt}>Part</th>
-            <th style={thSt}>ปัญหา</th><th style={thSt}>NG</th><th style={thSt}>ที่มา</th><th style={thSt}>ระดับ</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('เลขที่')}</th><th style={thSt}>{trI18n('วันที่')}</th><th style={thSt}>{trI18n('ไลน์')}</th><th style={thSt}>Part</th>
+            <th style={thSt}>{trI18n('ปัญหา')}</th><th style={thSt}>NG</th><th style={thSt}>{trI18n('ที่มา')}</th><th style={thSt}>{trI18n('ระดับ')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
           </tr></thead>
           <tbody>
             {list.map(n => (
@@ -1129,13 +1140,13 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
                 <td style={tdSt}>{n.line_name || '—'}</td>
                 <td style={tdSt}>{n.part_no || '—'}</td>
                 <td style={{ ...tdSt, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.defect_desc}</td>
-                <td style={{ ...tdSt, fontWeight: 700, color: n.qty_ng ? '#ef4444' : undefined }}>{n.qty_ng}</td>
+                <td style={{ ...tdSt, fontWeight: 700, color: n.qty_ng ? 'var(--red)' : undefined }}>{n.qty_ng}</td>
                 <td style={tdSt}>{NCR_SOURCE[n.source] || n.source}</td>
-                <td style={tdSt}><Chip label={NCR_SEV[n.severity]?.label || n.severity} color={NCR_SEV[n.severity]?.color || '#6b7280'} /></td>
-                <td style={tdSt}><Chip label={NCR_STATUS[n.status]?.label || n.status} color={NCR_STATUS[n.status]?.color || '#6b7280'} /></td>
+                <td style={tdSt}><Chip label={trI18n(NCR_SEV[n.severity]?.label) || n.severity} color={NCR_SEV[n.severity]?.color || '#6b7280'} /></td>
+                <td style={tdSt}><Chip label={trI18n(NCR_STATUS[n.status]?.label) || n.status} color={NCR_STATUS[n.status]?.color || '#6b7280'} /></td>
               </tr>
             ))}
-            {list.length === 0 && <tr><td style={tdSt} colSpan={9}><span style={{ color: 'var(--muted)' }}>ไม่มีรายการ</span></td></tr>}
+            {list.length === 0 && <tr><td style={tdSt} colSpan={9}><span style={{ color: 'var(--muted)' }}>{trI18n('ไม่มีรายการ')}</span></td></tr>}
           </tbody>
         </table>
       </div>
@@ -1143,10 +1154,10 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
       {createModal && (
         <Modal title={createModal.id ? `✏️ แก้ข้อมูล ${createModal.ncr_no}` : '🚨 เปิด NCR ใหม่'} onClose={() => setCreateModal(null)} width={960}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
-            <Field label="ไลน์ผลิต">
+            <Field label={trI18n('วันที่พบ')}><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
+            <Field label={trI18n('ไลน์ผลิต')}>
               {/* <LineSelect> กรอง scope (leader = ครอบครัวไลน์ · sections) ให้เอง — ถอด filter ที่เขียนเองออก (2026-09-07) */}
-              <LineSelect lines={lineObjs} value={createModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={createModal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 role={role} lineId={lineId} sections={sections}
                 onChange={v => setCreateModal(f => ({ ...f, line_name: v }))} />
             </Field>
@@ -1156,110 +1167,112 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
                 onChange={({ part_no, part_name }) => setCreateModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={createModal.part_name} onChange={e => setCreateModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
-            <Field label="ที่มา">
+            <Field label={trI18n('ที่มา')}>
               <select style={inputSt} value={createModal.source} onChange={e => setCreateModal(f => ({ ...f, source: e.target.value }))}>
-                {Object.entries(NCR_SOURCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {Object.entries(NCR_SOURCE).map(([v, l]) => <option key={v} value={v}>{trI18n(l)}</option>)}
               </select>
             </Field>
-            <Field label="ระดับความรุนแรง">
+            <Field label={trI18n('ระดับความรุนแรง')}>
               <select style={inputSt} value={createModal.severity} onChange={e => setCreateModal(f => ({ ...f, severity: e.target.value }))}>
-                {Object.entries(NCR_SEV).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
+                {Object.entries(NCR_SEV).map(([v, s]) => <option key={v} value={v}>{trI18n(s.label)}</option>)}
               </select>
             </Field>
-            <Field label="จำนวนที่ตรวจพบ/กักกัน (ชิ้น)"><input type="number" style={inputSt} value={createModal.qty_found} onChange={e => setCreateModal(f => ({ ...f, qty_found: e.target.value }))} /></Field>
-            <Field label="จำนวน NG (ชิ้น)"><input type="number" style={inputSt} value={createModal.qty_ng} onChange={e => setCreateModal(f => ({ ...f, qty_ng: e.target.value }))} /></Field>
-            <Field label="รายละเอียดของเสีย / สิ่งที่ไม่เป็นไปตามข้อกำหนด *" span>
+            <Field label={trI18n('จำนวนที่ตรวจพบ/กักกัน (ชิ้น)')}><input type="number" style={inputSt} value={createModal.qty_found} onChange={e => setCreateModal(f => ({ ...f, qty_found: e.target.value }))} /></Field>
+            <Field label={trI18n('จำนวน NG (ชิ้น)')}><input type="number" style={inputSt} value={createModal.qty_ng} onChange={e => setCreateModal(f => ({ ...f, qty_ng: e.target.value }))} /></Field>
+            <Field label={trI18n('รายละเอียดของเสีย / สิ่งที่ไม่เป็นไปตามข้อกำหนด *')} span>
               <textarea rows={3} style={{ ...inputSt, resize: 'vertical' }} value={createModal.defect_desc} onChange={e => setCreateModal(f => ({ ...f, defect_desc: e.target.value }))} />
             </Field>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setCreateModal(null)}>ยกเลิก</button>
-            <button style={btnSt('#ef4444')} onClick={createNCR}>{createModal.id ? '💾 บันทึกการแก้ไข' : 'เปิด NCR'}</button>
+            <button style={ghostBtn} onClick={() => setCreateModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt('var(--red)')} onClick={createNCR}>{createModal.id ? trI18n('บันทึกการแก้ไข') : trI18n('เปิด NCR')}</button>
           </div>
         </Modal>
       )}
 
       {detail && (
-        <Modal title={`📄 ${detail.ncr_no}`} onClose={() => setDetail(null)} width={640}>
+        <Modal title={`${detail.ncr_no}`} onClose={() => setDetail(null)} width={640}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Chip label={NCR_STATUS[detail.status]?.label || detail.status} color={NCR_STATUS[detail.status]?.color || '#6b7280'} />
-            <Chip label={NCR_SEV[detail.severity]?.label || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
-            <Chip label={NCR_SOURCE[detail.source] || detail.source} color="#a78bfa" />
+            <Chip label={trI18n(NCR_STATUS[detail.status]?.label) || detail.status} color={NCR_STATUS[detail.status]?.color || '#6b7280'} />
+            <Chip label={trI18n(NCR_SEV[detail.severity]?.label) || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
+            <Chip label={NCR_SOURCE[detail.source] || detail.source} color="var(--blue)" />
           </div>
+          {/* 🪜 ถึงขั้นไหน — กฎ ncrFlow() (utils/qaDocStatus.js) · UI §6.30 */}
+          {(() => { const f = ncrFlow(detail); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13, marginBottom: 12 }}>
-            <div><b>วันที่พบ:</b> {fmtD(detail.report_date)}</div>
-            <div><b>ไลน์:</b> {detail.line_name || '—'}</div>
+            <div><b>{trI18n('วันที่พบ:')}</b> {fmtD(detail.report_date)}</div>
+            <div><b>{trI18n('ไลน์:')}</b> {detail.line_name || '—'}</div>
             <div><b>Part:</b> {detail.part_no || '—'} {detail.part_name || ''}</div>
-            <div><b>พบ/NG:</b> {detail.qty_found} / <span style={{ color: '#ef4444', fontWeight: 700 }}>{detail.qty_ng}</span> ชิ้น</div>
-            <div style={{ gridColumn: '1 / -1' }}><b>ปัญหา:</b> {detail.defect_desc}</div>
-            <div style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 11.5 }}>เปิดโดย {detail.created_by || '—'}{detail.closed_at ? ` · ปิดเมื่อ ${fmtD(detail.closed_at.slice(0, 10))} โดย ${detail.closed_by || '—'}` : ''}</div>
+            <div><b>{trI18n('พบ/NG:')}</b> {detail.qty_found} / <span style={{ color: 'var(--red)', fontWeight: 700 }}>{detail.qty_ng}</span> {trI18n('ชิ้น')}</div>
+            <div style={{ gridColumn: '1 / -1' }}><b>{trI18n('ปัญหา:')}</b> {detail.defect_desc}</div>
+            <div style={{ gridColumn: '1 / -1', color: 'var(--muted)', fontSize: 11.5 }}>{trI18n('เปิดโดย')} {detail.created_by || '—'}{detail.closed_at ? ` · ปิดเมื่อ ${fmtD(detail.closed_at.slice(0, 10))} โดย ${detail.closed_by || '—'}` : ''}</div>
             {detail.status === 'cancelled' && (
-              <div style={{ gridColumn: '1 / -1', color: '#6b7280', fontSize: 12.5 }}>❌ ยกเลิกโดย {detail.cancelled_by || '—'} — {detail.cancel_reason}</div>
+              <div style={{ gridColumn: '1 / -1', color: '#6b7280', fontSize: 12.5 }}>{trI18n('❌ ยกเลิกโดย')} {detail.cancelled_by || '—'} — {detail.cancel_reason}</div>
             )}
           </div>
           {/* ✏️ / ❌ ใบที่เปิดผิด — แก้หัวใบได้จนกว่าจะปิด · ยกเลิกได้ถ้ายังไม่ผูก 8D (เลขที่คงอยู่ ไม่ลบเอกสาร) */}
           {isOpenQaDoc(detail) && canRecord && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              <button style={ghostBtn} onClick={() => setCreateModal({ ...EMPTY_NCR, ...detail, part_no: detail.part_no || '', part_name: detail.part_name || '' })}>✏️ แก้ข้อมูลใบ (ไลน์/พาร์ท/อาการ/จำนวน)</button>
-              <button style={ghostBtn} onClick={() => cancelNCR(detail)}>❌ ยกเลิกใบนี้ (เปิดผิด)</button>
+              <button style={ghostBtn} onClick={() => setCreateModal({ ...EMPTY_NCR, ...detail, part_no: detail.part_no || '', part_name: detail.part_name || '' })}>{trI18n('แก้ข้อมูลใบ (ไลน์/พาร์ท/อาการ/จำนวน)')}</button>
+              <button style={ghostBtn} onClick={() => cancelNCR(detail)}>{trI18n('ยกเลิกใบนี้ (เปิดผิด)')}</button>
             </div>
           )}
 
           {isOpenQaDoc(detail) && canRecord ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Field label="1) มาตรการกักกันชั่วคราว (Containment)">
+              <Field label={trI18n('1) มาตรการกักกันชั่วคราว (Containment)')}>
                 <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={edit.containment} onChange={e => setEdit(x => ({ ...x, containment: e.target.value }))} />
               </Field>
-              <Field label="2) สาเหตุเบื้องต้น (Root Cause)">
+              <Field label={trI18n('2) สาเหตุเบื้องต้น (Root Cause)')}>
                 <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={edit.root_cause} onChange={e => setEdit(x => ({ ...x, root_cause: e.target.value }))} />
               </Field>
               {canManage && (
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <Field label="3) Disposition (เฉพาะ qa:manage)">
+                  <Field label={trI18n('3) Disposition (เฉพาะ qa:manage)')}>
                     <select style={inputSt} value={edit.disposition} onChange={e => setEdit(x => ({ ...x, disposition: e.target.value }))}>
-                      <option value="">— เลือก —</option>
-                      {Object.entries(DISPO).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      <option value="">{trI18n('— เลือก —')}</option>
+                      {Object.entries(DISPO).map(([v, l]) => <option key={v} value={v}>{trI18n(l)}</option>)}
                     </select>
                   </Field>
-                  <Field label="หมายเหตุ disposition">
+                  <Field label={trI18n('หมายเหตุ disposition')}>
                     <input style={inputSt} value={edit.disposition_note} onChange={e => setEdit(x => ({ ...x, disposition_note: e.target.value }))} />
                   </Field>
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                <button style={ghostBtn} onClick={() => onOpenCapa(detail)}>🛠 เปิด 8D CAPA จาก NCR นี้</button>
-                <button style={btnSt('#f59e0b')} onClick={() => {
+                <button style={ghostBtn} onClick={() => onOpenCapa(detail)}>{trI18n('เปิด 8D CAPA จาก NCR นี้')}</button>
+                <button style={btnSt('var(--amber)')} onClick={() => {
                   if (!edit.containment.trim()) { toast.error('กรอกมาตรการกักกันก่อน'); return; }
                   updateNCR(detail.id, {
                     containment: edit.containment.trim(), root_cause: edit.root_cause.trim() || null,
                     status: detail.status === 'open' ? 'containment' : detail.status,
                   }, 'บันทึกมาตรการกักกันแล้ว ✓');
-                }}>บันทึกกักกัน</button>
+                }}>{trI18n('บันทึกกักกัน')}</button>
                 {canManage && (
                   <>
-                    <button style={btnSt('#4d9fff')} onClick={() => {
+                    <button style={btnSt('var(--blue)')} onClick={() => {
                       if (!edit.disposition) { toast.error('เลือก disposition ก่อน'); return; }
                       updateNCR(detail.id, {
                         containment: edit.containment.trim() || null, root_cause: edit.root_cause.trim() || null,
                         disposition: edit.disposition, disposition_note: edit.disposition_note.trim() || null,
                         disposition_by: fullName || null, status: 'disposition',
                       }, 'บันทึก disposition แล้ว ✓');
-                    }}>บันทึก Disposition</button>
-                    <button style={btnSt('#22c55e')} onClick={() => {
+                    }}>{trI18n('บันทึก Disposition')}</button>
+                    <button style={btnSt('var(--green)')} onClick={() => {
                       if (!detail.disposition && !edit.disposition) { toast.error('ต้องมี disposition ก่อนปิดรายการ'); return; }
                       updateNCR(detail.id, {
                         status: 'closed', closed_at: new Date().toISOString(), closed_by: fullName || null,
                         ...(edit.disposition ? { disposition: edit.disposition, disposition_note: edit.disposition_note.trim() || null, disposition_by: fullName || null } : {}),
                         containment: edit.containment.trim() || null, root_cause: edit.root_cause.trim() || null,
                       }, `ปิด ${detail.ncr_no} แล้ว ✓`);
-                    }}>✅ ปิด NCR</button>
+                    }}>{trI18n('ปิด NCR')}</button>
                   </>
                 )}
               </div>
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13 }}>
-              <div><b>กักกัน:</b> {detail.containment || '—'}</div>
+              <div><b>{trI18n('กักกัน:')}</b> {detail.containment || '—'}</div>
               <div><b>Root cause:</b> {detail.root_cause || '—'}</div>
               <div><b>Disposition:</b> {DISPO[detail.disposition] || '—'} {detail.disposition_note ? `(${detail.disposition_note})` : ''} {detail.disposition_by ? `· โดย ${detail.disposition_by}` : ''}</div>
             </div>
@@ -1274,10 +1287,10 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
    TAB 4 — CAPA / 8D
    ════════════════════════════════════════════════════════════════════════ */
 const CAPA_STATUS = {
-  open:        { label: 'เปิดใหม่',          color: '#ef4444' },
-  in_progress: { label: 'กำลังดำเนินการ',    color: '#f59e0b' },
-  verify:      { label: 'รอตรวจประสิทธิผล',  color: '#4d9fff' },
-  closed:      { label: 'ปิดแล้ว',            color: '#22c55e' },
+  open:        { label: 'เปิดใหม่',          color: 'var(--red)' },
+  in_progress: { label: 'กำลังดำเนินการ',    color: 'var(--amber)' },
+  verify:      { label: 'รอตรวจประสิทธิผล',  color: 'var(--blue)' },
+  closed:      { label: 'ปิดแล้ว',            color: 'var(--green)' },
 };
 const D_FIELDS = [
   ['d1_team',        'D1 — ทีมงาน (Team)'],
@@ -1429,13 +1442,13 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <FilterBar>
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={STATUS_SEG} />
+        <Segmented label={trI18n('สถานะ')} value={filter} onChange={setFilter} options={STATUS_SEG} />
         <span className="spacer" />
         {/* 🔒 ตัวนับที่ถูกกรองออก — ต้องอยู่เหนือ fold (UI-STANDARD §3.1) ไม่ใช่ท้ายตาราง
             และต้องบอกปลายทางที่ "ดูได้จริง" (ที่นี่กางกลับไม่ได้ ⇒ ชี้ไปบอร์ดคุณภาพ) */}
         {hiddenCount > 0 && (
-          <span className="filter-count" title="ใบของส่วนงานอื่น — ดูรายละเอียดได้ที่บอร์ดคุณภาพ แต่แก้/ปิดไม่ได้">
-            🔒 ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
+          <span className="filter-count" title={trI18n('ใบของส่วนงานอื่น — ดูรายละเอียดได้ที่บอร์ดคุณภาพ แต่แก้/ปิดไม่ได้')}>
+            ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
           </span>
         )}
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
@@ -1443,14 +1456,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
           part_no: '', line_name: '',
           d1_team: '', d2_problem: '', d3_containment: '', d4_root_cause: '', d5_corrective: '',
           d6_implement: '', d7_prevent: '', d8_closure: '', effectiveness: '', status: 'open',
-        })}>🛠 เปิด CAPA ใหม่</button>}
+        })}>{trI18n('เปิด CAPA ใหม่')}</button>}
       </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr>
-            <th style={thSt}>เลขที่</th><th style={thSt}>หัวข้อ</th><th style={thSt}>NCR อ้างอิง</th>
-            <th style={thSt}>ผู้รับผิดชอบ</th><th style={thSt}>กำหนดปิด</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('เลขที่')}</th><th style={thSt}>{trI18n('หัวข้อ')}</th><th style={thSt}>{trI18n('NCR อ้างอิง')}</th>
+            <th style={thSt}>{trI18n('ผู้รับผิดชอบ')}</th><th style={thSt}>{trI18n('กำหนดปิด')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
           </tr></thead>
           <tbody>
             {visible.map(c => {
@@ -1468,14 +1481,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                   <td style={{ ...tdSt, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.title}</td>
                   <td style={tdSt}>{c.qa_ncr?.ncr_no || '—'}</td>
                   <td style={tdSt}>{c.owner_name || '—'}</td>
-                  <td style={{ ...tdSt, whiteSpace: 'nowrap', color: overdue ? '#ef4444' : undefined, fontWeight: overdue ? 800 : 400 }}>
+                  <td style={{ ...tdSt, whiteSpace: 'nowrap', color: overdue ? 'var(--red)' : undefined, fontWeight: overdue ? 800 : 400 }}>
                     {fmtD(c.due_date)}{overdue ? ' ⚠️' : ''}
                   </td>
                   <td style={tdSt}>
-                    <Chip label={CAPA_STATUS[c.status]?.label || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} />
+                    <Chip label={trI18n(CAPA_STATUS[c.status]?.label) || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} />
                     {/* ผลวัดจริงตอนปิด — ปิดทั้งที่ของเสียไม่ลด ต้องเห็นจากลิสต์ ไม่ใช่ซ่อนอยู่ในใบ */}
                     {c.eff_verdict && EFF_V[c.eff_verdict] && (
-                      <span style={{ marginLeft: 5 }}><Chip label={EFF_V[c.eff_verdict].short} color={EFF_V[c.eff_verdict].color} /></span>
+                      <span style={{ marginLeft: 5 }}><Chip label={trI18n(EFF_V[c.eff_verdict].short)} color={EFF_V[c.eff_verdict].color} /></span>
                     )}
                   </td>
                 </tr>
@@ -1491,27 +1504,29 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
 
       {detail && (
         <Modal title={detail.id ? `🛠 ${detail.capa_no}` : '🛠 เปิด CAPA / 8D ใหม่'} onClose={() => setDetail(null)} width={1400}>
+          {/* 🪜 ถึงขั้นไหน — กฎ capaFlow() (utils/qaDocStatus.js) · UI §6.30 · ใบใหม่ยังไม่มีสถานะ = ไม่วาด */}
+          {detail.id && (() => { const f = capaFlow(detail); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-            <Field label="หัวข้อ *"><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
+            <Field label={trI18n('หัวข้อ *')}><input style={inputSt} value={detail.title} onChange={e => setDetail(f => ({ ...f, title: e.target.value }))} disabled={!canRecord} /></Field>
             {/* ผู้รับผิดชอบ = user ระบบ (profiles) — เลือกจากทะเบียนคน เผื่อแจ้งเตือนรายคนภายหลัง (2026-09-07) */}
-            <Field label="ผู้รับผิดชอบ">
+            <Field label={trI18n('ผู้รับผิดชอบ')}>
               <PersonSelect value={detail.owner_name || ''} history={ownerHist} onChange={r => setDetail(f => ({ ...f, owner_name: r.name }))} disabled={!canRecord} />
             </Field>
-            <Field label="กำหนดปิด (due date)"><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
+            <Field label={trI18n('กำหนดปิด (due date)')}><input type="date" style={inputSt} value={detail.due_date || ''} onChange={e => setDetail(f => ({ ...f, due_date: e.target.value }))} disabled={!canRecord} /></Field>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             {/* 🔴 part_no + line_name คือ join key ของลูปปิด 8D (matchDocSet · CapaEffectiveness .eq('line_name'))
                 — อ่านจากทะเบียนแทนพิมพ์เอง (2026-09-07) */}
-            <Field label="เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)">
+            <Field label={trI18n('เลขพาร์ท (ใช้หาเอกสาร PFMEA/Control Plan)')}>
               <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={!canRecord}
                 onChange={({ part_no }) => setDetail(f => ({ ...f, part_no }))} />
             </Field>
-            <Field label="ไลน์ผลิต">
-              <LineSelect lines={lineObjs} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+            <Field label={trI18n('ไลน์ผลิต')}>
+              <LineSelect lines={lineObjs} value={detail.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 disabled={!canRecord} onChange={v => setDetail(f => ({ ...f, line_name: v }))} />
             </Field>
           </div>
-          {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>อ้างอิง NCR: <b>{detail.ncr_no}</b></div>}
+          {detail.ncr_no && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{trI18n('อ้างอิง NCR:')} <b>{detail.ncr_no}</b></div>}
 
           {/* D1-D8 เรียง 2 คอลัมน์บนจอกว้าง (UI-CONVENTIONS §5 — เดิมคอลัมน์เดียวสูงยืดต้อง scroll) */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(420px, 100%), 1fr))', gap: 10 }}>
@@ -1521,7 +1536,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                   onChange={e => setDetail(f => ({ ...f, [key]: e.target.value }))} disabled={!canRecord || detail.status === 'closed'} />
               </Field>
             ))}
-            <Field label="ผลตรวจติดตามประสิทธิผล (Effectiveness Verification)">
+            <Field label={trI18n('ผลตรวจติดตามประสิทธิผล (Effectiveness Verification)')}>
               <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={detail.effectiveness || ''}
                 onChange={e => setDetail(f => ({ ...f, effectiveness: e.target.value }))} disabled={!canManage || detail.status === 'closed'} />
             </Field>
@@ -1559,17 +1574,17 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
               />
               {detail.status !== 'closed' && (
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 10, marginTop: 10 }}>
-                  <Field label="สรุปเรื่องเอกสาร PE (ตอบก่อนปิด)">
+                  <Field label={trI18n('สรุปเรื่องเอกสาร PE (ตอบก่อนปิด)')}>
                     <select style={inputSt} value={detail.pe_review_status || 'pending'} disabled={!canRecord}
                       onChange={e => setDetail(f => ({ ...f, pe_review_status: e.target.value }))}>
-                      <option value="pending">ยังไม่ได้ตรวจสอบ</option>
-                      <option value="done">ทบทวน/แก้เอกสารแล้ว</option>
-                      <option value="na">พิจารณาแล้วว่าไม่ต้องแก้</option>
+                      <option value="pending">{trI18n('ยังไม่ได้ตรวจสอบ')}</option>
+                      <option value="done">{trI18n('ทบทวน/แก้เอกสารแล้ว')}</option>
+                      <option value="na">{trI18n('พิจารณาแล้วว่าไม่ต้องแก้')}</option>
                     </select>
                   </Field>
-                  <Field label="หมายเหตุ (บังคับเมื่อเลือก 'ไม่ต้องแก้')">
+                  <Field label={trI18n('หมายเหตุ (บังคับเมื่อเลือก \'ไม่ต้องแก้\')')}>
                     <input style={inputSt} value={detail.pe_review_note || ''} disabled={!canRecord}
-                      placeholder="เช่น อาการนี้เป็น special cause ครั้งเดียว ไม่กระทบการควบคุมประจำ"
+                      placeholder={trI18n('เช่น อาการนี้เป็น special cause ครั้งเดียว ไม่กระทบการควบคุมประจำ')}
                       onChange={e => setDetail(f => ({ ...f, pe_review_note: e.target.value }))} />
                   </Field>
                 </div>
@@ -1577,26 +1592,26 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             </div>
           )}
           {!detail.id && (
-            <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
-              💾 บันทึกก่อน แล้วแผง <b>🔗 เอกสารที่ต้องตามแก้</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
+            <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
+              บันทึกก่อน แล้วแผง <b>{trI18n('เอกสารที่ต้องตามแก้')}</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
             </div>
           )}
 
           {detail.status !== 'closed' && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
-              <button style={ghostBtn} onClick={() => setDetail(null)}>ยกเลิก</button>
-              {canRecord && <button style={btnSt('#f59e0b')} onClick={() => save({ status: detail.id ? (detail.status === 'open' ? 'in_progress' : detail.status) : 'open' })}>💾 บันทึก</button>}
+              <button style={ghostBtn} onClick={() => setDetail(null)}>{trI18n('ยกเลิก')}</button>
+              {canRecord && <button style={btnSt('var(--amber)')} onClick={() => save({ status: detail.id ? (detail.status === 'open' ? 'in_progress' : detail.status) : 'open' })}>{trI18n('บันทึก')}</button>}
               {canRecord && detail.id && detail.status !== 'verify' && (
-                <button style={btnSt('#4d9fff')} onClick={() => {
+                <button style={btnSt('var(--blue)')} onClick={() => {
                   if (!detail.d5_corrective?.trim()) { toast.error('กรอก D5 มาตรการแก้ไขถาวรก่อนส่งตรวจ'); return; }
                   /* ไม่ตั้งวันที่มาตรการมีผล = ระบบวัดผลไม่ได้ และจะไม่มีวันเตือนว่าถึงเวลาสรุป
                      → เตือนแบบไม่บล็อก (ยังไม่ apply migration ก็ต้องส่งตรวจได้ตามปกติ) */
                   if (!detail.d6_effective_from) toast.info('แนะนำ: กรอก "วันที่มาตรการมีผลจริง" ในแผง 📉 ประสิทธิผล ไม่งั้นระบบวัดผลให้ไม่ได้');
                   save({ status: 'verify' }, 'ส่งตรวจประสิทธิผลแล้ว ✓');
-                }}>ส่งตรวจประสิทธิผล</button>
+                }}>{trI18n('ส่งตรวจประสิทธิผล')}</button>
               )}
               {canManage && detail.id && (
-                <button style={btnSt('#22c55e')} onClick={() => {
+                <button style={btnSt('var(--green)')} onClick={() => {
                   if (!detail.effectiveness?.trim()) { toast.error('กรอกผลตรวจประสิทธิผลก่อนปิด'); return; }
                   /* ด่านเรื่องเอกสาร PE — IATF §10.2.3/10.2.4 บังคับให้ทบทวน PFMEA/Control Plan
                      ⚠️ soft gate โดยตั้งใจ: บังคับให้ "ตอบ" ไม่ได้บังคับให้ "แก้เสร็จ"
@@ -1625,7 +1640,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                   }
                   const stamp = j ? { _eff: { eff_verdict: j.verdict, eff_measured_at: new Date().toISOString(), eff_snapshot: m ? { ...m, reason: j.reason } : null } } : {};
                   save({ status: 'closed', ...stamp }, `ปิด ${detail.capa_no} แล้ว ✓`);
-                }}>✅ ปิด CAPA</button>
+                }}>{trI18n('ปิด CAPA')}</button>
               )}
             </div>
           )}
@@ -1649,12 +1664,12 @@ function nextDue(inst) {
 function calState(inst) {
   if (inst.status !== 'active') return { label: inst.status === 'repair' ? 'ส่งซ่อม' : 'ยกเลิกใช้', color: '#6b7280' };
   const due = nextDue(inst);
-  if (!due) return { label: 'ยังไม่สอบเทียบ', color: '#ef4444' };
+  if (!due) return { label: 'ยังไม่สอบเทียบ', color: 'var(--red)' };
   const today = localDateStr();
-  if (due < today) return { label: 'เกินกำหนด!', color: '#ef4444' };
+  if (due < today) return { label: 'เกินกำหนด!', color: 'var(--red)' };
   const soon = new Date(); soon.setDate(soon.getDate() + 30);
-  if (due <= localDateStr(soon)) return { label: 'ใกล้ครบกำหนด', color: '#f59e0b' };
-  return { label: 'ปกติ', color: '#22c55e' };
+  if (due <= localDateStr(soon)) return { label: 'ใกล้ครบกำหนด', color: 'var(--amber)' };
+  return { label: 'ปกติ', color: 'var(--green)' };
 }
 
 function InstrumentTab({ lineObjs, canManage }) {
@@ -1710,8 +1725,8 @@ function InstrumentTab({ lineObjs, canManage }) {
     const c = { ok: 0, soon: 0, overdue: 0 };
     list.filter(i => i.status === 'active').forEach(i => {
       const s = calState(i);
-      if (s.color === '#22c55e') c.ok += 1;
-      else if (s.color === '#f59e0b') c.soon += 1;
+      if (s.color === 'var(--green)') c.ok += 1;
+      else if (s.color === 'var(--amber)') c.soon += 1;
       else c.overdue += 1;
     });
     return c;
@@ -1722,20 +1737,20 @@ function InstrumentTab({ lineObjs, canManage }) {
       <FilterBar>
         <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
         <span className="spacer" />
-        {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
+        {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>{trI18n('+ เพิ่มเครื่องมือวัด')}</button>}
       </FilterBar>
       {/* การ์ดตัวนับ = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <KpiCard label="สอบเทียบปกติ" value={counts.ok} color="#22c55e" />
-        <KpiCard label="ใกล้ครบกำหนด (≤30 วัน)" value={counts.soon} color="#f59e0b" />
-        <KpiCard label="เกินกำหนด / ยังไม่สอบเทียบ" value={counts.overdue} color="#ef4444" />
+        <KpiCard label={trI18n('สอบเทียบปกติ')} value={counts.ok} color="var(--green)" />
+        <KpiCard label={trI18n('ใกล้ครบกำหนด (≤30 วัน)')} value={counts.soon} color="var(--amber)" />
+        <KpiCard label={trI18n('เกินกำหนด / ยังไม่สอบเทียบ')} value={counts.overdue} color="var(--red)" />
       </div>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
-            <th style={thSt}>รหัส</th><th style={thSt}>ชื่อเครื่องมือ</th><th style={thSt}>ชนิด</th><th style={thSt}>Range / Res.</th>
-            <th style={thSt}>ตำแหน่ง</th><th style={thSt}>สอบเทียบล่าสุด</th><th style={thSt}>ครบกำหนด</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('รหัส')}</th><th style={thSt}>{trI18n('ชื่อเครื่องมือ')}</th><th style={thSt}>{trI18n('ชนิด')}</th><th style={thSt}>Range / Res.</th>
+            <th style={thSt}>{trI18n('ตำแหน่ง')}</th><th style={thSt}>{trI18n('สอบเทียบล่าสุด')}</th><th style={thSt}>{trI18n('ครบกำหนด')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
             {canManage && <th style={thSt}></th>}
           </tr></thead>
           <tbody>
@@ -1750,7 +1765,7 @@ function InstrumentTab({ lineObjs, canManage }) {
                   <td style={tdSt}>{[i.location, i.line_name].filter(Boolean).join(' · ') || '—'}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{fmtD(i.last_calibrated)}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', fontWeight: 700, color: s.color }}>{fmtD(nextDue(i))}</td>
-                  <td style={tdSt}><Chip label={s.label} color={s.color} /></td>
+                  <td style={tdSt}><Chip label={trI18n(s.label)} color={s.color} /></td>
                   {canManage && <td style={tdSt}>
                     <button className="tbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={() => setModal({
                       ...EMPTY_INST, ...i,
@@ -1763,7 +1778,7 @@ function InstrumentTab({ lineObjs, canManage }) {
                 </tr>
               );
             })}
-            {shown.length === 0 && <tr><td style={tdSt} colSpan={9}><span style={{ color: 'var(--muted)' }}>ไม่มีเครื่องมือวัดในทะเบียน</span></td></tr>}
+            {shown.length === 0 && <tr><td style={tdSt} colSpan={9}><span style={{ color: 'var(--muted)' }}>{trI18n('ไม่มีเครื่องมือวัดในทะเบียน')}</span></td></tr>}
           </tbody>
         </table>
       </div>
@@ -1771,35 +1786,35 @@ function InstrumentTab({ lineObjs, canManage }) {
       {modal && (
         <Modal title={modal.id ? `✏️ ${modal.code}` : '➕ เพิ่มเครื่องมือวัด'} onClose={() => setModal(null)} width={620}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <Field label="รหัส *"><input style={inputSt} value={modal.code} onChange={e => setModal(f => ({ ...f, code: e.target.value }))} /></Field>
-            <Field label="ชื่อเครื่องมือ *"><input style={inputSt} value={modal.name} onChange={e => setModal(f => ({ ...f, name: e.target.value }))} /></Field>
-            <Field label="ชนิด"><input style={inputSt} placeholder="caliper / micrometer / torque" value={modal.inst_type} onChange={e => setModal(f => ({ ...f, inst_type: e.target.value }))} /></Field>
-            <Field label="ยี่ห้อ"><input style={inputSt} value={modal.brand} onChange={e => setModal(f => ({ ...f, brand: e.target.value }))} /></Field>
+            <Field label={trI18n('รหัส *')}><input style={inputSt} value={modal.code} onChange={e => setModal(f => ({ ...f, code: e.target.value }))} /></Field>
+            <Field label={trI18n('ชื่อเครื่องมือ *')}><input style={inputSt} value={modal.name} onChange={e => setModal(f => ({ ...f, name: e.target.value }))} /></Field>
+            <Field label={trI18n('ชนิด')}><input style={inputSt} placeholder="caliper / micrometer / torque" value={modal.inst_type} onChange={e => setModal(f => ({ ...f, inst_type: e.target.value }))} /></Field>
+            <Field label={trI18n('ยี่ห้อ')}><input style={inputSt} value={modal.brand} onChange={e => setModal(f => ({ ...f, brand: e.target.value }))} /></Field>
             <Field label="Serial No."><input style={inputSt} value={modal.serial_no} onChange={e => setModal(f => ({ ...f, serial_no: e.target.value }))} /></Field>
             <Field label="Range"><input style={inputSt} placeholder="0-150 mm" value={modal.range_spec} onChange={e => setModal(f => ({ ...f, range_spec: e.target.value }))} /></Field>
             <Field label="Resolution"><input style={inputSt} placeholder="0.01 mm" value={modal.resolution} onChange={e => setModal(f => ({ ...f, resolution: e.target.value }))} /></Field>
-            <Field label="ตำแหน่ง/แผนก">
-              <SelectOrFree value={modal.location} options={orgUnits} placeholder="— เลือกจากผังองค์กร —" freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
+            <Field label={trI18n('ตำแหน่ง/แผนก')}>
+              <SelectOrFree value={modal.location} options={orgUnits} placeholder={trI18n('— เลือกจากผังองค์กร —')} freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
                 onChange={v => setModal(f => ({ ...f, location: v }))} />
             </Field>
-            <Field label="ไลน์">
-              <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+            <Field label={trI18n('ไลน์')}>
+              <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setModal(f => ({ ...f, line_name: v }))} />
             </Field>
-            <Field label="รอบสอบเทียบ (เดือน)"><input type="number" min="1" style={inputSt} value={modal.cal_freq_months} onChange={e => setModal(f => ({ ...f, cal_freq_months: e.target.value }))} /></Field>
-            <Field label="สอบเทียบล่าสุด"><input type="date" style={inputSt} value={modal.last_calibrated} onChange={e => setModal(f => ({ ...f, last_calibrated: e.target.value }))} /></Field>
-            <Field label="หน่วยงานสอบเทียบ"><input style={inputSt} value={modal.cal_by} onChange={e => setModal(f => ({ ...f, cal_by: e.target.value }))} /></Field>
-            <Field label="เลขที่ Certificate"><input style={inputSt} value={modal.cert_no} onChange={e => setModal(f => ({ ...f, cert_no: e.target.value }))} /></Field>
-            <Field label="สถานะ">
+            <Field label={trI18n('รอบสอบเทียบ (เดือน)')}><input type="number" min="1" style={inputSt} value={modal.cal_freq_months} onChange={e => setModal(f => ({ ...f, cal_freq_months: e.target.value }))} /></Field>
+            <Field label={trI18n('สอบเทียบล่าสุด')}><input type="date" style={inputSt} value={modal.last_calibrated} onChange={e => setModal(f => ({ ...f, last_calibrated: e.target.value }))} /></Field>
+            <Field label={trI18n('หน่วยงานสอบเทียบ')}><input style={inputSt} value={modal.cal_by} onChange={e => setModal(f => ({ ...f, cal_by: e.target.value }))} /></Field>
+            <Field label={trI18n('เลขที่ Certificate')}><input style={inputSt} value={modal.cert_no} onChange={e => setModal(f => ({ ...f, cert_no: e.target.value }))} /></Field>
+            <Field label={trI18n('สถานะ')}>
               <select style={inputSt} value={modal.status} onChange={e => setModal(f => ({ ...f, status: e.target.value }))}>
-                <option value="active">ใช้งาน</option><option value="repair">ส่งซ่อม</option><option value="retired">ยกเลิกใช้</option>
+                <option value="active">{trI18n('ใช้งาน')}</option><option value="repair">{trI18n('ส่งซ่อม')}</option><option value="retired">{trI18n('ยกเลิกใช้')}</option>
               </select>
             </Field>
-            <Field label="หมายเหตุ" span><input style={inputSt} value={modal.remark} onChange={e => setModal(f => ({ ...f, remark: e.target.value }))} /></Field>
+            <Field label={trI18n('หมายเหตุ')} span><input style={inputSt} value={modal.remark} onChange={e => setModal(f => ({ ...f, remark: e.target.value }))} /></Field>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={() => save()}>บันทึก</button>
+            <button style={ghostBtn} onClick={() => setModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt()} onClick={() => save()}>{trI18n('บันทึก')}</button>
           </div>
         </Modal>
       )}
@@ -1818,12 +1833,14 @@ const TABS = [
   { key: 'spc',         icon: '📐', label: 'SPC / Cp-Cpk' },
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
   // เคลมลูกค้า = ของเสียที่หลุดออกไปถึงลูกค้า — วางคู่ NCR เพราะอ่านด้วยกัน (2026-08-17)
-  // ถังเหลือง/แดง = บันทึกหน้ากล่องก่อนถึง NCR/Scrap (ฟอร์มกระดาษเดิม 2 ใบ · 2026-08-19)
+  /* 🟡 ถังเหลือง = **คิวรออนุมัติของแผนก** เท่านั้น (คำสั่ง user 06/11)
+     *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
+     ⇒ ทะเบียน/ใบเต็มอยู่ `/scrap-report?tab=bins` (หมวดฝ่ายผลิต) · ที่นี่ `mode="queue"` ห้ามเอาทะเบียนกลับมา */
   /* 🔧 ใบซ่อมรอ QA ตรวจหลังซ่อม (2026-10-22 · คำสั่ง user *"QA จะรู้ได้ยังไงว่ามี MO ค้างรอ QA กี่ใบ"*)
      วัด 22/10: มีจริง 92 ใบ เก่าสุด 36 วัน แต่หน้านี้ไม่เคยมีที่ไหนพูดถึงใบซ่อมเลย
      วางถัดจากใบตรวจเพราะเป็น "งานตรวจที่มีคนรออยู่" เหมือนกัน (ใบตรวจ = ตามแผน · อันนี้ = ตามเหตุ) */
   { key: 'morepair',    icon: '🔧', label: 'ใบซ่อมรอตรวจ' },
-  { key: 'bins',        icon: '🗑️', label: 'ถังเหลือง / ถังแดง' },
+  { key: 'bins',        icon: '🟡', label: 'ถังเหลืองรอตัดสิน' },
   { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
   // ใบเบิกชิ้นงานไปทดสอบ (FM-STO-003) — ของที่ทดสอบแล้วถูกดึงเข้าใบรายงานของเสีย (2026-08-24)
   { key: 'matreq',      icon: '📦', label: 'ใบเบิกทดสอบ' },
@@ -1871,7 +1888,7 @@ export default function QualityControl() {
     <Page>
       <PageHeader
         title="Quality Control Center" icon="🔍"
-        sub="ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949"
+        sub={trI18n('ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949')}
         tabs={TABS.map(t => ({ key: t.key, label: `${t.icon} ${t.label}` }))} tab={tab} onTab={setTab}
       />
 
@@ -1883,7 +1900,8 @@ export default function QualityControl() {
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} lineObjs={lineObjs} partOpts={partOpts} />}
       {/* 🗑️ ชิ้นเดียวกับแท็บถังเหลือง/แดงใน /scrap-report (ฝ่ายผลิต) — ข้อมูลชุดเดียว ไม่ได้ก๊อป
           user 19/10: ผลิตเป็นคนลงบันทึก (ไหลมาจาก Daily Report) · QA เป็นคนพิจารณาผล */}
-      {tab === 'bins' && <QualityBins />}
+      {/* 🏭 บ้านของเอกสาร = ฝ่ายผลิต ⇒ ที่นี่เห็นแค่คิวรอพิจารณา (ด่าน `qa-bins-queue-only`) */}
+      {tab === 'bins' && <QualityBins mode="queue" />}
       {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lineObjs} scopeNames={viewScope.names} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}

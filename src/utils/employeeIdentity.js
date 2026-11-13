@@ -87,4 +87,59 @@ export function staffKindHint(kind) {
   return 'พนักงานหน้าไลน์ = ถูกนับในเช็คชื่อ/กำลังคน/แผงสกิล';
 }
 
+/* ── 🔁 "รหัสนี้มีอยู่แล้ว" ต้องตอบเป็นคน ไม่ใช่ชื่อ constraint (2026-11-09) ──────────────────────
+ * เกิดจริง 09/11: หัวหน้า PD2 ลงทะเบียน 3 คน (2103622 เจนนิภา · 2103793 ขันทอง · 2103242 สุทธวีร์) ไม่ได้
+ *   toast ขึ้น `duplicate key value violates unique constraint "employees_employee_id_code_key"`
+ *   ทั้ง 3 คน **มีอยู่ในฐานแล้ว** (21–23/09 · 06/10) แต่เป็นสายสนับสนุน section ว่าง/PD1 และ 1 คนถูกปิดใช้งาน
+ *   ⇒ `/operator` ของ PD2 กรองตาม scope จึงมองไม่เห็น ⇒ คิดว่ายังไม่มี ⇒ กดเพิ่ม ⇒ ชนรหัส ⇒ ตัน
+ * 🔴 "มีอยู่ในฐานแต่มองไม่เห็น" ต้องถูกเขียนบนจอตรงๆ: ชื่อใคร · อยู่ส่วนไหน · ใช้งาน/ปิดอยู่ · ไปแก้ที่ไหน
+ *   ทุกทางเข้าถามด้วย `findEmployeeByCode()` ก่อน insert และแปล 23505 ด้วย `isDuplicateEmployeeError()` (กันแข่งกันกด)
+ *   RLS SELECT ของ employees = true สำหรับ authenticated ⇒ มองเห็นข้ามส่วนงานได้ (ตรวจ 09/11) */
+
+/** คอลัมน์ที่ต้องใช้ตอบว่า "คนนี้คือใคร อยู่ไหน" — ด่านเทสอ้างชื่อนี้ */
+export const EMPLOYEE_LOOKUP_COLUMNS = 'id, employee_id_code, name, section, department, staff_kind, is_active, position';
+
+/** ค้นแถวเดิมด้วยรหัสพนักงาน (ตัดช่องว่าง · ไม่สนตัวพิมพ์) · คืน `{ row, error }` — `row` null = ไม่มี · `error` = อ่านไม่ได้ (ห้ามตีเป็น "ไม่มี") */
+export async function findEmployeeByCode(client, code) {
+  const c = String(code ?? '').trim();
+  if (!c) return { row: null, error: null };
+  const res = await client.from('employees').select(EMPLOYEE_LOOKUP_COLUMNS).ilike('employee_id_code', c).limit(2);
+  if (res.error) return { row: null, error: res.error };
+  const rows = res.data || [];
+  return { row: rows.find(r => (r.employee_id_code || '').trim().toLowerCase() === c.toLowerCase()) || rows[0] || null, error: null };
+}
+
+/** Postgres 23505 บน unique ของรหัสพนักงาน (กรณีสองคนกดพร้อมกัน หลังด่านค้นหาผ่านแล้ว) */
+export function isDuplicateEmployeeError(err) {
+  if (!err) return false;
+  if (err.code === '23505') return true;
+  return /employees_employee_id_code_key/.test(String(err.message || ''));
+}
+
+/**
+ * ข้อความเมื่อรหัสซ้ำ — บอกว่า "ใคร · อยู่ไหน · สถานะ · แก้ที่ไหน" (pure · ใช้ทั้ง /register และ /add-user)
+ * @param existing แถวจาก findEmployeeByCode (อาจ null = รู้แค่ว่าซ้ำ แต่อ่านแถวไม่ได้)
+ * @param o.scopeSecs ขอบเขตส่วนงานของผู้ดู ([] = เห็นทั้งโรงงาน) — ใช้บอกว่า "อยู่นอกขอบเขตที่คุณเห็น"
+ */
+export function duplicateEmployeeText(existing, { code, scopeSecs = [] } = {}) {
+  const c = String(code ?? existing?.employee_id_code ?? '').trim();
+  if (!existing) {
+    return `รหัส ${c} มีอยู่ในฐานพนักงานแล้ว แต่อ่านรายละเอียดไม่ได้ — ค้นรหัสนี้ที่ /operator ก่อน ห้ามเพิ่มซ้ำ`;
+  }
+  const where = existing.section
+    ? `ส่วน ${existing.section}${existing.department ? ` · ${existing.department}` : ''}`
+    : 'ยังไม่ระบุส่วนงาน';
+  const kind = SUPPORT_VALUES.includes(existing.staff_kind) ? 'สายสนับสนุน'
+    : existing.staff_kind && existing.staff_kind !== STAFF_SHOPFLOOR ? 'ช่าง' : 'หน้างาน';
+  const inactive = existing.is_active === false;
+  const outOfScope = scopeSecs.length > 0 && !scopeSecs.includes(existing.section);
+  const status = inactive ? 'ถูกปิดใช้งานอยู่' : 'ใช้งานอยู่';
+  const fix = inactive
+    ? 'เปิดใช้งานกลับได้ที่ /operator (แท็บพนักงานพ้นสภาพ) แทนการเพิ่มใหม่'
+    : outOfScope
+      ? 'อยู่นอกขอบเขตที่คุณเห็น — ให้ admin ย้ายส่วนงาน/แผนกที่ /operator แล้วจะโผล่ในรายชื่อของคุณ'
+      : 'แก้ข้อมูลเดิมที่ /operator แทนการเพิ่มใหม่';
+  return `รหัส ${c} มีอยู่แล้ว: ${existing.name || '(ไม่มีชื่อ)'} · ${kind} · ${where} · ${status} — ${fix}`;
+}
+
 export { STAFF_SUPPORT };

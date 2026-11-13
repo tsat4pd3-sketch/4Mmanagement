@@ -28,11 +28,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { NO_ROW, initialActiveRow, moveActiveRow } from '../utils/pickerKeys';
 import { scanOfEvent, exactScanMatch } from '../utils/scanWedge';
 import { toast } from './Toast';
+import ScanModal from './ScanModal';
+import useIsMobile from '../utils/useIsMobile';
 
 /* ตัว normalize คำค้น (ทนการสะกดไทย) ย้ายไปอยู่ชั้นภาษาไทยแล้ว — `utils/thaiText.js`
    (เพราะ util ที่ pure ต้องใช้ตัวเดียวกัน แต่ import ไฟล์ .jsx ไม่ได้)
    re-export ต่อ ⇒ ที่ `import { normSearch } from '../components/SearchSelect'` ยังใช้ได้เหมือนเดิม */
 import { normSearch } from '../utils/thaiText';
+import { tr } from '../utils/i18n';
 export { normSearch };   // 🔴 ต้อง import เข้ามาด้วย — ไฟล์นี้เรียกใช้เองในตัวกรองลิสต์
 
 export default function SearchSelect({
@@ -64,7 +67,14 @@ export default function SearchSelect({
   inputStyle,
   style,
   inputId,               // id ของ <input> — ให้โค้ดเดิมที่ document.getElementById(...).focus() ยังใช้ได้
+  /* 📷 สแกนเพื่อเลือก (มือถือ · 27/10 · เฟส 1 "ทุกอย่างสแกนได้") — ส่งชื่อสิ่งที่สแกน เช่น 'เครื่องจักร' / 'บัตรพนักงาน'
+     มือถือ = ปุ่ม 📷 ข้างช่อง เปิดกล้อง/รับปุ่มสแกนข้างเครื่อง → เลือกตัวที่รหัสตรงเป๊ะ (`exactScanMatch` · แกะป้าย ESM ให้แล้ว)
+     ไม่ส่ง/จอคอม = หน้าตาเดิมเป๊ะ (DOM เดิม ไม่มีกรอบเพิ่ม) */
+  scan,
 }) {
+  const isMobile = useIsMobile();
+  const showScan = !!scan && isMobile && !disabled;
+  const [scanOpen, setScanOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const [innerText, setInnerText] = useState('');
@@ -175,8 +185,8 @@ export default function SearchSelect({
     padding: '8px 30px 8px 10px', color: 'var(--text)', fontSize: 13, ...inputStyle,
   };
 
-  return (
-    <div ref={boxRef} style={{ position: 'relative', ...style }}>
+  // ช่องพิมพ์ + ปุ่มล้าง — วาดตัวเดียวกันทั้งแบบมี/ไม่มีปุ่ม 📷 (ไม่มี = DOM เดิมเป๊ะ)
+  const inputBox = (
       <div style={{ position: 'relative' }}>
         <input
           id={inputId}
@@ -190,10 +200,34 @@ export default function SearchSelect({
           style={inp}
         />
         {shown
-          ? <button type="button" onClick={clear} disabled={disabled} title="ล้าง"
+          ? <button type="button" onClick={clear} disabled={disabled} title={tr('ล้าง')}
               style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 15, cursor: 'pointer', padding: '2px 6px', lineHeight: 1 }}>✕</button>
           : <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)', fontSize: 12, pointerEvents: 'none' }}>🔎</span>}
       </div>
+  );
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative', ...style }}>
+      {showScan ? (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {inputBox}
+          </div>
+          <button type="button" onClick={() => setScanOpen(true)} title={`สแกน${scan === true ? '' : scan}`} aria-label={`สแกน${scan === true ? '' : scan}`}
+            style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
+            📷
+          </button>
+        </div>
+      ) : inputBox}
+      {scanOpen && (
+        <ScanModal title={`สแกน${scan === true ? 'เพื่อเลือก' : scan}`} hint={tr('ส่องกล้องที่ป้าย/บัตร หรือกดปุ่มสแกนข้างเครื่อง — เลือกให้เฉพาะตัวที่รหัสตรงเป๊ะ')}
+          onClose={() => setScanOpen(false)}
+          onScan={(parsed) => {
+            const hit = exactScanMatch(options, parsed.raw);
+            if (!hit) return `ไม่พบ "${parsed.raw}" ที่ตรงตัวในรายการนี้ — ป้ายผิดชนิด/ไม่อยู่ในทะเบียน หรือเลือกจากรายการเอง`;
+            pick(hit);
+          }} />
+      )}
 
       {/* 🔴 ทะเบียนโหลดไม่สำเร็จ — ต้องเห็นตอนช่องปิดอยู่ด้วย (ไม่มีใครเปิดลิสต์เพื่อหาคำเตือน) */}
       {!open && loadFail && (
@@ -202,11 +236,11 @@ export default function SearchSelect({
 
       {/* ⚠️ พิมพ์ชื่อเองแล้วไม่ตรงลิสต์ = ยังบันทึกได้ แต่ต้องบอกให้เห็น ไม่ปล่อยเงียบ */}
       {!open && allowFree && !sel && text.trim() !== '' && (
-        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 3 }}>✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน</div>
+        <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 3 }}>{tr('✎ ชื่อที่พิมพ์เอง — ไม่ได้อยู่ในทะเบียน')}</div>
       )}
 
       {open && (
-        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
           {loadFail && (
             <div style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>{loadFail}</div>
           )}
@@ -233,7 +267,7 @@ export default function SearchSelect({
                           <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.lead}</span>
                         )}
                         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: o.lead ? 400 : 700, color: o.lead ? 'var(--text2)' : 'var(--text)', ...clampSt }}>
-                          {o.title ?? o.label}
+                          {o.title ?? tr(o.label)}
                         </span>
                       </div>
                       {/* บรรทัด 2 — รหัสนำ (ห้ามตัด) + ข้อความประกอบ (ตัดได้) */}
@@ -256,14 +290,14 @@ export default function SearchSelect({
             {rows.length === 0 && (
               <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--muted)' }}>
                 {emptyText}
-                {allowFree && q.trim() !== '' && <div style={{ marginTop: 3, color: 'var(--accent2)', fontSize: 11.5 }}>ใช้ “{q.trim()}” เป็นชื่อที่พิมพ์เองได้ — กดนอกกรอบเพื่อยืนยัน{freeHint ? ` (${freeHint})` : ''}</div>}
+                {allowFree && q.trim() !== '' && <div style={{ marginTop: 3, color: 'var(--accent2)', fontSize: 11.5 }}>{tr('ใช้ “')}{q.trim()}{tr('” เป็นชื่อที่พิมพ์เองได้ — กดนอกกรอบเพื่อยืนยัน')}{freeHint ? ` (${freeHint})` : ''}</div>}
               </div>
             )}
           </div>
           {/* ⚠️ ห้ามตัดของหายเงียบ — บอกเสมอว่าซ่อนไปกี่รายการ */}
           {hidden > 0 && (
             <div style={{ padding: '5px 10px', fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
-              แสดง {rows.length} จาก {matched.length} — พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน {hidden})
+              แสดง {rows.length} {tr('จาก')} {matched.length} {tr('— พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน')} {hidden})
             </div>
           )}
         </div>

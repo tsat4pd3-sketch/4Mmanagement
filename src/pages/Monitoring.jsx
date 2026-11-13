@@ -25,6 +25,7 @@ import { isTodayPeriod } from '../utils/periodHead';
 import { buildPnIndex, pickStockMat } from '../utils/matResolve';
 import { openOnly } from '../utils/shipStatus';
 
+import { tr } from '../utils/i18n';
 /* 🔴 จุดอัพโหลดไฟล์ Monitoring มี **จุดเดียวทั้งระบบ** (08/10 คำสั่ง user) — ตัวเดียวกับที่
    `/planner-sales?tab=monitoring` ใช้ · กดที่ไหนก็ลงครบทุกชั้นในครั้งเดียว ห้ามแยกกลับเป็น 2 ตัว */
 const MonitoringUpload = lazy(() => import('../components/MonitoringUpload'));
@@ -434,7 +435,7 @@ export default function Monitoring() {
       ? `⚠️ อ่านกฎรับเข้าคลัง/ยอดคลังไม่ครบ (${refErr.message || refErr}) ⇒ คอลัมน์วันนี้ยังไม่ได้ยึดยอดจริง และไม่มีของออกจากระบบ — BALANCE เป็นค่าจากสูตรล้วน`
       : [
         `คอลัมน์วันนี้ = ยอดคงเหลือจริงในคลัง (${locs.join(' · ') || '–'}) · IN = คลังกดรับแล้ว · ของออก = ใช้/คืนจากคลังนั้น`,
-        rcpRows.length ? `⏳ ผลิตคอนเฟิร์มแล้วรอคลังกดรับ ${rcpRows.length} ใบ · ${rcpQty.toLocaleString()} ชิ้น (ยังไม่นับใน IN — รับที่ /line-stock?tab=receipts)` : '',
+        rcpRows.length ? `⏳ ผลิตคอนเฟิร์มแล้วรอคลังกดรับ ${rcpRows.length} ใบ · ${rcpQty.toLocaleString()} ชิ้น (ยังไม่นับใน IN — รับที่ /line-stock?tab=in&store=receipts)` : '',
         loadErr(rcpR) ? '⚠️ อ่านใบรอรับเข้าไม่ได้ — ไม่รู้ว่ามีของค้างรับเท่าไหร่' : '',
         noRow ? `⚠️ ${noRow} พาร์ทไม่มีแถวในคลังอ้างอิง ⇒ ยังเช็คยอดจริงไม่ได้ (เดินสูตรจากยอดยกมา) — ตั้งยอดที่ /line-stock?tab=count` : '',
       ].filter(Boolean).join(' · '));
@@ -478,7 +479,7 @@ export default function Monitoring() {
     [partMat, sysLock, periods, board?.period_kind],
   );
   const lockNote = sysLock.size
-    ? ` · 🔒 IN ล็อก ${sysLock.size} พาร์ท (ระบบมีตัวเลขแล้ว — ตั้งแต่วันแรกที่มีถึงวันนี้ · ยอดไม่ตรงกดช่องเพื่อขอปรับยอดคลัง)`
+    ? ` · IN ล็อก ${sysLock.size} พาร์ท (ระบบมีตัวเลขแล้ว — ตั้งแต่วันแรกที่มีถึงวันนี้ · ยอดไม่ตรงกดช่องเพื่อขอปรับยอดคลัง)`
     : '';
   /* กดช่อง IN ที่ล็อก ⇒ เปิดใบ "ขอปรับยอดคลัง" (ไม่ใช่พิมพ์ทับ) */
   const onLockedCell = useCallback(({ partId }) => {
@@ -585,23 +586,23 @@ export default function Monitoring() {
   return (
     <Page>
       <PageHeader
-        title="Monitoring ติดตามแผน-สต๊อก" icon="📉"
-        sub="บอร์ดแทนไฟล์ Excel ของทีมวางแผน — PLAN กรอกเอง · ของเข้า/ออก/ขั้นต่ำ ระบบเติมให้"
+        title={tr('Monitoring ติดตามแผน-สต๊อก')} icon="📉"
+        sub={tr('บอร์ดแทนไฟล์ Excel ของทีมวางแผน — PLAN กรอกเอง · ของเข้า/ออก/ขั้นต่ำ ระบบเติมให้')}
         tabs={tabs} tab={tab} onTab={setTab}
         actions={canEdit ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/* 📦 บอร์ด FG ไม่ได้มาจากไฟล์ Excel — ปุ่มจึงแยกจาก "นำเข้าจากไฟล์" ตั้งแต่หัวเพจ
                 (ปุ่มเดียวกันแล้วเดาจากแท็บ = คนกดผิดแล้วงงว่าทำไมไม่ขอไฟล์) */}
-            <button type="button" onClick={() => setShowFgSync(true)}
-              title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
+            <button type="button" className="pg-btn" onClick={() => setShowFgSync(true)}
+              title={tr('สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว')}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-              📦 สร้างบอร์ด FG จากออเดอร์
+              {tr('สร้างบอร์ด FG จากออเดอร์')}
             </button>
-            <button type="button" onClick={() => setShowImport(true)}
+            <button type="button" className="pg-btn" onClick={() => setShowImport(true)}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-              📗 นำเข้าจากไฟล์ Excel
+              {tr('นำเข้าจากไฟล์ Excel')}
             </button>
           </div>
         ) : null}
@@ -611,7 +612,7 @@ export default function Monitoring() {
                 <select> ที่ไม่มี minWidth:0 จะดันกล่องจนล้นออกนอกจอแล้วปัดไม่ได้
                 (mobilesweep จับได้ 02/10) · label ต้อง minWidth:0 และ select ต้อง maxWidth:100% */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS + 1, minWidth: 0, flex: '0 1 380px', maxWidth: 380 }}>
-              <span style={{ flexShrink: 0 }}>บอร์ด</span>
+              <span style={{ flexShrink: 0 }}>{tr('บอร์ด')}</span>
               <select value={board?.id || ''} onChange={e => setBoardId(e.target.value)}
                 style={{ minWidth: 0, maxWidth: '100%', flex: 1 }}>
                 {tabBoards.map(b => (
@@ -651,13 +652,13 @@ export default function Monitoring() {
         /* data-subtab = แถวนี้ทำหน้าที่ "แท็บย่อย" ⇒ ลำดับ แท็บ → แท็บย่อย → แถบกรอง (UI-STANDARD §2.1) */
         <div data-subtab="1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {[
-            { k: 'rundown', t: '📉 ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
+            { k: 'rundown', t: 'ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
             { k: 'board', t: '✏️ บอร์ดแก้มือ (ต่อลูกค้า)', s: 'พิมพ์ทับยอดได้ · เห็นผลิตเข้า/ขั้นต่ำในตารางเดียว' },
           ].map(v => (
             <button key={v.k} type="button" onClick={() => setFgView(v.k)}
               aria-current={fgView === v.k ? 'true' : undefined}
               style={{
-                textAlign: 'left', padding: '7px 13px', borderRadius: 9, cursor: 'pointer',
+                textAlign: 'left', padding: '7px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 border: `1px solid ${fgView === v.k ? 'var(--accent)' : 'var(--border2)'}`,
                 background: fgView === v.k ? 'var(--accent-dim)' : 'var(--bg2)',
                 color: fgView === v.k ? 'var(--accent)' : 'var(--text2)',
@@ -670,7 +671,7 @@ export default function Monitoring() {
       ) : null}
 
       {tab === 'fg' && fgView === 'rundown' ? (
-        <Suspense fallback={<div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังโหลด…</div>}>
+        <Suspense fallback={<div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>
           {/* embed ทั้งดุ้น — ต้องครอบ <Hub> เสมอ ไม่งั้นหัวเรื่องซ้อน 2 ชั้น (มีด่าน · UI-STANDARD §2) */}
           <Hub><RundownStock /></Hub>
         </Suspense>
@@ -678,17 +679,17 @@ export default function Monitoring() {
         <div style={{ ...card, fontSize: FS + 1, lineHeight: 1.9 }}>
           ยังไม่มีบอร์ดในหมวดนี้ ({BOARD_TABS.find(t => t.key === tab)?.sheets})
           {canEdit
-            ? <> — กด <b>📗 นำเข้าจากไฟล์ Excel</b> แล้วเลือกไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์</>
+            ? <> {tr('— กด')} <b>{tr('นำเข้าจากไฟล์ Excel')}</b> {tr('แล้วเลือกไฟล์')} <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> {tr('ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์')}</>
             : ' — ต้องมีสิทธิ์จัดการบอร์ดจึงจะนำเข้าได้'}
         </div>
       ) : loading && !parts.length ? (
-        <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังโหลด…</div>
+        <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
       ) : (<>
         {/* 🔐 มีสิทธิ์จัดการบอร์ด แต่บอร์ดนี้เป็นของส่วนงานอื่น — เขียนบอก ห้ามให้ช่องเทาเฉยๆ */}
         {canEditPerm && !boardWrite.ok && (
           <div style={{ ...card, padding: '8px 10px', marginBottom: 8, fontSize: FS,
-            borderLeft: '4px solid #eab308' }}>
-            🔒 {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
+            borderLeft: '4px solid var(--amber)' }}>
+            {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
           </div>
         )}
         <MonitorBoardGrid

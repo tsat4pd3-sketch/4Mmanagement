@@ -5,6 +5,10 @@
  *   ESM:M:<uuid>     เครื่องจักร (machines.id)
  *   ESM:J:<uuid>     จิ๊ก / อุปกรณ์ในทะเบียน PM (jigs.id) — ⚠️ แม่พิมพ์ใช้ ESM:M (อยู่ใน machines)
  *   ESM:P:<mat_no>   สินค้า/พาร์ท (mat_no — unique ทั้ง dr_products/parts_master/kanban_standards)
+ *   ESM:L:<id>       ไลน์ผลิต (production_lines.id · Main)          ← เฟส 2 (2026-10-28)
+ *   ESM:T:<uuid>     ประเภท Downtime (dr_downtime_types.id)
+ *   ESM:X:<uuid>     ประเภทงานเสีย (dr_defect_types.id)
+ *   ESM:W:<code>     ที่เก็บ/รหัสคลัง (storage_locations.code)
  *   ESM:D:<uuid>     จุดส่งงานหน้าไลน์ (line_delivery_points.id — DR · ลูปสโตร์เฟส 4 · 2026-09-03)
  *                    สโตร์ยิงป้ายนี้ตอนวางของถึงไลน์ = หมุดเวลา delivered_at + ด่านตรวจ "ส่งถูกจุดไหม"
  *
@@ -28,6 +32,12 @@ export const QR_KINDS = {
   jig: { code: 'J', label: 'จิ๊ก (ทะเบียน PM)', icon: '🧩' },           // jigs = ทะเบียนอุปกรณ์ที่มีแผน PM
   product: { code: 'P', label: 'สินค้า/พาร์ท', icon: '📦' },
   delivery: { code: 'D', label: 'จุดส่งงาน', icon: '🎯' },
+  /* 🗒️ เฟส 2 "ทุกอย่างที่ต้องเลือก สแกนได้" (2026-10-28 · คำสั่ง user) — ของที่ไม่เคยมีตัวตนให้สแกน
+     ใช้คู่กับ "ใบสแกนประจำไลน์ A4" ที่ /qr-labels (แผ่นแยกตามไลน์ · คำสั่ง user 27/10) */
+  line: { code: 'L', label: 'ไลน์ผลิต', icon: '🏭' },              // production_lines.id (Main · ตัวเลข) — ชื่อไลน์เปลี่ยนได้ ป้ายไม่ต้องพิมพ์ใหม่
+  downtime_type: { code: 'T', label: 'ประเภท Downtime', icon: '⏱' }, // dr_downtime_types.id (uuid)
+  defect_type: { code: 'X', label: 'ประเภทงานเสีย', icon: '🔴' },    // dr_defect_types.id (uuid)
+  storage: { code: 'W', label: 'ที่เก็บ/รหัสคลัง', icon: '🏬' },      // storage_locations.code — รหัสเป็นภาษากลางกับ SAP (เหตุผลเดียวกับ mat_no)
 };
 
 const CODE_TO_KIND = Object.fromEntries(Object.entries(QR_KINDS).map(([k, v]) => [v.code, k]));
@@ -263,4 +273,39 @@ export function findQaPartByScan(scan, allParts = [], scoped = null) {
     return { error: `พาร์ท ${part.part_no || part.mat_no} อยู่นอกขอบเขตไลน์ของคุณ${part.line_name ? ` (${part.line_name})` : ''}` };
   }
   return { part };
+}
+
+/**
+ * หา "ไลน์ผลิต" จากสิ่งที่สแกนมา (เฟส 2 · 2026-10-28)
+ *   ESM:L:<id> = production_lines.id · เลข/ข้อความเปล่า = ชื่อไลน์ตรงเป๊ะ (ไม่สนตัวพิมพ์/ช่องว่าง/ขีด)
+ *   ป้ายชนิดอื่น = { error } บอกว่าเป็นป้ายอะไร · ไม่เจอ/ชื่อซ้ำ = { error } (ห้ามเดา)
+ * @returns {{ line: object } | { error: string }}
+ */
+export function resolveLine(scan, lines) {
+  if (!scan) return { error: 'อ่านป้ายไม่ออก' };
+  if (scan.kind && scan.kind !== 'line') return { error: `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้ายไลน์` };
+  const list = lines || [];
+  if (scan.kind === 'line') {
+    const hit = list.find(l => String(l.id) === String(scan.id));
+    return hit ? { line: hit } : { error: 'ไม่พบไลน์ของป้ายนี้ในทะเบียน (อาจถูกลบหรือป้ายของระบบอื่น)' };
+  }
+  const q = normCode(scan.id);
+  const hits = list.filter(l => normCode(l.name) === q);
+  if (hits.length === 1) return { line: hits[0] };
+  return { error: hits.length > 1 ? `ชื่อไลน์ "${scan.id}" ซ้ำในทะเบียน — เลือกจากรายการเอง` : `ไม่พบไลน์ "${scan.id}"` };
+}
+
+/**
+ * ป้ายของ "ทะเบียนประเภท" (Downtime / งานเสีย) → id ของแถว · ป้ายชนิดอื่น = { error }
+ * @param {'downtime_type'|'defect_type'} kind
+ * @returns {{ row: object } | { error: string }}
+ */
+export function resolveTypeRow(scan, kind, rows) {
+  if (!scan) return { error: 'อ่านป้ายไม่ออก' };
+  const want = QR_KINDS[kind]?.label || kind;
+  if (scan.kind !== kind) {
+    return { error: scan.kind ? `ป้ายนี้เป็นป้าย${QR_KINDS[scan.kind]?.label || scan.kind} ไม่ใช่ป้าย${want}` : `ต้องสแกนป้าย${want}จากใบสแกนประจำไลน์` };
+  }
+  const hit = (rows || []).find(r => String(r.id) === String(scan.id));
+  return hit ? { row: hit } : { error: `ไม่พบ${want}ของป้ายนี้ (อาจถูกปิดใช้งาน) — เลือกจากรายการเอง` };
 }

@@ -142,6 +142,23 @@ export const isMtnFormRow = (order = {}) => {
   return !!it && guessTeamFromName(it) === MTN_FORM_TEAM;
 };
 
+/* ── ใบนี้เป็นของ "ทีมเครื่องมือ" (JIG / DIE) ไหม ────────────────────────────  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* — งาน JIG/DIE ถอดของออกมาซ่อมที่ห้องช่าง ผู้แจ้งที่อยู่หน้าไลน์
+   จึงตรวจรับของที่ยังอยู่ในห้องช่างไม่ได้ ⇒ ขั้น 4 ย้ายไปฝั่งช่าง (ดู `TOOL_FORM_STEPS`)
+
+   🔴 เกณฑ์ "ทีมไหนเป็นทีมเครื่องมือ" อยู่ที่นี่ที่เดียว — ห้ามเขียนรายชื่อคีย์ทีมซ้ำในหน้า/ใน util อื่น
+      (หลักเดียวกับ `isMtnFormRow` ด้านบน · pure เรียกจาก mtnStepPerm ได้)
+   🔴 **ไม่รู้ = ไม่ใช่ทีมเครื่องมือ** ⇒ ถอยไปพฤติกรรมเดิม (ผู้แจ้งตรวจรับ) ไม่ใช่ย้ายช่องเซ็นเงียบๆ */
+const TOOL_TEAMS = ['jig_maintenance', 'die_maintenance'];
+const TOOL_TEAM_ALIASES = [...TOOL_TEAMS, 'jig', 'die', 'tooling'];
+export const isToolTeamRow = (order = {}) => {
+  const d = String(order?.mtn_dept || '').trim().toLowerCase();
+  if (d) return TOOL_TEAM_ALIASES.includes(d);
+  const it = String(order?.item_type || '').trim();
+  return !!it && TOOL_TEAMS.includes(guessTeamFromName(it));
+};
+
 /** เหตุผลมาตรฐานเมื่อ QA ไม่อยู่ในลูปของฟอร์มนี้เลย (ไม่ใช่มีคนกดข้าม) — user 2026-09-22 */
 export const QA_SKIP_REASON_MTN_FORM = 'ใบซ่อมของทีม MTN (FM-MTN-006) — ลูปนี้ไม่มีขั้นตรวจคุณภาพโดย QA';
 
@@ -200,6 +217,22 @@ export function isApprovalBlocked(order = {}) {
   if (order.dept_manager_at === undefined) return false;
   if (needsPlantManager(order.purpose) && order.plant_manager_at === undefined) return false;
   return mtnApprovalState(order).blocked;
+}
+
+/* ── ช่องกริด PR.No. / I/O. บนใบพิมพ์ FM-MTN-006 (03/11 · ประชุม 02/11 ข้อ A8 "IO ขึ้นขาด PR ขึ้นเกิน") ──
+   ฟอร์มกระดาษเดิมวาดทั้ง 2 ช่องเป็น 11 ช่องสี่เหลี่ยม แต่เลขจริง (วัดฐาน DR 03/11):
+     · I/O = **12 หลัก** ทุกตัว (`machines.io_no` 32 เครื่อง · `mtn_orders.io_no`) ⇒ 11 ช่อง = หลักสุดท้ายหาย ("IO ขาด")
+       (ช่องกรอก + ใบพิมพ์แก้เป็น 12 ไปแล้ว 30/10 — ย้ายค่ามาไว้ที่นี่ให้เป็นจุดเดียว)
+     · PR จาก SAP = **10 หลัก** (เช่น 1210104217) ⇒ 11 ช่อง = ช่องว่างเกินท้าย 1 ช่อง ("PR เกิน")
+   🔴 กริดต้อง **ไม่ตัดตัวอักษรทิ้ง** — เลขที่ยาวกว่าจำนวนช่อง (ใบเก่ากรอกมือ เช่น "PR2610-TEST")
+      ต้องงอกช่องเพิ่มให้ครบ ห้ามหายเงียบจากกระดาษ (ตัดทิ้ง = บั๊ก "IO ขาด" แบบเดิมกลับมา) */
+export const MO_IO_DIGITS = 12;
+export const MO_PR_DIGITS = 10;
+/** ตัวอักษรรายช่องของกริด — ยาว `max(n, ความยาวค่า)` · ช่องที่ไม่มีตัวอักษร = '' */
+export function moGridChars(value, n) {
+  const t = String(value ?? '').trim();
+  const len = Math.max(Number(n) || 0, t.length);
+  return Array.from({ length: len }, (_, i) => t[i] || '');
 }
 
 /** ช่องลายเซ็นที่ใบนี้ค้างอยู่ ('dept' | 'plant' | null) — ผู้จัดการต้นสังกัดมาก่อนเสมอ */

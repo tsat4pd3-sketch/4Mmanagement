@@ -125,3 +125,30 @@ test('🛡️ SearchSelect ต้องเช็ค Enter ท้ายการ�
   assert.match(s, /scanOfEvent\(e\)/);
   assert.match(s, /exactScanMatch\(/);
 });
+
+test('🔴 สติกเกอร์ของระบบ (ESM:M:<uuid> / ลิงก์ /scan?c=) สแกนลงช่องเลือกต้องเจอ — เดิมไม่ตรงอะไรเลย', () => {
+  const machines = [{ id: 'a1b2-uuid', label: 'SW-10' }, { id: 'c3d4-uuid', label: 'SW-11' }];
+  assert.equal(exactScanMatch(machines, 'ESM:M:a1b2-uuid')?.label, 'SW-10');
+  assert.equal(exactScanMatch(machines, 'https://esm.example.com/scan?c=ESM:M:c3d4-uuid')?.label, 'SW-11');
+  assert.equal(exactScanMatch(machines, 'SW10')?.label, 'SW-10', 'เลขเปล่าบนป้ายเดิมยังใช้ได้');
+  const parts = [{ id: 7, label: '10092454', lead: 'PN-A' }];
+  assert.equal(exactScanMatch(parts, 'ESM:P:10092454')?.id, 7);
+});
+
+test('บัตรพนักงานสแกนลงช่องเลือกคนได้ (employee_code) · scanKeys ไม่ต้องโชว์บนจอก็สแกนเจอ', () => {
+  const people = [{ id: 'e:1', label: 'สมชาย', employee_code: '2101864' }, { id: 'p:9', label: 'สมหญิง' }];
+  assert.equal(exactScanMatch(people, '2101864')?.id, 'e:1');
+  assert.equal(exactScanMatch([{ id: 'x', label: 'โกดัง A', scanKeys: ['WH-A'] }], 'wh a')?.id, 'x');
+});
+
+import { parseQrPayload, resolveLine, resolveTypeRow, buildQrPayload } from '../qrCode.js';
+test('🗒️ เฟส 2: ป้ายไลน์ / ประเภท Downtime / ประเภทงานเสีย', () => {
+  const lines = [{ id: 12, name: 'LINE 60' }, { id: 13, name: 'LINE 61' }];
+  assert.equal(resolveLine(parseQrPayload(buildQrPayload('line', 13)), lines).line?.name, 'LINE 61');
+  assert.equal(resolveLine(parseQrPayload('line-60'), lines).line?.id, 12, 'ชื่อไลน์เปล่า ตรงเป๊ะไม่สนขีด/ตัวพิมพ์');
+  assert.ok(resolveLine(parseQrPayload('ESM:T:abc'), lines).error.includes('ไม่ใช่ป้ายไลน์'));
+  const dt = [{ id: 'u1', name_th: 'เครื่องเสีย' }];
+  assert.equal(resolveTypeRow(parseQrPayload('ESM:T:u1'), 'downtime_type', dt).row?.name_th, 'เครื่องเสีย');
+  assert.ok(resolveTypeRow(parseQrPayload('ESM:X:u1'), 'downtime_type', dt).error, 'ป้าย NG สแกนลงช่อง Downtime = ปฏิเสธ');
+  assert.ok(resolveTypeRow(parseQrPayload('เครื่องเสีย'), 'downtime_type', dt).error, 'ข้อความเปล่าไม่เดาจากชื่อ');
+});

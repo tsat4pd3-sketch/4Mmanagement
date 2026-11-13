@@ -4,8 +4,18 @@ import { toast } from '../components/Toast';
 import { saveMyProfileMedia } from '../utils/profileSelf';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { luma, pickPaperCutoff, clipPaperToWhite, inkRatioOk } from '../utils/signatureImage';
 
-export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
+import { tr } from '../utils/i18n';
+/**
+ * ✍️ วาด/อัปโหลดลายเซ็น — ค่าเริ่มต้น = ลายเซ็นของ "บัญชีที่ login อยู่" (profiles.signature_url)
+ * 🆕 03/11 (ประชุม 02/11 C1): ใช้กับ **ลายเซ็นพนักงาน** ได้ด้วย โดยส่ง
+ *   · `folder`  = โฟลเดอร์ใน bucket `signatures` (พนักงาน = `emp/<employee_id>`) · ไม่ส่ง = `<uid>` เดิม
+ *   · `persist` = async (publicUrl) => ({ ok, message }) เขียน URL ลงแถวปลายทาง (ต้องนับแถวเอง) · ไม่ส่ง = โปรไฟล์ตัวเอง
+ *   · `title`   = หัวโมดัล
+ *   ตัวบีบรูป/ตัดพื้นกระดาษ/กันไฟล์ HEIC ใช้ชุดเดียวกัน (ห้ามก๊อปโมดัลนี้ไปทำใหม่)
+ */
+export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved, folder = null, persist = null, title = null }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
@@ -13,6 +23,10 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
+  /* 🔴 มีเส้นบนกระดาษจริงหรือยัง (09/11 · เคสจริง) — เดิมกด "บันทึก" บนกระดาษเปล่าได้
+     ⇒ โปรไฟล์ได้รูปขาวล้วน (1.6 KB) แล้วทุกใบที่ดึงลายเซ็นสดจากโปรไฟล์ (`utils/signResolve.js`)
+     กลายเป็นช่องว่างหมด รวมใบเก่า — คนเห็นว่า "เซ็นไม่ติด ลายเซ็นเก่าก็หาย" */
+  const hasInk = useRef(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -32,6 +46,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      hasInk.current = false;
     }, 50);
   }, [open, tab]);
 
@@ -54,6 +69,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const startDraw = useCallback((e) => {
     e.preventDefault();
     drawing.current = true;
+    hasInk.current = true;
     const canvas = canvasRef.current;
     const pos = getPos(e, canvas);
     lastPos.current = pos;
@@ -92,6 +108,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    hasInk.current = false;
   };
 
   const handleFileChange = async (e) => {
@@ -109,10 +126,12 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   };
 
   const handleSave = async () => {
+    if (tab === 'draw' && !hasInk.current) { toast.error('ยังไม่ได้เซ็น — วาดลายเซ็นในกรอบก่อนกดบันทึก'); return; }
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('ไม่พบข้อมูลผู้ใช้'); setSaving(false); return; }
+      const dir = folder || user.id;
 
       const ts = Date.now();
       let filePath, fileBlob, contentType;
@@ -120,7 +139,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       if (tab === 'draw') {
         const canvas = canvasRef.current;
         fileBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        filePath = `${user.id}/${ts}.png`;
+        filePath = `${dir}/${ts}.png`;
         contentType = 'image/png';
       } else {
         if (!uploadFile) { toast.error('กรุณาเลือกไฟล์'); setSaving(false); return; }
@@ -137,7 +156,24 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
               const canvas = document.createElement('canvas');
               canvas.width = Math.round(img.width * scale);
               canvas.height = Math.round(img.height * scale);
-              canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              /* 🔴 ย่อขนาดอย่างเดียวไม่ลดไฟล์ — PNG เป็นแบบไม่สูญเสีย ⇒ เก็บ noise ของกระดาษ
+                 กับแสงเงาไว้ครบ (วัด 28/10: ลายเซ็นที่อัปรูปเข้ามาใหญ่สุด 2.2 MB ขณะที่
+                 ลายเซ็นวาดบนจอแค่ 14 KB) ⇒ ตัดพื้นกระดาษให้ขาวสนิทก่อน PNG จะบีบได้จริง
+                 · ค่าตัดอ่านจากตัวรูปเอง (utils/signatureImage.js) ห้ามใช้ค่าคงที่ — กระดาษ
+                   ใต้แสงเหลือง/เงามือสว่างไม่เท่ากัน
+                 · ตัดแล้วลายเซ็นหาย/ตัดไม่เข้า = **ใช้รูปเดิม** ไฟล์ใหญ่ยังดีกว่าลายเซ็นหาย */
+              try {
+                const im = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const lum = new Uint8ClampedArray(im.data.length / 4);
+                for (let i = 0, j = 0; i < im.data.length; i += 4, j++) lum[j] = luma(im.data[i], im.data[i + 1], im.data[i + 2]);
+                const cut = pickPaperCutoff(lum);
+                if (cut) {
+                  const copy = new ImageData(new Uint8ClampedArray(im.data), im.width, im.height);
+                  if (inkRatioOk(clipPaperToWhite(copy.data, cut))) ctx.putImageData(copy, 0, 0);
+                }
+              } catch { /* อ่านพิกเซลไม่ได้ = ใช้รูปเดิม (ไม่ทำให้บันทึกล้ม) */ }
               canvas.toBlob(b => b ? resolve(b) : reject(new Error('บีบรูปไม่สำเร็จ')), 'image/png');
             };
             img.onerror = () => reject(new Error('ไฟล์นี้ไม่ใช่รูปที่รองรับ (ลองใช้ JPG/PNG)'));
@@ -146,7 +182,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         } finally {
           URL.revokeObjectURL(objUrl);
         }
-        filePath = `${user.id}/${ts}.png`;
+        filePath = `${dir}/${ts}.png`;
         contentType = 'image/png';
       }
 
@@ -159,7 +195,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
 
       // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error แล้วลายเซ็นหายหลัง logout
       // (เคสจริงที่หัวหน้าแผนกแจ้ง 2026-08-17) → เขียนผ่าน helper ที่ตรวจว่าเขียนติดจริง
-      const res = await saveMyProfileMedia('signature_url', publicUrl);
+      const res = persist ? await persist(publicUrl) : await saveMyProfileMedia('signature_url', publicUrl);
       if (!res.ok) { toast.error('บันทึกไม่สำเร็จ: ' + res.message); setSaving(false); return; }
 
       /* 🔴 **ห้ามลบไฟล์ลายเซ็นเดิม** (2026-10-24 · คำสั่ง user — เดิมลบทิ้งเพื่อกันไฟล์กำพร้า)
@@ -191,7 +227,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       <div style={{
         width: 'min(480px, 100%)',
         background: 'var(--card)',
-        borderRadius: 16,
+        borderRadius: 'var(--r-lg)',
         boxShadow: 'var(--shadow-lg)',
         overflow: 'hidden',
       }}>
@@ -201,7 +237,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>✍️ จัดการลายเซ็น</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || tr('✍️ จัดการลายเซ็น')}</div>
           <button onClick={onClose} style={{
             background: 'none', border: 'none', cursor: 'pointer',
             color: 'var(--muted)', fontSize: 18, lineHeight: 1, padding: '2px 6px',
@@ -212,9 +248,9 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Current signature preview */}
           {currentSignatureUrl && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ลายเซ็นปัจจุบัน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('ลายเซ็นปัจจุบัน')}</div>
               <div style={{
-                border: '1px solid var(--border)', borderRadius: 8,
+                border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: 8, background: 'var(--bg2)', textAlign: 'center',
               }}>
                 <img src={currentSignatureUrl} alt="signature" style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }} />
@@ -223,10 +259,10 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           )}
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             {[
               { key: 'draw', label: '✏️ วาดลายเซ็น' },
-              { key: 'upload', label: '📁 อัปโหลดรูป' },
+              { key: 'upload', label: 'อัปโหลดรูป' },
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key)} style={{
                 flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer',
@@ -234,15 +270,15 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 background: tab === t.key ? 'var(--accent)' : 'var(--bg2)',
                 color: tab === t.key ? '#fff' : 'var(--text2)',
                 transition: 'all 0.15s',
-              }}>{t.label}</button>
+              }}>{tr(t.label)}</button>
             ))}
           </div>
 
           {/* Draw tab */}
           {tab === 'draw' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>วาดลายเซ็นในกรอบด้านล่าง</div>
-              <div style={{ border: '2px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('วาดลายเซ็นในกรอบด้านล่าง')}</div>
+              <div style={{ border: '2px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
                 <canvas
                   ref={canvasRef}
                   width={440}
@@ -258,21 +294,21 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 />
               </div>
               <button onClick={clearCanvas} style={{
-                marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 6,
+                marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 'var(--r-md)',
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
-              }}>🗑️ ล้าง</button>
+              }}>{tr('ล้าง')}</button>
             </div>
           )}
 
           {/* Upload tab */}
           {tab === 'upload' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>เลือกไฟล์รูปภาพลายเซ็น</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{tr('เลือกไฟล์รูปภาพลายเซ็น')}</div>
               <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 13 }} />
               {uploadPreview && (
                 <div style={{
-                  marginTop: 12, border: '1px solid var(--border)', borderRadius: 8,
+                  marginTop: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                   padding: 10, background: 'var(--bg2)', textAlign: 'center',
                 }}>
                   <img src={uploadPreview} alt="preview" style={{ maxHeight: 120, maxWidth: '100%', objectFit: 'contain' }} />
@@ -285,16 +321,16 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={handleSave} disabled={saving} style={{
               flex: 2, padding: '10px 0', background: 'var(--accent)', color: 'var(--accent-ink)',
-              border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+              border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>
-              {saving ? 'กำลังบันทึก...' : '💾 บันทึกลายเซ็น'}
+              {saving ? tr('กำลังบันทึก...') : tr('💾 บันทึกลายเซ็น')}
             </button>
             <button onClick={onClose} style={{
               flex: 1, padding: '10px 0', background: 'var(--bg3)',
-              border: '1px solid var(--border2)', borderRadius: 8,
+              border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
               color: 'var(--text2)', cursor: 'pointer', fontSize: 13,
-            }}>ยกเลิก</button>
+            }}>{tr('ยกเลิก')}</button>
           </div>
         </div>
       </div>

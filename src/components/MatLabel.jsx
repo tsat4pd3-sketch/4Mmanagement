@@ -17,6 +17,7 @@ import useProducts from '../utils/useProducts';
 import useChildParts from '../utils/useChildParts';
 import { buildMatIndex, matInfo } from '../utils/matLabel';
 
+import { tr } from '../utils/i18n';
 /* index ผูกกับ "ก้อน products" + "ก้อน parts_master" ที่ cachedMaster คืนมา (reference เดียวทั้งแอป)
    ⇒ สร้างจริงครั้งเดียว ต่อให้ component นี้ถูก mount เป็นร้อยตัวในลิสต์เดียว
    ใช้ WeakMap ซ้อน 2 ชั้น (products → childParts → index) เพราะคีย์เป็น "อาร์เรย์ 2 ก้อน"
@@ -49,8 +50,10 @@ export function useMatIndex() {
  * @param {number} [size]     ฟอนต์ของเลข MAT (default 12 · ขั้นต่ำจอ TV 11 ตาม UI §4)
  * @param {boolean} [showPartNo] ปิดได้เมื่อที่แคบจริงๆ (default true)
  * @param {object} [style]    style เพิ่มของกล่องนอก
+ * @param {boolean} [oneLine] บรรทัดเดียวเสมอ — ชื่อ/คำบรรยายหดแล้วตัด … · รหัสยังไม่ตัด (default false = พฤติกรรมเดิม)
+ *                            ใช้ในแถวย่อที่สูงต้องคงที่ (ใบผลิตที่ย่อใน Daily Report · 09/11)
  */
-export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true, style }) {
+export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true, style, oneLine = false }) {
   const index = useMatIndex();
   const i = matInfo(mat, index, { name, pNo });
   if (!i.mat) return null;
@@ -71,9 +74,9 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   const subIsText = lead !== 'pno' && !!sub;                 // คำบรรยาย ไม่ใช่ชื่อสั้นๆ
   const headIsCode = lead === 'pno';                         // หัวเป็นรหัสจริง ⇒ ห้ามตัด
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap', minWidth: 0, ...style }}>
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: oneLine ? 'nowrap' : 'wrap', minWidth: 0, ...style }}>
       {head && (
-        <span title={headIsCode ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+        <span title={headIsCode ? tr('Part No. ของลูกค้า') : tr('ชื่อชิ้นงาน / สเปควัตถุดิบ')}
           style={{ fontSize: size, fontWeight: 700, color: 'var(--text2)', minWidth: 0,
             ...(headIsCode
               ? { fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }
@@ -81,12 +84,13 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
       )}
       {sub && (
         <span title={sub} style={{ fontSize: small, color: 'var(--muted)', minWidth: 0,
-          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
+          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null),
+          ...(oneLine ? { flex: '0 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
           {head ? `· ${sub}` : sub}
         </span>
       )}
       {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง/ห้ามตัดครึ่ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
-      <span title="เลข MAT (SAP)"
+      <span title={tr('เลข MAT (SAP)')}
         style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
         {(head || sub) ? '· ' : ''}MAT {i.mat}
       </span>

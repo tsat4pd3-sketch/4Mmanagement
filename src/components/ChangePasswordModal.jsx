@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 export default function ChangePasswordModal({ open, onClose, userEmail }) {
   const [current,  setCurrent]  = useState('');
   const [next,     setNext]     = useState('');
@@ -86,14 +87,14 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* Current password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              รหัสผ่านเดิม
+              {tr('รหัสผ่านเดิม')}
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showCur ? 'text' : 'password'}
                 value={current}
                 onChange={e => setCurrent(e.target.value)}
-                placeholder="กรอกรหัสผ่านปัจจุบัน"
+                placeholder={tr('กรอกรหัสผ่านปัจจุบัน')}
                 autoComplete="current-password"
                 style={{ paddingRight: 40 }}
                 disabled={loading}
@@ -115,14 +116,14 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* New password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              รหัสผ่านใหม่
+              {tr('รหัสผ่านใหม่')}
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showNew ? 'text' : 'password'}
                 value={next}
                 onChange={e => setNext(e.target.value)}
-                placeholder="อย่างน้อย 6 ตัวอักษร"
+                placeholder={tr('อย่างน้อย 6 ตัวอักษร')}
                 autoComplete="new-password"
                 style={{
                   paddingRight: 40,
@@ -141,28 +142,28 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               >{showNew ? '🙈' : '👁'}</button>
             </div>
             {weak && (
-              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>⚠ ต้องมีอย่างน้อย 6 ตัวอักษร</div>
+              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{tr('⚠ ต้องมีอย่างน้อย 6 ตัวอักษร')}</div>
             )}
           </div>
 
           {/* Confirm password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              ยืนยันรหัสผ่านใหม่
+              {tr('ยืนยันรหัสผ่านใหม่')}
             </label>
             <input
               type={showNew ? 'text' : 'password'}
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
-              placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+              placeholder={tr('กรอกรหัสผ่านใหม่อีกครั้ง')}
               autoComplete="new-password"
               style={{
                 borderColor: match ? 'var(--accent)' : noMatch ? '#ef4444' : undefined,
               }}
               disabled={loading}
             />
-            {match   && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>✓ รหัสผ่านตรงกัน</div>}
-            {noMatch && <div style={{ fontSize: 11, color: '#ef4444',       marginTop: 4 }}>✗ รหัสผ่านไม่ตรงกัน</div>}
+            {match   && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>{tr('✓ รหัสผ่านตรงกัน')}</div>}
+            {noMatch && <div style={{ fontSize: 11, color: '#ef4444',       marginTop: 4 }}>{tr('✗ รหัสผ่านไม่ตรงกัน')}</div>}
           </div>
 
           {/* Strength bar */}
@@ -171,9 +172,9 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
                 ความแข็งแกร่ง: {next.length < 6 ? '⚠ อ่อน' : next.length < 10 ? '🟡 พอใช้' : '🟢 แข็งแกร่ง'}
               </div>
-              <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 'var(--r-xs)', background: 'var(--border2)', overflow: 'hidden' }}>
                 <div style={{
-                  height: '100%', borderRadius: 2,
+                  height: '100%', borderRadius: 'var(--r-xs)',
                   width: `${Math.min((next.length / 14) * 100, 100)}%`,
                   background: next.length < 6 ? '#ef4444' : next.length < 10 ? '#f59e0b' : 'var(--accent)',
                   transition: 'width 0.3s, background 0.3s',
@@ -189,16 +190,16 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               onClick={handleClose}
               disabled={loading}
               style={{
-                flex: 1, padding: '10px 0', borderRadius: 8,
+                flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--text2)', fontWeight: 600, fontSize: 13,
               }}
-            >ยกเลิก</button>
+            >{tr('ยกเลิก')}</button>
             <button
               type="submit"
               disabled={loading || !current || next.length < 6 || next !== confirm}
               style={{
-                flex: 2, padding: '10px 0', borderRadius: 8,
+                flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: 'none',
                 background: loading || !current || next.length < 6 || next !== confirm
                   ? 'var(--muted2)' : 'var(--accent)',
@@ -206,7 +207,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
                 transition: 'background 0.2s',
               }}
             >
-              {loading ? '⏳ กำลังบันทึก...' : '🔐 เปลี่ยนรหัสผ่าน'}
+              {loading ? tr('⏳ กำลังบันทึก...') : tr('🔐 เปลี่ยนรหัสผ่าน')}
             </button>
           </div>
         </form>

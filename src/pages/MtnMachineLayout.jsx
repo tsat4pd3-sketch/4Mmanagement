@@ -5,7 +5,9 @@ import { compressLayoutImage } from '../utils/layoutImage'
 import { supabaseDR } from '../supabaseClient'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadLinesRes } from '../utils/useProductionLines';
+import { lineScope } from '../utils/sectionScope';
 import { UserContext } from '../App'
+import { teamsForUser } from '../utils/mtnTeams'
 import { can } from '../utils/permissions'
 import { STATUS_META, DEPT_LABEL, daysUntilDue } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
@@ -24,6 +26,8 @@ import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 import { urlParam } from '../utils/urlInit';
+import { tr } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 function publicUrl(path) {
   if (!path) return null
@@ -48,7 +52,7 @@ const S = {
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
   chip: (active, color) => ({
     padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? color : 'var(--border2)'}`, background: active ? `${color}18` : 'var(--bg3)', color: active ? color : 'var(--muted)',
+    border: `1.5px solid ${active ? color : 'var(--border2)'}`, background: active ? `${tint(color, 'dim')}` : 'var(--bg3)', color: active ? color : 'var(--muted)',
   }),
   viewBtn: (active) => ({
     padding: '7px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
@@ -77,7 +81,13 @@ const S = {
 // setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
 // setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
 export default function MtnMachineLayout({ setupMode = false }) {
-  const { role } = useContext(UserContext)
+  const { role, mtnTeams, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
+  /* 🔊 ขอบเขตเสียง "เรียกช่าง" ของหน้านี้ = ทีมของคนที่เปิดจอ (09/11 · feedback หน้างาน
+     "เรียกแผนกอื่น แต่ตัวเองก็เห็น alarm") — เดิมหน้านี้ mount ไซเรนโดยไม่ส่งทีมเลย
+     ⇒ ช่าง JIG ที่เปิดหน้านี้ได้ยินเสียงเรียกของทีม DIE/Maintenance ด้วยทุกใบ
+     🔴 ไม่มีทีม = ไม่กรอง (fail-open) — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน
+     ⚠️ แกนทีม (เสียงของใคร) กับแกนไลน์ `lineNames` (จอนี้ดูไลน์ไหน) **คนละคำถาม ใช้คู่กัน** */
+  const sirenTeams = useMemo(() => teamsForUser(mtnTeams, scopeSecs), [mtnTeams, scopeSecs])
   // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) = งานของทีม MTN เอง → ใช้สิทธิ์ pm:setup
   // (mtn/admin/manager/supervisor) ได้ทั้งบน /mtn-layout และ /layout-setup — facility เป็น domain ของช่าง
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
@@ -113,6 +123,26 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // production
   const [lines, setLines] = useState([])
   const [selectedLine, setSelectedLine] = useState(null)
+  /* 🔭 ขอบเขตของบัญชี — แท็บ "ผังไลน์ผลิต" (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+     แกนเดียวกับ FactoryMap — `lineScope()` (sectionScope.js) · `unlimited` (admin/ไม่จำกัด/ทะเบียนยังไม่โหลด)
+     = ลิสต์ทั้งโรงงานเหมือนเดิมเป๊ะ · ตัดแล้วหัวลิสต์เขียนว่าซ่อนกี่ไลน์ · `unsure` เขียนเตือน ห้ามเงียบ
+     · แท็บ Facility (โซนช่าง) = domain ของ MTN ทั้งโรงงาน ⇒ ไม่ตัด */
+  const scopeKey = (scopeSecs || []).join('|')
+  const viewScope = useMemo(() => lineScope({ role, lineId: userLineId, sections: scopeSecs || [], lines, scopeIdx }),
+    [role, userLineId, scopeKey, lines, scopeIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+  const viewLines = useMemo(() => {
+    if (viewScope.unlimited) return lines
+    const ok = new Set(viewScope.names)
+    return lines.filter(l => ok.has(l.name))
+  }, [lines, viewScope])
+  const scopeHidden = viewScope.unlimited ? 0 : lines.length - viewLines.length
+  const scopeLabel = (scopeSecs || []).filter(Boolean).join(' · ') || 'ไลน์ของคุณ'
+  // ไลน์เริ่มต้น = ไลน์แรกในขอบเขต (ไม่จำกัด = แถวแรกของทะเบียน เหมือนเดิม) · เลือกแล้วไม่ทับ
+  useEffect(() => {
+    if (selectedLine || !lines.length) return
+    const first = viewScope.unlimited ? lines[0] : viewLines[0]
+    if (first) setSelectedLine(first.name)
+  }, [lines, viewLines, viewScope, selectedLine])
   const [prodImage, setProdImage] = useState(null)
   const [prodPoints, setProdPoints] = useState([])
   const [machineInfo, setMachineInfo] = useState({})
@@ -163,7 +193,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   useEffect(() => {
     loadLinesRes().then(({ data }) => {
-      setLines(data || []); if (data?.length && !selectedLine) setSelectedLine(data[0].name)
+      setLines(data || [])   // ไลน์เริ่มต้นเลือกที่ effect ขอบเขตข้างบน (ไลน์แรกในขอบเขต)
     })
     reloadAreas()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -390,11 +420,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
 
   const orderedLines = useMemo(() => {
-    const parents = lines.filter(l => !l.parent_line_name), children = lines.filter(l => l.parent_line_name), out = []
+    const parents = viewLines.filter(l => !l.parent_line_name), children = viewLines.filter(l => l.parent_line_name), out = []
     parents.forEach(p => { out.push({ ...p }); children.filter(c => c.parent_line_name === p.name).forEach(c => out.push({ ...c, _child: true })) })
     children.filter(c => !parents.find(p => p.name === c.parent_line_name)).forEach(c => out.push({ ...c, _child: true }))
     return out
-  }, [lines])
+  }, [viewLines])
 
   // detail panel target
   const sel = selId ? (view === 'production' ? prodPoints.find(p => p.id === selId) : facPoints.find(p => p.id === selId)) : null
@@ -407,18 +437,19 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   return (
     <Page width="full" style={S.page}>
-      <DowntimeSiren mode="call_mtn" />
+      <DowntimeSiren mode="call_mtn" team={sirenTeams}
+                     lineNames={view === "facility" || viewScope.unlimited ? null : viewScope.names} />
       {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
-      <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
-        sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
+      <PageHeader title={tr('ผังเครื่องจักร (ซ่อมบำรุง)')} icon="🗺️"
+        sub={tr('ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ')}
         actions={cameFrom === 'factory-map' && (
           /* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */
-          <button onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>← กลับผังรวมโรงงาน</button>
+          <button type="button" className="pg-btn" onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>{tr('กลับผังรวมโรงงาน')}</button>
         )}
         tabs={[
-          !setupMode && { key: 'overview', label: '🗺️ ภาพรวมทั้งโรงงาน' },
-          { key: 'production', label: '🏭 ไลน์ผลิต' },
-          { key: 'facility', label: '🔌 Facility / Utility' },
+          !setupMode && { key: 'overview', label: 'ภาพรวมทั้งโรงงาน' },
+          { key: 'production', label: 'ไลน์ผลิต' },
+          { key: 'facility', label: 'Facility / Utility' },
         ]}
         tab={view} onTab={k => { setView(k); setSelId(null) }} />
 
@@ -428,39 +459,39 @@ export default function MtnMachineLayout({ setupMode = false }) {
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>{ALL.team}</button>
-        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || '#4d9fff')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
+        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || 'var(--blue)')}>{t.icon || DEPT_ICON[t.key] || ''} {tr(t.label) || DEPT_LABEL[t.key]}</button>)}
         {view === 'facility' && canEdit && (
           <button onClick={() => setFacEdit(v => { if (v) { setArmedJig(null); setArmedMachine(null) } return !v })}
-            style={S.viewBtn(facEdit)} title={facEdit ? 'กลับสู่โหมดดูสถานะ' : 'เปิดเครื่องมือจัดผัง (เพิ่มโซน/อัปรูป/วางจุด)'}>
-            {facEdit ? '✓ เสร็จสิ้นการแก้ผัง' : '✏️ แก้ผังโซน'}
+            style={S.viewBtn(facEdit)} title={facEdit ? tr('กลับสู่โหมดดูสถานะ') : tr('เปิดเครื่องมือจัดผัง (เพิ่มโซน/อัปรูป/วางจุด)')}>
+            {facEdit ? 'เสร็จสิ้นการแก้ผัง' : 'แก้ผังโซน'}
           </button>
         )}
         {view === 'facility' && editMode && (
           <>
-            <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ — จุดบนผังโซนนี้ (Ctrl+Z)">↩️ Undo</button>
-            <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+            <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title={tr('ย้อนกลับ — จุดบนผังโซนนี้ (Ctrl+Z)')}>Undo</button>
+            <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title={tr('ทำซ้ำ (Ctrl+Y)')}>Redo</button>
           </>
         )}
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(STATUS_META).map(([k, m]) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{m.label}{counts[k] ? ` (${counts[k]})` : ''}
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{tr(m.label)}{counts[k] ? ` (${counts[k]})` : ''}
             </span>
           ))}
         </div>
       </div>
 
       {view === 'facility' && (armedJig || armedMachine) && (
-        <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-          📍 คลิกบนผังเพื่อวาง <b>{armedJig ? (jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name) : (facMachines.find(m => m.id === armedMachine)?.machine_no)}</b>{armedMachine ? ' (ดึงจากฐานเครื่องจักร)' : ''} · <span onClick={() => { setArmedJig(null); setArmedMachine(null) }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
+        <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '6px 10px' }}>
+          คลิกบนผังเพื่อวาง <b>{armedJig ? (jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name) : (facMachines.find(m => m.id === armedMachine)?.machine_no)}</b>{armedMachine ? ' (ดึงจากฐานเครื่องจักร)' : ''} · <span onClick={() => { setArmedJig(null); setArmedMachine(null) }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>{tr('ยกเลิก')}</span>
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'stretch' }}>
         <div style={{ flex: '1 1 560px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           {loading
-            ? <div style={{ flex: 1, minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14 }}>
+            ? <div style={{ flex: 1, minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
                 <div style={{ width: 30, height: 30, border: '2px solid var(--accent)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
               </div>
             : <MachineFloorMap
@@ -473,13 +504,13 @@ export default function MtnMachineLayout({ setupMode = false }) {
           {sel && selInfo && (
             /* ⚠️ ผังสูงเกือบเต็มจอ → แผงรายละเอียดอยู่ใต้ fold: คลิกหมุดแล้ว "เหมือนคลิกได้เฉยๆ ไม่มีอะไรขึ้น"
                (user ทัก 2026-08-26) → เลื่อนมาให้เห็นเองทุกครั้งที่เลือกหมุด */
-            <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
+            <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ {selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
-                <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
+                <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
               </div>
               {selChecklists.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${deptLabelOf(dept)}` : ''} สำหรับรายการนี้</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีเช็คลิสต์ PM')}{dept !== 'all' ? ` ของแผนก ${deptLabelOf(dept)}` : ''} {tr('สำหรับรายการนี้')}</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {selChecklists.map((c, i) => {
@@ -489,8 +520,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12, borderTop: i ? '1px dashed var(--border)' : 'none', paddingTop: i ? 6 : 0 }}>
                         <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
                         <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.eqName ?? selInfo.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
-                        <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{deptIconOf(c.dept)} {deptLabelOf(c.dept)}</span>
+                        <span style={{ color: m.color, fontWeight: 700 }}>{tr(m.label)}</span>
                         <span style={{ color: 'var(--muted)' }}>{c.nextDue ? `ครบ ${c.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}${dd != null ? (dd < 0 ? ` (เกิน ${Math.abs(dd)} วัน)` : ` (อีก ${dd} วัน)`) : ''}` : 'ยังไม่มีวัน PM ครั้งถัดไป'}</span>
                       </div>
                     )
@@ -504,7 +535,19 @@ export default function MtnMachineLayout({ setupMode = false }) {
         {/* right sidebar — production: line tree · facility: zones + equipment */}
         {view === 'production' ? (
           <div style={S.side}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>ไลน์ผลิต ({lines.length})</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: (scopeHidden > 0 || viewScope.unsure) ? 6 : 10 }}>{tr('ไลน์ผลิต (')}{viewLines.length})</div>
+            {(scopeHidden > 0 || viewScope.unsure) && (
+              <div title={viewScope.unsure ? 'ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง/หาไลน์ของบัญชีไม่เจอ)' : `ขอบเขตของบัญชีนี้: ${scopeLabel}`}
+                style={{ fontSize: 11, fontWeight: 700, marginBottom: 10, padding: '3px 8px', borderRadius: 'var(--r-md)',
+                  color: viewScope.unsure ? 'var(--amber)' : 'var(--accent)',
+                  background: viewScope.unsure ? 'var(--amber-dim)' : 'var(--accent-dim)',
+                  border: `1px solid ${viewScope.unsure ? 'var(--amber-line)' : 'var(--accent)'}` }}>
+                {viewScope.unsure
+                  ? (viewScope.unlimited ? '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน'
+                    : `⚠ ขอบเขตไม่ชัด — แสดง ${viewLines.length} ไลน์ · ซ่อน ${scopeHidden}`)
+                  : `🔭 เฉพาะ ${scopeLabel} · ซ่อน ${scopeHidden} ไลน์นอกขอบเขต`}
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {orderedLines.map(l => <div key={l.id} onClick={() => setSelectedLine(l.name)} style={S.rowBtn(selectedLine === l.name, l._child)}>{l._child ? '└ ' : ''}{l.name}</div>)}
             </div>
@@ -512,27 +555,27 @@ export default function MtnMachineLayout({ setupMode = false }) {
         ) : (
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('โซน Facility (')}{areas.length})</span>
+              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('+ โซน')}</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (
                 <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <div onClick={() => setAreaId(a.id)} style={{ ...S.rowBtn(areaId === a.id, false), flex: 1 }}>{a.image_path ? '🗺️' : '▫️'} {a.name}</div>
-                  {editMode && <button className="tbtn" onClick={() => deleteArea(a.id)} title="ลบโซน" style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
+                  {editMode && <button className="tbtn" onClick={() => deleteArea(a.id)} title={tr('ลบโซน')} style={{ background: 'transparent', border: 'none', color: '#e05c4a', cursor: 'pointer', fontSize: 12 }}>✕</button>}
                 </div>
               ))}
-              {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{canEdit ? 'ยังไม่มีโซน — กด “✏️ แก้ผังโซน” แล้ว “+ โซน” เพื่อเริ่ม' : 'ยังไม่มีโซน — ให้ทีมช่างตั้งค่าก่อน'}</div>}
+              {!areas.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{canEdit ? tr('ยังไม่มีโซน — กด “✏️ แก้ผังโซน” แล้ว “+ โซน” เพื่อเริ่ม') : tr('ยังไม่มีโซน — ให้ทีมช่างตั้งค่าก่อน')}</div>}
             </div>
 
             {/* ── โหมดดู (default): การ์ดสถานะโซน — PM / ใบซ่อมค้าง / พลังงาน (สไตล์การ์ด energy)
                    ผู้บริหารคลิกโซนจากผังรวมต้องเจอ "สถานะ" ไม่ใช่เครื่องมือ setup (2026-08-26) ── */}
             {areaId && !editMode && (() => {
               const d = zoneEnergy?.prev != null ? deltaPct(zoneEnergy.qty, zoneEnergy.prev) : null
-              const dCol = d == null ? 'var(--muted)' : d <= -5 ? '#22c55e' : d > 10 ? '#ef4444' : 'var(--text2)'
+              const dCol = d == null ? 'var(--muted)' : d <= -5 ? 'var(--green)' : d > 10 ? 'var(--red)' : 'var(--text2)'
               return (
-                <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📊 สถานะโซนนี้</div>
+                <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 'var(--r-md)', padding: '10px 12px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 11 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{tr('สถานะโซนนี้')}</div>
                   {/* 🛠️ PM — นับจากอุปกรณ์ที่สังกัดโซน (เกณฑ์เดียวกับผังรวมโรงงาน) ไม่ใช่แค่หมุดบนผัง */}
                   {(() => {
                     const rows = (zonePm?.rows || []).filter(r => (dept === 'all' ? !r.am : r.dept === dept))   // ทุกทีม = PM ช่าง · AM ดูจอ AM
@@ -541,17 +584,17 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     return (
                       <div>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                          🛠️ PM อุปกรณ์ · {zonePm?.equipCount ?? 0} ตัวในโซน{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
+                          PM อุปกรณ์ · {zonePm?.equipCount ?? 0} {tr('ตัวในโซน')}{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
                         </div>
                         {!rows.length ? (
                           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} ในโซนนี้ —{' '}
-                            <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ตั้งจุดตรวจที่ ศูนย์ PM → ตั้งค่าจุดตรวจ</Link>
+                            ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของ ${deptLabelOf(dept)}` : ''} {tr('ในโซนนี้ —')}{' '}
+                            <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ตั้งจุดตรวจที่ ศูนย์ PM → ตั้งค่าจุดตรวจ')}</Link>
                           </div>
                         ) : (<>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
                             {Object.entries(STATUS_META).filter(([k]) => cnt[k]).map(([k, m]) => (
-                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.label} {cnt[k]}</span>
+                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{tr(m.label)} {cnt[k]}</span>
                             ))}
                           </div>
                           {/* ⭐ ตัวที่ user ถามหา: "เครื่องไหนจะถึงคิว PM" — บอกชื่อ+วันครบ ไม่ใช่แค่ตัวเลขรวม */}
@@ -570,16 +613,16 @@ export default function MtnMachineLayout({ setupMode = false }) {
                                     </span>
                                     {/* ปิดลูป: เห็นว่าถึงคิวแล้วกดไปตรวจได้เลย ไม่ต้องไปไล่หาเองในหน้า PM */}
                                     <Link to={`/pm?tab=check&dept=${r.dept || 'maintenance'}&equip=${r.jigId}`}
-                                      onClick={e => e.stopPropagation()} title="ไปบันทึกผลตรวจของเครื่องนี้"
-                                      style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>✓ ตรวจ</Link>
+                                      onClick={e => e.stopPropagation()} title={tr('ไปบันทึกผลตรวจของเครื่องนี้')}
+                                      style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--accent)', textDecoration: 'none' }}>{tr('✓ ตรวจ')}</Link>
                                   </div>
                                 )
                               })}
-                              {due.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {due.length - 6} รายการ</div>}
+                              {due.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+ อีก')} {due.length - 6} {tr('รายการ')}</div>}
                               {/* ทางออกไปหน้าที่ทำงานจริง — จอนี้อ่านอย่างเดียว */}
                               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                                <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>📅 แผน PM ทั้งหมด</Link>
-                                <Link to="/pm?tab=coord" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>🗓️ นัดประสานงาน</Link>
+                                <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>{tr('📅 แผน PM ทั้งหมด')}</Link>
+                                <Link to="/pm?tab=coord" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none' }}>{tr('🗓️ นัดประสานงาน')}</Link>
                               </div>
                             </div>
                           )}
@@ -594,8 +637,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     )
                   })()}
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ค้างของโซนนี้</div>
-                    <div style={{ fontSize: zoneMo.length ? 17 : 12, fontWeight: 900, color: zoneMo.length ? '#f59e0b' : '#22c55e', marginTop: 3 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ใบซ่อม MO ค้างของโซนนี้')}</div>
+                    <div style={{ fontSize: zoneMo.length ? 17 : 12, fontWeight: 900, color: zoneMo.length ? 'var(--amber)' : 'var(--green)', marginTop: 3 }}>
                       {zoneMo.length ? `${zoneMo.length} ใบ` : '✅ ไม่มีใบค้าง'}
                     </div>
                     {zoneMo.slice(0, 3).map(o => (
@@ -603,22 +646,22 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         {o.mo_no || '⏳ รอออกเลข'} · {o.machine_no}
                       </div>
                     ))}
-                    {zoneMo.length > 3 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>+ อีก {zoneMo.length - 3} ใบ — ดูที่ใบแจ้งซ่อม</div>}
+                    {zoneMo.length > 3 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('+ อีก')} {zoneMo.length - 3} {tr('ใบ — ดูที่ใบแจ้งซ่อม')}</div>}
                   </div>
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>⚡ พลังงานไฟฟ้า{zoneEnergy ? ` · ${monthLabel(zoneEnergy.month)}` : ''}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('⚡ พลังงานไฟฟ้า')}{zoneEnergy ? ` · ${monthLabel(zoneEnergy.month)}` : ''}</div>
                     {zoneEnergy ? (
                       <>
                         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 2 }}>
                           <span style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{fmtKwh(zoneEnergy.qty)}</span>
                           <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.9 }}>kWh</span>
-                          {d != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: dCol, lineHeight: 1.8 }}>{d > 0 ? '+' : ''}{d}% เทียบเดือนก่อน</span>}
+                          {d != null && <span style={{ fontSize: 11.5, fontWeight: 800, color: dCol, lineHeight: 1.8 }}>{d > 0 ? '+' : ''}{d}{tr('% เทียบเดือนก่อน')}</span>}
                         </div>
-                        {zoneEnergy.cost > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>≈ {fmtBaht(zoneEnergy.cost)} บาท</div>}
+                        {zoneEnergy.cost > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>≈ {fmtBaht(zoneEnergy.cost)} {tr('บาท')}</div>}
                       </>
                     ) : (
                       /* "ไม่มีข้อมูล" ≠ 0 — บอกตรงๆ ว่ายังไม่กรอก + กรอกที่ไหน (ห้ามเงียบ) */
-                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของโซนนี้ — กรอกที่หน้า ⚡ พลังงาน (ชื่อจุดวัดต้องตรงชื่อโซน)</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{tr('ยังไม่กรอกของโซนนี้ — กรอกที่หน้า ⚡ พลังงาน (ชื่อจุดวัดต้องตรงชื่อโซน)')}</div>
                     )}
                   </div>
                   {/* ⚠️ ห้ามเขียนว่า uptime/online — ยังไม่มีสัญญาณรายเครื่อง (กฎ SCADA) */}
@@ -634,18 +677,18 @@ export default function MtnMachineLayout({ setupMode = false }) {
                 {editMode && (
                   <label style={{ display: 'block', marginBottom: 12 }}>
                     <input ref={fileRef} type="file" accept="image/*" hidden onChange={uploadImage} disabled={busy} />
-                    <span style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+                    <span style={{ display: 'block', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px', fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
                       {busy ? 'อัปโหลด...' : facImage ? '🖼️ เปลี่ยนรูปผังโซน' : '📷 อัปโหลดรูปผังโซน'}
                     </span>
                   </label>
                 )}
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์ที่ยังไม่วาง ({unplacedJigs.length + facMachines.length})</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr('อุปกรณ์ที่ยังไม่วาง (')}{unplacedJigs.length + facMachines.length})</div>
                 {/* บอกวิธีวางให้เห็นชัด — เดิมมีแต่ tooltip คนหาไม่เจอว่าต้องกดยังไง (2026-08-03) */}
                 {canEdit && (unplacedJigs.length + facMachines.length) > 0 && (
-                  <div style={{ fontSize: 11, color: facImage ? 'var(--accent)' : 'var(--accent2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 7, padding: '5px 8px', marginBottom: 7, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 11, color: facImage ? 'var(--accent)' : 'var(--accent2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 8px', marginBottom: 7, lineHeight: 1.5 }}>
                     {facImage
-                      ? <>วิธีวาง: <b>① กดปุ่ม 📍 วาง</b> ที่อุปกรณ์ → <b>② คลิกตำแหน่งบนผัง</b></>
-                      : <>⚠️ ต้อง <b>อัปโหลดรูปผังโซน</b> ก่อน ถึงจะวางอุปกรณ์ได้</>}
+                      ? <>{tr('วิธีวาง:')} <b>{tr('① กดปุ่ม 📍 วาง')}</b> {tr('ที่อุปกรณ์ →')} <b>{tr('② คลิกตำแหน่งบนผัง')}</b></>
+                      : <>{tr('⚠️ ต้อง')} <b>{tr('อัปโหลดรูปผังโซน')}</b> {tr('ก่อน ถึงจะวางอุปกรณ์ได้')}</>}
                   </div>
                 )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -653,12 +696,12 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     const c = colorFor(info.checklists)
                     return (
                       <div key={id} onClick={() => { if (!canEdit) return; facImage ? (setArmedJig(id), setArmedMachine(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
-                        title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'คลิกแล้วไปคลิกบนผังเพื่อวาง' : 'อัปโหลดรูปผังก่อน'}
+                        title={!canEdit ? tr('ไม่มีสิทธิ์แก้ผัง') : facImage ? tr('คลิกแล้วไปคลิกบนผังเพื่อวาง') : tr('อัปโหลดรูปผังก่อน')}
                         style={{ ...S.unplacedRow, border: `1px solid ${armedJig === id ? 'var(--accent)' : 'var(--border)'}`, background: armedJig === id ? 'var(--accent-dim)' : 'var(--bg3)' }}>
                         <div style={S.unplacedTop}>
                           <span style={{ width: 9, height: 9, borderRadius: '50%', background: c.color, flexShrink: 0 }} />
                           <span style={S.unplacedNo}>{info.jig_no || info.name}</span>
-                          {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                          {canEdit && <span style={S.placeChip(armedJig === id)}>{armedJig === id ? tr('👆 คลิกบนผัง') : tr('📍 วาง')}</span>}
                         </div>
                         {info.jig_no && info.name && <div style={S.unplacedSub}>{info.name}</div>}
                       </div>
@@ -667,19 +710,19 @@ export default function MtnMachineLayout({ setupMode = false }) {
                   {/* bridge: facility/utility จากฐานเครื่องจักร — คลิกแล้ววาง = สร้าง shadow jig อัตโนมัติ */}
                   {facMachines.map(m => (
                     <div key={`m-${m.id}`} onClick={() => { if (!canEdit) return; facImage ? (setArmedMachine(m.id), setArmedJig(null)) : toast.error('อัปโหลดรูปผังโซนก่อน') }}
-                      title={!canEdit ? 'ไม่มีสิทธิ์แก้ผัง' : facImage ? 'ดึงจากฐานเครื่องจักร — คลิกแล้ววางบนผัง' : 'อัปโหลดรูปผังก่อน'}
+                      title={!canEdit ? tr('ไม่มีสิทธิ์แก้ผัง') : facImage ? tr('ดึงจากฐานเครื่องจักร — คลิกแล้ววางบนผัง') : tr('อัปโหลดรูปผังก่อน')}
                       style={{ ...S.unplacedRow, border: `1px dashed ${armedMachine === m.id ? 'var(--accent)' : 'var(--border2)'}`, background: armedMachine === m.id ? 'var(--accent-dim)' : 'var(--bg2)' }}>
                       <div style={S.unplacedTop}>
                         <span style={{ fontSize: 11, flexShrink: 0 }}>{m.equipment_category === 'utility' ? '⚡' : '🔧'}</span>
                         <span style={S.unplacedNo}>{m.machine_no}</span>
-                        {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? '👆 คลิกบนผัง' : '📍 วาง'}</span>}
+                        {canEdit && <span style={S.placeChip(armedMachine === m.id)}>{armedMachine === m.id ? tr('👆 คลิกบนผัง') : tr('📍 วาง')}</span>}
                       </div>
                       <div style={S.unplacedSub}>
-                        {m.machine_name || m.line_name || ''}<span style={{ color: 'var(--accent2)' }}> · ฐานเครื่องจักร</span>
+                        {m.machine_name || m.line_name || ''}<span style={{ color: 'var(--accent2)' }}> {tr('· ฐานเครื่องจักร')}</span>
                       </div>
                     </div>
                   ))}
-                  {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>วางครบแล้ว · เพิ่ม facility/utility ที่ <b>ฐานข้อมูลเครื่องจักร</b> (เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง</div>}
+                  {!unplacedJigs.length && !facMachines.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('วางครบแล้ว · เพิ่ม facility/utility ที่')} <b>{tr('ฐานข้อมูลเครื่องจักร')}</b> {tr('(เลือกหมวด Facility/Utility) แล้วจะมาโผล่ที่นี่ให้วาง')}</div>}
                 </div>
               </>
             )}

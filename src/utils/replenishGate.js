@@ -17,9 +17,12 @@
       → **ตารางความจริงของ `validateDeliverPayload` ต้องตรงกับ trigger เป๊ะ** (มีเทสล็อก)
 
    ไฟล์นี้ pure — ห้าม import supabase/react                                                    */
+import { isCoilUom, qtyUnit } from './coilUom.js';
+import { getWorkDate, workDateOfTime } from './workDate.js';
+
 
 /* ═══ 🏷️ "ใบนี้มาจากไหน" — `wip_replenish_requests.source` (2026-10-21) ════════════════════
-   3 ค่า (CHECK ฝั่ง DB · migration `20261021_wip_replenish_source_line_adhoc_main.sql`):
+   4 ค่า (CHECK ฝั่ง DB · migration `20261021_…` + `20261105b_wip_replenish_line_order_main.sql` เพิ่ม `line_order`):
      `line`           = ระบบเสนอเพราะยอดถึง min (มี `min_at_req`)
      `line_adhoc`     = หัวหน้าไลน์ **ขอเบิกเอง** ไม่ต้องมี min ไม่ต้องรอถึง min
      `store_forecast` = สโตร์สร้างใบจากแผนผลิต
@@ -31,6 +34,8 @@ export const REQ_SOURCES = {
   line:           { label: '📦 ไลน์ขอเบิก (ถึง min)', short: 'ถึง min',  side: 'line',  who: 'คนเรียก' },
   line_adhoc:     { label: '📦 ไลน์ขอเบิกเอง',        short: 'ขอเอง',    side: 'line',  who: 'คนขอ' },
   store_forecast: { label: '🏬 สโตร์ส่งตามแผนผลิต',    short: 'ตามแผน',   side: 'store', who: 'ผู้เปิดใบ' },
+  // 05/11 — ระบบออกเองจากใบผลิตที่ไลน์เปิด (แตก BOM ลูกตรง เทียบ WIP หน้าไลน์ ครบ packing std) · lib/lineDemandSync.js
+  line_order:     { label: '🧾 ไลน์เปิดใบผลิต (แตก BOM)', short: 'เปิดใบผลิต', side: 'line', who: 'ผู้เปิดใบผลิต' },
 };
 /** meta ของที่มาใบ — ไม่รู้จัก/ว่าง = ถือเป็นใบจากไลน์ (ห้ามคืน null) */
 export const reqSourceMeta = (s) => REQ_SOURCES[String(s ?? '').trim()] || REQ_SOURCES.line;
@@ -236,11 +241,15 @@ export function checkPickPart({ request, scan }) {
 export function checkPickQty({ request, qty }) {
   const want = Number(request?.request_qty) || 0;
   const q = Number(qty);
-  if (!(q > 0)) return { status: 'invalid', block: true, needConfirm: false, diff: 0, message: 'ใส่จำนวนที่หยิบ (ต้องมากกว่า 0)' };
-  const diff = q - want;
+  const coil = isCoilUom(request?.uom);
+  const u = qtyUnit(request?.uom);
+  if (!(q > 0)) return { status: 'invalid', block: true, needConfirm: false, diff: 0, message: coil ? 'ใส่น้ำหนักม้วนที่จ่ายจริง (kg · ต้องมากกว่า 0)' : 'ใส่จำนวนที่หยิบ (ต้องมากกว่า 0)' };
+  const diff = Math.round((q - want) * 1e6) / 1e6;
+  /* 🧲 05/11 — coil "จ่ายเป็นม้วน" (user เลือก): ม้วนหนักกว่าที่ต้องใช้ = ปกติ ไม่บล็อก · ส่วนเกินค้างหน้าไลน์ ลดยอดรอบหน้า */
+  if (diff > 0 && coil) return { status: 'ok', block: false, needConfirm: false, diff, coilOver: true, message: `✓ จ่ายม้วน ${q.toLocaleString()} kg (ต้องใช้ ${want.toLocaleString()} kg) — เกิน ${diff.toLocaleString()} kg ค้างหน้าไลน์ ใช้รอบถัดไป` };
   if (diff > 0) return { status: 'over', block: true, needConfirm: false, diff, message: `หยิบเกินใบ ${diff.toLocaleString()} ชิ้น (ใบขอ ${want.toLocaleString()}) — ส่งเกินทำ WIP บวม ลดให้เท่าใบ` };
-  if (diff < 0) return { status: 'under', block: false, needConfirm: true, diff, message: `หยิบได้ ${q.toLocaleString()} / ${want.toLocaleString()} — ขาด ${(-diff).toLocaleString()} ชิ้น (ยืนยันว่าส่งไม่ครบ ไลน์จะเห็นตอนรับของ)` };
-  return { status: 'ok', block: false, needConfirm: false, diff: 0, message: `✓ ครบ ${want.toLocaleString()} ชิ้น` };
+  if (diff < 0) return { status: 'under', block: false, needConfirm: true, diff, message: `หยิบได้ ${q.toLocaleString()} / ${want.toLocaleString()} — ขาด ${(-diff).toLocaleString()} ${u} (ยืนยันว่าส่งไม่ครบ ไลน์จะเห็นตอนรับของ)` };
+  return { status: 'ok', block: false, needConfirm: false, diff: 0, message: `✓ ครบ ${want.toLocaleString()} ${u}` };
 }
 
 /** คอลัมน์ที่เขียนลงใบตอน pending → preparing */
@@ -263,4 +272,19 @@ export function validatePickPayload(p) {
   if (gate === 'scanned') return norm(p.picked_scan_raw) ? null : 'สแกนพาร์ทก่อนเริ่มเตรียม';
   if (gate === 'override') return norm(p.picked_override_reason) ? null : 'ปลดบล็อกต้องระบุเหตุผล';
   return 'ต้องสแกนพาร์ท หรือให้หัวหน้าปลดบล็อก ก่อนกด "เริ่มเตรียม"';
+}
+
+/* 📭 ส่งถึงไลน์แล้วแต่ไลน์ยังไม่กดรับ (2026-11-05 · คำสั่ง user ข้อ D)
+   · เขียนเวลาที่ค้างบนการ์ดทุกใบที่ `delivered` (ทั้งจอสโตร์และแผงไลน์)
+   · `overdue` = ส่งตั้งแต่วันทำงานก่อนหน้า (ข้ามวันทำงานแล้วยังไม่รับ) — ใช้ขอบ "วันทำงาน" แทนตัวเลขชั่วโมงที่ต้องเดา
+   · ไม่รู้เวลาส่ง = null ห้ามเดา · `now` รับเป็นพารามิเตอร์ (เทสตรึงเวลา) */
+export function unreceivedAge(req, now = new Date()) {
+  if (req?.status !== 'delivered' || !req?.delivered_at) return null;
+  const t = new Date(req.delivered_at).getTime();
+  if (!Number.isFinite(t)) return null;
+  const min = Math.max(0, Math.round((now.getTime() - t) / 60000));
+  const dWork = workDateOfTime(req.delivered_at);
+  const overdue = !!dWork && dWork < getWorkDate(now);
+  const span = min >= 60 ? `${Math.floor(min / 60)} ชม. ${min % 60} นาที` : `${min} นาที`;
+  return { min, overdue, text: `ส่งถึงไลน์แล้ว ${span} — ไลน์ยังไม่กดรับ${overdue ? ' (ข้ามวันทำงานแล้ว)' : ''}` };
 }

@@ -21,13 +21,27 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
 import { loadDocForms, withDocFoot } from '../utils/docForms';
 import { wavg, wLoad, dtMinBySession, orderPlanQty } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { notifyEvent } from '../utils/notifyEvent';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
+import NoticeBar from '../components/NoticeBar';
+/* สีจาก token (var(--red) …) ต่อ alpha-hex ไม่ได้ (SVG/CSS parse พัง = ดำ · UI §6.17) ⇒ ย่อยเป็น -dim/-line · hex จาก DB ยังต่อ alpha ได้เหมือนเดิม */
+const tintOf = (c, lvl) => {
+  const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
+  if (m) return `var(--${m[1]}-${lvl === 'line' ? 'line' : 'dim'})`;
+  if (/^var\(/.test(c || '')) return lvl === 'line' ? 'var(--border2)' : 'var(--bg3)';
+  return `${c}${lvl === 'line' ? '55' : '22'}`;
+};
+
 import FilterBar from '../components/FilterBar';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
+import { machineLaneCount } from '../utils/machineAssets';
+import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -57,18 +71,18 @@ const defaultMeetingDate = () => (new Date().getHours() < 8 ? getWorkDate() : da
 
 const SHIFT_LABEL = { day: '☀️ กะเช้า', night: '🌙 กะดึก' };
 const ACT_STATUS = {
-  open:      { label: 'รอดำเนินการ', color: '#f59e0b' },
-  doing:     { label: 'กำลังทำ',     color: '#4d9fff' },
-  done:      { label: 'เสร็จแล้ว',   color: '#22c55e' },
-  cancelled: { label: 'ยกเลิก',      color: '#94a3b8' },
+  open:      { label: 'รอดำเนินการ', color: 'var(--amber)' },
+  doing:     { label: 'กำลังทำ',     color: 'var(--blue)' },
+  done:      { label: 'เสร็จแล้ว',   color: 'var(--green)' },
+  cancelled: { label: 'ยกเลิก',      color: 'var(--muted)' },
 };
 const FOURM_STATUS = {
-  pending:    { label: 'รอ SV',  color: '#f59e0b' },
-  pending_qa: { label: 'รอ QA',  color: '#f59e0b' },
-  approved:   { label: 'อนุมัติ', color: '#22c55e' },
-  rejected:   { label: 'Reject', color: '#ef4444' },
+  pending:    { label: 'รอ SV',  color: 'var(--amber)' },
+  pending_qa: { label: 'รอ QA',  color: 'var(--amber)' },
+  approved:   { label: 'อนุมัติ', color: 'var(--green)' },
+  rejected:   { label: 'Reject', color: 'var(--red)' },
 };
-const achieveColor = (pct) => (pct >= 100 ? '#22c55e' : pct >= 85 ? '#f59e0b' : '#ef4444');
+const achieveColor = (pct) => (pct >= 100 ? 'var(--green)' : pct >= 85 ? 'var(--amber)' : 'var(--red)');
 const pctStr = (num, den) => (den > 0 ? Math.round((num / den) * 100) : 0);
 
 export default function MorningMeeting() {
@@ -98,6 +112,9 @@ export default function MorningMeeting() {
   const [sessions, setSessions]       = useState([]);
   const [downtimes, setDowntimes]     = useState([]);
   const [breakPols, setBreakPols]     = useState([]); // break_policies (DR) — ตัด DT ที่ทับพักออกก่อนถ่วงน้ำหนัก
+  /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes) — ใช้ใน useMemo (sync) ⇒ เก็บเป็น state
+     `{}` = ยังไม่โหลด/ไม่มีใครกรอก = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องครอบ 1 เลน) */
+  const [affectsLn, setAffectsLn]     = useState({});
   const [defects, setDefects]         = useState([]);
   const [orders, setOrders]           = useState([]);
   const [pairMat, setPairMat]         = useState({}); // mat_no → pair_mat_no (งานคู่ RH/LH)
@@ -128,14 +145,11 @@ export default function MorningMeeting() {
      (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
       กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
      ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set(getLineFamilyNames(allLines, userLineId));
-      return allLines.filter(l => fam.has(l.name));
-    }
-    if (scopeSecs.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
-    return allLines;
-  }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
+  /* 🔭 ของกลาง `scopedLines()` ตัวเดียว (QC audit 09/11) — สูตรที่เคยก๊อปไว้ที่นี่ให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้ง (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ) */
+  const scopedLines = useMemo(
+    () => scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx }),
+    [allLines, role, userLineId, scopeSecs, scopeIdx]);
 
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {
@@ -162,8 +176,10 @@ export default function MorningMeeting() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
-      setAllLines(data || []);
+      const { data, error: lineErr } = await loadLinesRes();   // cache กลาง (25/09) — กำลังคนอยู่ใน LINE_COLUMNS แล้ว
+      /* 🔴 28/10 — อ่านทะเบียนไม่สำเร็จ **ห้ามทับลิสต์เดิมด้วย []** (เคสจริง: หน้างานแจ้ง
+         "ไม่มีไลน์ให้เลือกในลิสต์" ทั้งที่ไลน์ยังอยู่ครบ) · toast กลางใน main.jsx บอกเหตุให้แล้ว */
+      if (!lineErr) setAllLines(data || []);
       // ส่วนงานจากผังองค์กร (org_nodes kind='section') — ลิสต์/ลำดับตามผัง ไม่เดาจาก production_lines.section
       const { data: og } = await supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true);
       setOrgSections(orgValues(og));
@@ -205,10 +221,12 @@ export default function MorningMeeting() {
           .select('*').in('status', ['open', 'doing']).lt('meeting_date', D)
           .order('meeting_date').limit(200),
         // ทะเบียนเครื่องต่อไลน์ — ใช้เป็นฐานเวลาเครื่องรวม (เครื่อง × นาทีกะที่เปิด) เทียบ % Downtime
-        supabaseDR.from('machines').select('machine_no, line_name').in('line_name', lineNames).limit(1000),
+        // 🔴 ต้อง select equipment_kind — ทะเบียนนี้เก็บจิ๊ก/แม่พิมพ์ด้วย ถ้านับรวมจะได้ฐานเวลาเครื่อง
+        //    มากกว่าจริง ⇒ % Downtime ออกมา **ต่ำกว่าความจริง** (utils/machineAssets.js)
+        supabaseDR.from('machines').select('machine_no, line_name, equipment_kind').in('line_name', lineNames).limit(1000),
         // นโยบายเวลาพัก — ใช้ตัด downtime ที่ทับพักออกก่อนถ่วงน้ำหนัก OEE (utils/oee §3.1)
         // ⚠️ ต้อง select ot_scope ด้วย ไม่งั้นนับพักเกินในกะเช้าที่ทำโอ
-        supabaseDR.from('break_policies').select('shift, process_type, start_time, duration_min, ot_scope, anchor, offset_min').eq('is_active', true),
+        supabaseDR.from('break_policies').select(BREAK_POLICY_COLS).eq('is_active', true),
       ]);
       if (!live()) return;
       const sess = chk(sessRes, 'ข้อมูลกะ'), fm = chk(fmRes, '4M'), att = chk(attRes, 'เช็คชื่อ');
@@ -216,8 +234,11 @@ export default function MorningMeeting() {
       const mcs = chk(mcsRes, 'ทะเบียนเครื่อง'), brkPols = chk(brkRes, 'นโยบายพัก');
       setBreakPols(brkPols || []);
       setSessions(sess || []);
+      const byLine = {};
+      (mcs || []).forEach(m => { (byLine[m.line_name] ||= []).push(m); });
       const mCnt = {};
-      (mcs || []).forEach(m => { mCnt[m.line_name] = (mCnt[m.line_name] || 0) + 1; });
+      // นับเฉพาะเครื่องจักรจริง + ไม่ซ้ำเลขเครื่อง (ตัวกลาง utils/machineAssets.js)
+      Object.entries(byLine).forEach(([ln, rows]) => { mCnt[ln] = machineLaneCount(rows); });
       setMachineCountByLine(mCnt);
       setFourM(fm || []);
       // ผูกแถวเช็คชื่อเข้ากับ "ชื่อไลน์" ผ่าน employees.line_id แล้วกรองเฉพาะไลน์ใน scope
@@ -324,6 +345,8 @@ export default function MorningMeeting() {
     if (s.qty_ok != null) return s.qty_ok;
     return s.actual_qty || 0;
   };
+  useEffect(() => { let alive = true; loadAffectsLanes().then(m => { if (alive) setAffectsLn(m || {}); }); return () => { alive = false; }; }, []);
+
   const sum = useMemo(() => {
     let actual = 0, target = 0;
     sessions.forEach(s => {
@@ -335,7 +358,7 @@ export default function MorningMeeting() {
     // และตัวเลขในประชุมเช้า/Telegram/ใบพิมพ์ ไม่ตรงกับ /oee-analytics (แก้ 2026-08-05)
     /* plannedMin = นาทีที่หักจากฐานเวลาได้จริง (ตัดส่วนที่ทับพักตามนโยบายออก · utils/oee §3.1)
        ต้องเป็นชุดเดียวกับ /oee-analytics ไม่งั้น OEE เฉลี่ยในใบประชุม/Telegram คนละเลขกับจอ */
-    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+    const dtEffBy = dtMinBySession(closed, downtimes, breakPols, { lines: allLines, affectsBy: affectsLn });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
     const oeeRows = closed.map(s => ({
       oee: Number(s.oee), shift_min: s.shift_min,
       plannedMin: dtEffBy[s.id]?.planned || 0,
@@ -365,7 +388,7 @@ export default function MorningMeeting() {
       dtMin, dtCount, dtPlannedMin, dtBaseMin, dtPct, dtMachines, ng,
       present, attTotal: attendance.length,
     };
-  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessions, downtimes, attendance, viewLines, orders, machineCountByLine, breakPols, affectsLn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ผลต่อไลน์ (การ์ด) — เฉพาะ leaf lines, ไลน์ไม่เปิดกะ = เทา
   const lineResults = useMemo(() => leafLines.map(l => {
@@ -419,11 +442,11 @@ export default function MorningMeeting() {
       const absent = attendance.filter(a => a._line === line && !a.is_present && !a.leave_type).length;
       const fmPending = fourM.filter(m => m.line_name === line && ['pending', 'pending_qa'].includes(m.status)).length;
       const causes = [];
-      if (topDt) causes.push({ icon: '🛠️', text: topDt, color: '#ef4444' });
-      if ((o.qty_ng ?? 0) > 0) causes.push({ icon: '❌', text: `NG ${o.qty_ng}`, color: '#ef4444' });
-      if (absent > 0) causes.push({ icon: '👤', text: `ขาด ${absent} คน`, color: '#f59e0b' });
-      if (fmPending > 0) causes.push({ icon: '🔄', text: `4M ค้าง ${fmPending}`, color: '#f59e0b' });
-      if (unfinished) causes.push({ icon: '⏳', text: o.status === 'carry_over' ? 'ยกยอดข้ามกะ' : 'ใบยังไม่ปิด', color: '#94a3b8' });
+      if (topDt) causes.push({ icon: '🛠️', text: topDt, color: 'var(--red)' });
+      if ((o.qty_ng ?? 0) > 0) causes.push({ icon: '❌', text: `NG ${o.qty_ng}`, color: 'var(--red)' });
+      if (absent > 0) causes.push({ icon: '👤', text: `ขาด ${absent} คน`, color: 'var(--amber)' });
+      if (fmPending > 0) causes.push({ icon: '🔄', text: `4M ค้าง ${fmPending}`, color: 'var(--amber)' });
+      if (unfinished) causes.push({ icon: '⏳', text: o.status === 'carry_over' ? tr('ยกยอดข้ามกะ') : tr('ใบยังไม่ปิด'), color: 'var(--muted)' });
       return { o, line, shift: sess?.shift, target, actual, gap: Math.max(0, target - actual), unfinished, dtMin, causes };
     }).filter(Boolean).sort((a, b) => b.gap - a.gap);
   }, [orders, sessions, downtimes, attendance, fourM]);
@@ -502,7 +525,7 @@ export default function MorningMeeting() {
         actor: fullName,
         lines: [
           `📌 ${actModal.problem.trim()}`,
-          `🏭 ไลน์: ${actModal.line_name || '—'} · 📅 ประชุม ${meetingDate}`,
+          `🏭 ไลน์: ${actModal.line_name || '—'} · ประชุม ${meetingDate}`,
           `🙋 ผู้รับผิดชอบ: ${actModal.assignee?.trim() || '(ยังไม่ระบุ)'}`,
           actModal.due_date ? `⏰ กำหนดเสร็จ ${actModal.due_date}` : '',
           actModal.root_cause?.trim() ? `🔍 ${actModal.root_cause.trim()}` : '',
@@ -584,14 +607,14 @@ export default function MorningMeeting() {
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>สรุปประชุมแถวเช้า ${fmtDate(meetingDate)}</title>
 <style>body{font-family:'Sarabun',sans-serif;font-size:13px;margin:24px}h1{font-size:18px}h2{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%}</style></head><body>
 <h1>🌅 สรุปประชุมแถวเช้า — ${fmtDate(meetingDate)} · ${scopeLabel}</h1>
-<p>📦 ผลิตรวม <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
+<p>{tr('📦 ผลิตรวม')} <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
 ⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง${sum.dtPct != null ? ` = ${sum.dtPct}% ของเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60)} ชม. · ${sum.dtMachines} เครื่อง` : ''} — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
-<table><tr><th style="${td}">ไลน์</th><th style="${td}">พาร์ท</th><th style="${td}">เป้า</th><th style="${td}">ได้จริง</th><th style="${td}">ขาด</th><th style="${td}">สาเหตุ</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
-<h2>🛠️ Top Downtime นอกแผน</h2>
-<table><tr><th style="${td}">สาเหตุ</th><th style="${td}">นาที</th><th style="${td}">ครั้ง</th><th style="${td}">เครื่อง</th></tr>${dtRows || `<tr><td colspan="4" style="${td}">— ไม่มี —</td></tr>`}</table>
+<table><tr><th style="${td}">{tr('ไลน์')}</th><th style="${td}">{tr('พาร์ท')}</th><th style="${td}">{tr('เป้า')}</th><th style="${td}">{tr('ได้จริง')}</th><th style="${td}">{tr('ขาด')}</th><th style="${td}">{tr('สาเหตุ')}</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
+<h2>{tr('🛠️ Top Downtime นอกแผน')}</h2>
+<table><tr><th style="${td}">{tr('สาเหตุ')}</th><th style="${td}">{tr('นาที')}</th><th style="${td}">{tr('ครั้ง')}</th><th style="${td}">{tr('เครื่อง')}</th></tr>${dtRows || `<tr><td colspan="4" style="${td}">— ไม่มี —</td></tr>`}</table>
 <h2>📌 Action Items</h2>
-<table><tr><th style="${td}">จากวัน</th><th style="${td}">ไลน์</th><th style="${td}">เรื่อง</th><th style="${td}">ผู้รับผิดชอบ</th><th style="${td}">กำหนด</th><th style="${td}">สถานะ</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
+<table><tr><th style="${td}">{tr('จากวัน')}</th><th style="${td}">{tr('ไลน์')}</th><th style="${td}">{tr('เรื่อง')}</th><th style="${td}">{tr('ผู้รับผิดชอบ')}</th><th style="${td}">{tr('กำหนด')}</th><th style="${td}">{tr('สถานะ')}</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <p style="margin-top:18px;color:#888">พิมพ์จาก ESM Morning Meeting · ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</p>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'morning_meeting')); w.document.close();
@@ -601,7 +624,7 @@ export default function MorningMeeting() {
 
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
   const h2St = { margin: '0 0 10px', fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', display: 'flex', alignItems: 'center', gap: 8 };
-  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 700, color, background: bg || `${color}22`, border: `1px solid ${color}55`, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' });
+  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 700, color, background: bg || tintOf(color), border: `1px solid ${tintOf(color, 'line')}`, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap' });
 
   const KpiStrip = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(5, 1fr)', gap: 10 }}>
@@ -610,7 +633,7 @@ export default function MorningMeeting() {
         sum.target > 0
           ? { label: 'ผลิตรวม (ชิ้น)', value: `${sum.actual.toLocaleString()}/${sum.target.toLocaleString()}`, sub: `${sum.achieve}% ของเป้า`, color: achieveColor(sum.achieve) }
           : { label: 'ผลิตรวม (ชิ้น)', value: sum.actual.toLocaleString(), sub: 'ไม่มีเป้าให้เทียบ (ยังไม่ตั้ง target/std)', color: 'var(--text)' },
-        { label: 'OEE เฉลี่ย', value: sum.oeeAvg != null ? `${sum.oeeAvg}%` : '—', sub: 'เฉพาะกะที่ปิดแล้ว', color: sum.oeeAvg == null ? 'var(--muted)' : sum.oeeAvg >= 85 ? '#22c55e' : sum.oeeAvg >= 65 ? '#f59e0b' : '#ef4444' },
+        { label: 'OEE เฉลี่ย', value: sum.oeeAvg != null ? `${sum.oeeAvg}%` : '—', sub: 'เฉพาะกะที่ปิดแล้ว', color: sum.oeeAvg == null ? 'var(--muted)' : sum.oeeAvg >= 85 ? 'var(--green)' : sum.oeeAvg >= 65 ? 'var(--amber)' : 'var(--red)' },
         // ผลรวมนาทีของ "ทุกรายการทุกเครื่องทุกไลน์" (เวลาซ้อนกันได้) เทียบกับฐานเวลาเครื่องรวม
         // ที่มีจริงของวันนั้น → % ทำให้เห็นทันทีว่าเยอะหรือน้อย (เกณฑ์สี: <3% เขียว · 3-8% เหลือง · >8% แดง)
         sum.dtPct != null
@@ -619,14 +642,14 @@ export default function MorningMeeting() {
               // sub ต้องสั้นพอไม่ล้นการ์ด — รายละเอียดเต็ม (สูตรฐาน) อยู่ใน tooltip
               sub: `${sum.dtMin.toLocaleString()} นาที · ${sum.dtCount} ครั้ง / ฐาน ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม.${sum.dtPlannedMin ? ` · ในแผนอีก ${sum.dtPlannedMin.toLocaleString()} น.` : ''}`,
               title: `Downtime นอกแผน ${sum.dtMin.toLocaleString()} นาที (≈${(sum.dtMin / 60).toFixed(1)} ชม.) จาก ${sum.dtCount} รายการ\nฐานเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60).toLocaleString()} ชม. = นาทีกะที่เปิด × จำนวนเครื่องของไลน์ (${sum.dtMachines} เครื่อง)\nในแผน (planned เช่น นับสต็อก/ไม่มีแผนผลิต) ${sum.dtPlannedMin.toLocaleString()} นาที — แสดงแยก ไม่นับใน %\nเวลารายการซ้อนกันได้ (หลายเครื่องเสียพร้อมกัน) จึงเกิน 24 ชม./วันได้`,
-              color: sum.dtMin === 0 ? '#22c55e' : sum.dtPct > 8 ? '#ef4444' : sum.dtPct >= 3 ? '#f59e0b' : '#22c55e',
+              color: sum.dtMin === 0 ? 'var(--green)' : sum.dtPct > 8 ? 'var(--red)' : sum.dtPct >= 3 ? 'var(--amber)' : 'var(--green)',
             }
-          : { label: 'Downtime นอกแผน', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? '#ef4444' : '#22c55e' },
-        { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? '#ef4444' : '#22c55e' },
-        { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: '#4d9fff' },
+          : { label: 'Downtime นอกแผน', value: `${sum.dtMin.toLocaleString()} นาที`, sub: `${sum.dtCount} ครั้ง — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้`, color: sum.dtMin > 0 ? 'var(--red)' : 'var(--green)' },
+        { label: 'ของเสีย (NG)', value: sum.ng.toLocaleString(), sub: 'จากทุกกะ', color: sum.ng > 0 ? 'var(--red)' : 'var(--green)' },
+        { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: 'var(--blue)' },
       ].map(k => (
         <div key={k.label} title={k.title || undefined} style={{ ...card, height: '100%', minHeight: 92, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4, minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr(k.label)}</div>
           <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'var(--font-display)', color: k.color, lineHeight: 1.1 }}>{k.value}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', overflowWrap: 'break-word' }}>{k.sub}</div>
         </div>
@@ -667,8 +690,8 @@ export default function MorningMeeting() {
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 52px 44px 52px', columnGap: 8, rowGap: 5, alignItems: 'baseline' }}>
                   <span />
-                  <span style={head}>ยอดผลิต</span>
-                  <span style={head} title="% เทียบเป้าการผลิตของกะ">ตามเป้า</span>
+                  <span style={head}>{tr('ยอดผลิต')}</span>
+                  <span style={head} title={tr('% เทียบเป้าการผลิตของกะ')}>{tr('ตามเป้า')}</span>
                   <span style={head}>OEE</span>
                   <span style={head}>DT</span>
                   {['day', 'night'].map(sh => {
@@ -677,22 +700,22 @@ export default function MorningMeeting() {
                       <Fragment key={sh}>
                         <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
                         {!s ? (
-                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
+                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>{tr('— ไม่เปิดกะ —')}</span>
                         ) : (
                           <>
                             <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--text)' }}>
                               {s.pct != null ? `${s.actual.toLocaleString()}/${s.target.toLocaleString()}` : s.actual.toLocaleString()}
                             </span>
                             <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--muted)' }}
-                              title={s.pct == null ? 'ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ' : undefined}>
+                              title={s.pct == null ? tr('ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ') : undefined}>
                               {s.pct != null ? `${s.pct}%` : '—'}
                             </span>
                             {/* OEE ยังไม่อนุมัติปิดกะ = โชว์สีส้ม+ ~ (ค่าเบื้องต้น หัวหน้ารู้ว่ายังไม่ official) */}
-                            <span title={s.oee != null && s.oeePending ? 'ค่าเบื้องต้น — ยังไม่ผ่านการอนุมัติปิดกะ' : undefined}
-                              style={{ ...cell, color: s.oee == null ? 'var(--muted)' : s.oeePending ? '#f59e0b' : '#4d9fff', fontWeight: s.oee != null ? 800 : 400 }}>
+                            <span title={s.oee != null && s.oeePending ? tr('ค่าเบื้องต้น — ยังไม่ผ่านการอนุมัติปิดกะ') : undefined}
+                              style={{ ...cell, color: s.oee == null ? 'var(--muted)' : s.oeePending ? 'var(--amber)' : 'var(--blue)', fontWeight: s.oee != null ? 800 : 400 }}>
                               {s.oee != null ? `${s.oeePending ? '~' : ''}${Math.round(s.oee)}%` : '—'}
                             </span>
-                            <span style={{ ...cell, color: s.dtMin > 0 ? '#ef4444' : 'var(--muted)', fontWeight: s.dtMin > 0 ? 800 : 400 }}>
+                            <span style={{ ...cell, color: s.dtMin > 0 ? 'var(--red)' : 'var(--muted)', fontWeight: s.dtMin > 0 ? 800 : 400 }}>
                               {s.dtMin > 0 ? `${s.dtMin}น.` : '—'}
                             </span>
                           </>
@@ -703,7 +726,7 @@ export default function MorningMeeting() {
                 </div>
                 {notClosed.length > 0 && (
                   <div style={{ marginTop: 'auto' }}>
-                    <span style={chip('#f59e0b')}>⏳ ยังไม่ปิดกะ: {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
+                    <span style={chip('var(--amber)')}>{tr('⏳ ยังไม่ปิดกะ:')} {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
                   </div>
                 )}
               </>
@@ -711,22 +734,22 @@ export default function MorningMeeting() {
           })()}
         </div>
       ))}
-      {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
+      {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>{tr('ไม่มีไลน์ใน scope')}</div>}
     </div>
   );
 
   const MissedPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>📉 งานหลุดแผน <span style={chip(missedOrders.length ? '#ef4444' : '#22c55e')}>{missedOrders.length} รายการ</span></h2>
+      <h2 style={h2St}>{tr('งานหลุดแผน')} <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} {tr('รายการ')}</span></h2>
       {missedOrders.length === 0 ? (
-        <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
+        <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ทุกใบงานได้ตามเป้า')}</div>
       ) : (
         <div style={{ overflowX: 'auto', ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
                 {['ไลน์', 'พาร์ท / ใบงาน', 'เป้า', 'ได้จริง', 'ขาด', 'สาเหตุ (อัตโนมัติจากข้อมูลที่บันทึก)', canRecord ? '' : null].filter(v => v !== null).map(h => (
-                  <th key={h} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, whiteSpace: 'nowrap' }}>{tr(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -737,23 +760,23 @@ export default function MorningMeeting() {
                   <td style={{ padding: '6px 8px' }}>{m.o.part_name || m.o.mat_no || '-'} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({m.o.prod_no})</span></td>
                   <td style={{ padding: '6px 8px', textAlign: 'right' }}>{m.target.toLocaleString()}</td>
                   <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{m.actual.toLocaleString()}</td>
-                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: '#ef4444' }}>{m.gap.toLocaleString()}</td>
+                  <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 800, color: 'var(--red)' }}>{m.gap.toLocaleString()}</td>
                   <td style={{ padding: '6px 8px' }}>
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {m.causes.length ? m.causes.map((c, i) => (
                         <span key={i} style={chip(c.color)}>{c.icon} {c.text}</span>
-                      )) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>ไม่พบสาเหตุที่บันทึกไว้ — ระบุในที่ประชุม</span>}
+                      )) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>{tr('ไม่พบสาเหตุที่บันทึกไว้ — ระบุในที่ประชุม')}</span>}
                     </div>
                   </td>
                   {canRecord && (
                     <td style={{ padding: '6px 4px' }}>
-                      <button className="tbtn" onClick={() => openActModal({
+                      <button type="button" className="pg-btn sm" onClick={() => openActModal({
                         problem: `${m.o.part_name || m.o.mat_no || m.o.prod_no} หลุดแผน ${m.gap} ชิ้น (${m.actual}/${m.target})`,
                         line_name: m.line, ref_kind: 'order_miss', ref_id: String(m.o.id),
                       })}
-                        title="ตั้งเป็น Action Item"
-                        style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        ➕ Action
+                        title={tr('ตั้งเป็น Action Item')}
+                        style={{ whiteSpace: 'nowrap' }}>
+                        Action
                       </button>
                     </td>
                   )}
@@ -769,33 +792,33 @@ export default function MorningMeeting() {
   const DtDefectPanel = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? '#ef4444' : '#22c55e')}>{sum.dtMin} นาที</span></h2>
-        {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
+        <h2 style={h2St}>{tr('Top Downtime นอกแผน')} <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} {tr('นาที')}</span></h2>
+        {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มี Downtime นอกแผน')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDowntime.unplanned.map(t => (
               <div key={t.name} style={{ fontSize: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.name} {t.carry && <span style={chip('#f59e0b')}>ข้ามกะ</span>}
+                      {t.name} {t.carry && <span style={chip('var(--amber)')}>{tr('ข้ามกะ')}</span>}
                     </div>
-                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || '#ef4444', borderRadius: 3 }} />
+                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', marginTop: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || 'var(--red)', borderRadius: 'var(--r-xs)' }} />
                     </div>
                   </div>
-                  <span style={{ fontWeight: 800, color: '#ef4444', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
-                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} ครั้ง</span>
+                  <span style={{ fontWeight: 800, color: 'var(--red)', whiteSpace: 'nowrap' }}>{Math.round(t.min)} {tr('น.')}</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} {tr('ครั้ง')}</span>
                 </div>
                 {/* note ที่พนักงานพิมพ์ — ทำให้ประเภทกว้างๆ เช่น "อื่นๆ" อ่านรู้เรื่องว่าเกิดอะไรจริง */}
                 {t.topDescs.length > 0 && (
                   <div style={{ marginTop: 2, paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 1 }}>
                     {t.topDescs.map(([desc, min]) => (
                       <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        ↳ {desc} <span style={{ color: '#fca5a5' }}>— {Math.round(min)} น.</span>
+                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {Math.round(min)} {tr('น.')}</span>
                       </div>
                     ))}
                     {Object.keys(t.descs).length > 3 && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ …และอีก {Object.keys(t.descs).length - 3} รายการ</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('↳ …และอีก')} {Object.keys(t.descs).length - 3} {tr('รายการ')}</div>
                     )}
                   </div>
                 )}
@@ -807,21 +830,21 @@ export default function MorningMeeting() {
         {topDowntime.planned.length > 0 && (
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border)', opacity: 0.65 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>
-              🗓 ในแผน (planned) — รวม {sum.dtPlannedMin.toLocaleString()} นาที (ไม่นับใน %)
+              ในแผน (planned) — รวม {sum.dtPlannedMin.toLocaleString()} นาที (ไม่นับใน %)
             </div>
             {topDowntime.planned.map(t => (
               <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--muted)' }}
                 title={t.topDescs.map(([desc, min]) => `${desc} — ${Math.round(min)} น.`).join('\n')}>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>{Math.round(t.min)} น. · {t.count} ครั้ง</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{Math.round(t.min)} {tr('น. ·')} {t.count} {tr('ครั้ง')}</span>
               </div>
             ))}
           </div>
         )}
       </div>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>🔍 Top ของเสีย (NG/Suspect)</h2>
-        {topDefects.length === 0 ? <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มีของเสียที่บันทึก</div> : (
+        <h2 style={h2St}>{tr('Top ของเสีย (NG/Suspect)')}</h2>
+        {topDefects.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มีของเสียที่บันทึก')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDefects.map((t, i) => (
               <div key={i} style={{ fontSize: 12 }}>
@@ -829,13 +852,13 @@ export default function MorningMeeting() {
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <b>{t.type}</b> <span style={{ color: 'var(--muted)' }}>· {t.part}</span>
                   </span>
-                  <span style={{ fontWeight: 800, color: '#ef4444' }}>{t.qty} ชิ้น</span>
+                  <span style={{ fontWeight: 800, color: 'var(--red)' }}>{t.qty} {tr('ชิ้น')}</span>
                 </div>
                 {t.topDescs.length > 0 && (
                   <div style={{ paddingLeft: 10 }}>
                     {t.topDescs.map(([desc, q]) => (
                       <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        ↳ {desc} <span style={{ color: '#fca5a5' }}>— {q} ชิ้น</span>
+                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {q} {tr('ชิ้น')}</span>
                       </div>
                     ))}
                   </div>
@@ -857,36 +880,36 @@ export default function MorningMeeting() {
     routine.forEach(m => { routineByLine[m.line_name] = (routineByLine[m.line_name] || 0) + 1; });
     return (
       <div style={card}>
-        <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('#4d9fff')}>{fourM.length} รายการ</span></h2>
-        {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
+        <h2 style={h2St}>{tr('4M Change เมื่อวาน')} <span style={chip('var(--blue)')}>{fourM.length} {tr('รายการ')}</span></h2>
+        {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('— ไม่มีบันทึก 4M —')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
-              const st = FOURM_STATUS[m.status] || { label: m.status, color: '#94a3b8' };
+              const st = FOURM_STATUS[m.status] || { label: m.status, color: 'var(--muted)' };
               return (
                 /* 🔴 ปัญหาเดียวกับแถว action item (2026-09-16 · วัดจริง @390px): ชิป 2 ใบ + ชื่อไลน์
                    `nowrap` กินไป 316 จาก 328px ⇒ **รายละเอียด 4M ถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด**
                    บนมือถือให้พับบรรทัดได้ · ชื่อไลน์ยังไม่ตัดกลางคำ แต่ต้องหดแบบ ellipsis */
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                  <span style={chip(st.color)}>{st.label}</span>
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                  <span style={chip(st.color)}>{tr(st.label)}</span>
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</span>
-                  <span style={chip('#94a3b8')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
+                  <span style={chip('var(--muted)')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
                   <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{m.description}</span>
                 </div>
               );
             })}
             {routine.length > 0 && (
-              <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: '3px solid #22c55e' }}>
+              <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: '3px solid var(--green)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={chip('#22c55e')}>อนุมัติ</span>
+                  <span style={chip('var(--green)')}>{tr('อนุมัติ')}</span>
                   <span style={{ color: 'var(--text2)' }}>
-                    ย้ายจุดในไลน์เดิม (skill ผ่าน/เคยทำ) <b>{routine.length} คน</b> —{' '}
+                    ย้ายจุดในไลน์เดิม (skill ผ่าน/เคยทำ) <b>{routine.length} {tr('คน')}</b> —{' '}
                     <span style={{ color: 'var(--muted)' }}>
                       {Object.entries(routineByLine).map(([ln, n]) => `${ln} ×${n}`).join(' · ')}
                     </span>
                   </span>
-                  <button onClick={() => setShowRoutineMoves(v => !v)}
-                    style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    {showRoutineMoves ? '▲ ซ่อนรายชื่อ' : `▼ ดูรายชื่อ (${routine.length})`}
+                  <button type="button" className="pg-btn sm" onClick={() => setShowRoutineMoves(v => !v)}
+                    style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                    {showRoutineMoves ? 'ซ่อนรายชื่อ' : `ดูรายชื่อ (${routine.length})`}
                   </button>
                 </div>
                 {showRoutineMoves && (
@@ -908,40 +931,40 @@ export default function MorningMeeting() {
 
   const ReadinessPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>☀️ ความพร้อมเช้านี้</h2>
+      <h2 style={h2St}>{tr('ความพร้อมเช้านี้')}</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
           /* 🔴 มือถือ @390px (mobilesweep 2026-09-24): ชื่อไลน์ยาว เช่น "LINE APRON ASSY (HYDROFORM) ชุดที่ 1"
              + ชิป nowrap ดันแถวล้น 328→386px ⇒ มือถือพับบรรทัด · ชิ้น nowrap หดแบบ ellipsis (UI-CONVENTIONS §มือถือ ข้อ 3) */
-          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span style={{ fontSize: 14 }}>🚨</span>
             <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d._line}</b>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d.machine_no || ''}</span>
-            <span style={{ color: '#fca5a5', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
-            <span style={{ ...chip('#ef4444'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>ยังซ่อมไม่เสร็จ</span>
+            <span style={{ color: 'var(--red)', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
+            <span style={{ ...chip('var(--red)'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{tr('ยังซ่อมไม่เสร็จ')}</span>
             {canRecord && (
-              <button className="tbtn" onClick={() => openActModal({
+              <button type="button" className="pg-btn sm" onClick={() => openActModal({
                 problem: `เครื่อง ${d.machine_no || ''} ${d._line}: ${d.dr_downtime_types?.name_th || 'Downtime'} ยังซ่อมไม่เสร็จ`,
                 line_name: d._line, ref_kind: 'downtime', ref_id: String(d.id),
-              })} style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap' }}>➕ Action</button>
+              })} style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>Action</button>
             )}
           </div>
         )) : (
-          <div style={{ fontSize: 13, color: '#22c55e', fontWeight: 700 }}>✅ ไม่มีเครื่องซ่อมค้าง</div>
+          <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มีเครื่องซ่อมค้าง')}</div>
         )}
         {/* 4M ที่ยังรออนุมัติ (ทุกวัน ไม่เฉพาะเมื่อวาน = ของที่ควรตามในที่ประชุม) — เหลืองนิ่งตาม Andon */}
         {fourM.filter(m => ['pending', 'pending_qa'].includes(m.status)).map(m => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.45)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span>🟡</span><b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</b>
             <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
                 แต่เติมสถานะที่ 3 เข้า filter แล้วลืมเติมใน FOURM_STATUS = จอขาว */}
-            <span style={chip('#f59e0b')}>{FOURM_STATUS[m.status]?.label || m.status}</span>
+            <span style={chip('var(--amber)')}>{tr(FOURM_STATUS[m.status]?.label) || m.status}</span>
           </div>
         ))}
         {openActions.filter(a => a._carry).length > 0 && (
-          <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>
+          <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>
             ⏮ Action ค้างจากวันก่อน {openActions.filter(a => a._carry).length} รายการ — ดูวาระถัดไป
           </div>
         )}
@@ -952,38 +975,38 @@ export default function MorningMeeting() {
   const ActionsPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>
-        📌 Action Items <span style={chip(openActions.length ? '#f59e0b' : '#22c55e')}>{openActions.length} ค้าง</span>
+        Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} {tr('ค้าง')}</span>
         {canRecord && (
-          <button onClick={() => openActModal()} style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
-            ➕ เพิ่ม Action
+          <button type="button" className="pg-btn sm" onClick={() => openActModal()} style={{ marginLeft: 'auto' }}>
+            {tr('เพิ่ม Action')}
           </button>
         )}
       </h2>
-      {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ยังไม่มี action item —</div> : (
+      {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('— ยังไม่มี action item —')}</div> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(bounded ? { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' } : null) }}>
           {actions.map(a => {
             const st = ACT_STATUS[a.status] || ACT_STATUS.open;
             const overdue = ['open', 'doing'].includes(a.status) && a.due_date && a.due_date < getWorkDate();
             return (
-              <div key={a.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 8, fontSize: 12, padding: '7px 10px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${overdue ? '#ef4444' : st.color}`, flexDirection: isMobile ? 'column' : 'row' }}>
+              <div key={a.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 8, fontSize: 12, padding: '7px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: `3px solid ${overdue ? 'var(--red)' : st.color}`, flexDirection: isMobile ? 'column' : 'row' }}>
                 {/* 🔴 มือถือต้อง wrap (2026-09-16 · วัดจริง @390px): ชื่อไลน์ `nowrap` ยาว 198px จาก 328px
                     ทำให้ **ข้อความปัญหาถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด** — ตัวที่ต้องอ่านที่สุดหายไป
                     ส่วนชื่อไลน์ยังห้าม wrap กลางคำ แต่ต้องหดได้ + ellipsis ไม่ใช่ดันของอื่นตกจอ */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                  {a._carry && <span style={chip('#f59e0b')} title={`จากประชุมวันที่ ${fmtDate(a.meeting_date)}`}>⏮ {fmtDate(a.meeting_date)}</span>}
+                  {a._carry && <span style={chip('var(--amber)')} title={`จากประชุมวันที่ ${fmtDate(a.meeting_date)}`}>⏮ {fmtDate(a.meeting_date)}</span>}
                   {a.line_name && <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{a.line_name}</b>}
                   <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1 1 auto', minWidth: 0 }}>{a.problem}</span>
-                  {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>สาเหตุ: {a.root_cause}</span>}
+                  {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>{tr('สาเหตุ:')} {a.root_cause}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                  {a.assignee && <span style={chip('#4d9fff')}>👤 {a.assignee}</span>}
-                  {a.due_date && <span style={chip(overdue ? '#ef4444' : '#94a3b8')}>{overdue ? '⚠ เลยกำหนด ' : '📅 '}{fmtDate(a.due_date)}</span>}
-                  <span style={chip(st.color)}>{st.label}</span>
+                  {a.assignee && <span style={chip('var(--blue)')}>{a.assignee}</span>}
+                  {a.due_date && <span style={chip(overdue ? 'var(--red)' : 'var(--muted)')}>{overdue ? '⚠ เลยกำหนด ' : '📅 '}{fmtDate(a.due_date)}</span>}
+                  <span style={chip(st.color)}>{tr(st.label)}</span>
                   {canRecord && ['open', 'doing'].includes(a.status) && (
                     <>
-                      {a.status === 'open' && <button className="tbtn" onClick={() => setActStatus(a, 'doing')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: '#4d9fff', cursor: 'pointer' }}>▶ เริ่มทำ</button>}
-                      <button className="tbtn" onClick={() => setActStatus(a, 'done')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: '#22c55e', cursor: 'pointer' }}>✓ เสร็จ</button>
-                      <button className="tbtn" onClick={() => setActStatus(a, 'cancelled')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+                      {a.status === 'open' && <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'doing')}>{tr('เริ่มทำ')}</button>}
+                      <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'done')}>{tr('เสร็จ')}</button>
+                      <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setActStatus(a, 'cancelled')}>✕</button>
                     </>
                   )}
                 </div>
@@ -997,18 +1020,18 @@ export default function MorningMeeting() {
 
   /* ── วาระสำหรับโหมด TV (ไล่ทีละสไลด์) ── */
   const slides = [
-    { title: '🎯 ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
+    { title: 'ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <KpiStrip />
-        <SectionHead icon="🏭" title="ผลรายไลน์" extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
+        <SectionHead icon="🏭" title={tr('ผลรายไลน์')} extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
         <LineCards />
       </div>
     ) },
-    { title: '📉 งานหลุดแผน — เกิดเพราะอะไร', render: () => <MissedPanel /> },
-    { title: '🛠️ Downtime & ของเสีย', render: () => <DtDefectPanel /> },
-    { title: '🔄 4M Change', render: () => <FourMPanel /> },
-    { title: '☀️ ความพร้อมเช้านี้', render: () => <ReadinessPanel /> },
-    { title: '📌 Action Items', render: () => <ActionsPanel /> },
+    { title: 'งานหลุดแผน — เกิดเพราะอะไร', render: () => <MissedPanel /> },
+    { title: 'Downtime & ของเสีย', render: () => <DtDefectPanel /> },
+    { title: '4M Change', render: () => <FourMPanel /> },
+    { title: 'ความพร้อมเช้านี้', render: () => <ReadinessPanel /> },
+    { title: 'Action Items', render: () => <ActionsPanel /> },
   ];
 
   // คีย์บอร์ดในโหมด TV: ◀ ▶ เปลี่ยนวาระ · Esc ออก
@@ -1050,41 +1073,37 @@ export default function MorningMeeting() {
   return (
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* หัวเพจ + ปุ่ม (UI-STANDARD 2026-09-24) — โหมดประชุม (tvMode) เป็น overlay เต็มจอแยกต่างหาก ไม่ใช้หัวนี้ */}
-      <PageHeader title="ประชุมแถวเช้า" icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
+      <PageHeader title={tr('ประชุมแถวเช้า')} icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
         actions={<>
-          <button onClick={() => { setSlide(0); setTvMode(true); }} style={btnSt(false)} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">📺 โหมดประชุม</button>
-          <button onClick={handlePrint} style={btnSt(false)} title="พิมพ์สรุปเป็นเอกสาร">🖨️ พิมพ์</button>
+          {/* ปุ่มตายตัว ≤2 (UI §6.35): [โหมดประชุม] [ส่งสรุป Telegram] · พิมพ์ → ⋯ */}
+          <OverflowMenu items={[{ key: 'print', icon: '📄', label: 'พิมพ์', onClick: handlePrint, title: 'พิมพ์สรุปเป็นเอกสาร' }]} />
+          <button type="button" className="pg-btn" onClick={() => { setSlide(0); setTvMode(true); }} title={tr('โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)')}>{tr('โหมดประชุม')}</button>
           {canRecord && (
-            <button onClick={sendTelegram} disabled={sendingTg} style={{ ...btnSt(true), opacity: sendingTg ? 0.6 : 1 }} title="ส่งสรุปประชุมเข้า Telegram">
-              {sendingTg ? '⏳ กำลังส่ง…' : '📤 ส่งสรุป Telegram'}
+            <button type="button" className="pg-btn primary" onClick={sendTelegram} disabled={sendingTg} style={{ opacity: sendingTg ? 0.6 : 1 }} title={tr('ส่งสรุปประชุมเข้า Telegram')}>
+              {sendingTg ? tr('กำลังส่ง…') : tr('ส่งสรุป Telegram')}
             </button>
           )}
         </>} />
       <FilterBar>
         {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <SectionScopeSelect lines={scopedLines} value={secFilter} onChange={s => setSecFilter(s)} only={sectionOpts} />
         )}
-        <span className="filter-label">วันที่ประชุม</span>
+        <span className="filter-label">{tr('วันที่ประชุม')}</span>
         <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
       </FilterBar>
 
       {!loading && loadErr && (
-        <div role="alert" style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
-          {loadErr}
-        </div>
+        <NoticeBar tone="bad">{loadErr}</NoticeBar>
       )}
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลดข้อมูล…')}</div>
       ) : (
         <>
           <KpiStrip />
-          <SectionHead icon="🏭" title="ผลรายไลน์"
+          <SectionHead icon="🏭" title={tr('ผลรายไลน์')}
             extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์ · ~OEE = รออนุมัติปิดกะ`} />
           <LineCards />
-          <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
+          <SectionHead icon="🔎" title={tr('เจาะปัญหาเมื่อวาน')} />
           <MissedPanel bounded />
           <DtDefectPanel />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
@@ -1104,17 +1123,17 @@ export default function MorningMeeting() {
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
-            <span style={{ fontSize: 14, color: 'var(--muted)' }}>🌅 ประชุมแถวเช้า · {fmtDate(meetingDate)} · {scopeLabel}</span>
+            <span style={{ fontSize: 14, color: 'var(--muted)' }}>{tr('ประชุมแถวเช้า ·')} {fmtDate(meetingDate)} · {scopeLabel}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
               <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
-                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
-                {gestureOn ? '📷 ปิดท่ามือ' : '📷 คุมด้วยท่ามือ'}
+                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
+                {gestureOn ? 'ปิดท่ามือ' : 'คุมด้วยท่ามือ'}
                 <ToggleDot on={gestureOn} />
               </button>
-              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
+              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title={tr('ออกจากโหมดประชุม (Esc)')}>✕</button>
             </div>
           </div>
           {/* zoom ขยายทั้งวาระให้อ่านจากระยะไกล (จอ TV) — เนื้อหา component เดียวกับโหมดปกติเป๊ะ */}
@@ -1129,7 +1148,7 @@ export default function MorningMeeting() {
           </div>
           {/* 📷 Gesture Mode — mount เฉพาะตอนเปิด (unmount = ดับกล้องทันที) */}
           {gestureOn && (
-            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 10, padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
+            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>{tr('⏳ กำลังโหลด Gesture Mode…')}</div>}>
               <GestureCam onGesture={handleGesture} onError={handleGestureError} />
             </Suspense>
           )}
@@ -1140,41 +1159,41 @@ export default function MorningMeeting() {
       {actModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
-          <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
+          <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 'var(--r-lg)', background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>➕ Action Item — ประชุม {fmtDate(meetingDate)}</h3>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('➕ Action Item — ประชุม')} {fmtDate(meetingDate)}</h3>
               <button onClick={() => setActModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ปัญหา / สิ่งที่ต้องทำ *
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ปัญหา / สิ่งที่ต้องทำ *')}
                 <textarea rows={2} value={actModal.problem} onChange={e => setActModal(v => ({ ...v, problem: e.target.value }))}
                   style={{ marginTop: 4, fontSize: 13, resize: 'vertical' }} />
               </label>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>สาเหตุ (สรุปในที่ประชุม)
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('สาเหตุ (สรุปในที่ประชุม)')}
                 <input value={actModal.root_cause} onChange={e => setActModal(v => ({ ...v, root_cause: e.target.value }))}
-                  style={{ marginTop: 4, fontSize: 13 }} placeholder="เช่น น็อตจับจิ๊กสึก / วัตถุดิบมาช้า" />
+                  style={{ marginTop: 4, fontSize: 13 }} placeholder={tr('เช่น น็อตจับจิ๊กสึก / วัตถุดิบมาช้า')} />
               </label>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ไลน์
+                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ไลน์')}
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope+section filter เดิม (viewLines) */}
-                  <LineSelect lines={viewLines} value={actModal.line_name} placeholder="— เรื่องรวม —" style={{ marginTop: 4, fontSize: 13 }}
+                  <LineSelect lines={viewLines} value={actModal.line_name} placeholder={tr('— เรื่องรวม —')} style={{ marginTop: 4, fontSize: 13 }}
                     onChange={v => setActModal(x => ({ ...x, line_name: v }))} />
                 </label>
-                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>กำหนดเสร็จ
+                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('กำหนดเสร็จ')}
                   <input type="date" value={actModal.due_date || ''} onChange={e => setActModal(v => ({ ...v, due_date: e.target.value }))}
                     style={{ marginTop: 4, fontSize: 13 }} />
                 </label>
               </div>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ผู้รับผิดชอบ
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ผู้รับผิดชอบ')}
                 {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (คนของไลน์ที่เลือกขึ้นก่อน) — ตารางเก็บชื่อ text ไม่มีคอลัมน์ id */}
-                <PersonSelect value={actModal.assignee || ''} source="both" history={assigneeHist} placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 4 }}
+                <PersonSelect value={actModal.assignee || ''} source="both" history={assigneeHist} placeholder={tr('ชื่อผู้รับผิดชอบ')} style={{ marginTop: 4 }}
                   lines={actModal.line_name ? getLineFamilyNames(allLines, actModal.line_name) : undefined}
                   onChange={({ name }) => setActModal(v => ({ ...v, assignee: name }))} />
               </label>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-                <button onClick={() => setActModal(null)} style={btnSt(false)}>ยกเลิก</button>
+                <button onClick={() => setActModal(null)} style={btnSt(false)}>{tr('ยกเลิก')}</button>
                 <button onClick={saveAction} disabled={savingAct} style={{ ...btnSt(true), opacity: savingAct ? 0.6 : 1 }}>
-                  {savingAct ? '⏳ กำลังบันทึก…' : '💾 บันทึก'}
+                  {savingAct ? tr('กำลังบันทึก…') : tr('บันทึก')}
                 </button>
               </div>
             </div>

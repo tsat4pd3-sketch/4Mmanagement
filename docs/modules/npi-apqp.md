@@ -19,6 +19,7 @@ ESM ที่มีอยู่คุม **mass production** (ปลายน้
 | ECI ขา PE | คำขอแก้เอกสาร PE (ลูปปิด 8D) | `npi_change_requests.pe_change_request_id → pe_change_requests` |
 | ECI ขากระบวนการ | ใบ 4M Method | `npi_change_requests.four_m_log_id → four_m_logs` |
 | **โปรเจค** | **บอร์ด New Model `/nm-board`** | **`npi_projects.nm_board_id` (text = รหัสรุ่นบนบอร์ด · 06/10)** |
+| **โปรเจค** | **RFQ ของ Marketing `/rfq` (ต้นน้ำ · 30/10)** | **`mkt_rfqs.npi_project_id → npi_projects.id`** (ทิศเดียว — ฝั่ง NPI ไม่มีคอลัมน์ · ส่ง CRD จาก `/rfq` = สร้างโปรเจค+พาร์ท+เฟสด้วย `nextProjectCode`/`buildPartRows` ท่าเดียวกับหน้านี้ · 📄 `mkt-rfq.md`) |
 | ECI ขาแบบ / tooling | ทะเบียน rev แบบ / แผน tooling ในโมดูลเดียวกัน | FK |
 
 เทียบ E-SPT: Problem follow-up + Dashboard ของ ESM ครอบคลุมกว่าอยู่แล้ว (8D closed-loop · dept-dashboard) จึง**ไม่สร้างซ้ำ** —
@@ -113,7 +114,7 @@ catalog group 'คุณภาพ & วิศวกรรม' sort 755-757 · `p
 - cron/Edge `npi-due-scan` เตือนเอกสาร/ขั้นงานที่จะเลยกำหนดใน 7 วัน (ตอนนี้เห็นเฉพาะตอนเปิดหน้า)
 - ฟอร์มเฉพาะโตโยต้า (CF concept builder / ATIS builder) — ไม่ทำจนกว่ามีงานโตโยต้าจริง; ใช้ `/qa-setup` + doc-forms export แทน
 - import แม่แบบ/รายการจาก Excel ของลูกค้า · export timing chart เป็น Excel
-- ผูก `npi_parts` → สร้าง `dr_products` อัตโนมัติตอน SOP (ตอนนี้ mat_no เป็น text เชื่อมมือ)
+- ผูก `npi_parts` → สร้าง `dr_products` อัตโนมัติตอน SOP (ตอนนี้ mat_no เป็น text เชื่อมมือ) · **รอยต่อฝั่งเอกสารมีแล้ว 30/10 = ใบแจ้งจัดทำ F-MKT-001/002 ออกจาก `/rfq` ตอนได้งาน** (ของจริงที่โรงงานใช้) — ส่วน "สร้างพาร์ทจริงในระบบ" ยังไม่ทำ
 - แถวเก่าใน ECI ที่ผูก `four_m_log_id` แล้วใบ 4M ถูก reject — ยังไม่มีสัญญาณย้อนกลับมาที่ ECI
 
 ## 9. ประวัติ
@@ -128,3 +129,20 @@ single-source audit สร้าง DR `suppliers` (code · name · kind · cont
 เป็น**ทะเบียนชื่อฝั่งโรงงาน** — ช่อง "ผู้ทำ (maker)" ใน tooling plan เลือกผ่าน `<SupplierSelect kinds={['tooling','internal']}>`
 (`maker_name` ยังเก็บ text · พิมพ์เองได้พร้อมป้าย) · **ไม่ใช่ supplier portal เฟส 4** — เฟส 4 ยังต้องมี `supplier_id` + role/RLS ฝั่ง Main ตาม §8
 ถึงตอนนั้นให้ portal อ้าง `suppliers.code` นี้ ไม่ต้องสร้างทะเบียนซ้อน
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+ECI + PPAP — แถบ ✓→○ ในโมดัล (`eciFlow/ppapFlow` ใน `utils/npi.js`) · เฟส APQP ใช้การ์ดเฟสเดิม ไม่ใส่แถบ · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+หมวด คุณภาพ & วิศวกรรม
+· **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
+· เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
+· ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
+> 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`

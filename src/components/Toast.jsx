@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { explainNetError } from '../utils/netError';
 
+import { tr } from '../utils/i18n';
 /* ── Toast store (singleton outside React) ── */
 const onMobile = () => { try { return window.matchMedia('(max-width:768px)').matches; } catch { return false; } };
 let _dispatch = null;
@@ -67,9 +68,9 @@ export function ToastContainer() {
   return (
     <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
       {toasts.map(t => (
-        <div key={t.id} onClick={() => remove(t.id)} title="คลิกเพื่อปิด" style={{
+        <div key={t.id} onClick={() => remove(t.id)} title={tr('คลิกเพื่อปิด')} style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 18px', borderRadius: 10,
+          padding: '10px 18px', borderRadius: 'var(--r-md)',
           background: 'rgba(18,18,28,0.96)', border: `1px solid ${COLORS[t.type]}55`,
           borderLeft: `4px solid ${COLORS[t.type]}`,
           boxShadow: 'var(--shadow-float)',
@@ -81,7 +82,7 @@ export function ToastContainer() {
           <span style={{ flexShrink: 0 }}>{ICONS[t.type]}</span>
           <span>{t.msg}</span>
           {t.n > 1 && (
-            <span style={{ flexShrink: 0, background: COLORS[t.type], color: '#0b0b12', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 800 }}>×{t.n}</span>
+            <span style={{ flexShrink: 0, background: COLORS[t.type], color: '#0b0b12', borderRadius: 'var(--r-pill)', padding: '1px 8px', fontSize: 11, fontWeight: 800 }}>×{t.n}</span>
           )}
           <span style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0, paddingLeft: 6 }}>✕</span>
         </div>

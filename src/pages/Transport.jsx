@@ -14,6 +14,7 @@ import { RATE } from '../utils/refreshRates';
 import { checkWrite } from '../utils/dbWrite';
 import { useOrgSections } from '../utils/useOrgSections';
 
+import { tr } from '../utils/i18n';
 /* ─── TRANSPORT — มอบหมายขนส่ง (Teiki-bin phase 1: ก) ─────────────────────────
    ชั้น carrier (คนขับ/ผู้ขน) + สกิลยานพาหนะ + มอบหมาย carrier ให้ "รอบส่ง" ที่มีอยู่
    ต่อยอดบน kanban_delivery_rounds ไม่สร้างคิว/บอร์ดใหม่ · ตาราง DR (anon)
@@ -179,8 +180,8 @@ export default function Transport() {
   return (
     <Page>
       <PageHeader
-        title="มอบหมายขนส่ง (Transport)" icon="🚚"
-        sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
+        title={tr('มอบหมายขนส่ง (Transport)')} icon="🚚"
+        sub={tr('มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1')}
         tabs={[
           { key: 'assign', label: `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})` },
           { key: 'route', label: `🗺️ เส้นทางรอบส่ง (${nRoutes})` },
@@ -201,7 +202,7 @@ export default function Transport() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {byLine.map(g => (
               <div key={g.line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: '#f59e0b', background: 'var(--bg2)' }}>🏭 {g.line}</div>
+                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: 'var(--amber)', background: 'var(--bg2)' }}>{g.line}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px, 100%), 1fr))', gap: 10, padding: 12 }}>
                   {g.rounds.map(r => {
                     const st = getRoundStatus(r, confirmedSet, dlvMap, workDate, nowMs);
@@ -209,20 +210,20 @@ export default function Transport() {
                     const carrier = asg?.carrier_id ? carrierMap[asg.carrier_id] : null;
                     const opts = carrierOptsFor(r.shift);
                     return (
-                      <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 11, background: 'var(--bg2)' }}>
+                      <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 11, background: 'var(--bg2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} {tr('รอบ')} {r.round_no}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{tr(st.label)}</span>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} · ส่ง {(r.delivery_time || '').slice(0, 5) || '—'} · {r.points_count || 1} จุด
+                          ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} {tr('· ส่ง')} {(r.delivery_time || '').slice(0, 5) || '—'} · {r.points_count || 1} จุด
                         </div>
                         <div style={{ marginTop: 8 }}>
                           {canManage ? (
                             <select value={asg?.carrier_id || ''} disabled={busy === r.id}
                               onChange={e => assignCarrier(r, e.target.value)}
-                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, fontSize: 12.5, background: 'var(--card)', border: `1px solid ${carrier ? 'var(--accent)' : 'var(--border)'}`, color: 'var(--text)' }}>
-                              <option value="">— ยังไม่มอบหมาย —</option>
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12.5, background: 'var(--card)', border: `1px solid ${carrier ? 'var(--accent)' : 'var(--border)'}`, color: 'var(--text)' }}>
+                              <option value="">{tr('— ยังไม่มอบหมาย —')}</option>
                               {opts.map(c => <option key={c.id} value={c.id}>{c.name}{c.emp_code ? ` (${c.emp_code})` : ''}</option>)}
                             </select>
                           ) : (
@@ -253,11 +254,11 @@ export default function Transport() {
       {tab === 'carriers' && (
         <div style={{ ...card }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>👷 คนขับ / ผู้ขน</span>
+            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>{tr('คนขับ / ผู้ขน')}</span>
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
-                style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                ➕ เพิ่มคนขับ
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
+                {tr('เพิ่มคนขับ')}
               </button>
             )}
           </div>
@@ -266,16 +267,16 @@ export default function Transport() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 10 }}>
               {carriers.map(c => (
-                <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
+                <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>👷 {c.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{c.name}</span>
                     {canManage && <button className="tbtn" onClick={() => setEditCarrier(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                     {c.emp_code ? `${c.emp_code} · ` : ''}{SHIFTS.find(s => s[0] === c.shift)?.[1] || 'ทุกกะ'}{c.section ? ` · ${c.section}` : ''}{!c.is_active ? ' · ⛔ ปิด' : ''}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6 }}>
-                    {c.vehicles?.length ? c.vehicles.map(vehLabel).join(' · ') : <span style={{ color: 'var(--muted)' }}>— ยังไม่ระบุยานพาหนะ —</span>}
+                    {c.vehicles?.length ? c.vehicles.map(vehLabel).join(' · ') : <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่ระบุยานพาหนะ —')}</span>}
                   </div>
                 </div>
               ))}
@@ -419,7 +420,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
 
   if (!hasGraph) return (
     <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีถนน/จุดจอดบนผัง — วาดก่อนที่ <b style={{ color: 'var(--text2)' }}>ตั้งค่าผัง/Floorplan → 📦 Store / AMR</b>
+      ยังไม่มีถนน/จุดจอดบนผัง — วาดก่อนที่ <b style={{ color: 'var(--text2)' }}>{tr('ตั้งค่าผัง/Floorplan → 📦 Store / AMR')}</b>
     </div>
   );
 
@@ -429,39 +430,39 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       {/* '0 1 320px' + minWidth:0 — desktop กว้าง 320 เท่าเดิม แต่จอ 320px ยอมหดแทนที่จะดันล้น
           (เดิม '0 0 320px' + minWidth:280 = ไม่ยอมหดเลย ล้นออกนอกจอ 37px) */}
       <div style={{ ...card, flex: '0 1 320px', minWidth: 0, maxWidth: '100%' }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>เลือกรอบส่ง</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>{tr('เลือกรอบส่ง')}</div>
         <select value={selRound || ''} onChange={e => setSelRound(e.target.value || null)}
-          style={{ width: '100%', padding: '7px 9px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
-          <option value="">— เลือกรอบ —</option>
+          style={{ width: '100%', padding: '7px 9px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
+          <option value="">{tr('— เลือกรอบ —')}</option>
           {byLine.map(g => (
             <optgroup key={g.line} label={g.line}>
-              {g.rounds.map(r => <option key={r.id} value={r.id}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} · ส่ง {(r.delivery_time || '').slice(0, 5) || '—'} ({(stopsByRound[r.id] || []).length} จุด)</option>)}
+              {g.rounds.map(r => <option key={r.id} value={r.id}>{r.shift === 'night' ? '🌙' : '☀️'} {tr('รอบ')} {r.round_no} {tr('· ส่ง')} {(r.delivery_time || '').slice(0, 5) || '—'} ({(stopsByRound[r.id] || []).length} {tr('จุด)')}</option>)}
             </optgroup>
           ))}
         </select>
 
         {!round ? (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ')}</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ลำดับจุดจอด ({stopIds.length})</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{tr('ลำดับจุดจอด (')}{stopIds.length})</span>
               {canManage && stopIds.length >= 3 && (
                 <button onClick={optimizeOrder} disabled={busy === round.id}
-                  title="ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)"
-                  style={{ padding: '3px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, rgba(74,222,128,.15))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-                  ✨ เรียงให้สั้นสุด
+                  title={tr('ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)')}
+                  style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, var(--green-dim))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+                  {tr('เรียงให้สั้นสุด')}
                 </button>
               )}
             </div>
-            {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง</div>}
+            {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{tr('ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง')}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
               {stops.map((s, i) => {
                 const n = nById[s.node_id]; const k = nodeKind(n?.kind);
                 const seg = i > 0 ? route.segments[i - 1] : null;
                 const broken = seg && !seg.ok;
                 return (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '5px 8px' }}>
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? 'var(--red)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '5px 8px' }}>
                     <span style={{ width: 20, height: 20, borderRadius: '50%', background: k.color, color: '#08130a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: '0 0 auto' }}>{i + 1}</span>
                     {(() => {
                       const act = actionOf(s);
@@ -469,23 +470,23 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                       return (
                         <button onClick={() => canManage && saveStopAction?.(s.id, isLoad ? 'drop' : 'load')}
                           disabled={!canManage || busy === round.id}
-                          title={canManage ? 'คลิกสลับ รับของ ⇄ ส่งของ' : undefined}
-                          style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
-                            background: isLoad ? 'rgba(56,189,248,0.15)' : 'rgba(74,222,128,0.15)',
-                            color: isLoad ? '#38bdf8' : 'var(--accent)',
-                            border: `1px solid ${isLoad ? 'rgba(56,189,248,0.5)' : 'var(--accent)'}` }}>
-                          {isLoad ? '⬆ รับ' : '⬇ ส่ง'}
+                          title={canManage ? tr('คลิกสลับ รับของ ⇄ ส่งของ') : undefined}
+                          style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
+                            background: isLoad ? 'var(--blue-dim)' : 'var(--green-dim)',
+                            color: isLoad ? 'var(--blue)' : 'var(--accent)',
+                            border: `1px solid ${isLoad ? 'var(--blue-line)' : 'var(--accent)'}` }}>
+                          {isLoad ? 'รับ' : 'ส่ง'}
                         </button>
                       );
                     })()}
                     <span style={{ flex: 1, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {k.icon} {n?.name || n?.line_name || '(จุดไม่มีชื่อ)'}
-                      {broken && <span style={{ color: '#ef4444', fontSize: 11 }}> · ⚠ ถนนขาด</span>}
+                      {broken && <span style={{ color: 'var(--red)', fontSize: 11 }}> {tr('· ⚠ ถนนขาด')}</span>}
                     </span>
                     {canManage && <>
                       <button onClick={() => moveStop(i, -1)} disabled={i === 0 || busy === round.id} style={miniBtn}>▲</button>
                       <button onClick={() => moveStop(i, 1)} disabled={i === stopIds.length - 1 || busy === round.id} style={miniBtn}>▼</button>
-                      <button onClick={() => removeStop(i)} disabled={busy === round.id} style={{ ...miniBtn, color: '#ef4444' }}>✕</button>
+                      <button onClick={() => removeStop(i)} disabled={busy === round.id} style={{ ...miniBtn, color: 'var(--red)' }}>✕</button>
                     </>}
                   </div>
                 );
@@ -508,83 +509,83 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                       const mine = isOfLine(n);
                       return (
                         <button key={n.id} onClick={() => addStop(n.id)} disabled={busy === round.id}
-                          style={{ padding: '4px 9px', borderRadius: 16, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
-                            background: mine ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)',
+                          style={{ padding: '4px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                            background: mine ? 'var(--accent-dim, var(--green-dim))' : 'var(--bg2)',
                             color: mine ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${mine ? 'var(--accent)' : 'var(--border)'}` }}>
-                          {mine ? '🎯 ' : ''}{nodeKind(n.kind).icon} {n.name || n.line_name || 'จุด'}
+                          {mine ? ' ' : ''}{nodeKind(n.kind).icon} {n.name || n.line_name || 'จุด'}
                         </button>
                       );
                     })}
-                    {addables.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เพิ่มครบทุกจุดจอดแล้ว</span>}
+                    {addables.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('เพิ่มครบทุกจุดจอดแล้ว')}</span>}
                   </div>
                 </>
               );
             })()}
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border2)', fontSize: 12.5 }}>
               {stopIds.length < 2 ? (
-                <span style={{ color: 'var(--muted)' }}>ต้องมี ≥ 2 จุดจอดเพื่อคำนวณเส้นทาง</span>
+                <span style={{ color: 'var(--muted)' }}>{tr('ต้องมี ≥ 2 จุดจอดเพื่อคำนวณเส้นทาง')}</span>
               ) : route.ok ? (
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>✅ เส้นทางรวม ≈ {route.distance.toFixed(1)} หน่วยผัง · {route.nodePath.length - 1} ช่วง</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('✅ เส้นทางรวม ≈')} {route.distance.toFixed(1)} {tr('หน่วยผัง ·')} {route.nodePath.length - 1} {tr('ช่วง')}</span>
               ) : (
-                <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
+                <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)')}</span>
               )}
             </div>
 
             {stopIds.length >= 2 && route.ok && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
-                  📏 ระยะจริง: {realDist != null
+                  ระยะจริง: {realDist != null
                     ? <b style={{ color: 'var(--text)' }}>{realDist >= 1000 ? (realDist / 1000).toFixed(2) + ' กม.' : realDist.toFixed(0) + ' ม.'}</b>
-                    : <span style={{ color: 'var(--muted)' }}>ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)</span>}
+                    : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)')}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13 }}>🚗</span>
-                  <select value={vehCode} onChange={e => setVehCode(e.target.value)} style={{ flex: '1 1 110px', padding: '5px 7px', borderRadius: 7, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                  <select value={vehCode} onChange={e => setVehCode(e.target.value)} style={{ flex: '1 1 110px', padding: '5px 7px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                     {vehicles.map(v => <option key={v.code} value={v.code}>{v.icon} {v.name}</option>)}
                   </select>
                   {canManage ? (
                     <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
                       <input type="number" min="0" step="0.5" defaultValue={speedKmh || ''} key={(veh?.code || '') + String(speedKmh)}
                         onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehSpeed(veh.code, v); }}
-                        style={{ width: 54, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> กม./ชม.
+                        style={{ width: 54, padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> {tr('กม./ชม.')}
                     </label>
-                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} กม./ชม.</span>}
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} {tr('กม./ชม.')}</span>}
                   {canManage ? (
                     <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      จุ
+                      {tr('จุ')}
                       <input type="number" min="0" step="1" defaultValue={veh?.capacity_pkg || ''} key={'cap' + (veh?.code || '') + String(veh?.capacity_pkg ?? '')}
                         onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehCapacity(veh.code, v); }}
-                        style={{ width: 50, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> กล่อง/เที่ยว
+                        style={{ width: 50, padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> {tr('กล่อง/เที่ยว')}
                     </label>
-                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>จุ {veh?.capacity_pkg || '—'} กล่อง/เที่ยว</span>}
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('จุ')} {veh?.capacity_pkg || '—'} {tr('กล่อง/เที่ยว')}</span>}
                 </div>
                 {totalMin != null ? (
                   <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
                     ⏱️ เวลา: <b>{fmtMin(totalMin)}</b>
-                    <span style={{ color: 'var(--muted)' }}> (วิ่ง {fmtMin(moveMin)}{dwellTotal > 0 ? ` + แวะ ${fmtMin(dwellTotal)}` : ''})</span>
+                    <span style={{ color: 'var(--muted)' }}> {tr('(วิ่ง')} {fmtMin(moveMin)}{dwellTotal > 0 ? ` + แวะ ${fmtMin(dwellTotal)}` : ''})</span>
                   </div>
-                ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>⏱️ ตั้งมาตราส่วน + ความเร็ว เพื่อดูเวลา</div>}
+                ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('⏱️ ตั้งมาตราส่วน + ความเร็ว เพื่อดูเวลา')}</div>}
                 {canManage && (
                   <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                    เวลาแวะต่อจุด:
+                    {tr('เวลาแวะต่อจุด:')}
                     <input type="number" min="0" step="0.5" defaultValue={dwellMin || ''} key={'dwell' + dwellMin}
                       onBlur={e => { const v = parseFloat(e.target.value) || 0; if (v !== dwellMin) saveDwell(v); }}
-                      style={{ width: 50, padding: '4px 6px', borderRadius: 6, fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> น.
+                      style={{ width: 50, padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> {tr('น.')}
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
-                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                    {simRun ? '⏸ หยุด' : '▶ จำลองการวิ่ง'}
+                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
+                    {simRun ? tr('หยุด') : tr('จำลองการวิ่ง')}
                   </button>
-                  <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
+                  <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
                   {simMinNow != null && (
-                    <span style={{ fontSize: 12, color: simState.dwellAt ? '#f59e0b' : 'var(--accent)', fontWeight: 700 }}>
+                    <span style={{ fontSize: 12, color: simState.dwellAt ? 'var(--amber)' : 'var(--accent)', fontWeight: 700 }}>
                       ⏱ {fmtMin(simMinNow)}{simState.dwellAt ? ` · ⏸ แวะจุด ${simState.dwellAt}` : ''}
                     </span>
                   )}
                 </div>
-                <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${simFrac * 100}%`, background: 'var(--accent)', transition: 'width 0.1s linear' }} />
                 </div>
               </div>
@@ -598,24 +599,24 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       <div style={{ flex: '1 1 480px', minWidth: 0 }}>
         {imageUrl ? (
           <>
-          <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ position: 'relative', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <img src={imageUrl} alt="แผนที่เส้นทาง" style={{ display: 'block', width: '100%', height: 'auto' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.35)' }} />
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {/* ถนนทั้งโรงงาน — เห็นครบทุกเส้น เส้นที่ไม่ได้ใช้ = เทาบาง (คำสั่ง user 2026-08-03) */}
               {edges.map(e => { const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) return null;
-                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeOpacity="0.55" strokeWidth="2" vectorEffect="non-scaling-stroke" />; })}
+                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--muted)" strokeOpacity="0.55" strokeWidth="2" vectorEffect="non-scaling-stroke" />; })}
               {/* เส้นทางที่เลือก (เด่น) — วาด "ราย segment เฉพาะที่หากันถึงจริง"
                   ⚠️ ห้ามวาด polyline เดียวจาก nodePath: คู่ที่ถนนขาดจะกลายเป็นเส้นเขียว
                   ลากตรงทะลุกำแพง ดูสมบูรณ์ทั้งที่ไปไม่ถึง (QC audit 2026-08-20 · T2-11) */}
               {route.segments.filter(s => s.ok && s.path.length > 1).map((s, i) => (
                 <polyline key={`seg-${i}`} points={s.path.map(id => nById[id]).filter(Boolean).map(p => `${p.x},${p.y}`).join(' ')}
-                  fill="none" stroke="#4ade80" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                  fill="none" stroke="var(--green)" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               ))}
               {/* คู่ที่ถนนขาด = เส้นประแดงตรงๆ ให้เห็นว่า "ตรงนี้ยังไปไม่ถึง" ไม่ใช่ซ่อนเงียบ */}
               {route.segments.filter(s => !s.ok).map((s, i) => {
                 const a = nById[s.from], b = nById[s.to]; if (!a || !b) return null;
-                return <line key={`brk-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ef4444" strokeWidth="2.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
+                return <line key={`brk-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--red)" strokeWidth="2.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
               })}
             </svg>
             {/* node markers ทั้งหมด (จาง) + จุดจอดของรอบ (เลขลำดับ + บทบาท ⬆รับ/⬇ส่ง) */}
@@ -624,13 +625,13 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               return (
                 <div key={n.id} title={idx >= 0 ? `${idx + 1}. ${n.name || n.line_name || ''} · ${act === 'load' ? '⬆ รับของ' : '⬇ ส่งของ'}` : undefined}
                   style={{ position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, transform: 'translate(-50%,-50%)',
-                  width: idx >= 0 ? 22 : 10, height: idx >= 0 ? 22 : 10, borderRadius: '50%', background: idx >= 0 ? k.color : '#64748b',
+                  width: idx >= 0 ? 22 : 10, height: idx >= 0 ? 22 : 10, borderRadius: '50%', background: idx >= 0 ? k.color : 'var(--muted)',
                   opacity: idx >= 0 ? 1 : 0.55, border: idx >= 0 ? '2px solid #fff' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 11, fontWeight: 800, color: '#08130a', boxShadow: idx >= 0 ? '0 1px 5px rgba(0,0,0,0.5)' : 'none', zIndex: idx >= 0 ? 2 : 1 }}>
                   {idx >= 0 ? idx + 1 : ''}
                   {idx >= 0 && (
                     <span style={{ position: 'absolute', top: -7, right: -8, width: 14, height: 14, borderRadius: '50%',
-                      background: act === 'load' ? '#38bdf8' : '#4ade80', border: '1.5px solid #fff',
+                      background: act === 'load' ? 'var(--blue)' : 'var(--green)', border: '1.5px solid #fff',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#08130a' }}>
                       {act === 'load' ? '⬆' : '⬇'}
                     </span>
@@ -642,24 +643,24 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
             {simPos && simFrac > 0 && (
               <div title={simState.dwellAt ? `⏸ แวะจอดจุด ${simState.dwellAt} (${dwellMin} น.)` : undefined}
                 style={{ position: 'absolute', left: `${simPos.x}%`, top: `${simPos.y}%`, transform: 'translate(-50%,-50%)', width: 28, height: 28, borderRadius: '50%',
-                  background: simState.dwellAt ? '#f59e0b' : '#22d3ee', border: '2px solid #fff',
-                  boxShadow: simState.dwellAt ? '0 0 12px 3px rgba(245,158,11,0.75)' : '0 0 12px 3px rgba(34,211,238,0.7)',
+                  background: simState.dwellAt ? 'var(--amber)' : '#22d3ee', border: '2px solid #fff',
+                  boxShadow: simState.dwellAt ? '0 0 12px 3px var(--amber-line)' : '0 0 12px 3px rgba(34,211,238,0.7)',
                   zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{veh?.icon || '🚚'}</div>
             )}
           </div>
           {/* legend ใต้แผนที่ */}
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 3.5, borderRadius: 2, background: '#4ade80', display: 'inline-block' }} /> เส้นทางรอบนี้
+              <span style={{ width: 22, height: 3.5, borderRadius: 'var(--r-xs)', background: 'var(--green)', display: 'inline-block' }} /> เส้นทางรอบนี้
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 2, borderRadius: 2, background: '#94a3b8', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
+              <span style={{ width: 22, height: 2, borderRadius: 'var(--r-xs)', background: 'var(--muted)', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 13, height: 13, borderRadius: '50%', background: '#38bdf8', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬆</span> รับของ (load)
+              <span style={{ width: 13, height: 13, borderRadius: '50%', background: 'var(--blue)', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬆</span> รับของ (load)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 13, height: 13, borderRadius: '50%', background: '#4ade80', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬇</span> ส่งของ (drop)
+              <span style={{ width: 13, height: 13, borderRadius: '50%', background: 'var(--green)', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬇</span> ส่งของ (drop)
             </span>
           </div>
           </>
@@ -715,14 +716,14 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
   return (
     // ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับ (§7)
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? tr('➕ เพิ่มคนขับ') : tr('✏️ แก้ไขคนขับ')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
           <div style={{ position: 'relative' }}>
-            <span style={lbl}>🔎 เลือกจากฐานพนักงาน</span>
-            <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder="ค้นหาชื่อ / รหัสพนักงาน…" style={inp} />
+            <span style={lbl}>{tr('เลือกจากฐานพนักงาน')}</span>
+            <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder={tr('ค้นหาชื่อ / รหัสพนักงาน…')} style={inp} />
             {empMatches.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-float)' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-float)' }}>
                 {empMatches.map(e => (
                   <button key={e.id} onClick={() => pickEmp(e)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: 12.5, background: 'none', border: 'none', borderBottom: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' }}>
                     {e.name} {e.employee_id_code ? <span style={{ color: 'var(--muted)' }}>· {e.employee_id_code}</span> : ''}{e.section ? <span style={{ color: 'var(--muted)' }}> · {e.section}</span> : ''}
@@ -730,34 +731,34 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
                 ))}
               </div>
             )}
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource')}</div>
           </div>
-          <div><span style={lbl}>ชื่อ *</span><input value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setEmpLocked(false); }} style={inp} /></div>
+          <div><span style={lbl}>{tr('ชื่อ *')}</span><input value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setEmpLocked(false); }} style={inp} /></div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}><span style={lbl}>รหัสพนักงาน{empLocked ? ' (จากทะเบียน)' : ''}</span>
+            <div style={{ flex: 1 }}><span style={lbl}>{tr('รหัสพนักงาน')}{empLocked ? ' (จากทะเบียน)' : ''}</span>
               <input value={f.emp_code || ''} readOnly={empLocked} onChange={e => setF({ ...f, emp_code: e.target.value })} style={{ ...inp, opacity: empLocked ? 0.75 : 1 }} /></div>
-            <div style={{ flex: 1 }}><span style={lbl}>กะ</span>
+            <div style={{ flex: 1 }}><span style={lbl}>{tr('กะ')}</span>
               <select value={f.shift || ''} onChange={e => setF({ ...f, shift: e.target.value })} style={inp}>
-                {SHIFTS.map(s => <option key={s[0]} value={s[0]}>{s[1]}</option>)}
+                {SHIFTS.map(s => <option key={s[0]} value={s[0]}>{tr(s[1])}</option>)}
               </select>
             </div>
           </div>
-          <div><span style={lbl}>ส่วนงาน (optional)</span>
+          <div><span style={lbl}>{tr('ส่วนงาน (optional)')}</span>
             <select value={f.section || ''} onChange={e => setF({ ...f, section: e.target.value })} style={inp}>
-              <option value="">— ไม่ระบุ —</option>
+              <option value="">{tr('— ไม่ระบุ —')}</option>
               {/* ค่าเดิมที่ไม่อยู่ในผัง (ข้อมูลเก่า/พิมพ์มาก่อน) ต้องยังโชว์ ไม่หายเงียบ */}
-              {f.section && !orgSections.includes(f.section) && <option value={f.section}>{f.section} ⚠ ไม่มีในผังองค์กร</option>}
-              {orgSections.map(s => <option key={s} value={s}>{s}</option>)}
+              {f.section && !orgSections.includes(f.section) && <option value={f.section}>{f.section} {tr('⚠ ไม่มีในผังองค์กร')}</option>}
+              {orgSections.map(s => <option key={s} value={s}>{tr(s)}</option>)}
             </select>
           </div>
           <div>
-            <span style={lbl}>🚚 ยานพาหนะที่ขับได้ (สกิล)</span>
+            <span style={lbl}>{tr('ยานพาหนะที่ขับได้ (สกิล)')}</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {vehicles.map(v => {
                 const on = f.vehicles.includes(v.code);
                 return (
                   <button key={v.code} onClick={() => toggleVeh(v.code)} style={{
-                    padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                    padding: '6px 11px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
                     background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)',
                     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                   }}>{v.icon} {v.name}</button>
@@ -766,13 +767,13 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
             </div>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={!!f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} style={{ width: 'auto' }} /> ใช้งาน (active)
+            <input type="checkbox" checked={!!f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} style={{ width: 'auto' }} /> {tr('ใช้งาน (active)')}
           </label>
-          <div><span style={lbl}>หมายเหตุ</span><input value={f.note || ''} onChange={e => setF({ ...f, note: e.target.value })} style={inp} /></div>
+          <div><span style={lbl}>{tr('หมายเหตุ')}</span><input value={f.note || ''} onChange={e => setF({ ...f, note: e.target.value })} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
+          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import { toast } from './Toast';
 import { pullRows, rpnOf } from '../utils/peMaster';
 import { inp, btn, ghost, Pill, Modal, WarnBar } from './NpiUi';
 
+import { tr } from '../utils/i18n';
 export default function PeMasterPullModal({ procs, fmea, masters, masterItems, initialProcId, onClose, onDone }) {
   const linked = useMemo(() => (procs || []).filter(p => p.master_process_id), [procs]);
   const [procId, setProcId] = useState(initialProcId && linked.some(p => p.id === initialProcId) ? initialProcId : (linked[0]?.id || ''));
@@ -27,23 +28,23 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
   };
 
   return (
-    <Modal title="📚 เติม failure mode จาก master" onClose={onClose} width={760}
-      footer={<><button style={ghost} onClick={onClose}>ยกเลิก</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
+    <Modal title={tr('เติม failure mode จาก master')} onClose={onClose} width={760}
+      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
       {!linked.length ? <WarnBar color="#f59e0b">ยังไม่มี OP ไหนผูกกระบวนการมาตรฐาน — ไปที่แท็บ Flow → ✏️ OP → เลือก "กระบวนการมาตรฐาน" ก่อน</WarnBar> : (
         <>
           <select style={{ ...inp, marginBottom: 8 }} value={procId} onChange={e => { setProcId(e.target.value); setPicked(null); }}>
             {linked.map(p => <option key={p.id} value={p.id}>OP {p.op_no} · {p.name} → 📚 {(masters || []).find(m => m.id === p.master_process_id)?.name || '?'}</option>)}
           </select>
-          {master && !master.confirmed_at && <WarnBar color="#f59e0b">กระบวนการมาตรฐานนี้ยังไม่ผ่านการยืนยันจาก PE (seed จากชื่อ OP) — ดึงได้ แต่ควรตรวจว่าใช่กระบวนการเดียวกันจริง</WarnBar>}
+          {master && !master.confirmed_at && <WarnBar color="#f59e0b">{tr('กระบวนการมาตรฐานนี้ยังไม่ผ่านการยืนยันจาก PE (seed จากชื่อ OP) — ดึงได้ แต่ควรตรวจว่าใช่กระบวนการเดียวกันจริง')}</WarnBar>}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
-            ดึงได้ {rows.length} รายการ{skipped ? ` · ข้าม ${skipped} ที่ OP นี้มี failure mode เดียวกันอยู่แล้ว` : ''} · ค่า S/O/D และ controls จะเป็นค่าตั้งต้น แก้ในพาร์ทได้อิสระ
+            ดึงได้ {rows.length} {tr('รายการ')}{skipped ? ` · ข้าม ${skipped} ที่ OP นี้มี failure mode เดียวกันอยู่แล้ว` : ''} · ค่า S/O/D และ controls จะเป็นค่าตั้งต้น แก้ในพาร์ทได้อิสระ
           </div>
-          {!rows.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีรายการใหม่ให้ดึง</div>}
+          {!rows.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีรายการใหม่ให้ดึง')}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '50vh', overflowY: 'auto' }}>
             {rows.map(r => {
               const on = !picked || picked.has(r.master_item_id);
               return (
-                <label key={r.master_item_id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 8, background: on ? 'var(--bg2)' : 'transparent', cursor: 'pointer' }}>
+                <label key={r.master_item_id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: on ? 'var(--bg2)' : 'transparent', cursor: 'pointer' }}>
                   <input type="checkbox" checked={on} onChange={e => setPicked(prev => { const n = new Set(prev || rows.map(x => x.master_item_id)); e.target.checked ? n.add(r.master_item_id) : n.delete(r.master_item_id); return n; })} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

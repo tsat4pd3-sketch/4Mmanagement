@@ -86,3 +86,64 @@ export function linesOfSloc(slocs, lines, code) {
   const c = slocLabel(code);
   return (lines || []).map(l => l.name).filter(n => slocCodeOfLine(slocs, lines, n) === c);
 }
+
+/* ═══ 🏠 ที่จัดเก็บหลักของพาร์ท (2026-11-05 · คำสั่ง user) ═══════════════════════════════════
+   user: *"สโตร์ไม่จำเป็นต้องไปตั้งไลน์ · part master แต่ละตัวควรตั้งได้ว่าที่จัดเก็บหลักอยู่ที่ไหน
+          ส่วนไปที่ไหนก็ตามพาร์ทแม่ที่เรียกไปผลิต — 20056789 ผลิตที่ P401 แต่เก็บที่ S402 คนละประเด็นกัน"*
+   · กองยอดสต็อกฝั่งคลัง (`STOCK_BUCKETS` = STORE / FG WAREHOUSE) ยังเป็นกองเดียวใน ledger
+     แต่ "อยู่พื้นที่ไหน" = **`parts_master.home_sloc` ของพาร์ทนั้น** ไม่ใช่การผูกไลน์ใน storage_locations
+   · ไลน์ผลิต = ผูกไลน์เหมือนเดิม (`slocOfLine`) — ปลายทางของสโตร์ = พื้นที่ของไลน์ที่เปิดใบผลิต
+   · 🔴 พาร์ทที่ยังไม่ตั้ง = null → จอเขียน "ยังไม่ตั้งที่จัดเก็บ" **ห้ามเดาจากเลข MAT** */
+export const STOCK_BUCKETS = ['STORE', 'FG WAREHOUSE'];
+export const STORE_SLOC_KINDS = ['store_part', 'raw', 'warehouse'];
+export const isStockBucket = (line) => STOCK_BUCKETS.includes(norm(line).toUpperCase());
+
+/** ที่จัดเก็บหลักของ MAT จาก Map(mat → code) · ไม่ตั้ง = null */
+export const homeSlocOf = (homeOf, mat) => {
+  const c = slocLabel(homeOf?.get?.(norm(mat)));
+  return c || null;
+};
+
+/** พื้นที่ของ "แถวยอด" (กอง + MAT): กองคลัง = ที่จัดเก็บหลักของพาร์ท · ไลน์ผลิต = ผูกไลน์ (ไล่สายแม่) */
+export function slocOfStockRow(slocs, lines, lineName, mat, homeOf) {
+  if (isStockBucket(lineName)) {
+    const code = homeSlocOf(homeOf, mat);
+    return code ? { code, via: 'home', sloc: (slocs || []).find(s => slocLabel(s?.code) === code) || null } : null;
+  }
+  return slocOfLine(slocs, lines, lineName);
+}
+export const slocCodeOfStockRow = (...a) => slocOfStockRow(...a)?.code || null;
+
+/* ═══ 📍 "พื้นที่เดียวกัน" ตามรหัส SAP (2026-11-05 · คำสั่ง user) ═══════════════════════════════
+   user: *"เราคุยกันที่พื้นที่ที่ตั้งไว้อ้างอิงจาก SAP ไม่สนว่าอยู่ไลน์แม่หรือลูก — GOR · Assy GOR · Laser GOR คือ P410
+          ก็นับว่าอยู่ที่เดียวกัน"* ⇒ ความต้องการ/ของคงเหลือ/ใบรอหยิบ ของการเบิกจากสโตร์ คิดรวมทั้งพื้นที่
+   · ไลน์ที่ยังไม่ผูกพื้นที่ = คิดเฉพาะไลน์ตัวเอง (`code: null`) — จอต้องเขียนว่ายังไม่ผูก ห้ามเดาไปรวมกับไลน์อื่น */
+export function areaLinesOf(slocs, lines, lineName) {
+  const ln = norm(lineName);
+  const hit = slocOfLine(slocs, lines, ln);
+  if (!hit) return { code: null, lines: ln ? [ln] : [] };
+  const own = (hit.sloc?.line_names || []).map(norm);
+  const all = [...new Set([ln, ...own, ...linesOfSloc(slocs, lines, hit.code)].filter(Boolean))];
+  return { code: hit.code, lines: all };
+}
+
+/* ═══ 🔀 ของค้าง "ไลน์แม่" ที่พื้นที่ SAP ครอบอยู่แล้ว = ไม่ใช่ปัญหา (2026-11-09 · คำสั่ง user) ═══
+   user: *"ถ้าพื้นที่ใช้ร่วมกันก็คือของอยู่ที่พื้นที่นั้น — apron assy ก็ P411 ลูก 60/61/sub apron ก็ P411 ที่เดียวกัน"*
+   ตัวตัดสต็อกตอนคอนเฟิร์ม (`fn_area_take` ฝั่ง DR) หักจาก **ทุกไลน์ในพื้นที่เดียวกัน** อยู่แล้ว
+   ⇒ ไลน์แม่ที่อยู่พื้นที่เดียวกับลูกทุกตัว = ของถูกหักได้ ไม่ต้องย้าย
+   🔴 ต้องตรงกับ SQL `fn_area_lines()` — นับเฉพาะชื่อที่ "ระบุในทะเบียนรหัสคลังเอง" (ไม่ไล่ตกทอดจากแม่)
+      ไม่งั้นจอบอกว่าหักได้ แต่ฝั่ง DB หาไม่เจอ = ของค้างเงียบ
+   · ครอบ = ไลน์แม่ถูกระบุในรหัสคลังที่มีไลน์ลูกของมัน **อย่างน้อย 1 ตัว** (ลูกตัวนั้นคอนเฟิร์มแล้วหักของที่แม่ได้)
+     ลูกที่อยู่พื้นที่อื่น (เช่น D1=P404 ขณะที่แม่อยู่ P413 — user ตัดสิน 09/11) = ไม่ใช้ของกองนี้ ตามที่ตั้ง
+   · ไลน์แม่ไม่ได้ผูกพื้นที่ / พื้นที่ของแม่ไม่มีลูกเลย = **ยังค้างจริง** คืน false */
+export function parentAreaCovers(slocs, lines, parentName) {
+  const p = norm(parentName);
+  if (!p) return false;
+  const kids = (lines || []).filter(l => l && l.is_active !== false && norm(l.parent_line_name) === p).map(l => norm(l.name));
+  if (!kids.length) return false;
+  const active = (slocs || []).filter(s => s && s.is_active !== false && Array.isArray(s.line_names));
+  const home = active.find(s => s.line_names.map(norm).includes(p));
+  if (!home) return false;
+  const names = new Set(home.line_names.map(norm));
+  return kids.some(k => names.has(k));
+}

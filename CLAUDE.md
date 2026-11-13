@@ -49,7 +49,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## Supabase Projects
 
-ระบบใช้ **2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
+**2 Supabase projects แยกกัน** — ห้ามสมมติว่าเป็น project เดียว
 
 | Project | ID | ใช้เก็บอะไร | Client ใน code |
 |---------|-----|------------|----------------|
@@ -70,6 +70,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 🔴 **โครงสร้างจริง (ตาราง/คอลัมน์/FK/หน้าไหนใช้ตารางไหน) อ่านสดที่หน้า `/schema`** — ห้ามเขียนลิสต์คอลัมน์เป็นมือที่ไหนอีก (snapshot มือล้าสมัยทุกครั้ง)
 > 📄 กฎ/เหตุผล/ประวัติรายตารางที่ pg_catalog บอกไม่ได้ (employees · production_lines · profiles · oee_targets · ot_night_bookings · workstations · employee_skills · shift_schedules · ppe_* · four_m_logs · notifications · meeting_action_items · event_comments) → **`docs/modules/db-schema.md`**
+> 📄 จอ `/schema` อ่านสดจาก pg_catalog ทั้ง 2 project → `docs/modules/schema-map.md`
+- 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`** (มีด่านใน build)
 
 **กฎเหล็กรายตารางที่ทุก session ต้องรู้ก่อนแตะ (ที่เหลืออ่านในไฟล์โมดูล):**
 - `production_lines` — 🔴 **`unit_kind` = "เป็นไลน์ผลิตไหม"** (`production` default / `support` = สำนักงาน/งานสนับสนุน) — ตัดสินผ่าน **`src/utils/unitKind.js` เท่านั้น** (มีด่าน) · **ว่าง/ไม่รู้จัก = ไลน์ผลิต** · ช่องเลือกไลน์กรอง support ออกเป็น default · จอคน/ทะเบียน (เช็คชื่อ·จัดกะ·ผังองค์กร·ทะเบียนไลน์) ต้องส่ง `includeSupport` · **คนละแกนกับ `line_type`**
@@ -87,23 +89,23 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
   🔴 **ทะเบียนที่จับคู่ด้วย "ข้อความ" (ไม่ผูก FK) — ลบ/เปลี่ยนชื่อแถวทะเบียน ต้องไล่เช็คและไล่แก้ปลายทางในคราวเดียว**
   ห้ามเช็คแค่ "มีลูกในตารางตัวเองไหม" · ต้นแบบ `src/utils/orgNodeRefs.js` (ผังองค์กร — เช็ค FK + สำเนาชื่อ ·
   ต่างชั้นใช้คีย์ต่างกัน code vs name) · **นับไม่ครบ = ห้ามลบ (fail-closed)** · 📄 `docs/modules/org-hierarchy.md`
-- **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
+- **ตารางใหม่**: RLS ครบทุก cmd ที่ client ใช้ (`upsert` ต้องมี UPDATE) + 🔴 **GRANT ระดับตารางครบทุก cmd ด้วย** (RLS ผ่านแต่ GRANT ขาด = PostgREST ตอบ **401** · คิวรีตรวจใน `db-write-rules.md`) + `has_perm('<คีย์เดียวกับปุ่มบนจอ>')` + ผูก audit (ดู Traceability) + migration file เสมอ
 
 ---
 
 ## 📄 โมดูลที่รายละเอียดอยู่ในไฟล์โมดูลล้วน (ไม่มีกฎข้าม session)
 
-ดัชนีเต็ม `docs/modules/README.md`
+**ดัชนีเต็ม + คำอธิบายรายโมดูล = `docs/modules/README.md`** (ที่นี่เก็บแค่ชื่อไฟล์ให้ grep เจอ)
 เปิดอ่าน **เฉพาะโมดูลที่งานนี้แตะ** · กฎของโมดูลพวกนี้อยู่ในไฟล์ของมัน **ไม่ใช่ที่นี่**
 
-หน้า/route ทั้งระบบ `pages-routes.md` · สายธารความต้องการ `/flow-tower` `demand-flow-tower.md` ·
-คำนวณ Kanban จาก forecast `kanban-auto-calc.md` · ออเดอร์ manual (ไลน์ไม่มีคัมบัง) `daily-report.md` ·
-QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · กระบวนการผลิต (process types) `process-types.md` ·
-ไลน์ผสมหลาย process `daily-report-mixed-process.md` · Kaizen `improvements-kaizen.md` ·
-ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
-Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
-จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
-Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md`
+`pages-routes` · `demand-flow-tower` · `kanban-auto-calc` · `daily-report` · `qr-equipment-scan` ·
+`process-types` · `daily-report-mixed-process` · `improvements-kaizen` · `morning-meeting` ·
+`factory-master-map` · `adoption-outlook` · `group-overview` · `remote-control` · `pm-coordination` ·
+`traceability-audit-log` · `reusable-pm-checker` · `logistic-planner-sales` · `scrap-report` ·
+`store-requisition-form` · `qa-inspection` · `bbs-safety` · `dept-dashboard-tv` · `vsm` ·
+`spare-part-master` · `fixture-shim-record` · `floorplan-setup` · `workforce-insight` ·
+`product-history` · `order-trace` · `feedback-inbox` · `mkt-rfq` · `i18n` · `ppe-requirements` · `integration-hub`
+(ดีไซน์ Dashboard → `docs/DASHBOARD-DESIGN.md`)
 
 ---
 ## Organizational Hierarchy · Role System
@@ -120,8 +122,14 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
 >   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
 >   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
+>   🏢 **ผังรับชั้นบน `company_group→spg→company→plant` แล้ว (04/11) — "ราก/ขึ้นตรง/ตกทอด" ถาม `src/utils/orgLayers.js` เท่านั้น**
+>     (`unitRoots`/`isOrphanDept`/`unitParentId` · ตกทอดหยุดที่ชั้นบน · ห้ามเขียน `!parent_id` ใหม่ · ด่าน `org-upper-layers-ready`)
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
+>   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
+>     ถาม `canWriteUnit(ctx,'<ส่วนงาน>')` ทั้งที่ถือ CC ระดับแผนก = **`partial_unit` (ok)** ไม่ใช่บล็อก
+>     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
+>     (แผนกพี่น้องยัง ❌ เหมือนเดิม) ⇒ **จอต้องเช็คซ้ำตอนเขียนจริง ห้ามถือ `partial_unit` เป็นใบผ่าน**
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
 >     ไลน์ตัดสินที่ตัวไลน์ก่อนถอยไปส่วนงาน · อ่านผังไม่ได้ = บล็อก (`scope_unreadable`)
@@ -131,6 +139,12 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > 🔴 **"ย้ายของ" ต้องเช็ค 2 ฝั่ง: ต้นทาง (แถวเดิม) + ปลายทาง (ค่าที่กำลังจะเขียน)** (19/10)
 >   ย้ายโหนดผัง/แผน/รายการตรวจ/แถวข้ามพาร์ท = เขียนลงหน่วยใหม่ · ด่านที่มองแถวเดิมอย่างเดียว **ปล่อยการย้ายออกนอกขอบเขตเสมอ**
 > 🔴 **หน้าแม่ที่มีกฎแล้ว ต้องส่งกฎลงแผงลูก** (ส่งแค่ `canEdit` = แผงลูกเขียนข้ามหน่วยได้) — ด่านต้องตรวจ "prop ที่ส่งจริง"
+> 🔴 **ตัวตน (`employees`) ห้ามบีบ "ขอบเขตที่ดูแล" (`profiles`)** (27/10) — หัวหน้าก็เป็นพนักงานที่สังกัด
+>   *ไลน์ลูก* แต่ `profiles.line_id` ตั้งเป็น*ไลน์แม่* ⇒ แกนไลน์ต้องผ่าน **`widerLineId()`**
+>   (`utils/lineHierarchy.js`) เอาตัวที่สูงกว่าในผัง · คนละสาย = ฐานพนักงานชนะ · ไม่รู้ผัง = ค่าเดิม (มีด่าน)
+> 🔄 **รักษาการ/รับผิดชอบเพิ่ม (`org_assignments`) ทับขอบเขตจริงตอน login ได้ทาง "กว้างขึ้น" เท่านั้น** (02/11 · คำสั่ง user)
+>   — จุดเดียว `src/utils/assignmentOverlay.js` (`applyAssignments`) · วันมีผล `isGranting()` · อ่านไม่ได้ = ไม่ทับ + จอเขียนบอก
+>   · ตำแหน่ง HR = ฐาน **ห้ามแก้ตำแหน่งให้ตรงสิทธิ์** ให้ลงมอบหมายที่ `/org-setup` แทน (ด่าน `assignment-overlay-widen-only`)
 > 🔴 **เปลี่ยนกฎที่ตัดสินขอบเขต = พิสูจน์กับทะเบียนผู้ใช้จริงก่อน merge** (26/10 · คำสั่ง user)
 >   **การบีบขอบเขตเป็น "การตั้งค่า" ไม่ใช่งานของโค้ด** — ห้ามคืนน้อยกว่าที่ `profiles` ตั้งไว้ ·
 >   ด่าน `src/utils/__tests__/scopeRegistryGate.test.mjs` (ทะเบียนไม่มีชื่อคน · SQL รีเฟรชใน `_meta`)
@@ -145,17 +159,16 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 `pending` → (supervisor) → `pending_qa` ถ้า `requires_qa` ไม่งั้น `approved` → (QA) → `approved`
 · ตีกลับ = `rejected` + `reject_reason` · **ทุกการเปลี่ยนสถานะแจ้ง Telegram Group ทันที**
 
+> ### 🔴 ปุ่ม "อนุมัติ/เซ็นรับ" ต้องถามยืนยันก่อนเขียน DB — **ของกลาง `src/utils/signConfirm.js`**
+> (คำสั่ง user 28/10 "กดพลาดคือพลาดเลย" · ขยายทั้งระบบ 02/11) ใช้ที่ **ใบ MO · 4M · ผลพิจารณาถังเหลือง**
+> **ห้ามเขียนข้อความยืนยันเองในหน้า** — ต้องบอกครบ 3 อย่าง: **อนุมัติอะไร · ใบไหน · ในนามใคร**
+> 🔴 **ห้ามถามพร่ำเพรื่อ** — จังหวะที่มีด่านอยู่แล้ว (modal/ต้องแนบรูป/ต้องพิมพ์เหตุผล) **ไม่ต้องถามซ้ำ**
+> · 3 ด่าน `mtn-approve-needs-confirm` · `approve-needs-confirm-4m` · `defect-auto-yellow`
+
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
 > เคลียร์คิวค้างจากบั๊กด้วย `rejected` + เหตุผล **ห้าม `delete` ห้าม `approved`**
 > 📄 กฎเต็ม + เหตุการณ์ → `docs/modules/four-m-workflow.md`
-
----
-
-## Logistic — Planner & Sales / Delivery / Rundown Stock (2026-07-10..11)
-
-โมดูลติดตามการส่งงานลูกค้า (ตารางทั้งหมดอยู่ DR project) — 3 หน้า:
-> 📄 รายละเอียดเต็ม → `docs/modules/logistic-planner-sales.md`
 
 ---
 
@@ -164,7 +177,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **ตัวเศษ %P = "ทุกชิ้นที่เครื่องทำออกมา" ไม่ใช่แค่งานดี** (2026-10-04)
 > `P = CT × Total Count ÷ Run` · `Q = Good ÷ Total Count` · **Total Count = ดี + เสีย + ทดลอง + สงสัย**
-> นับแต่งานดี = ของเสียถูกหัก **2 ครั้ง** ⇒ OEE ต่ำกว่าจริง · **งานทดลองเข้าด้วย**
+> **งานทดลองเข้าด้วย**
 > ⇒ `defectQtyAll` ⇒ QA ตัดสินของสงสัย **%Q ขยับ · %P ไม่ขยับ**
 > · เติมผ่าน **`ngByMatFrom()`** → `ngForP` (จอสด) · ปิดกะคิดเองจาก `defects` · **ห้ามบวกในหน้า**
 >   คิวรี `defect_logs` ต้อง embed `prod_orders(mat_no)` · ด่าน `oee-live-needs-ngforp`
@@ -175,185 +188,96 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 >   `dtMinOutsideBreaks()` + `breakIntervalsIn()` ใน `src/utils/oee.js` เท่านั้น ห้ามรวม `duration_min` เองในหน้า**
 > · จุดที่ตอบ "เครื่องหยุดกี่นาที" (พาเรโต/มูลค่า/MTTR/ตาราง DT) ยังใช้ `duration_min` เต็มเหมือนเดิม — **ห้ามสลับ 2 ชุดนี้**
 > · 🔴 **ไลน์เครื่องขนานบันทึก DT รายเครื่อง ⇒ หารจำนวนเลนก่อนหักจากเวลากะ (`laneWeightFn()`) · `dtMinBySession` ต้องส่ง `{ lines }`**
->   (มีด่าน) ไม่ส่ง = `wLoad` เหลือ 0 = **กะหายจากค่าเฉลี่ยเงียบๆ** · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
+>   (มีด่าน) · 🔴 **stamp `oee_a` ต้อง stamp `actual_qty` ด้วย** (`sessionProducedQty()` · มีด่าน)
+>   🔴 **แต่ "ของกลางของไลน์" (คอนเวเยอร์/ระบบลม) หยุด = ไลน์หยุดทั้งไลน์ ห้ามหารเลน** (28/10 · คำสั่ง user)
+>   ⇒ ทะเบียนตอบว่าตัวนี้ครอบกี่เลน (`machines.affects_lanes` · กรอกที่ `/machines`) · โหลดผ่าน
+>   **`src/utils/affectsLanes.js`** ส่งเข้า `laneWeightFn(N, affectsBy)` · **ว่าง = 1 เลน = พฤติกรรมเดิม** · ของกลางที่อยู่**ไลน์แม่** ใช้ธง `stops_whole_line`
+>   · ห้ามเขียน `1/parallelN` เองในหน้า (ด่าน `lane-weight-single-entry`)
 > · 🏭 **"ไลน์นี้พักกี่นาที" ไม่เท่ากันทุกไลน์** (`break_line_rules` · 20/10) — เจ้าของกฎ **`src/utils/breakLineRules.js`**
 >   (ไล่สายแม่→ลูก + ทะเบียนกลางที่ `breakIntervalsIn` อ่านเอง ⇒ สูตรที่มี `session` ไม่ต้องส่ง prop) ·
 >   🔴 **ห้ามทับค่า/ไล่สายเองในหน้า · ห้ามถอดการอ่านทะเบียนกลาง** · 🔴 **จอที่วาด "แถบเงาเวลาพัก" เอง
 >   ต้องส่งชื่อไลน์ของแถว** เข้า `halfDayBreakBands()` + อ่านชื่อพักจาก `band.policies`
 >   **ห้ามจับคู่จาก `start_time`** (พักท้ายกะ = `null`) (ด่าน `break-line-rules-single-entry`)
 
-> ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
-> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
->   ต้นเหตุ/ผู้ถูกพาล = `dayDelaySummaryOf()` / `pushChainOf()` · `<DelayBlameBar>` ·
->   **หน้าที่วาดบอร์ดต้องส่ง `frameEndMs`** · 🔴 **ไม่มี CT / ไม่มีงานเหลือ / ไม่ส่งปลายกะ = `null` ห้ามคืน 0**
-> · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
->   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
-> · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
-
 > ### 🔴🔴 กฎเหล็กข้าม session — **ชิ้น ≠ shot** (งานคู่ gang die / RH-LH · 2026-09-18)
-> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น ⇒ บวก `qty×CT` ทั้งสองข้าง = เวลามาตรฐาน 2 เท่า
+> CT = เวลาต่อ **1 จังหวะ** แต่ปั๊มทีเดียวได้ 2 ชิ้น
 > · **ยอดผลิต/%Q/ของเสีย นับ "ชิ้น" · เวลามาตรฐานของ %P นับ "shot" — ห้ามสลับ**
 > · ยุบผ่าน `collapsePairShots()` (`utils/pairTotals.js`) — **ภาระกะตอนวางแผน ใช้ `pairLoadTotal()`
 >   ในไฟล์เดียวกัน** (มีด่าน) · `computeLiveOee` ต้องส่ง `pairMap` ทุกจอ (มีด่าน) · **ลืม `select('pair_mat_no')` = pairMap ว่าง = นับ 2 เท่าเงียบๆ**
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"พาร์ทจริง" = สินค้า ไม่ใช่ MAT ตัวเดียว** (2026-10-05 · คำสั่ง user)
-> `op_parent_mat` = **text ช่องเดียว** ⇒ ลูกค้าอื่นของสินค้าเดียวกัน ชั้น OP ไม่ยุบ = **นับซ้ำเงียบๆ**
+> `op_parent_mat` = **text ช่องเดียว** ⇒ สินค้าเดียวกันคนละลูกค้า ชั้น OP ไม่ยุบ = **นับซ้ำเงียบๆ**
 > · ยุบผ่าน `collapseOps` ที่อ่าน **`alts`** จาก `loadOpInfo()` — จับกลุ่มด้วย **แกน `p_no`
 >   (`partCoreOf` · `src/utils/partGroup.js`) เท่านั้น ห้ามใช้ชื่อ/`family_id`** (มีด่าน) ·
->   ยุบเกินที่นี่ = ตัดขั้นที่ไม่ควรตัด = **ยอดขาด** กู้ไม่ได้ · `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
+>   `alts` ว่าง = พฤติกรรมเดิมเป๊ะ
 
 > ### 🔴🔴 กฎเหล็กข้าม session — **"ของสงสัย" ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน** (2026-09-30 · คำสั่ง user)
 > · **ของสงสัย = ยังไม่รู้ว่าดีหรือเสีย ⇒ กันออกจาก %Q แล้ว "เขียนบนจอว่ารอพิจารณากี่ชิ้น"**
->   (หลักเดียวกับงานทดลอง) · ผลพิจารณาอ่านจาก `quality_bin_records`
+>   ผลพิจารณาอ่านจาก `quality_bin_records`
 >   ผูกด้วย `defect_log_id` · ตัดสินที่ `suspectState()` (§7.1 `oee.js`) **ห้ามคิดเองในหน้า**
 >   — `scrap`/ย้ายลงถังแดง = เสีย · `good`/`repair`/`use_as_is`/`return_date` = ไม่เสีย · ไม่มีผล = **รอ**
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
 > · 🔴 **คิวรีที่เอาไปคิด %Q ต้องต่อ `${QBIN_EMBED}` ใน select** ไม่ต่อ = `suspectState()` คืน `unknown`
->   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
->   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
+>   แล้วถอยไปใช้พฤติกรรมเดิม · มีด่าน `oee-suspect-needs-qbin-embed`
+>   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** — ตัดสินแล้วคิดใหม่ผ่าน `restampSessionQByDefects()` · **NG ที่ใบเหลืองครอบ = กฎเดียวกัน** (§7.2 `binCoveredSplit`)
+
+> ### 🔴🔴 กฎเหล็กข้าม session — **ปิดกะต้องตรึง CT + นโยบายพักเป็น snapshot** (2026-11-11 · คำสั่ง user)
+> `ct_snapshot`/`break_snapshot` (DR) · เจ้าของกฎ **`src/utils/oee.js` §snapshot** · **เก็บ input ไม่ใช่ช่วงพักสำเร็จรูป**
+> · 🔴 **ไม่มี snapshot = ถอยไปทะเบียนสดเป๊ะ ห้ามบล็อก ห้าม backfill กะเก่า** · 🔴 **มีแล้วห้ามทับด้วยทะเบียนวันนี้** (2 ด่าน)
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md`
 
 ---
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
-
-หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต) — แทนฟอร์มกระดาษ 2 ใบ: แผนตรวจรายเดือน (ไลน์+กะ) + ใบผลตรวจ
-🔴 **ช่องว่างในตารางตรวจรายวันต้องตอบได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่ต้องตรวจวันนั้น"** —
-ตัดสินที่ **`src/utils/dailyCheckDay.js`** (`checkDayState()`) + รู้ว่าวันไหนผลิตจาก `src/utils/runDays.js`
-· **ตัวหาร % = ตรวจแล้ว + ขาดตรวจ เท่านั้น** · 🔴 **อ่านไม่ได้ = `unknown` ห้ามบีบเป็น "ไม่ได้ผลิต"** (มีด่าน)
-· 🔴 **สัญลักษณ์สถานะห้ามยืมตัวอักษรของ "คำตอบ" ในใบเดียวกัน** (`✗`≈`N` · `–`≈`N/A` = "ตรวจแล้วผิดปกติ")
-  ⇒ ใช้ `CHECK_DAY_META`/`CHECK_DAY_LEGEND` **ห้ามแต่ง mark/สีเองในหน้า** (มีด่าน · UI §6.29)
+หน้า `/lpa` · 🔴 **ช่องว่างในตารางตรวจรายวัน (ไม่ได้ตรวจ/ไม่ได้ผลิต/ไม่ต้องตรวจ) ตัดสินที่ `checkDayState()`
+(`src/utils/dailyCheckDay.js`) · อ่านไม่ได้ = `unknown` · ห้ามแต่ง mark/สีเอง ใช้ `CHECK_DAY_META`** (มีด่าน · UI §6.29)
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
 
-## Scrap Report — ใบรายงานของเสีย FM-PD2-002 Rev.06 (paperless + export · 2026-07-16)
-
-หน้า `/scrap-report` (`ScrapReport.jsx`) — แทนฟอร์มกระดาษ "ใบรายงานของเสีย" · export Excel ตรงฟอร์ม
-> 📄 รายละเอียดเต็ม → `docs/modules/scrap-report.md`
-
----
-
-## 📦 ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 Rev.01 (paperless · 2026-08-24)
-
-แท็บ 📦 ใบเบิกทดสอบ ใน `/qa` (`src/components/MaterialRequests.jsx`) — user ส่งใบกระดาษมา
-> 📄 รายละเอียดเต็ม → `docs/modules/store-requisition-form.md`
-
----
-
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
-
-> ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
-> ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร: **ออกใบ = เขียนทะเบียนก่อนค่อยพิมพ์** (ล้ม = ห้ามพิมพ์ต่อเงียบ) ·
-> เก็บ **`snapshot` = เนื้อใบ** · **พิมพ์ซ้ำ = ใบเดิม ไม่ออกเลขใหม่** · snapshot ไม่ตรงข้อมูลปัจจุบัน = เขียนบนจอ ·
-> เลข running = "เลขสูงสุดของเดือน+1" **ห้าม `count()+1`** · ต้นแบบ `src/lib/prodProblemDoc.js`
-> · ถังเหลือง/แดง: อายุแท็ก · ผล QA 4 ทาง · เลข WI ซ่อม → `src/utils/qualityBin.js`/`repair_wi_registry`
->   **ห้ามประกาศซ้ำในหน้า** · **ห้ามเพิ่ม `closed_at` ที่ต้องมีคนกดปิด** (ไม่มีใครกด = ของค้างเทียมเต็มจอ)
+> ### 🔴 ใบที่มีเลขที่ = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (มีด่าน)
+> ออกใบ = เขียนทะเบียนก่อนพิมพ์ · เก็บ `snapshot` · พิมพ์ซ้ำ = ใบเดิม · เลข running = สูงสุดของเดือน+1 **ห้าม `count()+1`**
+> · ต้นแบบ `src/lib/prodProblemDoc.js` · ถังเหลือง/แดง → `src/utils/qualityBin.js` **ห้ามประกาศซ้ำในหน้า**
 
 > 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md`
 
 ---
 
-## QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04)
-
-สายงานคุณภาพแบ่งชัด 2 หน้า — อย่าเอาไปปนกัน:
-> 📄 รายละเอียดเต็ม → `docs/modules/qa-inspection.md`
-
----
-
-## 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21)
-
-แท็บ 🦺 BBS ใน `/daily-checker` (`src/pages/BbsCheck.jsx`) — user ส่งฟอร์ม Excel มา
-> 📄 รายละเอียดเต็ม → `docs/modules/bbs-safety.md`
-
----
-
-## Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06)
-
-หน้าเดียวสลับส่วนงานด้วย `?dept=` — เฟส 1: ฝ่ายผลิต · ซ่อมบำรุง · สโตร์ · QA (ออกแบบเต็ม + ส่วนงานที่ยังไม่ทำ ดู `docs/DASHBOARD-DESIGN.md`)
-> 📄 รายละเอียดเต็ม → `docs/modules/dept-dashboard-tv.md`
-
----
-
-## Value Stream Mapping — `/vsm` (เฟส 1 · 2026-08-13)
-
-หน้า VSM (`VSM.jsx`, กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้าสำเร็จรูป (mat เบอร์ 1) + เดือน แล้ว
-> 📄 รายละเอียดเต็ม → `docs/modules/vsm.md`
-
----
-
 ## Production Plan — วางแผนการผลิต (`/production-plan` · แท็บ `?tab=lots` แผนสั่งงานล็อต)
-
-จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบ**กำลังผลิตที่ทำได้จริง** → ต้องเปิดกี่กะ วันไหน OT/กะดึก/วันหยุด
-· สูตรทั้งหมดอยู่ใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
-
-**กฎที่ทุก session ต้องรู้ (ที่เหลืออ่านในเอกสาร):**
-- **🧩 แผน = "กรอบ" (Layer 1) · ผลิตเปิดคัมบัง-คอนเฟิร์มยอด = ของจริง (Layer 2)** (คำสั่ง user 01/10)
-  🔴 **แผนไม่สร้างใบผลิต ไม่เขียนสถานะ** — จับคู่จาก**ยอดรวมต่อพาร์ท** (`matchPlanToActual`)
-  ⇒ ออกใบตามล็อตแล้วให้หน้างานสแกนด้วย = **เป้านับซ้ำ** · **`over`/`offPlan` ต้องโชว์ ห้ามกลืน**
-- 🔴 **ห้ามแก้ `prod_orders.session_id` ให้เป็น null ได้** — ทั้งระบบ join `production_sessions!inner`
-- **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
-- 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · ⛔ ถอดแล้วอย่ารื้อกลับ: ปุ่ม "เริ่มล็อตนี้" · `reconcilePlan()` · `production_plan:start`
-> 📄 **รายละเอียด (ปันยอดข้ามกะ · ไทม์ไลน์ลากจัดแผน · ยืดข้ามเบรค · จองเครื่องทดลอง `source='trial'`
-> · เวลาเปลี่ยนรุ่น/ความสูงแม่พิมพ์ที่ยังกรอกไม่ครบ)** → `docs/modules/production-plan.md`
+สูตรอยู่ `src/utils/planLots.js` · `planTimeline.js` · บอร์ดหลุดแผน `planStatusOf()` (`utils/heijunkaQueue.js`) — **ห้ามคิดเองในหน้า** (มีด่าน)
+· 🔴 **แผน = กรอบ ไม่สร้างใบผลิต ไม่เขียนสถานะ** (`matchPlanToActual`) · 🔴 **ห้ามแก้ `prod_orders.session_id` เป็น null** (ทั้งระบบ join `production_sessions!inner`)
+> 📄 รายละเอียดเต็ม (ยกเลิกล็อต · บอร์ดหลุดแผน/ผู้ถูกพาล · ของที่ถอดแล้ว) → `docs/modules/production-plan.md`
 
 ## MTN Work-Order — ใบแจ้งซ่อม MO (`/mtn-repair`) · JIG/DIE/PD 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**
-
-ตารางอยู่ DR project (anon-open) · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ แตกสาขาด้วย
-`stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** — มีด่าน regressionGuards
-· **หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)** — KPI ช่าง → `/mtn-analysis?tab=kpi` ·
-อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` **ห้ามเอากลับมา**
-· 🔒 **ช่องเซ็นขั้น 6/7/8 ล็อก "ฝั่ง + ตำแหน่ง"** (04/10) — ขั้นฝั่งช่าง ฝ่ายผู้แจ้งกดไม่ได้ และกลับกัน ·
-  🔴 **ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้** (ห้ามย้ายบรรทัดนั้นขึ้นก่อนด่าน) · ฝั่ง = `actorSideOf()`
-  **ห้ามเดาจากชื่อ** · **ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ** · คีย์แยก `mtn_head`/`close_cost`
-> 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`
+ตารางอยู่ DR · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ `stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** (มีด่าน)
+> 📄 รายละเอียดเต็ม (แท็บที่ย้ายออก · ล็อกช่องเซ็นฝั่ง+ตำแหน่ง `actorSideOf()`) → `docs/modules/mtn-work-order.md`
 
 ## 🗑️ "อื่นๆ / ไม่ระบุ" ห้ามขึ้นอันดับ 1 ของจอวิเคราะห์ (2026-09-23 · คำสั่ง user)
-
-*"ไม่ระบุกับอื่นๆ มาอันดับ 1 กับ 2 การวิเคราะห์จะไม่มีประโยชน์เลย"* → ใช้กับทุกจอที่วิเคราะห์ input พนักงาน
-**กติกา 5 ชั้น** — `utils/unclassified.js` (1-3) · `downtimeCategory.js` (4) · `autoCategory.js` (5)
-1. 🔴 **ต้นทาง — ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้อยู่แล้ว** (มีด่าน `regressionGuards`)
-2. **ทะเบียน taxonomy ต้องครบ + มี group** (ทีมที่ไม่มีอาการในทะเบียน = เลือกได้แค่ "อื่นๆ")
-3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก
-   "ไม่กรอกเลย" · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
-4. 🔑 **ถังขยะที่มีคีย์อื่นกรอกไว้แล้ว ต้องแตกด้วยคีย์นั้นก่อน อย่ารีบเดาจากคำ** (มีด่าน)
-   downtime: ถัง "อื่นๆ/Alarm ไม่ระบุ" **เกือบทุกใบมี `machine_no`** ⇒ `dtBucketName` (`utils/downtimeCategory.js`)
-   แตกเป็น `"<เครื่อง> · <ประเภท>"`
-5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
-   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
-   · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-   · 🔴 **ชั้นภาษาไทย = `utils/thaiText.js` · สถิติคำ = `utils/termStats.js` เท่านั้น** (เกณฑ์ตัดสิน/
-     คีย์เสียง/คำกำกวม อยู่ในไฟล์โมดูล — **ผ่อนเกณฑ์เมื่อไหร่พังทันที ห้ามแก้โดยไม่อ่าน**)
-> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
+ใช้กับทุกจอที่วิเคราะห์ input พนักงาน · กติกา 5 ชั้น `utils/unclassified.js` (1-3) · `downtimeCategory.js` (4) · `autoCategory.js` (5)
+· 🔴 **ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้** · จอต้องบอกว่าชี้เป้าไม่ได้กี่ % · **ห้ามเขียนผลเดากลับฐาน** (มีด่าน)
+· 🔴 **ชั้นภาษาไทย = `utils/thaiText.js` · สถิติคำ = `utils/termStats.js` เท่านั้น — ห้ามผ่อนเกณฑ์โดยไม่อ่านไฟล์โมดูล**
+> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4
 
 ## 📦 ของหน้าไลน์คุมที่ "พื้นที่ → ไลน์ → พาร์ท" — **เลิกจุด WIP แล้ว** (2026-10-01 · คำสั่ง user)
-
-🔴 **"จุด" ที่เหลือในระบบต้องเป็น "ที่อยู่" ไม่ใช่ "ถังที่มียอด"** — ยอดคงเหลืออยู่ที่ **ไลน์ + พาร์ท**
-(`line_part_levels`) ที่เดียว · **ยอดที่ไม่มีใครหักออก = ยอดปลอม** จุดเดียวก็ทำให้คนเลิกเชื่อทั้งจอ
-· ชั้นบัญชี = **SLoc** (`P411` = ทั้ง Apron Assy — ตรง SAP · `slocOfLine()` derive จากไลน์แม่)
-· **`wip_buffer_points` = ตารางอ่านประวัติเท่านั้น ห้ามมีจอไหนเขียน/เรียก `wip_point_add_qty` อีก** (มีด่าน)
-· ⚠️ **คนละตัวกับ `workstations` (จุดงาน = ที่ยืนของคน) และ `line_delivery_points` (ป้าย QR จุดส่ง = ที่อยู่ ไม่มียอด)** — 2 ตัวนี้ยังใช้อยู่
-📄 ตัวเลข + สิ่งที่ถอดออก + งานค้าง → `docs/modules/demand-flow-tower.md` §เลิกจุด WIP
+🔴 **ยอดคงเหลืออยู่ที่ ไลน์ + พาร์ท (`line_part_levels`) ที่เดียว** · `wip_buffer_points` = อ่านประวัติเท่านั้น
+**ห้ามเขียน/เรียก `wip_point_add_qty`** (มีด่าน) · คนละตัวกับ `workstations` / `line_delivery_points` (ยังใช้อยู่)
+📄 `docs/modules/demand-flow-tower.md` §เลิกจุด WIP
 
 ## ⏱️ ความจุกะ + ⌨️ คีย์บอร์ดของ picker (2026-10-02 · feedback หน้างาน)
-
-🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` สะสมเองในหน้า** (มีด่าน)
-`one_piece_flow` = บวกทั้งกะ · **`parallel_machine` = ภาระของ "เลนที่ใบใหม่จะไปลง" ไม่ใช่ผลรวมทั้งไลน์**
-· ยุบคู่ RH/LH ด้วย `pairLoadTotal` (ชิ้น ≠ shot) · 🔴 **ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน** · ใบที่คิดไม่ได้คืน `unknownCt` ให้จอเขียนบอก
-· `confirmed` **ยังนับเป็นภาระ** — ตัดเฉพาะ `cancelled`/`imported`/`carry_over`
-
-🔴 **picker: "เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ"** — `initialActiveRow()` (`utils/pickerKeys.js` · มีด่าน)
-**เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ** ⇒ ลิสต์ที่เล็งแถวแรกไว้จะเลือกตัวบนสุดให้เองเงียบๆ
-· ไม่มีคำค้น = `NO_ROW` · มีคำค้น = แถวแรก · **ช่องสแกนที่บล็อก ต้องคาเคอร์เซอร์ไว้ที่เดิม**
-📄 ตัวเลข + ลูกโซ่เต็ม → `docs/modules/daily-report.md`
+🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` เองในหน้า** (มีด่าน) · ไม่รู้ความจุ/CT = ไม่เตือน
+🔴 **picker: เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ** — `initialActiveRow()` (`utils/pickerKeys.js` · มีด่าน) · เครื่องสแกนส่ง Enter ท้ายรหัสเสมอ
+📄 → `docs/modules/daily-report.md`
 
 ## 🏷️ `machine_no` = คีย์ join แบบ text — เขียนต่างแบบ = แท่งซ้ำทุกจอ (2026-09-25)
 
 `SW10` กับ `SW-10` คือเครื่องเดียวกัน แต่พาเรโต/KPI ช่าง/MTBF/Andon แตกเป็นคนละแท่ง
 · 🔴 ยุบได้เฉพาะ **รูปแบบ** (ตัวพิมพ์/ช่องว่าง/ขีด/0 นำหน้า) ผ่าน `snapMachineNo` (`utils/machineNo.js`
   · ฝั่ง SQL `public.machine_key()` **ตรรกะต้องตรงกัน**) · ช่องรับเลขเครื่องใหม่ต้องผ่าน `MachineSelect`
-· 🔴 **ทับศัพท์/ชื่อย่อห้ามเดา** · คีย์ที่ทะเบียนเขียน 2 แบบ = ข้าม ให้คนลบตัวซ้ำก่อน (📄 `mtn-problem-analysis.md` §รอบ 5)
+· 🔴 **วรรณยุกต์/สระไทย "ลอย" ตัดได้ (ไม่ใช่การเดา) แต่ฐานต้องเป็นช่วงอักษรไทย*ทั้งหมด* รวมสระ** —
+  แคบเป็นพยัญชนะล้วน = กิน เครื่อง→เครือง ทั้งฐานเงียบๆ (`stripStrayThaiMarks` · มีด่าน)
+· 🔴 **ทับศัพท์/ชื่อย่อห้ามเดา** (`เลเซอร์04` ≠ `Laser4`) · คีย์ที่ทะเบียนเขียน 2 แบบ = ข้าม ให้คนลบตัวซ้ำก่อน (📄 `mtn-problem-analysis.md` §รอบ 5)
 
 ---
 
@@ -402,68 +326,30 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
 
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
-
-2 แท็บ `?tab=kpi|qc7` · สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` —
-**โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** · 🔴 แยกชนิดสินทรัพย์ (`?asset=`) ด้วย `machines.equipment_kind`
-**ห้ามใช้ `mtn_dept`** (ส่วนใหญ่ลงเป็นทีม production ปนทุกชนิดของสินทรัพย์)
-· 🔴 **พาเรโตอยู่แท็บ `qc7` ที่เดียว** (เดิมซ้ำใน KPI)
+สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` — **โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** ·
+🔴 แยกชนิดสินทรัพย์ด้วย `machines.equipment_kind` **ห้ามใช้ `mtn_dept`**
 > 📄 `docs/modules/mtn-problem-analysis.md`
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
 
-ทะเบียนที่เคยกระจาย 3 หมวดเมนู ยุบเป็นหน้าเดียว 5 แท็บ: `?tab=machine|die|jig|spare|rack`
-(route เดิม `/machine-database` `/die-registry` `/fixture` redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น
-ไม่แก้ของเดิม** (pattern เดียวกับ `PmHub`) · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
+หน้าเดียว 5 แท็บ `?tab=machine|die|jig|spare|rack` (route เดิม redirect เข้ามา) · **embed หน้าเดิมทั้งดุ้น ไม่แก้ของเดิม** · สิทธิ์ piggyback **ไม่ต้อง seed `page:/equipment`**
 · 🔴 **แท็บซ้อนแท็บต้องคนละ query param** — หน้าลูกใช้ `?die=` / `?fx=` **ห้ามใช้ `?tab=`** (UI §6.8 ข้อ 2.4)
 
 ---
 
-## คลังอะไหล่ (Spare Part Master) — FM-JIG-009 + Rank ตาม WI-JIG-010 (2026-08-05)
-
-แท็บ 🔩 คลังอะไหล่ ใน `/equipment?tab=spare` (`src/components/SparePartMaster.jsx`) — ค้นอะไหล่/ชั้นวาง · ยอดตรงการเบิกจริงในใบ MO · Rank A/B/C อัตโนมัติ
-> 📄 รายละเอียดเต็ม → `docs/modules/spare-part-master.md`
-
----
-
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
-
-> ### ⏱️ เวลาเปลี่ยนรุ่นงานปั๊ม (setup time · 2026-09-25) — คิดผ่าน `src/utils/pressSetup.js` เท่านั้น
-> `die_height_mm` + ช่วง shut height + กฎ `press_setup_rules` (เครื่อง ชนะ ไลน์ ชนะ global · กรอกที่ `/equipment?tab=die` + `/machines`)
-> ผลของความสูง = **อัตราเชิงเส้น `per_mm_sec`** (ช่างปั๊ม: 1 มม. = 1 วินาที) · **ห้ามฝังเลขเวลา setup ในโค้ด**
-> · 🔴 **ไม่มีกฎ/ไม่รู้เวลาฐาน = `null` ห้ามคืน 0** · ไม่รู้ความสูง = ธง `unknown_height` + บอกว่าต่ำกว่าจริง ·
->   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
-> · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
+> ⏱️ **เวลาเปลี่ยนรุ่นงานปั๊มคิดผ่าน `src/utils/pressSetup.js` เท่านั้น** · ห้ามฝังเลขเวลา setup ในโค้ด ·
+> 🔴 ไม่มีกฎ/ไม่รู้เวลาฐาน = `null` ห้ามคืน 0
 > 📄 `docs/modules/die-maintenance.md`
 
 ---
 
-## Fixture Shim Record — คุมความยั่งยืนของจิ๊ก (2026-09-01 · คำขอลูกค้า)
-
-หน้า `/equipment?tab=jig` (เดิม `/fixture` · แท็บลูก `?fx=` · `FixtureRegistry.jsx`) — ลูกค้าขอ ระบบบันทึกชิม (shim record) เพื่อคุม fixture sustainability
-> 📄 รายละเอียดเต็ม → `docs/modules/fixture-shim-record.md`
-
----
-
 ## PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
+> 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md` · AM↔PM → `docs/modules/am-pm-linkage-audit.md`
 
-> 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
-
-> ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
-> · **ทีม AM = `isAmTeam(department)` (`utils/pmTeams.js`) ห้าม hardcode `'production'`** (มีด่าน) · ฝั่ง edge อ่าน `mtn_teams.kind`
-> · **`next_due_date` ว่าง ≠ ปกติ** — ตัวนับ PM ทุกจอผ่าน `planDueBucket()` (`lib/pmSchedule.js`) · ถัง `never`/`no_cycle` ต้องเขียนบนจอ
->   · แผน `run_day` ไม่มีวันปฏิทิน: `resolvePlanDue` คืน `status:'run_day'` **ห้ามถอยไป last_done+interval** · ตัดสินจริงที่จอ AM/PMSchedule
-> · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
->   · 🔴 **"ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก** ผ่าน `openFamilyLines()` (`lib/pmDailyStatus.js`) **ห้ามเทียบชื่อตรงตัว** (มีด่าน)
->     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
-> · **ทะเบียนรายวัน ⇒ แผน AM = run_day อัตโนมัติชั้น DB** (`pm_am_plan_follow_registry`) —
->   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
-
----
-
-## ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16)
-
-หลักการ: หน้า display (ผังรวมโรงงาน/Dashboard) = ดู + popup เท่านั้น · การตั้งค่าผังทั้งหมดรวมที่ `/layout-setup` "🗺️ ตั้งค่าผัง/Floorplan" (หมวดตั้งค่าโปรแกรม) แยกแท็บตาม POV — เตรียมรับ Store/AMR ในอนาคต
-> 📄 รายละเอียดเต็ม → `docs/modules/floorplan-setup.md`
+> ### 🔴 AM ↔ PM (มีด่านทุกข้อ)
+> ทีม AM = `isAmTeam()` (`utils/pmTeams.js`) ห้าม hardcode · ตัวนับ PM ผ่าน `planDueBucket()` (`lib/pmSchedule.js`) ·
+> "กะนี้ AM ตรวจแล้วหรือยัง" = `lib/dailyAmBoard.js` ที่เดียว · ไลน์ที่เดินอยู่นับแม่-ลูกผ่าน `openFamilyLines()`
 
 ---
 
@@ -473,50 +359,22 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 ---
 
-## 🗄️ โครงสร้างฐานข้อมูล — `/schema` (2026-09-22)
-
-จอให้ทีมงาน**เห็นเองว่าตารางชื่ออะไร · PK/FK ผูกกันแบบไหน · หน้าไหนใช้ตารางไหน** แล้วกดแจ้งบัคพร้อมบริบท
-· โครงสร้างอ่าน**สด**จาก pg_catalog (RPC `esm_schema_overview` / `esm_schema_table` ทั้ง 2 project)
-· **ห้ามเขียนรายชื่อตาราง/คอลัมน์เป็นลิสต์มือที่ไหนอีก** — snapshot มือล้าสมัยทุกครั้ง
-· 🔴 **migration ที่ copy ข้อมูลกันพลาด ต้องสร้างใน schema `archive` ห้ามไว้ใน `public`**
-  (มีด่านใน build)
-> 📄 `docs/modules/schema-map.md`
-
----
-
 ## Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13)
-
-ระบบสะสม EXP ทักษะพนักงานจากการทำงานจริง — ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก
-2 flow ที่อนุญาต · ทุกการเพิ่มคะแนนอัตโนมัติต้องเป็นฟังก์ชันฝั่ง DB เท่านั้น
-- **⭐ v2 (2026-09-24) วัด "ความสามารถ" ไม่ใช่ "การมาทำงาน"** — 4 ขา (ปริมาณสะสมแบบ log · คุณภาพ ·
-  ความหลากหลาย/เหตุผิดปกติ · การรับรอง) + **ประตูรายขั้น** · ค่าเกณฑ์ทุกตัวอยู่ใน `skill_exp_config`
-  **ห้าม hardcode ใน SQL/JS** · `fn_skill_exp_rebuild()` **คำนวณใหม่ทั้งก้อนทุกคืน** (idempotent โดยโครงสร้าง)
-- 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
-  ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
-- 🔴 **ขา "ปริมาณ" นับ `shots` (จังหวะ) ไม่ใช่ `qty_ok` (ชิ้น)** — กฎ "ชิ้น ≠ shot" ใช้ที่นี่ด้วย ·
-  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
-  ใช้ `cum_ratio` + `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
-- ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
-> 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
-> **เหตุผล/งานวิจัย/ตารางเวลาต่อขั้น → `docs/SKILL-EXP-ALGORITHM-DESIGN.md` (อ่านก่อนปรับเกณฑ์)**
+🔴 **ห้ามเขียนคะแนน `employee_skills` จาก client นอก 2 flow ที่อนุญาต · เพิ่มคะแนนอัตโนมัติ = ฟังก์ชันฝั่ง DB เท่านั้น**
+· ค่าเกณฑ์อยู่ `skill_exp_config` ห้าม hardcode · `shadow_score = null` = ประเมินไม่ได้ ไม่ใช่ 0 · ขึ้นขั้นต้องผ่านคนอนุมัติ
+· ขา "ปริมาณ" นับ shots ใช้ `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
+> 📄 `docs/modules/employee-skills-exp.md` · ก่อนปรับเกณฑ์อ่าน `docs/SKILL-EXP-ALGORITHM-DESIGN.md`
 
 ---
 
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
-
-หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม) — โมดูลทีม Process Engineering: Process Flow / PFMEA / Control Plan ถอดโครงจากเอกสารจริง TSAT
-· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว**)
+หน้า `/pe-docs` · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · คลัง PFMEA: ระบบเสนอ คนตัดสิน (ห้าม auto-update master)
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---
 
 ## 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
-
-ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานถึง SOP (คำสั่ง user "ให้ ESM ครอบคลุม E-SPT — ทำส่วนที่ไม่ยุ่งกับ supplier ก่อน") · หมวด คุณภาพ & วิศวกรรม
-· **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
-· เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
-· ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
-· migration `20260907_npi_apqp_main.sql` (**apply แล้ว 2026-09-07**) · supplier portal = เฟส 4 ยังไม่ทำ
+· 🔴 **ตาราง `npi_*` อยู่ Main project — ห้ามย้ายไป DR** (supplier ภายนอกจะ login · DR anon-open) · สูตรไฟสี `src/utils/npi.js`
 > 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`
 
 ---
@@ -533,99 +391,45 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - **🔴 โหมดปีห้ามโหลดแถวดิบ** — ผ่าน RPC rollup (`obeya_year_rollup` ฝั่ง DR / `obeya_attendance_rollup` ฝั่ง Main)
   แล้วให้ JS หาร/ตัดสิน · **RPC ห้ามคำนวณ KPI**
 - **🔴 คอลัมน์ที่มี `not null default` ห้ามเช็ค truthiness** (`kpi_definitions.source` default `'manual'` ⇒ `!d.source` เท็จเสมอ · มีด่าน)
-- **ขอบเขตทุกแท็บ = `<OrgScopePicker>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · **Cost Center = ช่องแยก ห้ามปนในลิสต์ผัง** · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
-- **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** (คนละหน่วยเวลา/แกน/เจ้าของตัวเลข) · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
-- 🔴 **KPI การเงิน (%DL+OH · %RM · DSI · ยอดขาย/หัว) = ยอดเงินของหน่วย ÷ ตัวเลขกลางโรงงาน** — ตัวเลขฐานอยู่ `kpi_base_inputs` (ยอดขาย/COGS กรอกที่ ทั้งโรงงาน ที่เดียว) · ค่ารายเดือนคิดผ่าน `applyFormulaEntries()` (`utils/kpiFormula.js`) **ห้ามหารเองในหน้า** · ขาดตัวแปร = `null` ห้าม 0 · ตารางนี้ห้าม `upsert` (unique index เป็น expression)
+- **ขอบเขตทุกแท็บ = `<OrgScopePicker ccOnly>`** (`src/utils/orgScope.js`) ห้าม select จาก `org_nodes` เอง · 🔴 **Obeya/KPI สรุปตาม cost center — ช่องหลัก = รหัส CC หนึ่งแถวต่อรหัส (1 รหัสครอบหลายไลน์)** (30/10 คำสั่ง user) · 🔴 **CC ที่มีหน่วยเจ้าของ = หน่วยเจ้าของ** — เก็บ/เทียบ scope ของ `kpi_*` ผ่าน `canonicalScope()`/`defScopeColumns()` เท่านั้น (มีด่าน `kpi-scope-write-raw` + trigger ฝั่ง DB · 15/10) · ห้ามใช้ `ancestorsOf(cc)` (คืนแค่ plant โดยตั้งใจ)
+- **ห้ามยุบแท็บ `kpi` กับ `sqdcm` เป็นบอร์ดเดียว** · 2 แท็บนั้นวาดจาก `ObeyaSheet.jsx` ชิ้นเดียว
+- 🔴 **KPI การเงิน (%DL+OH · %RM · DSI · ยอดขาย/หัว) = ยอดเงินของหน่วย ÷ ตัวเลขกลางโรงงาน** — ตัวเลขฐานอยู่ `kpi_base_inputs` (ยอดขาย/COGS กรอกที่ ทั้งโรงงาน ที่เดียว) · ค่ารายเดือนคิดผ่าน `applyFormulaEntries()` (`utils/kpiFormula.js`) **ห้ามหารเองในหน้า** · ขาดตัวแปร = `null` ห้าม 0 · ตารางนี้ห้าม `upsert` (unique index เป็น expression) · 🔴 **ยอดขาย/หัว = ค่ากลางโรงงาน ทุกหน่วยเลขเดียว** (`scope:'plant'` · 09/11 คำสั่ง user) · 📅 **KPI สะสมตัดสินรายเดือนด้วยแผนสะสม** (`score_by_plan` → `scoreDef(v, def, { plan })` · 11/11)
 > 📄 **รายละเอียดทั้งหมด** → `docs/modules/obeya-kpi-board.md`
 > · จอ SQDCM (+โหมดปี §9) → `docs/modules/obeya.md` · ดีไซน์ → `docs/OBEYA-DESIGN.md`
 > · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
 ## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
-
-> **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
-> (มีด่าน) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
-> ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
-> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว**)
-> 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น
-> ⇒ ก่อนประกาศว่าไม่มีลูก ต้องถาม **`sheetsWithKidsOf()`** ก่อน · กางด้วย `explodeBom(..., { startSheet })`
-> **ห้ามรวมหลายใบเป็นชุดเดียว** (รวม = นับซ้ำ) · มุมมองพาร์ท = อ่านอย่างเดียว ห้ามแก้/สร้างใบให้เอง (มีด่าน)
-> 🔴 **`bomOf(mat, sheet)` = "ชุดของใบที่กางอยู่ชนะทั้งชุด" ไม่ได้รวม 2 ชุด** ⇒ ของที่มีแต่ในใบของพาร์ทเอง
-> **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
-> — **จอชี้อย่างเดียว ห้ามยุบ/ลบ/แก้ qty ของ `bom_items` ให้เอง** (PE แก้เอง · คำสั่ง user 19/10 · มีด่าน)
-> 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
->   — ใบที่ 3 เขียนคนละค่า = ยุบแล้วยอดเปลี่ยนเงียบ · พาร์ทที่**ไม่มีใบของตัวเอง**ไม่โผล่ในตารางคู่
+> **🔴 ต้นไม้ BOM ผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น** · "ใบนี้ว่าง ≠ พาร์ทไม่มีลูก" ถาม `sheetsWithKidsOf()` ·
+> **ห้ามรวมหลายใบเป็นชุดเดียว** (นับซ้ำ) · จอชี้ใบซ้ำ **ห้ามแก้ `bom_items` ให้เอง** (มีด่าน)
+> 🔻 confirm ใบผลิต: รายการที่ตัดมาจาก `fn_bom_direct_demand(mat)` (DR) ที่เดียว · ของลม = PE ติ๊กเอง ห้าม seed ·
+> โซ่ขาด `fn_bom_deduct_gaps()` ต้องโชว์ · 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm**
 > 📄 `docs/modules/bom-levels.md`
 
 ---
 
-## Workforce Insight — กำลังคน / เปลี่ยนจุดงาน / Turnover (`/workforce-insight` · 2026-09-02)
-
-หน้า `WorkforceInsight.jsx` (พนักงาน & ทักษะ) — **อ่านอย่างเดียว ไม่มี resource:action ใหม่** · 3 แท็บ: กำลังคนรายวัน · การเปลี่ยนจุดงาน · Turnover
-> 📄 รายละเอียดเต็ม → `docs/modules/workforce-insight.md`
-
----
-
-## ประวัติผลิต by Product — `/product-history` (2026-07-24)
-
-หน้า ProductHistory (กลุ่มวิเคราะห์ & รายงาน) — เลือกสินค้า (ค้นด้วย mat_no/ชื่อ/PN) → ดูย้อนหลังว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ master data
-> 📄 รายละเอียดเต็ม → `docs/modules/product-history.md`
-
----
-
-## สอบกลับ Order — `/order-trace` (Order Traceability · 2026-07-30)
-
-หน้า OrderTrace (วิเคราะห์ & รายงาน) — 2 แท็บ `order` (จากเลขใบผลิต · default) / `symptom` (จากอาการ) — สแกน `prod_no` แล้วเห็นทุกเหตุการณ์ของใบนั้น
-> 📄 รายละเอียดเต็ม → `docs/modules/order-trace.md`
-
----
-
 ## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
-
-กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
-- **ดึง ไม่ใช่ยิง** (ไม่สร้างแถว `notifications`) · **🔔 กระดิ่งแท็บ "🎯 รอคุณ" = ชั้น `mine` ชุดเดียวกัน** (`useMyQueue` โหลดร่วม)
-- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง (+ช่องเซ็นที่ตำแหน่งเราเซ็นได้คนเดียว `soleSignerFor()`) · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว**)
-- **🔴 badge (รูปโปรไฟล์ + กระดิ่ง + ไอคอนแอป) นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
-- **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
+กฎ `src/utils/myQueue.js` · 🔴 **3 ชั้น `mine`/`unit`/`floor` ห้ามยุบ · badge นับเฉพาะ `mine` ผ่าน `badgeCount()`**
 > 📄 `docs/modules/my-queue.md`
 
 ---
 
 ## 📉 Monitoring — Excel ทีมวางแผนเข้าระบบ (`/monitoring` · 02/10)
-
-13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
-`buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
-· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
-  🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
-· ⚠️ **แต่ละชีทคิด Total SL คนละสูตร — เก็บเป็น `sl_row` ห้ามยุบเอง**
-· 📦 **บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ "ไลน์"** (ยอดสั่งจาก EDI 862/830) ⇒ **IN ห้ามกรองไลน์**
+เลขทุกตัวออกจาก `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน) · 🔴 ยอดยกมาว่าง = `null` ห้ามเดา 0 ·
+ช่อง IN ที่ระบบมีเลขแล้ว = ล็อก (`makeLockLookup`)
 📄 `docs/modules/monitoring-boards.md`
 
 ---
 
 ## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
-
-กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
-· ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
-· 🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` (อ้างอิง) — ห้ามย้าย `employees.org_node_id` ห้ามแตะ `cost_center`** · **"ไปช่วย ≠ นับเป็นกำลังคน"** (ไม่เข้าช่องว่าง/ตัวนับ) · มีด่าน `manpower-flex-reference-only`
+กฎ `utils/manpowerBoard.js` · 🔴 ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id` ·
+🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` ห้ามย้าย `employees.org_node_id`/`cost_center`** (มีด่าน)
 > 📄 `docs/modules/manpower-board.md`
 
 ---
 
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
-
-จออ่านอย่างเดียว บอกว่าช่วงที่เลือก **เพิ่ม/แก้/ปรับ** อะไรไปบ้าง · **ไม่แตะ Supabase เลย**
-· 🔴 **แหล่งความจริงคือ git** — `scripts/gen-changelog.mjs` → `public/changelog.json` (อยู่ในขั้น build)
-  **ห้ามแก้ไฟล์นั้นมือ · ห้ามทำทะเบียนอัพเดทให้คนมาจดเอง** (ช่องที่ไม่มีใครกรอก = ช่องตาย)
-· 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
-· กฎตีชนิด = `src/utils/changelog.js` (**ต้องมีตะกร้ารับท้ายลิสต์** — commit ไม่ตามรูปห้ามหายจากจอ)
+🔴 **`public/changelog.json` สร้างจาก git (`scripts/gen-changelog.mjs`) — ห้ามแก้มือ · สคริปต์ห้ามทำ build ล่ม**
 > 📄 `docs/modules/program-update.md`
-
----
-
-## 💬 กล่องรับ Feedback จากหน้างาน (2026-08-14 · คำขอ user)
-
-ปุ่ม "💬 แจ้งปัญหา / ข้อเสนอแนะ" ท้าย sidebar (ใต้เปลี่ยนรหัสผ่าน) → `src/components/FeedbackModal.jsx` (lazy chunk)
-> 📄 รายละเอียดเต็ม → `docs/modules/feedback-inbox.md`
 
 ---
 
@@ -633,6 +437,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 - 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
   · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
+- 🔕 **ผู้ใช้ปิดแจ้งเตือนรายเรื่องเองได้** (เมนูโปรไฟล์) — **กรองใน `notify_recipients` ฝั่ง DB ที่เดียว ห้ามกรองในหน้า** (มีด่าน)
+  · คิวงานที่รอคนลงมือ = `notification_rules.can_mute=false` (**ทะเบียน** ตั้งที่ `/notification-config` ห้าม hardcode) · ยิงถึงเจ้าของงานตรง (`extra_user_ids`) ปิดไม่ได้อยู่แล้ว
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
@@ -641,9 +447,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` (crop + บีบ JPEG 480px q0.85 อัตโนมัติ)
-- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน) — HEIC จาก iPhone
-  เบราว์เซอร์อื่น decode ไม่ได้ · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` (มีในตัวแล้ว)
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน — HEIC) · เข้าหน้าครอปใช้ `<ImageCropModal>`
 - **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว ดูนามสกุลด้วย) ·
   **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ**
 > 📄 เหตุการณ์ egress · ตัวเลข GIF · กับดัก HEIC → `docs/modules/storage-images.md`
@@ -658,6 +463,8 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 ที่ต้องรู้ข้าม session:
 - **`src/App.jsx` = source of truth ของเมนู/หมวด** (`NAV_ITEMS`, `NAV_GROUP_ORDER`, `UserContext`, `Sidebar`)
 - **`src/main.jsx`** — `RootErrorBoundary` + `vite:preloadError` auto-reload **ห้ามถอด**
+  · 🔴 **ตาข่ายกันจอขาวอยู่ใน `index.html` (`#boot-fallback`) ห้ามถอด** — chunk โหลดไม่ได้/พังตอน import
+    = React ไม่เคยขึ้น ⇒ ErrorBoundary ไม่ทำงาน · `main.jsx` ต้องตั้ง `window.__ESM_MOUNTED` หลัง render (มีด่าน)
 - **`src/supabaseClient.js`** — 2 clients: `supabase` (Main) / `supabaseDR` (DR — anon เสมอ)
 - **`src/utils/`** = กฎ/สูตรกลางทั้งหมด (สิทธิ์ · ขอบเขตส่วนงาน · loader ทะเบียนของ picker · ชั้นภาษาไทย)
   **แก้กฎที่นี่ที่เดียว ห้ามก๊อปสูตรไปไว้ในหน้า** · `src/lib/` = logic เฉพาะโดเมน · `src/pages/` ชื่อไฟล์ตรงกับ route (⚠️ `operator.jsx` ตัวพิมพ์เล็ก)
@@ -718,12 +525,11 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 
 > ขั้น "เช็คกฎก่อน / ทำตาม convention / อัพเดทกฎในคอมมิทเดียวกัน" อยู่ที่ **§กฎการทำงานทุก session** หัวไฟล์
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
-> · เอกสารบังคับอ่าน: ทุกงาน `ENGINEERING-PRINCIPLES.md` · UI `UI-CONVENTIONS.md` · สิทธิ์ `PERMISSIONS-DESIGN.md` · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
+> · เอกสารบังคับอ่าน → §File Structure · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
-> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
+> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26)
 > **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ
-> 🔴 **ทุกครั้งที่ deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างชี้ไปไฟล์เก่าที่ถูกลบ = พังพร้อมกันทุกเครื่อง**
-> ของที่ merge แล้วแต่ยังไม่ deploy **ไม่ทำให้ใครเดือดร้อน** — รอได้เสมอ · 📄 `docs/modules/deploy.md` §หน้าต่าง deploy
+> (deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างพังพร้อมกันทุกเครื่อง) · 📄 `docs/modules/deploy.md`
 
 **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
@@ -807,6 +613,7 @@ Audit log ใครแก้อะไร `traceability-audit-log.md` · ขอ�
 - 🔴 **"คนนี้เข้ากะไหน" อ่านจาก `src/utils/shiftAssign.js` เท่านั้น** — `scheduleTeamFor(emp, maps)` (รายคน) ·
   `lineScheduleTeam(lineId, maps)` (รายไลน์) · **ห้ามอ่าน `maps.byLine[id]` ตรงๆ** และ `buildScheduleMaps(rows, **lines**)`
   ต้องส่ง `lines` เสมอ — **ไลน์ลูกตกทอดกะจากไลน์แม่** เหมือนจอตั้งค่า · ไม่ส่ง = ไลน์ลูกที่ยังไม่มีแถว = **คนไม่มีกะเงียบๆ** (2 ด่าน)
+- 🗂️ **หน่วยสนับสนุน (QA · STORE · Die/JIG/Tooling MTN · Maintenance) อยู่ในทะเบียนไลน์แล้ว** (`unit_kind='support'` + ไลน์แม่-ลูก · 05/11) ⇒ ตั้งกะ/เช็คชื่อ/ยืมคน ทางเดียวกับไลน์ · 🔴 **`shift_schedules.dept_name` = แกนเก่า ห้ามเพิ่มชื่อใหม่** (ข้อความลอย ไม่มีทะเบียน ไม่มี FK)
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**
 > 📄 ตาราง 4 รูปแบบ OT + มาตรา 75 (`shutdown75`) + จุดจองทุกทาง + migration → `docs/modules/shift-ot.md`
@@ -837,6 +644,21 @@ Platform:    Render.com (Static Site)
 
 ---
 
+## 🏷️ 2 เว็บจากโค้ดชุดเดียว — edition (2026-10-29 · คำสั่ง user "แยก frontend ของ New Model")
+
+`npm run build` → `dist/` = ESM เต็ม · `npm run build:nm` → `dist-nm/` = **เว็บ New Model (IEC)**
+— โปรแกรมตัวเดียวกัน · Supabase Main เดิม · บัญชีเดิม · ต่างแค่ "เว็บนี้มีหน้าอะไร"
+เจ้าของกฎ **`src/appEdition.js` / `src/appEdition.nm.js`** (สลับด้วย alias ใน `vite.nm.config.js`)
+- 🔴 **โมดูลใหม่ที่ "เห็นกับ NM" (Marketing ฯลฯ) = เติม `EDITION_PAGES` ของไฟล์เดิม ห้ามแตก edition ที่ 3**
+- 🔴 **`edition` ≠ สิทธิ์ ต้องผ่านทั้งคู่** — edition = "เว็บนี้มีหน้านี้ไหม" (ตายตัวตอน build · **admin ข้ามไม่ได้**
+  · ด่าน = บรรทัดแรกของ `canAccessPage()`) · **เอาหน้าเข้า `EDITION_PAGES` ไม่ได้แจกสิทธิ์ให้ใครเพิ่ม**
+  · ห้ามใช้แทนสิทธิ์ (client ล้วน ไม่มีผลกับ RLS)
+- 🔴 **import เขียน `'<path>/appEdition'` เท่านั้น** (ไม่มี `.js` ไม่มี `.nm`) · **แก้ `vite.config.js`/`index.html`
+  ต้องตามไปแก้ `vite.nm.config.js`/`nm.html`** · **ลิงก์ในหน้า NM ต้องชี้หน้าที่อยู่ใน `EDITION_PAGES`** (3 ด่าน)
+> 📄 `docs/modules/nm-frontend-split.md`
+
+---
+
 ## Branch & Deploy Workflow
 
 - **Main branch:** `main`
@@ -849,7 +671,6 @@ Platform:    Render.com (Static Site)
   - **ข้อยกเว้น (ต้องหยุดถามก่อน merge):** ถ้าเงื่อนไข 2 ไม่ผ่าน/ไม่แน่ใจว่ากระทบส่วนอื่น, หรือเป็นการเปลี่ยน schema/RLS/พฤติกรรมที่ย้อนยาก, หรือเป็น product decision ที่ตีความได้หลายแบบ → หยุดถาม user ก่อน อย่า auto-merge
 - ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
 - **ห้ามแก้ RLS policy / schema migration แบบ blanket** (loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่รู้ว่าตารางอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู §Supabase Projects
-- เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
 
 ---
 

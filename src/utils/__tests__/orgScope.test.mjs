@@ -371,3 +371,51 @@ test('inherit_scope=false — หน่วยแม่ไม่ครอบห�
   assert.ok(opt, 'JIG MTN ต้องยังอยู่ในลิสต์ตัวเลือก');
   assert.equal(opt.depth > 0, true, 'ต้องยังวาดเป็นลูกของ PD4 ในผัง');
 });
+
+test('🪞 แผนกที่มีกลุ่มไลน์เดียวชื่อเดียวกัน → แถวกลุ่มติด merged (จอซ่อน) · ไลน์ลูกขยับขึ้น 1 ชั้น · key ยังอยู่', () => {
+  const dep = idx.optionOf('department', 'HYDROFORM');
+  const grp = idx.optionOf('line_group', 'HYDROFORM');
+  const leaf = idx.optionOf('line', 'HDF1');
+  assert.ok(dep && grp && leaf);
+  assert.equal(grp.merged, true);
+  assert.equal(leaf.depth, dep.depth + 1, 'ไลน์ลูกต้องย่อหน้าต่อจากแผนกโดยตรง');
+  assert.equal(leaf.parentKey, grp.key, 'สายบรรพบุรุษไม่เปลี่ยน (ขอบเขตที่บันทึกเป็น line_group ยังครอบ)');
+  // แผนกที่กลุ่มชื่อไม่ตรง/มีหลายกลุ่ม ห้ามยุบ
+  idx.options.filter(o => o.kind === 'line_group' && o.merged).forEach((g) => {
+    const d = idx.options.find(o => o.key === g.parentKey);
+    assert.equal(d.kind, 'department');
+    assert.equal(idx.options.filter(o => o.kind === 'line_group' && o.parentKey === d.key).length, 1);
+  });
+});
+
+test('💰 ลิสต์ CC ของ index: 1 รหัส = 1 แถว · ไลน์ของรหัส = ทุกไลน์ที่ถือรหัสนั้น (ฐานของโหมด ccOnly บน Obeya)', () => {
+  const ccs = idx.options.filter(o => o.kind === 'cost_center');
+  assert.ok(ccs.length > 0);
+  assert.equal(new Set(ccs.map(o => o.value)).size, ccs.length, 'รหัสห้ามซ้ำแถว');
+  ccs.forEach(o => assert.ok(idx.lineNamesOf('cost_center', o.value).length >= 0));
+  const shared = lines.filter(l => l.cost_center).reduce((m, l) => { (m[l.cost_center] ||= []).push(l.name); return m; }, {});
+  Object.entries(shared).filter(([, names]) => names.length > 1).forEach(([cc, names]) => {
+    const got = new Set(idx.lineNamesOf('cost_center', cc));
+    names.forEach(nm => assert.ok(got.has(nm), `${cc} ต้องครอบ ${nm}`));
+  });
+});
+
+/* ═══ 🏢 ชั้นบน (company_group → spg → company → plant) เหนือส่วนงาน — ผลต้องเท่าเดิมเป๊ะ (04/11) ═══
+   บล็อกเดิม: topNodes อ่านจาก parent_id ว่าง ⇒ เติม plant เหนือส่วนงาน = ส่วนงานหายจาก picker ทั้งระบบ
+   ตอนนี้รากของชั้นหน่วยถามจาก orgLayers.unitRoots() — ชั้นบนไม่ถูกวาด (รากยังเป็น plant เสมือน) */
+test('🏢 เติมโหนดชั้นบนเหนือทุกส่วนงานแล้ว option/ancestors/linesOf ต้องเท่าเดิมทุกตัว', () => {
+  const upper = [
+    { id: 'g', kind: 'company_group', name: 'TSG', parent_id: null, sort_order: 0 },
+    { id: 'spg', kind: 'spg', code: '2000', name: 'AMF', parent_id: 'g' },
+    { id: 'co', kind: 'company', code: 'TSAT', name: 'TSAT', parent_id: 'spg' },
+    { id: 'pl', kind: 'plant', code: '2140', name: 'TSAT-P4', parent_id: 'co', cost_center: '2140000000', division: 'production' },
+  ];
+  const lifted = nodes.map(n => (n.parent_id == null ? { ...n, parent_id: 'pl' } : n));
+  const base = buildOrgScope({ nodes, lines, divisions });
+  const withUpper = buildOrgScope({ nodes: [...upper, ...lifted], lines, divisions });
+  const strip = (idx) => idx.options.map(o => [o.key, o.label, o.depth, o.cost_center ?? null, [...(idx.lineNamesOf(o.key) || [])].sort().join('|')]);
+  assert.deepEqual(strip(withUpper), strip(base), 'ชุด option ต้องไม่เปลี่ยน');
+  for (const o of base.options) assert.deepEqual(withUpper.ancestorsOf(o.key), base.ancestorsOf(o.key), `ancestors ของ ${o.key}`);
+  assert.ok(!withUpper.options.some(o => ['company_group', 'spg', 'company'].includes(o.kind)), 'ชั้นบนต้องไม่โผล่เป็น option');
+  assert.ok(!withUpper.options.some(o => o.cost_center === '2140000000'), 'รหัสของ plant ห้ามไหลลงหน่วย');
+});

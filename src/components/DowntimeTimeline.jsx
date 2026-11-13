@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CLOSE_AHEAD_WARN_MIN, dtCoverMin, fmtOffset } from '../utils/shiftWindow';
 
+import { tr } from '../utils/i18n';
 /**
  * ⏱ ไทม์ไลน์เครื่องหยุดรายไลน์ — "หยุดตอนไหนของวัน" ไม่ใช่แค่ "หยุดรวมกี่นาที"
  *
@@ -149,10 +150,10 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: RUN_COLOR, borderRadius: 2, marginRight: 4, verticalAlign: -1 }} />เดินเครื่อง</span>
-        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: '#ef4444', borderRadius: 2, marginRight: 4, verticalAlign: -1 }} />หยุดนอกแผน (สีตามประเภท)</span>
-        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: PLANNED_COLOR, borderRadius: 2, marginRight: 4, verticalAlign: -1 }} />หยุดตามแผน (ไม่นับเป็น loss)</span>
-        <span style={{ opacity: 0.8 }}>· แตะแถบเพื่อดูรายละเอียด</span>
+        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: RUN_COLOR, borderRadius: 'var(--r-xs)', marginRight: 4, verticalAlign: -1 }} />{tr('เดินเครื่อง')}</span>
+        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: '#ef4444', borderRadius: 'var(--r-xs)', marginRight: 4, verticalAlign: -1 }} />{tr('หยุดนอกแผน (สีตามประเภท)')}</span>
+        <span><span style={{ display: 'inline-block', width: 12, height: 10, background: PLANNED_COLOR, borderRadius: 'var(--r-xs)', marginRight: 4, verticalAlign: -1 }} />{tr('หยุดตามแผน (ไม่นับเป็น loss)')}</span>
+        <span style={{ opacity: 0.8 }}>{tr('· แตะแถบเพื่อดูรายละเอียด')}</span>
       </div>
 
       {/* ตารางกว้าง → เลื่อนแนวนอนในกรอบตัวเอง (หน้าห้ามเลื่อนแนวนอน) */}
@@ -188,7 +189,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                   )}
                 </div>
 
-                <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2)', borderRadius: 5, border: '1px solid var(--border)', overflow: 'hidden' }}>
+                <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                   {/* เส้นตารางรายชั่วโมง */}
                   {ticks.map(t => (
                     <div key={t} style={{ position: 'absolute', left: `${pct(t)}%`, top: 0, bottom: 0, width: 1, background: 'var(--border)', opacity: 0.5 }} />
@@ -214,7 +215,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
 
                 {/* กรอกแค่จำนวนนาที = วางบนแกนไม่ได้ — ต้องเห็น ห้ามหายเงียบ */}
                 {r.untimed > 0 && (
-                  <div title="รายการที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวม/พาเรโต้ยังนับให้ครบ)"
+                  <div title={tr('รายการที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวม/พาเรโต้ยังนับให้ครบ)')}
                     style={{ marginLeft: 6, flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
                     ⏱ +{r.untimed} ({r.untimedMin} น.)
                   </div>
@@ -226,21 +227,21 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       </div>
 
       {sel && (
-        <div style={{ marginTop: 8, padding: '8px 11px', background: 'var(--bg2)', border: `1px solid ${sel.color}`, borderRadius: 8, fontSize: 11.5, lineHeight: 1.65 }}>
+        <div style={{ marginTop: 8, padding: '8px 11px', background: 'var(--bg2)', border: `1px solid ${sel.color}`, borderRadius: 'var(--r-md)', fontSize: 11.5, lineHeight: 1.65 }}>
           <b style={{ color: sel.planned ? PLANNED_COLOR : sel.color }}>{sel.planned ? '🗓️ หยุดตามแผน' : '🔴 หยุดนอกแผน'} · {sel.name}</b>
           {' '}<span style={{ color: 'var(--muted)' }}>{sel.line}</span>
-          {sel.machine && <> · เครื่อง <b>{sel.machine}</b></>}
+          {sel.machine && <> {tr('· เครื่อง')} <b>{sel.machine}</b></>}
           <div style={{ color: 'var(--text2)' }}>
-            {hhmm(sel.st)} – {sel.open ? <b style={{ color: '#ef4444' }}>ยังหยุดอยู่</b> : hhmm(sel.en)} · <b>{sel.mins}</b> นาที
+            {hhmm(sel.st)} – {sel.open ? <b style={{ color: '#ef4444' }}>{tr('ยังหยุดอยู่')}</b> : hhmm(sel.en)} · <b>{sel.mins}</b> นาที
           </div>
-          {sel.note && <div style={{ color: 'var(--text2)' }}>💬 {sel.note}</div>}
-          <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>✕ ปิด</button>
+          {sel.note && <div style={{ color: 'var(--text2)' }}>{sel.note}</div>}
+          <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>{tr('✕ ปิด')}</button>
         </div>
       )}
 
       {totalUntimed > 0 && (
-        <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.55 }}>
-          ⏱ มี <b>{totalUntimed} รายการ</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
+        <div data-warn="1" style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.55 }}>
+          มี <b>{totalUntimed} {tr('รายการ')}</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
           (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้
         </div>
       )}

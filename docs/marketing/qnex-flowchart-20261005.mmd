@@ -1,0 +1,150 @@
+---
+config:
+  theme: base
+  themeVariables:
+    primaryColor: '#e1f5fe'
+    edgeLabelBackground: '#ffffff'
+    tertiaryColor: '#fff'
+---
+flowchart TB
+ subgraph Stage1["Manual Job Type Selection (Human-First)"]
+        ManualMatUI["Manual Select Process Type"]
+        MatDecision{"Selected Process"}
+        SteelSchema["Apply Stamping Schema"]
+        PlasticSchema["Apply Injection Schema"]
+  end
+ subgraph subGraph0["OEM Identification & Transformation Data"]
+        RawLake[("MKT Data Lake<br/>Raw PDF/Excel")]
+        Ingest["Data Ingestion Service<br/>Read Raw Email/File"]
+        Classifier[OEM Auto-Classifier<br/>Check Header / Email / Keywords]:::logic
+        CheckConfidence{Detect OEM<br/>Confident?}:::logic
+        SelectProfile[Load OEM Profile Config<br/>Tagged with OEM_ID]:::logic
+        ManualOEM[MKT Select/Confirm OEM UI]:::external
+        ManualOEM --> SelectProfile
+        TransformEngine["Data Transformation<br>- OCR/Excel Parser<br>- Data Validation/Mapping"]
+        StagingDB[("Structured Database/Historical<br>Tagged: Process_Type + OEM_ID")]
+  end
+ subgraph subGraph1["Logic & Computation Layer"]
+        AssessService["Automated Assessment"]
+        DataSelection["Data Selection Service<br/>(Allow Access / Routing)"]:::logic
+        RDPP_API[["RDPP Dep. API"]]
+        RD_API[["R&D Dep. API"]]
+        TSAT_API[["TSAT P.3 Dep. API"]]
+        IEC_API[["IEC Dep. API"]]
+        Purch_API[["Purchasing Dep. API"]]
+        DesignChange{"Pre-technical review / Design Change Required?"}
+        ExportPackage[Design Package Export]
+        PreMKTReview{"MKT Review<br/>(Concept&Cost)"}:::logic
+        CostModeler["Cost Modeler Engine"]
+        CalcEngine["Auto-Calculation Engine"]
+  end
+ subgraph subGraph2["Business Review"]
+        MKTReview{"MKT Review<br/>(Quoting Price)"}
+        ReworkTracker["Rework Process Tracker"]
+        ReworkTracker --> TargetRouter{Target Department<br/>Selection Router}:::logic
+  end
+  subgraph "Specific Department Execution (Selective Loop)"
+        TargetRouter -->|Flag: PURCHASING| RWPurch_API[[Purchasing Dep. API<br/>- Re-quote<br/>- Add Mat./BOP]]:::external
+        TargetRouter -->|Flag: IEC| RWIEC_API[[IEC Dep. API<br/>- Re-assess Engineering]]:::external
+        TargetRouter -->|Flag: TSAT| RWTSAT_API[[TSAT P.3 Dep. API<br/>- Re-assess Engineering]]:::external
+        TargetRouter -->|Flag: RD| RWRD_API[[3. R&D Dep. API<br/>- Re-assess Engineering]]:::external
+        TargetRouter -->|Flag: RDPP| RWRDPP_API[[2. RDPP Dep. API<br/>- Re-assess Engineering]]:::external
+    end
+  subgraph "Customer Feedback Loop (MKT Manual)"
+        MKT_Task -->|Offline Contact| Customer((Customer)):::external
+        Customer -.->|Reply Feedback| MKT_Task
+
+        MKT_Task --> FeedbackDecision{Customer Feedback<br/>Result}:::logic
+
+        FeedbackDecision -->|Customer's Approved| PreMKTReview:::logic
+        FeedbackDecision -->|Design Change Req| ReworkDesign[Rework Design<br/>Increment Design Version]:::logic
+        FeedbackDecision -->|Decline| Decline[Decline Quote]:::error
+    end
+    subgraph "Award Tracking Process"
+        Award["Award Tracking"]
+        Award --> AwardDecision{Award Outcome<br/>Result}:::logic
+      %% 1. Case: WON (ได้งาน)
+      AwardDecision -->|1. Won / Awarded| StateWon[Update Status: AWARDED]:::logic
+      StateWon --> CalcWon["Calculate Added Annual Sales<br/>(Annual Volume x Unit Price)"]:::logic
+      CalcWon --> GenWonReport[Generate Won Report]:::terminal
+      GenWonReport --> ProdOrder[Trigger Production Order Process]:::logic
+      ProdOrder --> SaveWon[(Log Project Data<br/>Historical Database)]:::data
+
+      %% 2. Case: LOST (ไม่ได้งาน)
+     AwardDecision -->|2. Lost / Rejected| StateLost[Update Status: LOST]:::logic
+      StateLost --> CalcLost[Capture Loss Reasons & Calculate Lost Annual Sales]:::logic
+      CalcLost --> GenLostReport[Generate Lost Sales Report]:::error
+      GenLostReport --> SaveLost[(Log Outcome & Reason<br/>Historical Database)]:::data
+
+    end
+    Ingest -- Store Unstructured --> RawLake
+    Ingest --> Classifier
+    Classifier --> CheckConfidence
+      CheckConfidence -->|Yes: High Confidence| SelectProfile
+      CheckConfidence -->|No: Uncertain / New Format| ManualOEM
+    
+    SelectProfile -- Apply Parsing Rules --> TransformEngine
+    SelectProfile -.->|Apply Calculation Template| CostModeler
+    SelectProfile -.->|Apply Quotation Format| FinalQuote
+    TransformEngine -- Save Clean Data --> StagingDB
+    Start(["Start: RFQ Received"]) --> ManualMatUI
+    ManualMatUI --> MatDecision
+    MatDecision -- Steel Stamping --> SteelSchema
+    MatDecision -- Plastic Injection --> PlasticSchema
+    SteelSchema --> Ingest
+    PlasticSchema --> Ingest
+    StagingDB -- Process Clean Data --> AssessService
+    RawLake -. Input Data<br>Only for 1st Phase .-> AssessService
+    AssessService --> DataSelection
+    DataSelection -- Async Call --> RDPP_API & RD_API & TSAT_API & IEC_API & Purch_API
+    RDPP_API -- Engineering Report/Cost --> IEC_API
+    RD_API -- Engineering Report/Cost --> IEC_API
+    TSAT_API -- Engineering Report/Cost --> IEC_API
+    IEC_API --Feasibility & Cost--> DesignChange:::logic
+    ExportPackage --> MKT_Task[Assign MKT Task<br/>Status: PENDING_CUSTOMER_FEEDBACK]:::logic
+    DesignChange:::external -->|Yes|  ExportPackage:::logic
+    DesignChange -->|No| PreMKTReview
+    ReworkDesign -- Feedback Files -->DataSelection
+    Purch_API -- Supplier Quotes --> PreMKTReview
+     PreMKTReview -->|Approved| CostModeler
+    PreMKTReview -->|Need Rev./Add. Info.| ReworkTracker
+    CostModeler --> CalcEngine
+    CalcEngine --> MKTReview
+    MKTReview -- Needs Rework --> ReworkTracker
+    MKTReview -- Approved --> FinalQuote["Generate QUOTATION"]
+    RWPurch_API --> CheckComplete{Rework Checklist<br/>Completed?}:::logic
+        RWIEC_API --> CheckComplete
+        RWTSAT_API --> CheckComplete
+        RWRD_API --> CheckComplete
+        RWRDPP_API --> CheckComplete
+        CheckComplete -->|Yes: Data Updated| PreMKTReview
+        CheckComplete -->|No: Missing Required Data| TargetRouter
+    FinalQuote --> Award["Award Tracking"]
+    SaveWon --> End
+    SaveLost --> End
+
+     Start:::terminal
+     Ingest:::logic
+     RawLake:::data
+     TransformEngine:::logic
+     StagingDB:::data
+     AssessService:::logic
+     AssessService:::logic
+     RDPP_API:::external
+     RD_API:::external
+     TSAT_API:::external
+     IEC_API:::external
+     Purch_API:::external
+     CostModeler:::logic
+     CalcEngine:::logic
+     MKTReview:::logic
+     ReworkTracker:::logic
+     FinalQuote:::terminal
+     Decline:::error
+     Award:::terminal
+     End([Process End]):::terminal
+    classDef data fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    classDef logic fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef external fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef terminal fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef error fill:#ffebee,stroke:#c62828,stroke-width:2px

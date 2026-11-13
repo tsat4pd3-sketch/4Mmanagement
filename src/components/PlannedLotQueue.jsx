@@ -19,6 +19,7 @@ import MatLabel from './MatLabel';
 import { qtyText, splitPlanForSession, matchPlanToActual } from '../utils/planLots';
 import { fetchAllPages } from '../utils/fetchByIds';
 
+import { tr } from '../utils/i18n';
 const shiftLabel = (sh) => (sh === 'night' ? 'กะดึก' : 'กะเช้า');
 const STATE_COLOR = { done: '#22c55e', partial: '#4d9fff', pending: 'var(--border2)' };
 
@@ -72,20 +73,20 @@ export default function PlannedLotQueue({ session, orders = [] }) {
     const l = r.lot;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', fontSize: 12,
-        padding: '4px 8px', background: 'var(--bg2)', borderRadius: 6,
+        padding: '4px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)',
         borderLeft: `3px solid ${carried && r.state === 'pending' ? '#f59e0b' : STATE_COLOR[r.state]}` }}>
         <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
         <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
-        {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
-        {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>🔧 {l.die_no}</span>}
+        {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>{l.machine_no}</span>}
+        {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>{l.die_no}</span>}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 12 }}>
           <b style={{ color: STATE_COLOR[r.state] }}>{qtyText(r.donePcs)}</b>
-          <span style={{ color: 'var(--muted)' }}> / {qtyText(l.qty_plan)} ชิ้น</span>
+          <span style={{ color: 'var(--muted)' }}> / {qtyText(l.qty_plan)} {tr('ชิ้น')}</span>
           {r.pct != null && <b style={{ color: STATE_COLOR[r.state] }}> · {r.pct}%</b>}
         </span>
         {r.fromOrders > 0 && (
-          <span title="ยอดนี้รวมมาจากใบผลิต/บัตรคัมบังที่หน้างานเปิดจริง" style={{ fontSize: 11, color: 'var(--muted)' }}>
+          <span title={tr('ยอดนี้รวมมาจากใบผลิต/บัตรคัมบังที่หน้างานเปิดจริง')} style={{ fontSize: 11, color: 'var(--muted)' }}>
             จาก {r.fromOrders} ใบ
           </span>
         )}
@@ -94,17 +95,17 @@ export default function PlannedLotQueue({ session, orders = [] }) {
   };
 
   return (
-    <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 9 }}>
+    <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-md)' }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff', marginBottom: 2 }}>
-        📋 กรอบแผนจากทีมวางแผน
+        กรอบแผนจากทีมวางแผน
         {m.planPcs > 0 && (
           <span style={{ color: 'var(--text2)', fontWeight: 700 }}>
-            {' '}— ทำได้ {qtyText(m.donePcs)}/{qtyText(m.planPcs)} ชิ้น ({m.pct}%) · เสร็จ {m.doneLots}/{m.rows.length} ล็อต
+            {' '}{tr('— ทำได้')} {qtyText(m.donePcs)}/{qtyText(m.planPcs)} {tr('ชิ้น (')}{m.pct}%) · เสร็จ {m.doneLots}/{m.rows.length} ล็อต
           </span>
         )}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
-        แผนเป็น<b>กรอบ</b> ไม่ได้สั่งให้เปิดใบ — หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ ระบบรวมยอดทุกกะของวันมาเทียบให้เอง
+        แผนเป็น<b>{tr('กรอบ')}</b> ไม่ได้สั่งให้เปิดใบ — หน้างานสแกนคัมบัง/เปิดเป้าตามปกติ ระบบรวมยอดทุกกะของวันมาเทียบให้เอง
       </div>
       {dayErr && (
         <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 6 }}>
@@ -134,11 +135,11 @@ export default function PlannedLotQueue({ session, orders = [] }) {
       {(m.over.length > 0 || m.offPlan.length > 0) && (
         <div style={{ marginTop: 7, fontSize: 11.5, color: 'var(--text2)', display: 'grid', gap: 2 }}>
           {m.over.length > 0 && (
-            <div>➕ <b>ทำเกินกรอบ</b> {m.over.map(o => `${o.mat_no} +${qtyText(o.pcs)}`).join(' · ')} ชิ้น</div>
+            <div>➕ <b>{tr('ทำเกินกรอบ')}</b> {m.over.map(o => `${o.mat_no} +${qtyText(o.pcs)}`).join(' · ')} {tr('ชิ้น')}</div>
           )}
           {m.offPlan.length > 0 && (
-            <div>🆕 <b>ทำนอกแผน</b> {m.offPlan.map(o => `${o.mat_no} ${qtyText(o.pcs)}`).join(' · ')} ชิ้น
-              <span style={{ color: 'var(--muted)' }}> — ไม่ใช่ความผิด แต่วางแผนต้องรู้</span></div>
+            <div>🆕 <b>{tr('ทำนอกแผน')}</b> {m.offPlan.map(o => `${o.mat_no} ${qtyText(o.pcs)}`).join(' · ')} ชิ้น
+              <span style={{ color: 'var(--muted)' }}> {tr('— ไม่ใช่ความผิด แต่วางแผนต้องรู้')}</span></div>
           )}
         </div>
       )}

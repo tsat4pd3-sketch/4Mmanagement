@@ -4,7 +4,10 @@ import ReadOnlyNote from '../components/ReadOnlyNote';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
+import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';   // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
+import { buildScheduleMaps } from '../utils/shiftAssign';
 import { UserContext } from '../App';
+import { confirmSign } from '../utils/signConfirm';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import { loadDocForms, docFormSync, fullCode, getDocForm, getDocFormRevisions, withDocFoot } from '../utils/docForms';
@@ -15,8 +18,8 @@ import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
-import { getLineFamilyNames, getLineFamilyIds } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds, sortLineNames } from '../utils/lineHierarchy';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
   MS_LEVELS, scoreToLevel, msStyle, GAUGE_FILL, GAUGE_STROKE, Q_PATHS, skillGaugeSvgStr,
@@ -25,7 +28,10 @@ import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skil
 import SkillRadarPanel from '../components/SkillRadarPanel';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
-import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
+import { buildChangePointSheet, changePointSheetHtml, changePointPrintDoc, CPC_CSS } from '../lib/changePointSheet';
+import { loadRunDays, ranOn } from '../utils/runDays';
+import { isWorkingDayFrom } from '../utils/workingDay';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -49,6 +55,12 @@ import useTimeRange from '../utils/useTimeRange';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
+import NoticeBar from '../components/NoticeBar';
+import StepFlow from '../components/StepFlow';
+import { fourMFlow } from '../utils/fourMFlow';
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr as trI18n } from '../utils/i18n';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
    🔴 ต้องรับ url ได้ เพราะ doc_control อัปโลโก้ทับรายฟอร์มได้ (`doc_forms.logo_url`)
@@ -64,6 +76,45 @@ function getTsLogoDataUrl(url) {
 }
 /** โลโก้ของฟอร์มนี้ — ทะเบียนชนะ แล้วค่อยถอยไปโลโก้ TS ทางการ */
 const formLogo = (docKey) => getTsLogoDataUrl(docFormSync(docKey, {}).logo_url);
+
+/* ══ 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวสำหรับทุกแท็บในไฟล์นี้ (QC audit 09/11 · กวาดรอบ 3) ══
+   เดิมแต่ละแท็บเขียนสูตรเอง (21 จุด) แล้วตอบไม่เหมือนกัน และทุกจุดแคบกว่าที่ `profiles` ตั้งไว้:
+   `leader` ได้ครอบครัวไลน์ (บางจุดได้ไลน์เดียว!) โดยไม่รวมส่วนงานที่ถูกกำกับไว้ (กฎ 26/10)
+   และไม่มีจุดไหนส่ง `scopeIdx` ⇒ แกน Cost Center / ขอบเขตระดับแผนก-กลุ่ม ตกหมด
+   🔴 ความหมายที่ทุกแท็บใช้ร่วมกัน:
+     `unlimited` = ไม่จำกัด · `names`/`ids` = Set ของไลน์ที่เห็นได้ (null เมื่อไม่จำกัด)
+     `empOk(emp)` = พนักงานคนนี้อยู่ในขอบเขตไหม (ไม่ผูกไลน์ = ถอยไปตัดด้วยส่วนงาน)
+     `sectionsIn(all)` = ลิสต์ส่วนงานที่เลือกได้ (กรองแล้วไม่เหลือ = ไม่กรอง — ช่องเลือกห้ามตาย) */
+function useScopeOf(lines) {
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
+  return useMemo(() => {
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: lines || [], scopeIdx });
+    const names = r.unlimited ? null : new Set(r.names);
+    const linesIn = r.unlimited ? (lines || []) : (lines || []).filter(l => names.has(l.name));
+    const ids = r.unlimited ? null : new Set(linesIn.map(l => String(l.id)));
+    /* 🔴 จำกัดขอบเขตอยู่ แต่ไม่เหลือไลน์ให้ตัด (ไลน์ของบัญชีไม่อยู่ในทะเบียน ฯลฯ) = "ตัดขอบเขตไม่ได้"
+       · ยังมีส่วนงานกำกับ ⇒ ถอยไปตัดด้วยส่วนงาน · ไม่มีเลย ⇒ `blocked` = fail-closed (ไม่มีแถว)
+       ห้ามปล่อยให้คิวรีวิ่งทั้งโรงงาน (09/11) · จอต้องเขียนบอก (`<ScopeUnresolvedNote>`) */
+    const unresolved = !r.unlimited && !(ids && ids.size);
+    return {
+      ...r, names, ids, linesIn, scopeSecs,
+      unresolved, blocked: unresolved && !scopeSecs.length,
+      lineIds: ids ? [...ids] : null,
+      empOk: (emp) => {
+        if (!ids) return true;
+        const lid = emp?.line_id;
+        if (lid != null) return ids.has(String(lid));
+        return scopeSecs.length ? inSectionScope(scopeSecs, emp?.section) : false;
+      },
+      sectionsIn: (all) => {
+        if (r.unlimited) return all;
+        const secs = new Set(linesIn.map(l => l.section).filter(Boolean));
+        const keep = (all || []).filter(x => secs.has(x) || (scopeSecs.length && inSectionScope(scopeSecs, x)));
+        return keep.length ? keep : all;
+      },
+    };
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
+}
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -137,12 +188,12 @@ function CsvBtn({ onClick, style = {} }) {
   if (!can('report', 'export', role)) return null;
   return (
     <button onClick={onClick} style={{
-      padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-      background: 'rgba(34,197,94,0.12)', color: '#22c55e',
-      border: '1px solid rgba(34,197,94,0.35)', display: 'flex', alignItems: 'center', gap: 5,
+      padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      background: 'var(--green-dim)', color: 'var(--green)',
+      border: '1px solid var(--green-line)', display: 'flex', alignItems: 'center', gap: 5,
       ...style,
     }}>
-      ⬇️ CSV
+      CSV
     </button>
   );
 }
@@ -164,6 +215,27 @@ function fillUnitLines(u, names) {
   return next.length === u.lines.length && next.every((n, i) => n === u.lines[i]) ? u : { ...u, lines: next };
 }
 
+/** 🔭 แจ้งบนจอเมื่อตัดขอบเขตของบัญชีไม่ได้ — ห้ามเงียบ (ทั้งกรณี fail-closed และกรณีถอยไปทั้งโรงงาน) */
+function ScopeUnresolvedNote({ scope, linesLoaded }) {
+  if (!scope || !linesLoaded) return null;
+  if (scope.blocked) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์ของบัญชีไม่อยู่ในทะเบียน และไม่มีส่วนงานกำกับ) — ไม่แสดงรายชื่อเพื่อไม่ให้เห็นข้ามหน่วยงาน · แจ้งผู้ดูแลระบบให้ตั้งขอบเขตที่ /add-user
+    </NoticeBar>
+  );
+  if (scope.unresolved) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตด้วยไลน์ไม่ได้ (ไลน์ของบัญชีไม่ตรงทะเบียน) — แสดงตามส่วนงานที่ตั้งไว้: {scope.scopeSecs.join(' · ')}
+    </NoticeBar>
+  );
+  if (scope.unsure) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตของบัญชีนี้ไม่ได้ (ส่วนงานที่ตั้งไว้ไม่ตรงผัง) — กำลังแสดงทั้งโรงงาน
+    </NoticeBar>
+  );
+  return null;
+}
+
 function urlScopeSeed() {
   const sc = parseScopeKey(urlParam('scope'));
   if (sc.kind === 'section') return { section: sc.value, dept: '', line: '' };
@@ -181,10 +253,10 @@ const urlTeam = () => urlParam('team') ?? '';
 const urlPeriod = (fallback) => Number(urlPick('period', ['1', '2'], String(fallback)));
 
 const CAT_META = {
-  Man:      { color: '#4d9fff', bg: 'rgba(77,159,255,0.12)',  label: 'Man',      icon: '👷' },
-  Machine:  { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', label: 'Machine',  icon: '⚙️' },
-  Material: { color: '#22c55e', bg: 'rgba(34,197,94,0.12)',  label: 'Material', icon: '📦' },
-  Method:   { color: '#c084fc', bg: 'rgba(139,92,246,0.12)', label: 'Method',   icon: '📋' },
+  Man:      { color: 'var(--blue)', bg: 'var(--blue-dim)',  label: 'Man',      icon: '👷' },
+  Machine:  { color: 'var(--amber)', bg: 'var(--amber-dim)', label: 'Machine',  icon: '⚙️' },
+  Material: { color: 'var(--green)', bg: 'var(--green-dim)',  label: 'Material', icon: '📦' },
+  Method:   { color: 'var(--blue)', bg: 'var(--blue-dim)', label: 'Method',   icon: '📋' },
 };
 
 // แท็บจองรถ: ตัดคำ "พรุ่งนี้" ออก — หน้าเลือกดูวันไหนก็ได้ (default = วันงานวันนี้)
@@ -230,7 +302,7 @@ export default function Report({ mode = 'report' }) {
   return (
     <Page>
       <PageHeader
-        title={mode === 'skills' ? 'Skill Matrix & ค่าฝีมือ' : 'รายงาน'}
+        title={mode === 'skills' ? trI18n('Skill Matrix & ค่าฝีมือ') : trI18n('รายงาน')}
         icon={mode === 'skills' ? '🏅' : '📋'}
         tabs={tabIdxs.map(i => ({ key: String(i), label: TABS[i] }))}
         tab={String(activeTab)} onTab={setTabStr}
@@ -257,15 +329,14 @@ function ExportNote() {
   const { role } = useContext(UserContext);
   return <ReadOnlyNote show={!can('report', 'export', role)} role={role}
     what="ส่งออก/พิมพ์รายงาน" permKey="report:export"
-    hint="ดูตัวเลขบนหน้าจอได้ตามปกติ — ที่ปิดคือปุ่ม CSV / Excel / พิมพ์" />;
+    hint={trI18n('ดูตัวเลขบนหน้าจอได้ตามปกติ — ที่ปิดคือปุ่ม CSV / Excel / พิมพ์')} />;
 }
 
 function OtTransportBookingTab({ autoOpenMaster }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -316,20 +387,32 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   // mandatory scope ก่อน (leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
+  /* 🔭 ขอบเขตจากของกลาง (QC audit 09/11 · กวาดรอบ 2) — เดิมเทียบ `line_id` ตรงตัว ⇒ หัวหน้าที่
+     ผูกกับไลน์แม่มองไม่เห็นคนในไลน์ลูก และไม่รู้จัก `scopeIdx` · คนที่ไม่ผูกไลน์ยังตัดด้วยส่วนงาน */
+  const empScope = useMemo(() => {
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (r.unlimited) return null;
+    const names = new Set(r.names);
+    return new Set(lines.filter(l => names.has(l.name)).map(l => String(l.id)));
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
   const filteredRows = rows
     .filter(r => {
-      if (role === 'leader' && userLineId) return String(r.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, r.employees?.section);
-      return true;
+      if (!empScope) return true;
+      const lid = r.employees?.line_id;
+      if (lid != null) return empScope.has(String(lid));
+      return scopeSecs.length ? inSectionScope(scopeSecs, r.employees?.section) : false;
     })
     .filter(r => !section    || r.employees?.section    === section)
     .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
   const allSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-  const sections = (role === 'leader' && userLineId)
-    ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
-    : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+  /* ส่วนงานที่เลือกได้ = ของไลน์ที่เห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้ (เดิม leader ได้ช่องเดียว) */
+  const sections = !empScope ? allSections : (() => {
+    const secs = new Set(lines.filter(l => empScope.has(String(l.id))).map(l => l.section).filter(Boolean));
+    const keep = allSections.filter(s => secs.has(s) || (scopeSecs.length && inSectionScope(scopeSecs, s)));
+    return keep.length ? keep : allSections;
+  })();
 
   const handleExportCsv = () => {
     downloadCSV(
@@ -367,17 +450,17 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} (${DAY_TYPE_META[dayType].label}) · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} คน</p>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)')}</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} (${DAY_TYPE_META[dayType].label}) · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} {trI18n('คน')}</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ไลน์/แผนก</th>
-<th style="border:1px solid #ccc;padding:4px">กะ</th>
-<th style="border:1px solid #ccc;padding:4px">ช่วงเวลา OT</th>
-<th style="border:1px solid #ccc;padding:4px">สายรถ</th>
-<th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ไลน์/แผนก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('กะ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ช่วงเวลา OT')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('สายรถ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('งานที่ทำ')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -388,42 +471,37 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
-          <option value="">{ALL.section}</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <span className="filter-label">วันที่ทำ OT</span>
+        {/* 09/11: ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร") · state เดิม */}
+        <SectionScopeSelect pickDept value={section} dept={deptFilter} only={sections}
+          onChange={(sec, info) => { setSection(sec); setDeptFilter(info.unit || ''); }} />
+        <span className="filter-label">{trI18n('วันที่ทำ OT')}</span>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
           <span style={{
-            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', whiteSpace: 'nowrap',
             color: isHoliday ? DAY_TYPE_META[dayType].color : 'var(--text2)',
-            background: isHoliday ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
-            border: `1px solid ${isHoliday ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`,
+            background: isHoliday ? 'var(--amber-dim)' : 'var(--bg3)',
+            border: `1px solid ${isHoliday ? 'var(--amber-line)' : 'var(--border)'}`,
           }}>
-            {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
+            {isHoliday ? '🔶 ' : ''}{trI18n(DAY_TYPE_META[dayType].label)}
           </span>
         )}
-        <Segmented value={shiftFilter} onChange={setShiftFilter} options={SHIFT_SEG_ALL} label="กะ" />
+        <Segmented value={shiftFilter} onChange={setShiftFilter} options={SHIFT_SEG_ALL} label={trI18n('กะ')} />
         <span className="spacer" />
         <div style={{ display: 'flex', gap: 8 }}>
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
               position: 'relative',
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              background: showMaster ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-            }}>⚙️ จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: showMaster ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
+            }}>{trI18n('จัดการสายรถ/งาน OT')}<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
             <button onClick={handlePrint} style={{
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)',
-            }}>🖨️ พิมพ์</button>
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)',
+            }}>{trI18n('พิมพ์')}</button>
           )}
         </div>
       </FilterBar>
@@ -431,7 +509,7 @@ table{border-collapse:collapse;width:100%}
       {showMaster && canManageMaster && <OtMasterDataPanel />}
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-        รายชื่อพนักงานที่จองว่าจะมาทำ OT วันที่ {date} (จากหน้าเช็คชื่อ ทั้งกะเช้า/กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
+        รายชื่อพนักงานที่จองว่าจะมาทำ OT วันที่ {date} {trI18n('(จากหน้าเช็คชื่อ ทั้งกะเช้า/กะดึก) — ใช้สำหรับธุรการจองรถรับส่ง · รวม')} <strong style={{ color: 'var(--text)' }}>{filteredRows.length}</strong> คน
       </div>
 
       <div className="card table-sticky" style={{ overflowX: 'auto' }}>
@@ -439,13 +517,13 @@ table{border-collapse:collapse;width:100%}
           <thead>
             <tr>
               <th style={{ minWidth: 40 }}>#</th>
-              <th style={{ minWidth: 100 }}>รหัส</th>
-              <th style={{ minWidth: 180 }}>ชื่อ-สกุล</th>
-              <th style={{ minWidth: 140 }}>ไลน์/แผนก</th>
-              <th style={{ minWidth: 70, textAlign: 'center' }}>กะ</th>
-              <th style={{ minWidth: 130, textAlign: 'center' }}>ช่วงเวลา OT</th>
-              <th style={{ minWidth: 160 }}>สายรถ</th>
-              <th style={{ minWidth: 160 }}>งานที่ทำ</th>
+              <th style={{ minWidth: 100 }}>{trI18n('รหัส')}</th>
+              <th style={{ minWidth: 180 }}>{trI18n('ชื่อ-สกุล')}</th>
+              <th style={{ minWidth: 140 }}>{trI18n('ไลน์/แผนก')}</th>
+              <th style={{ minWidth: 70, textAlign: 'center' }}>{trI18n('กะ')}</th>
+              <th style={{ minWidth: 130, textAlign: 'center' }}>{trI18n('ช่วงเวลา OT')}</th>
+              <th style={{ minWidth: 160 }}>{trI18n('สายรถ')}</th>
+              <th style={{ minWidth: 160 }}>{trI18n('งานที่ทำ')}</th>
             </tr>
           </thead>
           <tbody>
@@ -457,14 +535,14 @@ table{border-collapse:collapse;width:100%}
                 <td>{lineName(r.employees?.line_id) || r.employees?.section || r.employees?.department || '—'}</td>
                 <td style={{ textAlign: 'center' }}>{shiftLabel(r.shift)}</td>
                 <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  {otTimeLabel(r) || <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠️ ไม่ระบุ</span>}
+                  {otTimeLabel(r) || <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{trI18n('⚠️ ไม่ระบุ')}</span>}
                 </td>
                 <td>{busRouteLabel(r)}</td>
                 <td>{taskLabel(r)}</td>
               </tr>
             ))}
             {!loading && filteredRows.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานจอง OT สำหรับวันนี้</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>{trI18n('ไม่มีพนักงานจอง OT สำหรับวันนี้')}</td></tr>
             )}
           </tbody>
         </table>
@@ -549,48 +627,48 @@ function OtMasterDataPanel() {
   return (
     <div className="card mgrid" style={{ padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🚐 สายรถรับส่ง</div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{trI18n('สายรถรับส่ง')}</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder={trI18n('รหัส เช่น A17')} value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <input placeholder={trI18n('ชื่อสาย เช่น มาบยางพร-ปลวกแดง')} value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{r.code} {r.name}</span>
-              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
             </div>
           ))}
-          {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีสายรถ</div>}
+          {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ยังไม่มีสายรถ')}</div>}
         </div>
       </div>
 
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🛠️ งานที่ทำ OT</div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{trI18n('งานที่ทำ OT')}</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder={trI18n('ชื่องาน เช่น ผลิตตามแผน')} value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{t.name}</span>
-              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
             </div>
           ))}
-          {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
+          {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ยังไม่มีงาน')}</div>}
         </div>
       </div>
 
       {/* master ของหน้าเช็คชื่อ/จัดกำลังคนอีก 2 ลิสต์ (เลิก hardcode ในโค้ด — QC audit 2026-08-19)
           สิทธิ์เดียวกับแผงนี้ (ot_master:manage) — กลุ่มเดียวกัน ไม่เพิ่ม permission key ใหม่ */}
-      <SimpleNameMaster table="special_task_types" title="📋 งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
-        placeholder="เช่น 5ส, คัดงาน" offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
-      <SimpleNameMaster table="leave_types" title="🏖️ ประเภทลา (หน้า เช็คชื่อ)"
-        placeholder="เช่น ลากิจ, ลาป่วย" offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
+      <SimpleNameMaster table="special_task_types" title={trI18n('งานนอกไลน์ (หน้า จัดการไลน์ผลิต)')}
+        placeholder={trI18n('เช่น 5ส, คัดงาน')} offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
+      <SimpleNameMaster table="leave_types" title={trI18n('ประเภทลา (หน้า เช็คชื่อ)')}
+        placeholder={trI18n('เช่น ลากิจ, ลาป่วย')} offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
     </div>
   );
 }
@@ -629,22 +707,22 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
     <div>
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{title}</div>
       {missing ? (
-        <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ ยังไม่ได้ apply migration 20260819_special_task_leave_masters_main (แจ้ง admin) — ระหว่างนี้หน้าที่ใช้จะใช้ค่ามาตรฐานเดิม</div>
+        <div style={{ fontSize: 12, color: 'var(--amber)' }}>{trI18n('⚠ ยังไม่ได้ apply migration 20260819_special_task_leave_masters_main (แจ้ง admin) — ระหว่างนี้หน้าที่ใช้จะใช้ค่ามาตรฐานเดิม')}</div>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ flex: 1 }}>{r.name}</span>
-                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
               </div>
             ))}
-            {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
+            {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ยังไม่มีรายการ')}</div>}
           </div>
         </>
       )}
@@ -667,6 +745,7 @@ function DailyTab() {
   const [loading, setLoading] = useState(false);
   const [stationMap, setStationMap] = useState({});
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [dailySection, setDailySection] = useState(scopeSeed?.section ?? '');
   const [dailyLine, setDailyLine] = useState('');
   const [dailyTeam, setDailyTeam] = useState(urlTeam);
@@ -710,26 +789,17 @@ function DailyTab() {
       return true;
     });
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope (CLAUDE.md "Section/Line/Team Scoping")
-    const scoped = filtered.filter(l => {
-      if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, l.employees?.section);
-      return true;
-    });
+    const scoped = filtered.filter(l => scope.empOk(l.employees));   // 🔭 ของกลาง (hook ด้านบน)
     setLogs(scoped);
     setLoading(false);
   };
 
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const linesInScope = useMemo(() => {
-    if (role === 'leader' && userLineId) return lines.filter(l => String(l.id) === String(userLineId));
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const linesInScope = scope.linesIn;
   const dailySections = useMemo(() => {
-    if (role === 'leader' && userLineId) return sortLike(linesInScope.map(l => l.section), orgSectionList);
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, linesInScope, orgSectionList, role, userLineId, scopeSecs]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
 
   const filteredLogs = useMemo(() => logs.filter(l => {
     if (dailySection && l.employees?.section !== dailySection) return false;
@@ -763,20 +833,20 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายงานเช็คชื่อประจำวัน</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} (${dayTypeLabel}) · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} คน</p>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายงานเช็คชื่อประจำวัน')}</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} (${dayTypeLabel}) · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} {trI18n('คน')}</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">แผนก</th>
-<th style="border:1px solid #ccc;padding:4px">ทีม</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">หมวก</th>
-<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
-<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('แผนก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ทีม')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('หมวก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รองเท้า')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ถุงมือ')}</th>
 <th style="border:1px solid #ccc;padding:4px">OT</th>
-<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('จุดงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -792,21 +862,19 @@ table{border-collapse:collapse;width:100%}
         <LineScopeSelect lines={linesInScope} sections={dailySections} section={dailySection} line={dailyLine} unit={dailyDept} pickDept valueKey="id"
           onChange={(sec, ln, { unit }) => { setDailySection(ln || unit ? '' : sec); setDailyLine(ln); setDailyDept(unit || ''); }} />
         <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calLoaded && (
-          <span style={{ fontSize: 12, fontWeight: 700, color: DAY_TYPE_META[getDayType(date)].color }}>
-            {DAY_TYPE_META[getDayType(date)].label}
-          </span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: DAY_TYPE_META[getDayType(date)].color }}>{trI18n(DAY_TYPE_META[getDayType(date)].label)}</span>
         )}
-        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG_ALL} label="กะ" />
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG_ALL} label={trI18n('กะ')} />
         <span className="spacer" />
-        <span className="filter-count">รวม {filteredLogs.length} คน</span>
+        <span className="filter-count">{trI18n('รวม')} {filteredLogs.length} {trI18n('คน')}</span>
         {canExport && (
-          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-            🖨️ PDF
+          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+            PDF
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
@@ -820,7 +888,7 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
-            <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
+            <thead><tr><th>{trI18n('โปรไฟล์')}</th><th>ID</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('แผนก')}</th><th>PPE</th><th>{trI18n('จุดงาน')}</th></tr></thead>
             <tbody>
               {filteredLogs.length === 0 ? <EmptyRow cols={6} /> : filteredLogs.map(l => (
                 <tr key={l.id}>
@@ -829,9 +897,9 @@ table{border-collapse:collapse;width:100%}
                   <td style={{ fontWeight: 600 }}>{l.employees?.name}</td>
                   <td style={{ color: 'var(--muted)', fontSize: 12 }}>{l.employees?.department || '—'}</td>
                   <td>
-                    <StatusBadge ok={l.has_helmet} label="หมวก" />
-                    <StatusBadge ok={l.has_boots} label="รองเท้า" />
-                    <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
+                    <StatusBadge ok={l.has_helmet} label={trI18n('หมวก')} />
+                    <StatusBadge ok={l.has_boots} label={trI18n('รองเท้า')} />
+                    <StatusBadge ok={l.has_gloves} label={trI18n('ถุงมือ')} />
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
                 </tr>
@@ -846,10 +914,9 @@ table{border-collapse:collapse;width:100%}
 
 function PerEmployeeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -874,12 +941,15 @@ function PerEmployeeTab() {
          ใครเช็คชื่อได้ ต้องเปิดดูเดือนของเขาได้ · กรอง = ช่าง/ธุรการที่เช็คชื่อทุกวัน
          **เปิดดูประวัติตัวเองไม่ได้เลย** (วัด 14/10: Office PD4 6 คน เช็คชื่อ 28/28 วัน) */
       let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team, staff_kind').eq('is_active', true);
-      if (role === 'leader' && userLineId) {
-        const { data: ls } = await loadLinesRes();
-        const fam = getLineFamilyIds(ls || [], Number(userLineId));
-        empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
-      } else if (scopeSecs.length) {
-        empQ = empQ.in('section', scopeSecs);
+      /* 🔭 ขอบเขตจากของกลาง — ไลน์ที่เห็นได้ ∪ (คนที่ไม่ผูกไลน์ = ตัดด้วยส่วนงาน) */
+      const { data: ls } = await loadLinesRes();
+      const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ls || [], scopeIdx });
+      if (!sc.unlimited) {
+        const okNames = new Set(sc.names);
+        const ids = (ls || []).filter(l => okNames.has(l.name)).map(l => l.id).filter(v => v != null);
+        if (ids.length && scopeSecs.length) empQ = empQ.or(`line_id.in.(${ids.join(',')}),section.in.(${scopeSecs.map(x => `"${x}"`).join(',')})`);
+        else if (ids.length) empQ = empQ.in('line_id', ids);
+        else if (scopeSecs.length) empQ = empQ.in('section', scopeSecs);
       }
       const { data } = await empQ.order('name');
       setEmployees(data || []);
@@ -899,6 +969,7 @@ function PerEmployeeTab() {
     // PostgreSQL cast date ไม่ผ่าน → query ตอบ 400 → หน้าโชว์ "ไม่มีข้อมูล" เงียบๆ ทั้งเดือน)
     const [yy, mm] = month.split('-').map(Number);
     const to = `${month}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+    /* cap-ok: พนักงาน *1 คน* × 1 เดือน = 30 แถว (วัด 11/11/26) — ไม่มีทางถึง 1,000 */
     const { data, error } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, assigned_line')
       .eq('employee_id', selected).gte('work_date', from).lte('work_date', to)
@@ -909,11 +980,13 @@ function PerEmployeeTab() {
   };
 
   // dropdown ส่วนงาน เหลือเฉพาะใน scope (leader → เฉพาะส่วนงานของพนักงานในไลน์ตัวเองซึ่งถูก scope แล้ว)
+  /* ลิสต์ส่วนงาน = ส่วนงานของคนที่โหลดมาจริง (ถูก scope ที่ query แล้ว) ∪ ส่วนงานที่กำกับไว้ */
   const empSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return sortLike(employees.map(e => e.section), orgSectionList);
     const all = orgSectionList.length ? orgSectionList : sortLike(employees.map(e => e.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [employees, orgSectionList, role, userLineId, scopeSecs]);
+    const mine = new Set(employees.map(e => e.section).filter(Boolean));
+    const keep = all.filter(x => mine.has(x) || (scopeSecs.length && inSectionScope(scopeSecs, x)));
+    return (scopeSecs.length || mine.size) ? (keep.length ? keep : all) : all;
+  }, [employees, orgSectionList, scopeSecs]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
     if (empSection && e.section    !== empSection) return false;
     if (empDept    && e.department !== empDept)    return false;
@@ -934,7 +1007,7 @@ function PerEmployeeTab() {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = logs.map((l, i) => {
       const dt = DAY_TYPE_META[getDayType(l.work_date)];
-      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${dt.color}22` : ''}">
+      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${tint(dt.color, 'dim')}` : ''}">
       <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(l.work_date)}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center;color:${dt.color}">${dt.label}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${l.is_present ? '✓' : '✗'}</td>
@@ -950,16 +1023,16 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายงานรายพนักงาน</h2>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายงานรายพนักงาน')}</h2>
 <p style="color:#666;margin:0 0 12px;font-size:10px">${emp?.employee_id_code || ''} — ${emp?.name || ''} · เดือน: ${month} · พิมพ์วันที่: ${todayStr}</p>
 <table><thead><tr style="background:#f3f4f6">
-<th style="border:1px solid #ccc;padding:4px">วันที่</th>
-<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">หมวก</th>
-<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
-<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
-<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันที่')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ประเภทวัน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('หมวก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รองเท้า')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ถุงมือ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('จุดงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -970,27 +1043,21 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {empSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        <SectionScopeSelect pickDept value={empSection} dept={empDept} only={empSections}
+          onChange={(sec, info) => { setEmpSection(sec); setEmpDept(info.unit || ''); }} />
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+        <SearchSelect value={String(selected ?? '')} placeholder={trI18n('ค้นหาพนักงาน (รหัส/ชื่อ)…')} style={{ flex: '0 1 320px', minWidth: 240 }}
           options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
           onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <span className="spacer" />
-        <span className="filter-count">มา {logs.filter(l => l.is_present).length} วัน</span>
+        <span className="filter-count">{trI18n('มา')} {logs.filter(l => l.is_present).length} {trI18n('วัน')}</span>
         {canExport && (
-          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
-            🖨️ PDF
+          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
+            PDF
           </button>
         )}
         <CsvBtn onClick={() => {
@@ -1007,15 +1074,15 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
-            <thead><tr><th>วันที่</th><th>PPE</th><th>จุดงาน</th></tr></thead>
+            <thead><tr><th>{trI18n('วันที่')}</th><th>PPE</th><th>{trI18n('จุดงาน')}</th></tr></thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={3} /> : logs.map((l, i) => (
                 <tr key={i}>
                   <td style={{ fontWeight: 600 }}>{fmtDate(l.work_date)}</td>
                   <td>
-                    <StatusBadge ok={l.has_helmet} label="หมวก" />
-                    <StatusBadge ok={l.has_boots} label="รองเท้า" />
-                    <StatusBadge ok={l.has_gloves} label="ถุงมือ" />
+                    <StatusBadge ok={l.has_helmet} label={trI18n('หมวก')} />
+                    <StatusBadge ok={l.has_boots} label={trI18n('รองเท้า')} />
+                    <StatusBadge ok={l.has_gloves} label={trI18n('ถุงมือ')} />
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.assigned_line ? (stationMap[String(l.assigned_line)] || l.assigned_line) : '—'}</td>
                 </tr>
@@ -1030,12 +1097,13 @@ table{border-collapse:collapse;width:100%}
 
 function StationLogTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [selectedStation, setSelectedStation] = useState('');
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
      แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
@@ -1064,28 +1132,19 @@ function StationLogTab() {
   // อยู่แล้วก็ตาม (2026-09 · user จับได้จากภาพหน้าจอ "ไม่กรอง hierarchy") — เติมตัวกรองส่วนงานแบบเดียวกับ
   // DailyTab/PerEmployeeTab ในไฟล์นี้ ให้แคบเหลือทีละส่วนงานก่อนไปเลือกสถานี
   const stationSectionsList = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine?.section ? [myLine.section] : [];
-    }
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
 
   // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
   // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
   // แล้วซ้อนตัวกรอง "ส่วนงาน" ที่ user เลือกเองทับอีกชั้น (แคบลงได้อย่างเดียว ไม่มีทางเห็นนอก scope ที่ role อนุญาต)
   const scopedStations = useMemo(() => {
-    const isRoleScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
+    /* 🔭 ของกลาง — ไลน์ที่เห็นได้ · ทะเบียนไลน์ยังไม่โหลด (แต่บัญชีถูกจำกัด) = fail-closed เหมือนเดิม */
     let out = stations;
-    if (isRoleScoped) {
+    if (!scope.unlimited) {
       if (!lines.length) return [];
-      if (role === 'leader' && userLineId) {
-        const myLine = lines.find(l => String(l.id) === String(userLineId));
-        out = myLine ? stations.filter(s => s.line_name === myLine.name) : [];
-      } else {
-        out = stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
-      }
+      out = stations.filter(s => scope.names.has(s.line_name));
     }
     if (stationSection) out = out.filter(s => secByLineName[s.line_name] === stationSection);
     return out;
@@ -1145,7 +1204,7 @@ function StationLogTab() {
     const todayStr = new Date().toLocaleDateString('th-TH', { dateStyle: 'long' });
     const rowsHtml = filteredRows.map((r, i) => {
       const dt = DAY_TYPE_META[getDayType(r.work_date)];
-      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${dt.color}22` : ''}">
+      return `<tr style="${dt.label !== DAY_TYPE_META.working.label ? `background:${tint(dt.color, 'dim')}` : ''}">
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center">${i+1}</td>
       <td style="border:1px solid #ccc;padding:3px 6px">${fmtDate(r.work_date)}</td>
       <td style="border:1px solid #ccc;padding:3px 6px;text-align:center;color:${dt.color}">${dt.label}</td>
@@ -1164,17 +1223,17 @@ table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
 <h2 style="margin:0 0 4px;font-size:16px">Log จุดงาน: ${station?.station_name || ''}</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">ไลน์: ${station?.line_name || ''} · ${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} รายการ</p>
+<p style="color:#666;margin:0 0 12px;font-size:10px">ไลน์: ${station?.line_name || ''} · ${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} {trI18n('รายการ')}</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">วันที่</th>
-<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ทีม</th>
-<th style="border:1px solid #ccc;padding:4px">กะ</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันที่')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ประเภทวัน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ทีม')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('กะ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('PPE ครบ')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -1190,27 +1249,24 @@ table{border-collapse:collapse;width:100%}
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect lines={lines} value={stationSection} onChange={s => setStationSection(s)} only={stationSectionsList} />
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
-              {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
+              {sts.map(s => <option key={s.id} value={String(s.id)}>{trI18n(s.station_name)}</option>)}
             </optgroup>
           ))}
         </select>
         <select value={stationTeam} onChange={e => setStationTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <Segmented value={stationShift} onChange={setStationShift} options={SHIFT_OPTIONS} label="กะ" />
+        <Segmented value={stationShift} onChange={setStationShift} options={SHIFT_OPTIONS} label={trI18n('กะ')} />
         <span className="spacer" />
-        <span className="filter-count">{filteredRows.length} รายการ</span>
+        <span className="filter-count">{filteredRows.length} {trI18n('รายการ')}</span>
         {canExport && (
-          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
-            🖨️ PDF
+          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+            PDF
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
@@ -1222,8 +1278,8 @@ table{border-collapse:collapse;width:100%}
       </TimeRangeBar>
 
       {station && (
-        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>📍 {station.station_name}</span>
+        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{station.station_name}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
         </div>
       )}
@@ -1233,13 +1289,13 @@ table{border-collapse:collapse;width:100%}
           <table style={{ minWidth: 520 }}>
             <thead>
               <tr>
-                <th>วันที่</th>
-                <th>โปรไฟล์</th>
-                <th>รหัส</th>
-                <th>ชื่อ</th>
-                <th>ทีม</th>
+                <th>{trI18n('วันที่')}</th>
+                <th>{trI18n('โปรไฟล์')}</th>
+                <th>{trI18n('รหัส')}</th>
+                <th>{trI18n('ชื่อ')}</th>
+                <th>{trI18n('ทีม')}</th>
                 <th>PPE</th>
-                <th>สถานะ</th>
+                <th>{trI18n('สถานะ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1250,12 +1306,12 @@ table{border-collapse:collapse;width:100%}
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
                   <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
                   <td style={{ fontSize: 12 }}>
-                    {r.employees?.team && <span style={{ background: 'rgba(77,159,255,0.15)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
+                    {r.employees?.team && <span style={{ background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
                   </td>
                   <td>
-                    <StatusBadge ok={r.has_helmet} label="หมวก" />
-                    <StatusBadge ok={r.has_boots} label="รองเท้า" />
-                    <StatusBadge ok={r.has_gloves} label="ถุงมือ" />
+                    <StatusBadge ok={r.has_helmet} label={trI18n('หมวก')} />
+                    <StatusBadge ok={r.has_boots} label={trI18n('รองเท้า')} />
+                    <StatusBadge ok={r.has_gloves} label={trI18n('ถุงมือ')} />
                   </td>
                   <td>
                     <span style={{ fontSize: 12, fontWeight: 700, color: r.is_present ? 'var(--green)' : 'var(--red)' }}>
@@ -1275,7 +1331,7 @@ table{border-collapse:collapse;width:100%}
 function RangeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const orgSectionList = useOrgSections();   // ลำดับส่วนงานตามผัง เหมือนแท็บอื่น (2026-10-01)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
@@ -1285,6 +1341,7 @@ function RangeTab() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   /* ?scope= — แผนก: ตั้งชื่อไว้ก่อน แล้ว <LineScopeSelect onUnitLines> เติมชุดไลน์ให้เมื่อผังโหลดเสร็จ (20/10) */
   const [scopeSeed] = useState(urlScopeSeed);
   const [rangeSection, setRangeSection] = useState(scopeSeed?.section ?? '');
@@ -1307,11 +1364,7 @@ function RangeTab() {
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
       .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id').order('id'));
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
-    const scoped = (data || []).filter(l => {
-      if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, l.employees?.section);
-      return true;
-    });
+    const scoped = (data || []).filter(l => scope.empOk(l.employees));   // 🔭 ของกลาง (hook ด้านบน)
     const map = {};
     scoped.forEach(l => {
       const key = l.employee_id;
@@ -1324,11 +1377,7 @@ function RangeTab() {
   };
 
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const rangeLinesInScope = useMemo(() => {
-    if (role === 'leader' && userLineId) return lines.filter(l => String(l.id) === String(userLineId));
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const rangeLinesInScope = scope.linesIn;
   const rangeSections = useMemo(() => sortLike(rangeLinesInScope.map(l => l.section), orgSectionList), [rangeLinesInScope, orgSectionList]);
 
   const rangeUnitIds = useMemo(() => new Set(lines.filter(l => rangeUnit.lines.includes(l.name)).map(l => String(l.id))), [lines, rangeUnit]);
@@ -1361,17 +1410,17 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">สรุปการมาทำงานช่วงเวลา</h2>
-<p style="color:#666;margin:0 0 12px;font-size:10px">${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} คน</p>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('สรุปการมาทำงานช่วงเวลา')}</h2>
+<p style="color:#666;margin:0 0 12px;font-size:10px">${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} {trI18n('คน')}</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ส่วนงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ส่วนงาน')}</th>
 <th style="border:1px solid #ccc;padding:4px">Team</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">วันทั้งหมด</th>
-<th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันทั้งหมด')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('%การมาทำงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -1390,14 +1439,14 @@ table{border-collapse:collapse;width:100%}
         <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id" onUnitLines={ul => setRangeUnit(u => fillUnitLines(u, ul))}
           onChange={(sec, ln, { unit, lines: ul }) => { setRangeSection(ln || unit ? '' : sec); setRangeLine(ln); setRangeUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span className="spacer" />
-        <span className="filter-count">{filteredRows.length} คน</span>
+        <span className="filter-count">{filteredRows.length} {trI18n('คน')}</span>
         {canExport && (
-          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
-            🖨️ PDF
+          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+            PDF
           </button>
         )}
         <CsvBtn onClick={() => downloadCSV(
@@ -1410,7 +1459,7 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
-            <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
+            <thead><tr><th>ID</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('มาทำงาน')}</th><th>%</th></tr></thead>
             <tbody>
               {filteredRows.length === 0 ? <EmptyRow cols={4} /> : filteredRows.map((r, i) => (
                 <tr key={i}>
@@ -1419,8 +1468,8 @@ table{border-collapse:collapse;width:100%}
                   <td><KpiSmall value={r.present} label={`/ ${r.total} วัน`} /></td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, minWidth: 60 }}>
-                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.5s' }} />
+                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', minWidth: 60 }}>
+                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 'var(--r-xs)', transition: 'width 0.5s' }} />
                       </div>
                       <span style={{ fontSize: 11, color: 'var(--text2)', minWidth: 30 }}>{r.total ? Math.round(r.present / r.total * 100) : 0}%</span>
                     </div>
@@ -1441,17 +1490,17 @@ const STATUS_META = {
         และทุกจอที่นับ "ค้างรออนุมัติ" กรอง `.in('status',['pending','pending_qa'])` อยู่แล้ว
      ⇒ ขาดป้ายนี้ = ตกไปที่ fallback `STATUS_META.pending` แล้วจอโกหกว่า "รอ SV Approve"
         (ขัดกฎ §4M "4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ") */
-  pending_doc: { label: '📎 รอแนบเอกสาร OJT', color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
-  pending:     { label: '⏳ รอ SV Approve',  color: '#f59e0b', bg: 'rgba(245,158,11,0.12)'  },
-  pending_qa:  { label: '🔍 รอ QA Approve',  color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
-  approved:    { label: '✅ Approved',        color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
-  rejected:    { label: '❌ Rejected',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'   },
+  pending_doc: { label: 'รอแนบเอกสาร OJT', color: 'var(--blue)', bg: 'var(--blue-dim)' },
+  pending:     { label: 'รอ SV Approve',  color: 'var(--amber)', bg: 'var(--amber-dim)'  },
+  pending_qa:  { label: 'รอ QA Approve',  color: 'var(--blue)', bg: 'var(--blue-dim)'  },
+  approved:    { label: 'Approved',        color: 'var(--green)', bg: 'var(--green-dim)'   },
+  rejected:    { label: 'Rejected',        color: 'var(--red)', bg: 'var(--red-dim)'   },
 };
 
 /* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
    ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
 function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '', scopeIdx } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
@@ -1493,7 +1542,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [focus,       setFocus]       = useState(focusId);  // id ใบที่เน้นอยู่ ('' = ไม่เน้น)
   const [logs,        setLogs]        = useState([]);
   const [lines,       setLines]       = useState([]);
-  const [loading,     setLoading]     = useState(false);
+  /* 🔴 เริ่ม `true` — เริ่ม false = เฟรมแรกวาด "ไม่มีข้อมูล"/"ไม่พบใบที่เลือก" ทั้งที่ยังไม่ได้ยิงคิวรี (28/10) */
+  const [loading,     setLoading]     = useState(true);
+  /* 🔴 "ยังไม่รู้ขอบเขต" ≠ "ขอบเขตว่าง" — ทะเบียนไลน์โหลดทีหลัง (loadLinesRes) ⇒ รอบแรก `lines` ว่าง
+     ⇒ allowedLineNames = [] ⇒ คิวรีกลายเป็น `.in('line_name', ['__none__'])` = 0 แถว
+     ⇒ จอขึ้น "⚠️ ไม่พบใบที่เลือกในรายการนี้" แล้วอีกแป๊บใบก็โผล่มาเอง (เคสจริง 28/10 จาก deep-link)
+     ⇒ ต้องกลั้นไม่ให้ยิงคิวรีจนกว่าทะเบียนไลน์จะ settle */
+  const [linesLoaded, setLinesLoaded] = useState(false);
   const [fourMSection, setFourMSection] = useState(scopeSeed?.section ?? '');
   const [fourMUnit, setFourMUnit] = useState({ name: scopeSeed?.dept || '', lines: [] });   // แผนก (org) → ชุดไลน์ (02/10)
   const [rejectModal,  setRejectModal]  = useState(null);
@@ -1505,6 +1560,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [isApprovingSaving, setIsApprovingSaving] = useState(false);
   const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
   const [cpcExporting, setCpcExporting] = useState(false);
+  // มุมมองแท็บ 4M: 'table' รายการใบ · 'sheet' ใบ Changing Point บนจอ (ไม่ต้องกด Export) — 2026-11-05
+  const [fourMView, setFourMView] = useState(() => urlPick('view', ['table', 'sheet'], 'table'));
+  const [cpcSheet, setCpcSheet] = useState({ key: '', html: '', loading: false, error: '' });
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
   const [showDocPanel, setShowDocPanel] = useState(false);
   const canManageDoc = can('four_m', 'manage_docs', role);
@@ -1518,22 +1576,21 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   // supervisor/leader เห็น 4M log เฉพาะไลน์/ส่วนงานตัวเอง (เดิมเห็นข้ามไลน์ได้หมด)
+  /* คืน `undefined` = **ยังตัดสินขอบเขตไม่ได้** (ทะเบียนไลน์ยังไม่ settle) — คนละความหมายกับ
+     `[]` = รู้แล้วว่าไม่มีไลน์ในขอบเขต และ `null` = ไม่จำกัด · ห้ามยุบ 3 ค่านี้เป็นค่าเดียว */
   const allowedLineNames = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => l.id === userLineId);
-      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
-    }
-    if (scopeSecs.length) {
-      return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
-    }
-    return null;
-  }, [role, scopeSecs, userLineId, lines]);
+    const needsLines = role !== 'admin' && (!!userLineId || scopeSecs.length > 0);   // แค่ถามว่า "ต้องรอทะเบียนไลน์ไหม" ไม่ใช่ตัวตัดสินขอบเขต
+    if (needsLines && !linesLoaded) return undefined;         // ยังตัดสินไม่ได้ (คงความหมายเดิม 3 ค่า)
+    /* 🔭 ของกลาง `lineScope()` — leader = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · รู้จัก scopeIdx */
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : r.names;
+  }, [role, scopeSecs, userLineId, lines, linesLoaded, scopeIdx]);
 
   useEffect(() => {
     loadLinesRes().then(({ data }) => {
       setLines(data || []); // 2026-09-07 ครบคอลัมน์ให้ <LineSelect>
       if (seedLineId(scopeSeed, data)) setLine(scopeSeed.line);   // แท็บนี้เก็บไลน์เป็นชื่อ
-    });
+    }).catch(() => {}).finally(() => setLinesLoaded(true));   // ล้มก็ต้องปลดล็อก ไม่งั้นจอค้างหมุน
     loadCompanyCalendar();
   }, []);
 
@@ -1559,6 +1616,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   const load = async () => {
+    /* 🔴 ยังไม่รู้ขอบเขต = **ยังไม่ยิงคิวรี** และคา loading ไว้ — ยิงไปก็ได้ 0 แถวแล้วจอโกหกว่าไม่มีใบ
+       (effect มี allowedLineNames ใน deps ⇒ พอทะเบียนไลน์มาถึงจะวิ่งรอบใหม่เอง) */
+    if (allowedLineNames === undefined) { setLoading(true); return; }
     setLoading(true);
     const data = await fetchAllRows(buildQ);
     setLogs(data || []);
@@ -1567,7 +1627,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     if (allIds.length) {
       const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', allIds);
       const map = {};
-      (profiles || []).forEach(p => { map[p.id] = p.full_name || 'ไม่ระบุ'; });
+      (profiles || []).forEach(p => { map[p.id] = p.full_name || trI18n('ไม่ระบุ'); });
       setProfileMap(map);
     }
     setLoading(false);
@@ -1581,6 +1641,23 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       setQaImagePreview(null);
       return;
     }
+
+    /* 🔴 ถามยืนยันก่อนเขียน — การอนุมัติเป็น one-way (02/11 · ขยายกฎ MO มาทั้งระบบ)
+       ทำไมที่นี่ด้วย: เขียน `sv_approved_by` = ชื่อคนกดไปอยู่บนใบ · มี compare-and-swap
+       (`.eq('status', log.status)`) ⇒ **กดแล้วกดคืนเองไม่ได้** ต้องให้คนตีกลับ = ประวัติเปื้อน
+       · แจ้งเตือนยิงออกทันทีที่สถานะเปลี่ยน ⇒ ถอนเงียบไม่ได้
+       ⚠️ ขั้น QA (`pending_qa`) ไม่ต้องถามซ้ำ — มี modal ที่ต้องแนบรูป + กด submit อยู่แล้ว
+          และ "ตีกลับ" ต้องพิมพ์เหตุผล = มีด่านโดยธรรมชาติ (ห้ามถามพร่ำเพรื่อ · UI §5.4) */
+    if (!confirmSign({
+      what: 'อนุมัติใบ 4M (หัวหน้างาน)',
+      docLabel: 'ใบ 4M',
+      orderNo: [log.category, log.line_name].filter(Boolean).join(' · ') || log.id,
+      actor: fullName,
+      as: 'หัวหน้างาน (SV)',
+      effect: log.requires_qa !== false
+        ? 'ส่งต่อให้ QA ตรวจ + แจ้งเตือนออกทันที'
+        : 'อนุมัติปิดเลย (ใบนี้ไม่ต้องผ่าน QA) + แจ้งเตือนออกทันที',
+    })) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     const now = new Date().toISOString();
@@ -1661,193 +1738,96 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
 
-  // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
+  // ── ใบ "Changing Point Control Record" (FM-PD2-037) — ดูบนจอ + Export ใช้ HTML ชุดเดียว (`lib/changePointSheet.js`) ──
+  /* โหลดข้อมูลของใบ 1 ไลน์ × 1 เดือน → คืน HTML ของใบ (ไม่รวม <html>) หรือโยน error ให้ผู้เรียกบอกบนจอ
+     ใบที่นับ = ทุกสถานะยกเว้น rejected · "-" = ไลน์ไม่ได้เปิดกะ (production_sessions DR) · อ่านกะไม่ได้ = "?" */
+  const loadChangePointSheetHtml = async (lineName, month) => {
+    const [yStr, mStr] = month.split('-');
+    const daysInMonth = new Date(Date.UTC(Number(yStr), Number(mStr), 0)).getUTCDate();
+    const monthStart = `${month}-01`;
+    const monthEnd   = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+    const family = lineFamilyOf(lineName);
+
+    const [logsRes, runs, dfCpc, revisionRows, logoDataUrl, cal] = await Promise.all([
+      supabase.from('four_m_logs')
+        .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
+        .in('line_name', family).neq('status', 'rejected')
+        .gte('work_date', monthStart).lte('work_date', monthEnd)
+        .order('work_date').order('created_at').order('id')
+        /* cap-ok: four_m_logs ต่อไลน์ต่อเดือน ≈ หลักร้อย (ทั้งโรงงาน ~1,000/เดือน วัด 05/11) */
+        .limit(5000),
+      loadRunDays({ lineNames: family, from: monthStart, to: monthEnd }),
+      getDocForm('changing_point', {}),
+      getDocFormRevisions('changing_point'),
+      formLogo('changing_point'),
+      loadCompanyCalendar(),   // วันหยุดตามปฏิทินบริษัท = ทาเทา (ไม่ใช่ ส-อา ตายตัว · คำสั่ง user 05/11)
+    ]);
+    if (logsRes.error) throw new Error(`อ่านใบ 4M ไม่สำเร็จ: ${logsRes.error.message}`);
+    const monthLogs = logsRes.data || [];
+
+    const sheet = buildChangePointSheet({
+      month, logs: monthLogs, today,
+      isWorkingDay: (date) => isWorkingDayFrom(cal, date),
+      ranOn: (date, shift) => ranOn(runs, date, shift),   // null = ไม่รู้ ⇒ "?" ห้ามเป็น "-"
+    });
+
+    // ชื่อคน (ผู้เปลี่ยนแปลง / หัวหน้างาน / QA / ผู้ออกเอกสาร) — อ่านไม่ได้ = ช่องว่าง ใบยังออกได้
+    const ids = [...new Set(monthLogs.flatMap(l => [l.created_by, l.sv_approved_by, l.approved_by]).concat(dfCpc.issued_by).filter(Boolean))];
+    const names = {};
+    let issuedSigUrl = null;
+    if (ids.length) {
+      const pr = await fetchByIds(ids, c => supabase.from('profiles').select('id, full_name, signature_url').in('id', c));
+      (pr.rows || []).forEach(p => { names[p.id] = p.full_name || ''; if (p.id === dfCpc.issued_by) issuedSigUrl = p.signature_url; });
+    }
+    const issuedSig = issuedSigUrl ? await urlToDataUrl(issuedSigUrl) : null;
+
+    return changePointSheetHtml(sheet, {
+      line: lineName,
+      section: lines.find(li => li.name === lineName)?.section || '',
+      logoDataUrl,
+      docNo: dfCpc.form_code || '', revision: dfCpc.rev ?? '',
+      effectiveDate: dfCpc.effective_date ? fmtDate(dfCpc.effective_date) : '',
+      legend: dfCpc.legend || '',
+      revisions: revisionRows || [],
+      issuedName: dfCpc.issued_by ? names[dfCpc.issued_by] : '',
+      issuedSig, names, fmtDate,
+    });
+  };
+
+  // ใบบนจอ — โหลดเมื่ออยู่โหมด "ใบ" + มีไลน์ + มีเดือน (guard กันคำตอบเก่ามาทับ)
+  useEffect(() => {
+    if (fourMView !== 'sheet' || !line || !cpcMonth || !linesLoaded) return;
+    let alive = true;
+    setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: true, error: '' });
+    loadChangePointSheetHtml(line, cpcMonth)
+      .then(html => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html, loading: false, error: '' }); })
+      .catch(e => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: false, error: e?.message || String(e) }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fourMView, line, cpcMonth, linesLoaded]);
+
   const handleExportChangePointPdf = async () => {
-    if (!line) { toast.error('เลือกไลน์ก่อน'); return; }
-    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; } // ช่อง month เคลียร์เป็น '' ได้ → parseInt(undefined) = NaN ตารางพัง
+    // 🔴 เดิมปุ่มถูก disable เงียบๆ ตอนยังไม่เลือกไลน์ ⇒ คนกดไม่ไปแล้วไม่รู้ว่าต้องเลือกอะไร (feedback หน้างาน 05/11)
+    if (!line) {
+      toast.error('ใบ Changing Point ออกได้ทีละ 1 ไลน์ — เลือกไลน์ก่อน');
+      setFourMView('sheet');   // พาไปหน้าที่มีปุ่มเลือกไลน์ให้กด
+      return;
+    }
+    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; }
     setCpcExporting(true);
-    const [yStr, mStr] = cpcMonth.split('-');
-    const y = parseInt(yStr), m = parseInt(mStr); // m: 1-12
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthStart = `${cpcMonth}-01`;
-    const monthEnd   = `${cpcMonth}-${String(daysInMonth).padStart(2, '0')}`;
-
-    const { data: monthLogs } = await supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
-      .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
-      .gte('work_date', monthStart).lte('work_date', monthEnd)
-      /* cap-ok: four_m_logs ต่อเดือน สูงสุด 433 แถว (วัด 20/10) */
-      .limit(5000);
-
-    // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
-    // บังคับ timezone เป็น Asia/Bangkok เสมอ ไม่พึ่ง getHours() (ขึ้นกับ timezone ของเครื่อง ผิดได้ถ้าเครื่องตั้งเวลาไม่ตรง)
-    const shiftOf = (l) => {
-      if (!l.created_at) return 'day';
-      const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: 'numeric', hourCycle: 'h23' }).format(new Date(l.created_at)));
-      return (h >= 8 && h < 20) ? 'day' : 'night';
-    };
-
-    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> { day: { day: [...], night: [...] } }
-    const dayMap = {}; // itemId -> { [day]: { day: [logs], night: [logs] } }
-    for (const l of (monthLogs || [])) {
-      const item = matchChecklistItem(l);
-      if (!item) continue;
-      const day = parseInt(l.work_date.slice(8, 10));
-      const shift = shiftOf(l);
-      (dayMap[item.id] ||= {});
-      (dayMap[item.id][day] ||= { day: [], night: [] });
-      dayMap[item.id][day][shift].push(l);
+    try {
+      const html = cpcSheet.key === `${line}|${cpcMonth}` && cpcSheet.html
+        ? cpcSheet.html
+        : await loadChangePointSheetHtml(line, cpcMonth);
+      const w = window.open('', '_blank');
+      if (!w) { toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up แล้วกดใหม่'); return; }
+      w.document.write(changePointPrintDoc(html));
+      w.document.close();
+    } catch (e) {
+      toast.error(`ออกใบไม่สำเร็จ: ${e?.message || e}`);
+    } finally {
+      setCpcExporting(false);
     }
-
-    // เอกสารควบคุม (เลขฟอร์ม/rev/effective/legend/ผู้ออกเอกสาร) — ทะเบียนกลาง doc_forms (2026-07-30)
-    // ยังไม่ตั้งค่า/ทะเบียนล่ม = fallback ค่าว่าง ไม่ให้ export ล้ม
-    const dfCpc = await getDocForm('changing_point', {});
-    let issuedProfile = null;
-    if (dfCpc.issued_by) {
-      try {
-        const { data } = await supabase.from('profiles').select('full_name, signature_url').eq('id', dfCpc.issued_by).maybeSingle();
-        issuedProfile = data;
-      } catch { /* best-effort */ }
-    }
-    const docCtrl = {
-      doc_no: dfCpc.form_code || null, revision: dfCpc.rev || null,
-      effective_date: dfCpc.effective_date || null, legend: dfCpc.legend || null,
-      issued: issuedProfile,
-    };
-    const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
-    const logoDataUrl = await formLogo('changing_point');
-
-    // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
-    const revisionRows = await getDocFormRevisions('changing_point');
-
-    const lineSection = lines.find(li => li.name === line)?.section || '';
-
-    const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-    const todayDate = parseInt(today.slice(8, 10));
-    const isCurrentMonth = today.slice(0, 7) === cpcMonth;
-    const isFutureMonth = cpcMonth > today.slice(0, 7);
-
-    const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = i + 1;
-      const dow = new Date(y, m - 1, d).getDay();
-      const weekend = dow === 0 || dow === 6;
-      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:15px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
-    }).join('');
-
-    // แยก Night/Day เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: N (กะดึก) / D (กะเช้า) ตามฟอร์มจริง
-    const gridRowsHtml = CHECKLIST_ITEMS.flatMap((item, idx) => {
-      const color = CATEGORY_COLOR[item.category];
-      const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
-      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length * 2;
-      return ['night', 'day'].map((shift, shiftIdx) => {
-        const cells = Array.from({ length: daysInMonth }, (_, i) => {
-          const d = i + 1;
-          const dow = new Date(y, m - 1, d).getDay();
-          const weekend = dow === 0 || dow === 6;
-          const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
-          const hit = dayMap[item.id]?.[d]?.[shift]?.length > 0;
-          const mark = isFuture ? '' : (hit ? 'X' : 'O');
-          return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
-        }).join('');
-        return `<tr>
-          ${(isFirstOfCat && shiftIdx === 0) ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
-          ${shiftIdx === 0 ? `<td rowspan="2" style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>` : ''}
-          <td style="border:1px solid #999;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;background:#f8f8f8" title="${shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)'}">${shift === 'day' ? 'D' : 'N'}</td>
-          ${cells}
-        </tr>`;
-      });
-    }).join('');
-
-    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ + บังคับ timezone Asia/Bangkok เพื่อไม่ให้วันที่คลาดเคลื่อนตาม timezone เครื่อง
-    const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
-    const nowMap = Object.fromEntries(nowParts.map(p => [p.type, p.value]));
-    const todayStr = `${nowMap.day} ${thaiMonths[Number(nowMap.month)]} ${nowMap.year}`;
-    const docNo = docCtrl?.doc_no || '-';
-    const revision = docCtrl?.revision || '0';
-    const effectiveDateStr = docCtrl?.effective_date ? fmtDate(docCtrl.effective_date) : '-';
-    const legendText = docCtrl?.legend || 'X = ในกรณีที่เปลี่ยนแปลงในวันนั้น\nO = ไม่ในกรณีที่เปลี่ยนแปลงในวันนั้น';
-
-    const revHistoryRowsHtml = (revisionRows && revisionRows.length ? revisionRows : [{}]).map((r, i) => `<tr>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.seq ?? (i + 1)}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.record_date ? fmtDate(r.record_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.rev || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.issued_date ? fmtDate(r.issued_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px">${r.description || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.responsible || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.approved_name || ''}</td>
-    </tr>`).join('');
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
-  table{border-collapse:collapse;width:100%}
-  @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
-</style></head><body style="padding:8mm">
-  <table style="margin-bottom:6px"><tr>
-    <td style="width:55%;vertical-align:top;padding:0 4px 0 0">
-      <div style="font-size:9px;font-weight:700;margin-bottom:2px">${docNo} Rev.${revision}</div>
-      <div style="font-size:8px;line-height:1.4;margin-bottom:4px">${legendText.split('\n').map(l => `<div>${l}</div>`).join('')}</div>
-      <table>
-        <thead><tr style="background:#f3f4f6">
-          <th style="border:1px solid #000;padding:2px;font-size:8px">ลำดับที่</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">วันที่บันทึก</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Rev</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Issued date</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Description of Change (New Issued)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Responsible (PD2)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Approved</th>
-        </tr></thead>
-        <tbody>${revHistoryRowsHtml}</tbody>
-      </table>
-      <table style="margin-top:4px"><tr>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;width:60%">Effective Date: <b>${effectiveDateStr}</b></td>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;text-align:center">
-          <div>Issued</div>
-          ${issuedSig ? `<img src="${issuedSig}" style="max-height:26px;max-width:60px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-          <div>${docCtrl?.issued?.full_name || ''}</div>
-        </td>
-      </tr></table>
-    </td>
-    <td style="width:45%;vertical-align:top">
-      <table><tr>
-        <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
-          ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
-        </td>
-        <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
-          ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
-        </td>
-        <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>ส่วน (Section): <b>${lineSection}</b></div>
-          <div>แผนก (Department): <b>${lineSection}</b></div>
-          <div>ไลน์ (Line): <b>${line}</b></div>
-        </td>
-        <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
-          <div>พิมพ์วันที่: ${todayStr}</div>
-        </td>
-      </tr></table>
-    </td>
-  </tr></table>
-
-  <table>
-    <thead>
-      <tr style="background:#f3f4f6">
-        <th style="border:1px solid #999"></th>
-        <th style="border:1px solid #999;padding:3px;font-size:9px">Detail (รายละเอียด)</th>
-        <th style="border:1px solid #999;padding:3px;font-size:8px">N/D</th>
-        ${dayHeaderCells}
-      </tr>
-    </thead>
-    <tbody>${gridRowsHtml}</tbody>
-  </table>
-<script>window.onload = () => window.print();</script>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setCpcExporting(false);
   };
 
   // Filter logs by section: cross-reference line_name to lines array to get section
@@ -1876,19 +1856,19 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* Reject modal */}
       {rejectModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
-            <h3 style={{ margin: '0 0 14px', color: '#ef4444', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{trI18n('❌ ระบุเหตุผลที่ Reject')}</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-              placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
-              style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+              placeholder={trI18n('เหตุผลที่ไม่อนุมัติ...')} rows={3}
+              style={{ width: '100%', borderRadius: 'var(--ctl-r)', padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
               <button onClick={handleReject}
-                style={{ flex: 2, padding: 11, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
-                ยืนยัน Reject
+                style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
+                {trI18n('ยืนยัน Reject')}
               </button>
               <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
-                ยกเลิก
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
+                {trI18n('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -1898,21 +1878,21 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* QA Approve Modal */}
       {qaApproveModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
-            <h3 style={{ margin: '0 0 4px', color: '#a855f7', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+            <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>{trI18n('QA ยืนยันคุณภาพงาน')}</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
               {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
             </p>
             {/* Request image preview */}
             {qaApproveModal.request_image_url && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📎 รูปจากผู้แจ้ง</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('รูปจากผู้แจ้ง')}</div>
                 <img src={qaApproveModal.request_image_url} style={{ maxHeight: 130, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border2)', cursor: 'pointer' }}
-                  onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: 'รูปจากผู้แจ้ง' })} />
+                  onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: trI18n('รูปจากผู้แจ้ง') })} />
               </div>
             )}
-            <div style={{ fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
-            <div style={{ border: `2px dashed ${qaImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+            <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginBottom: 6 }}>{trI18n('แนบรูปยืนยันคุณภาพ')} <span style={{ color: 'var(--muted)' }}>{trI18n('(ไม่บังคับ)')}</span></div>
+            <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={async e => {
@@ -1927,22 +1907,22 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                 }} />
               {qaImagePreview
                 ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
-                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูปยืนยัน</div>}
+                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>{trI18n('แตะเพื่อเลือกรูปยืนยัน')}</div>}
             </div>
             {qaImageFile && (
               <button type="button" onClick={() => { setQaImageFile(null); setQaImagePreview(null); }}
-                style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                ✕ ลบรูป
+                style={{ marginTop: 4, fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                {trI18n('ลบรูป')}
               </button>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
-                style={{ flex: 2, padding: 11, background: '#a855f7', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
-                {isApprovingSaving ? 'กำลังบันทึก...' : '✅ QA Approve'}
+                style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
+                {isApprovingSaving ? trI18n('กำลังบันทึก...') : 'QA Approve'}
               </button>
               <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
-                ยกเลิก
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
+                {trI18n('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -1956,7 +1936,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
             <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />
             <button onClick={() => setImageViewModal(null)}
-              style={{ position: 'absolute', top: -10, right: -10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              style={{ position: 'absolute', top: -10, right: -10, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: '50%', width: 28, height: 28, fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ×
             </button>
           </div>
@@ -1981,16 +1961,16 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           </>);
         })()}
         <select value={cat} onChange={e => setCat(e.target.value)}>
-          <option value="">{ALL.type}</option>
-          {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
+          <option value="">{trI18n(ALL.type)}</option>
+          {Object.keys(CAT_META).map(k => <option key={k} value={k}>{trI18n(k)}</option>)}
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">{ALL.status}</option>
+          <option value="">{trI18n(ALL.status)}</option>
           {/* วาดจาก STATUS_META ตัวเดียว — เดิม hardcode ป้ายซ้ำ ⇒ เพิ่มสถานะแล้วลืมแก้ที่นี่ */}
-          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{trI18n(v.label)}</option>)}
         </select>
         {actionableCount > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 6, padding: '3px 8px' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
@@ -2002,65 +1982,124 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           // export ชุดเดียวกับตารางบนจอ (ผ่าน filter ส่วนงาน) — เดิมใช้ logs ดิบ CSV ไม่ตรงจอ
           fourMFilteredLogs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
+        <span className="sep" />
+        {/* 📅 สลับ "รายการใบ" ↔ "ใบ Changing Point" (แบบกระดาษ FM-PD2-037) — ดูบนจอได้ ไม่ต้องกด Export (05/11) */}
+        <Segmented value={fourMView} onChange={setFourMView} label={trI18n('มุมมอง')}
+          options={[{ value: 'table', label: 'ตาราง' }, { value: 'sheet', label: 'ใบ Changing Point' }]} />
+        <span className="filter-label">{trI18n('เดือนของใบ')}</span>
+        <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
         {canExport && (
-          <>
-            <span className="sep" />
-            <span className="filter-label">เดือนของใบ Changing Point</span>
-            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
-            <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
-              title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
-              style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                background: 'rgba(234,179,8,0.15)', color: '#ca8a04', border: '1px solid rgba(234,179,8,0.4)',
-                opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
-              {cpcExporting ? 'กำลังสร้าง...' : '📅 Export Changing Point'}
-            </button>
-          </>
+          <button onClick={handleExportChangePointPdf} disabled={cpcExporting}
+            title={!line ? trI18n('ใบนี้ออกทีละ 1 ไลน์ — เลือกไลน์ในช่องขอบเขตก่อน') : trI18n('Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)')}
+            style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
+              opacity: cpcExporting ? 0.5 : 1 }}>
+            {cpcExporting ? trI18n('กำลังสร้าง...') : 'Export Changing Point'}
+          </button>
         )}
+        {!line && <span style={{ fontSize: 11, color: '#d97706' }}>{trI18n('ใบ Changing Point ต้องเลือก 1 ไลน์')}</span>}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
             position: 'relative',
-            padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            background: showDocPanel ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)',
-          }}>⚙️ จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
+            padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            background: showDocPanel ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
+          }}>{trI18n('จัดการเอกสาร')}<ToggleDot on={showDocPanel} /></button>
         )}
       </TimeRangeBar>
 
-      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) · โหมดใบ = ซ่อน (นับตามช่วงวันที่ ไม่ใช่เดือนของใบ) */}
+      {fourMView === 'table' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
             background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+            borderRadius: 'var(--r-md)', padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
           }}>
             <div style={{ fontSize: 20 }}>{m.icon}</div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{trI18n(m.label)}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
 
+      {fourMView === 'sheet' && (() => {
+        /* 📅 ใบ Changing Point บนจอ — HTML ชุดเดียวกับใบที่ Export (`lib/changePointSheet.js`)
+           ใบนี้ออกทีละ 1 ไลน์ ⇒ ยังไม่เลือกไลน์ = บอกตรงๆ + ให้กดเลือกไลน์ในขอบเขตได้ทันที (เดิมปุ่มเทาเฉยๆ) */
+        if (!line) {
+          const scopeNames = fourMUnit.name ? fourMUnit.lines
+            : (allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines)
+                .filter(l => !fourMSection || l.section === fourMSection).map(l => l.name);
+          const pickable = sortLineNames([...new Set(scopeNames)], lines);
+          return (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>{trI18n('เลือก 1 ไลน์เพื่อดูใบ Changing Point')}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+                ใบนี้ออกทีละไลน์ (1 ใบ = 1 ไลน์ × 1 เดือน) — กดชื่อไลน์ด้านล่าง หรือเลือกในช่องขอบเขตบนแถบกรอง
+              </div>
+              {pickable.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {pickable.map(n => (
+                    <button key={n} type="button" onClick={() => { setLine(n); setFourMSection(''); setFourMUnit({ name: '', lines: [] }); }}
+                      style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ไม่มีไลน์ในขอบเขตที่เลือก')}</div>}
+            </div>
+          );
+        }
+        const fresh = cpcSheet.key === `${line}|${cpcMonth}`;
+        if (!cpcMonth) return <div className="card" style={{ padding: 16, marginBottom: 16 }}>{trI18n('เลือกเดือนของใบก่อน')}</div>;
+        if (!fresh || cpcSheet.loading) return <div className="card" style={{ padding: 16, marginBottom: 16, color: 'var(--muted)' }}>{trI18n('กำลังโหลดใบ Changing Point...')}</div>;
+        if (cpcSheet.error) return (
+          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 12.5, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+            โหลดใบไม่สำเร็จ — {cpcSheet.error}
+          </div>
+        );
+        return (
+          <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 16, border: '1px solid var(--border)' }}>
+            <style>{CPC_CSS}</style>
+            <div dangerouslySetInnerHTML={{ __html: cpcSheet.html }} />
+          </div>
+        );
+      })()}
+
+      {fourMView === 'table' && (<>
+
+      {/* 🔴 รู้ขอบเขตแล้วแต่ไม่มีไลน์เลย = คิวรีถูกบีบเป็น 0 แถว — ต้องบอกว่าเป็นเรื่อง "ทะเบียนไลน์"
+          ห้ามปล่อยให้ไปโผล่เป็น "ไม่พบใบที่เลือก" (คนละสาเหตุ คนละทางแก้) */}
+      {allowedLineNames?.length === 0 && !loading && (
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, color: 'var(--text)',
+          background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+          ⚠️ ยังจับคู่ไลน์ในขอบเขตของคุณไม่ได้เลย — รายการจึงว่างทั้งที่อาจมีใบค้างอยู่
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>
+            อ่านทะเบียนไลน์ไม่สำเร็จ หรือส่วนงานที่ตั้งไว้ยังไม่มีไลน์ในผังองค์กร — โหลดหน้าใหม่ ถ้ายังไม่หายให้แจ้ง admin
+          </div>
+        </div>
+      )}
+
       {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
-      {focus && !loading && (
+      {focus && !loading && allowedLineNames?.length !== 0 && (
         focusRow ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
-            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
-            <span>🔗 เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-              ✕ ล้างการเน้น
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
+            background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>{trI18n('เน้นใบที่เลือกมา —')} <b>{focusRow.line_name || trI18n('ไม่ระบุไลน์')}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              {trI18n('ล้างการเน้น')}
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
-            background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12.5, color: 'var(--text)' }}>
-            <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
+            background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--text)' }}>
+            <span>{trI18n('⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ')}</span>
             <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
-              style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.35)' }}>
-              🔄 ล้างตัวกรอง
+              style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
+              {trI18n('ล้างตัวกรอง')}
             </button>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-              ✕ ปิด
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+              {trI18n('ปิด')}
             </button>
           </div>
         )
@@ -2071,9 +2110,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           <table style={{ minWidth: 720 }}>
             <thead>
               <tr>
-                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
-                <th style={{ textAlign: 'center' }}>สถานะ</th>
-                <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
+                <th>{trI18n('วันที่')}</th><th>{trI18n('ไลน์')}</th><th>{trI18n('ประเภท')}</th><th>{trI18n('รายละเอียด')}</th>
+                <th style={{ textAlign: 'center' }}>{trI18n('สถานะ')}</th>
+                <th style={{ textAlign: 'center', minWidth: 90 }}>{trI18n('ระดับ')}</th>
                 <th style={{ textAlign: 'center', minWidth: 160 }}>Action</th>
               </tr>
             </thead>
@@ -2088,43 +2127,45 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                 const isActionable = ['pending','pending_qa'].includes(l.status);
                 const isFocus = !!focus && l.id === focus;   // แถวที่ถูกเน้น (นิ่ง ไม่กระพริบ — ไม่ใช่ไฟ Andon)
                 return (
-                  <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'rgba(245,158,11,0.13)' } : undefined}>
-                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid #f59e0b' : undefined }}>{fmtDate(l.work_date)}</td>
+                  <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'var(--amber-dim)' } : undefined}>
+                    <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid var(--amber)' : undefined }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
-                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
+                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
                       {l.change_subtype && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                         {{ replace: '🔄 Replace', change: '⚠️ Change', same_ok: '🟢 ไลน์เดิม/ผ่านเกณฑ์', cross_skill_ok: '🟡 ข้ามไลน์/skill OK', cross_needs_ojt: '🔴 ข้ามไลน์/ต้อง OJT' }[l.change_subtype] ?? l.change_subtype}
                       </div>}
-                      {l.reject_reason && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
+                      {l.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 3 }}>{trI18n('เหตุผล:')} {l.reject_reason}</div>}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (
-                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: '📎 รูปจากผู้แจ้ง' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)', fontWeight: 600 }}>
-                            📎 รูปแจ้ง
+                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: trI18n('รูปจากผู้แจ้ง') })}
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
+                            {trI18n('รูปแจ้ง')}
                           </button>
                         )}
                         {l.qa_image_url && (
-                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: '🔍 รูป QA ยืนยัน' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 600 }}>
-                            🔍 รูป QA
+                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: trI18n('รูป QA ยืนยัน') })}
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
+                            {trI18n('รูป QA')}
                           </button>
                         )}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{trI18n(sm.label)}</span>
+                        {/* 🪜 ถึงขั้นไหน — กฎ fourMFlow() (utils/fourMFlow.js) · แบบย่อในแถวตาราง (UI §6.30) */}
+                        {(() => { const f = fourMFlow(l); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
                         {svName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>SV: {svName}</span>}
                         {qaName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
-                        background: needsQA ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
-                        color: needsQA ? '#ef4444' : '#22c55e' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-xs)',
+                        background: needsQA ? 'var(--red-dim)' : 'var(--green-dim)',
+                        color: needsQA ? 'var(--red)' : 'var(--green)' }}>
                         {needsQA ? '🔴 QA' : '🟢 SV'}
                       </span>
                     </td>
@@ -2133,12 +2174,12 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                         userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
                             <button onClick={() => handleApprove(l)}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)' }}>
-                              ✅ {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)' }}>
+                              {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
                             </button>
                             <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
-                              ❌ Reject
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
+                              Reject
                             </button>
                           </div>
                         ) : (
@@ -2179,6 +2220,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           </table>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -2263,45 +2305,45 @@ function DocumentControlPanel() {
 
   return (
     <div className="card" style={{ padding: 16, marginBottom: 14 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>⚙️ จัดการเอกสาร — Changing Point Control Record</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>{trI18n('จัดการเอกสาร — Changing Point Control Record')}</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)' }}>เลขฟอร์ม (doc_no)</label>
-          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="เช่น FM-PD-037" style={inSt} />
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('เลขฟอร์ม (doc_no)')}</label>
+          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder={trI18n('เช่น FM-PD-037')} style={inSt} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>Revision</label>
-          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="เช่น 00" style={inSt} />
+          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder={trI18n('เช่น 00')} style={inSt} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>Effective Date</label>
           <input type="date" value={effectiveDate || ''} onChange={e => setEffectiveDate(e.target.value)} style={inSt} />
         </div>
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('ผู้ออกเอกสาร (Issued)')}</label>
+          <SearchSelect value={issuedBy || ''} placeholder={trI18n('— เลือก (พิมพ์ค้นหาชื่อ) —')} inputStyle={inSt}
             options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 
       <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>Legend (2 บรรทัด)</label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('Legend (2 บรรทัด)')}</label>
         <textarea value={legend} onChange={e => setLegend(e.target.value)} rows={2} style={{ ...inSt, resize: 'vertical' }} />
       </div>
 
       <button onClick={saveDoc} disabled={saving} style={{
-        padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+        padding: '7px 16px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
-      }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูลเอกสาร'}</button>
+      }}>{saving ? trI18n('กำลังบันทึก...') : trI18n('บันทึกข้อมูลเอกสาร')}</button>
 
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📜 ประวัติการแก้ไขเอกสาร (Revision History)</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{trI18n('ประวัติการแก้ไขเอกสาร (Revision History)')}</div>
       <div style={{ overflowX: 'auto', marginBottom: 10 }}>
         <table style={{ minWidth: 720 }}>
           <thead>
             <tr>
               <th style={{ fontSize: 11 }}>#</th>
-              <th style={{ fontSize: 11 }}>วันที่บันทึก</th>
+              <th style={{ fontSize: 11 }}>{trI18n('วันที่บันทึก')}</th>
               <th style={{ fontSize: 11 }}>Rev</th>
               <th style={{ fontSize: 11 }}>Issued date</th>
               <th style={{ fontSize: 11 }}>Description</th>
@@ -2321,19 +2363,19 @@ function DocumentControlPanel() {
                 <td style={{ fontSize: 12 }}>{r.responsible || '—'}</td>
                 <td style={{ fontSize: 12 }}>{r.approved_name || '—'}</td>
                 <td>
-                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid rgba(239,68,68,0.4)', color: '#ef4444' }}>ลบ</button>
+                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
                 </td>
               </tr>
             ))}
             {!loading && revisions.length === 0 && (
-              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 14, fontSize: 12 }}>ยังไม่มีประวัติการแก้ไข</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 14, fontSize: 12 }}>{trI18n('ยังไม่มีประวัติการแก้ไข')}</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6, alignItems: 'end' }}>
-        <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} style={inSt} title="วันที่บันทึก" />
+        <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} style={inSt} title={trI18n('วันที่บันทึก')} />
         <input value={newRev.rev} onChange={e => setNewRev(v => ({ ...v, rev: e.target.value }))} placeholder="Rev" style={inSt} />
         <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} style={inSt} title="Issued date" />
         <input value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={inSt} />
@@ -2342,7 +2384,7 @@ function DocumentControlPanel() {
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
         <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
-        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
       </div>
     </div>
   );
@@ -2357,23 +2399,17 @@ function DocumentControlPanel() {
 
 function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
   // dropdown เหลือเฉพาะใน scope — ข้อมูลจริงถูกบังคับ scope ที่ query ของแต่ละแท็บแล้ว
   // (เดิมโชว์ทุกส่วนงาน/ไลน์ เลือกนอก scope ได้ผลว่างเปล่า ทำให้ผู้ใช้สับสน)
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set([...getLineFamilyIds(lines, Number(userLineId) || userLineId)].map(String));
-      return lines.filter(l => fam.has(String(l.id)));
-    }
-    return scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
+  const scopedLines = scope.linesIn;
   const sections = useMemo(() => {
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    if (role === 'leader' && userLineId) return sortLike(scopedLines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
   return (
     <>
       {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
@@ -2382,7 +2418,7 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
         unit={setFilterDept ? (filterDept || '') : ''} pickDept={!!setFilterDept}
         onChange={(sec, ln, { unit }) => { setFilterSection(ln || unit ? '' : sec); setFilterLine(ln); setFilterDept && setFilterDept(unit || ''); }} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)}>
-        <option value="">{ALL.team}</option>
+        <option value="">{trI18n(ALL.team)}</option>
         {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
       </select>
     </>
@@ -2390,7 +2426,7 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
 }
 
 function SkillMatrixTab() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
@@ -2402,6 +2438,7 @@ function SkillMatrixTab() {
   const [filterTeam,     setFilterTeam]     = useState(urlTeam);
   const [filterDept,     setFilterDept]     = useState(scopeSeed?.dept ?? '');
   const [lines,          setLines]          = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [selectedEmp,    setSelectedEmp]    = useState(null);
   const [subItemsByskill, setSubItemsByskill] = useState({});
   /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4 ใน CLAUDE.md) — load() ยิงทุกครั้งที่เปลี่ยน filter
@@ -2438,25 +2475,26 @@ function SkillMatrixTab() {
     let q = onlyShopfloorStaff(supabase.from('employees').select(baseSelect).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
-    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) — leader = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · รู้จัก scopeIdx */
+    if (scope.lineIds?.length) q = q.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ (ไม่มีไลน์ ไม่มีส่วนงาน) = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
-      q,
+      scope.blocked ? Promise.resolve({ data: [] }) : q,
     ]);
     /* 🤝 ต่อท้ายด้วยคนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers · src/utils/lineHelpers.js)
        ใบประเมินทักษะรายบุคคล F-PRS-P1-119 พิมพ์จากจอนี้ — หัวหน้าไลน์ปลายทางที่เห็นเขาทำงานจริง
        ต้องประเมินเขาได้ ไม่งั้นคนยืมข้ามส่วนงานหายจากจอทั้งที่ยืนอยู่ในไลน์
        scope ที่ใช้ = filter ที่เลือกอยู่ (ถ้ามี) ไม่ใช่ scope ดิบ — เลือกไลน์ตัวเอง = เห็นคนที่มาช่วยไลน์นั้น */
-    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine)
-                     : (role === 'leader' && userLineId) ? lineFamilyIdsOf(userLineId) : null;
+    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine) : (scope.lineIds || null);
     const effSecs    = filterSection ? [filterSection] : scopeSecs;
-    let list = await mergeBorrowedEmployees(emps || [], {
+    let list = scope.blocked ? [] : await mergeBorrowedEmployees(emps || [], {
       lines, lineIds: effLineIds, scopeSecs: effSecs,
       columns: baseSelect,
     });
@@ -2483,16 +2521,17 @@ function SkillMatrixTab() {
         />
       )}
 
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       <FilterBar style={{ marginBottom: 16 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span className="spacer" />
-        <span className="filter-count">{employees.length} คน · {skillDefs.length} สกิล</span>
+        <span className="filter-count">{employees.length} {trI18n('คน ·')} {skillDefs.length} {trI18n('สกิล')}</span>
         {/* 🔴 กฎความซื่อสัตย์ของจอ — จอนี้กรองช่าง/สายสนับสนุนออก (กำลังคนของไลน์เท่านั้น)
             ต้องเขียนไว้ ไม่งั้นคนเทียบกับใบเช็คชื่อ (เห็นครบทุกกลุ่มตั้งแต่ 14/10) แล้วงงว่าทำไมหัวไม่ตรง */}
-        <span className="filter-count" title="สกิล/กำลังคน นับเฉพาะพนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+        <span className="filter-count" title={trI18n('สกิล/กำลังคน นับเฉพาะพนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)')}>
           · ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
         </span>
-        <span className="filter-count">· คลิกที่พนักงานเพื่อดู Radar Chart</span>
+        <span className="filter-count">{trI18n('· คลิกที่พนักงานเพื่อดู Radar Chart')}</span>
         {canExport && (
         <button onClick={() => {
           const groups = groupSkillsByCategory(skillDefs);
@@ -2523,19 +2562,19 @@ table{border-collapse:collapse;width:100%}
 <table><thead>
 <tr style="background:#f3f4f6">
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">#</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">รหัส</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">ชื่อ</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">ส่วนงาน</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('รหัส')}</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('ชื่อ')}</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('ส่วนงาน')}</th>
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">Team</th>
 ${catHeaderCells}
-<th rowspan="2" style="border:1px solid #ccc;padding:3px;background:#d1fae5;color:#16a34a">เฉลี่ย</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px;background:#d1fae5;color:#16a34a">{trI18n('เฉลี่ย')}</th>
 </tr>
 <tr style="background:#e5e7eb">${headerCells}</tr>
 </thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
           const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'skill_matrix')); w.document.close();
-        }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
-          🖨️ PDF
+        }} disabled={employees.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: employees.length === 0 ? 0.5 : 1 }}>
+          PDF
         </button>
         )}
         <CsvBtn onClick={() => {
@@ -2560,11 +2599,11 @@ ${catHeaderCells}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
-          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}40` }}>
-            {lv.label} ≥{lv.min}
+          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
+            {trI18n(lv.label)} ≥{lv.min}
           </span>
         ))}
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>{trI18n('— ยังไม่ประเมิน')}</span>
       </div>
 
       {loading ? <Loader /> : (() => {
@@ -2597,12 +2636,12 @@ ${catHeaderCells}
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       {emp.image_url
                         ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
-                        : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        : <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                       }
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}
-                          {emp._isHelper && <span style={{ marginLeft: 5, color: '#0ea5e9', fontWeight: 700 }}>🤝 ยืมจาก {emp._helperFrom}</span>}
+                          {emp._isHelper && <span style={{ marginLeft: 5, color: 'var(--blue)', fontWeight: 700 }}>{trI18n('ยืมจาก')} {emp._helperFrom}</span>}
                         </div>
                       </div>
                     </div>
@@ -2611,8 +2650,8 @@ ${catHeaderCells}
                         const score = skillMap[s.name];
                         const lv = getLevel(score);
                         return (
-                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${lv.color}33` }}>
-                            {s.label} {score}
+                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
+                            {trI18n(s.label)} {score}
                           </span>
                         );
                       })}
@@ -2634,17 +2673,17 @@ ${catHeaderCells}
                   {visibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length}
                       style={{ textAlign: 'center', color: g.color,
-                        background: `${g.color}10`, borderBottom: `2px solid ${g.color}44`,
-                        padding: '5px 4px', borderLeft: `2px solid ${g.color}33` }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {g.label}</div>
-                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
+                        background: `${tint(g.color, 'dim')}`, borderBottom: `2px solid ${tint(g.color, 'line')}`,
+                        padding: '5px 4px', borderLeft: `2px solid ${tint(g.color, 'dim')}` }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {trI18n(g.label)}</div>
+                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{trI18n(g.desc)}</div>}
                     </th>
                   ))}
                 </tr>
                 {/* Skill name row */}
                 <tr>
-                  <th style={{ minWidth: 44, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' }}>รูป</th>
-                  <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>พนักงาน</th>
+                  <th style={{ minWidth: 44, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' }}>{trI18n('รูป')}</th>
+                  <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>{trI18n('พนักงาน')}</th>
                   {visibleGroups.map(g => g.skills.map((s, si) => (
                     <th key={s.name} style={{
                       minWidth: 56,
@@ -2653,11 +2692,11 @@ ${catHeaderCells}
                       fontSize: 11,
                       verticalAlign: 'bottom',
                       padding: '4px 3px 6px',
-                      borderLeft: si === 0 ? `2px solid ${g.color}33` : undefined,
+                      borderLeft: si === 0 ? `2px solid ${tint(g.color, 'dim')}` : undefined,
                     }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                         <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || g.color, flexShrink: 0 }} />
-                        <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{s.label}</span>
+                        <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{trI18n(s.label)}</span>
                       </div>
                     </th>
                   )))}
@@ -2678,8 +2717,8 @@ ${catHeaderCells}
                       onMouseLeave={e => e.currentTarget.style.background = ''}>
                       <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
-                          ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${avgLv.color}66`, display: 'block', margin: '0 auto' }} />
-                          : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${avgLv.color}22`, border: `2px solid ${avgLv.color}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
+                          ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'block', margin: '0 auto' }} />
+                          : <div style={{ width: 38, height: 38, borderRadius: 'var(--r-md)', margin: '0 auto', background: `${tint(avgLv.color, 'dim')}`, border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
@@ -2689,13 +2728,13 @@ ${catHeaderCells}
                         {emp._isHelper && (
                           <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้`}
                             style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
-                              color: '#0ea5e9', background: '#0ea5e918', border: '1px solid #0ea5e944',
-                              borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
-                            🤝 ยืมจาก {emp._helperFrom}
+                              color: 'var(--blue)', background: 'var(--blue)18', border: '1px solid var(--blue)44',
+                              borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>
+                            ยืมจาก {emp._helperFrom}
                           </div>
                         )}
                         {avg !== null && (
-                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>
                             avg {avg}
                           </div>
                         )}
@@ -2703,16 +2742,16 @@ ${catHeaderCells}
                       {visibleGroups.map(g => g.skills.map((s, si) => {
                         const score = skillMap[s.name];
                         if (score === undefined || score === 0) return (
-                          <td key={s.name} style={{ textAlign: 'center', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
+                          <td key={s.name} style={{ textAlign: 'center', borderLeft: si === 0 ? `2px solid ${tint(g.color, 'dim')}` : undefined }}>
                             <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
                           </td>
                         );
                         const lv = getLevel(score);
                         return (
-                          <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${g.color}22` : undefined }}>
-                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 4, padding: '3px 4px', minWidth: 36 }}>
+                          <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${tint(g.color, 'dim')}` : undefined }}>
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 'var(--r-xs)', padding: '3px 4px', minWidth: 36 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{score}</span>
-                              <span style={{ fontSize: 11, color: lv.color }}>{lv.label}</span>
+                              <span style={{ fontSize: 11, color: lv.color }}>{trI18n(lv.label)}</span>
                             </div>
                           </td>
                         );
@@ -2738,7 +2777,7 @@ ${catHeaderCells}
    เหลือไว้ที่นี่เฉพาะ <SkillGauge> ที่เป็น React component */
 function SkillGauge({ level, size = 34 }) {
   const fill   = GAUGE_FILL[level]   || 'none';
-  const stroke = GAUGE_STROKE[level] || '#9ca3af';
+  const stroke = GAUGE_STROKE[level] || 'var(--muted)';
   return (
     <svg width={size} height={size} viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg" style={{ display: 'block', margin: 'auto' }}>
       <circle cx="17" cy="17" r="15" fill="none" stroke={stroke} strokeWidth="1.5"/>
@@ -2822,10 +2861,10 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
     <td style="vertical-align:top;width:22%">
       <div style="margin-bottom:6px">${tsLogoHtml(logoUrl)}</div>
       <div style="font-size:9px;line-height:2">
-        <div>ฝ่าย : <strong>${dept}</strong></div>
-        <div>ส่วน : <strong>${section}</strong></div>
-        <div>แผนก : <strong>${department}</strong></div>
-        <div>หัวหน้าแผนก : <strong>${headName}</strong></div>
+        <div>{trI18n('ฝ่าย :')} <strong>${dept}</strong></div>
+        <div>{trI18n('ส่วน :')} <strong>${section}</strong></div>
+        <div>{trI18n('แผนก :')} <strong>${department}</strong></div>
+        <div>{trI18n('หัวหน้าแผนก :')} <strong>${headName}</strong></div>
       </div>
     </td>
     <td style="vertical-align:top;text-align:center;width:50%">
@@ -2850,29 +2889,29 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
           <td style="border:1px solid #666;padding:2px;text-align:center">(${approver || '......................'})</td>
         </tr>
         <tr>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">หัวหน้าแผนก</td>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วิศวกร/หัวหน้าส่วน</td>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">ผู้จัดการส่วนผลิต</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('หัวหน้าแผนก')}</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('วิศวกร/หัวหน้าส่วน')}</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('ผู้จัดการส่วนผลิต')}</td>
         </tr>
         <tr>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
-          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">วันที่ .................</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('วันที่ .................')}</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('วันที่ .................')}</td>
+          <td style="border:1px solid #666;padding:1px;text-align:center;font-size:7px">{trI18n('วันที่ .................')}</td>
         </tr>
       </table>
     </td>
   </tr></table>
   <table style="width:100%"><thead>
     <tr style="background:#d1d5db">
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="3">ลำดับ</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="3">เลขที่บัตร</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="3">ชื่อ-นามสกุล</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="3">ตำแหน่ง</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="3">อายุงาน</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${orderedDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="3">{trI18n('ลำดับ')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="3">{trI18n('เลขที่บัตร')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="3">{trI18n('ชื่อ-นามสกุล')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="3">{trI18n('ตำแหน่ง')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="3">{trI18n('อายุงาน')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${orderedDefs.length + 1}">{trI18n('ทักษะความสามารถการปฏิบัติงานของพนักงาน')}</th>
     </tr>
     <tr style="background:#f9fafb">${catHeaderCells}
-      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:8px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
+      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:8px;text-align:center" rowspan="2">{trI18n('ทักษะโดยรวม')}</th>
     </tr>
     <tr style="background:#e5e7eb">${skillHeaderCells}
     </tr>
@@ -2880,9 +2919,9 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   <div style="margin-top:10px">
     <table style="width:100%"><thead>
       <tr style="background:#d1d5db">
-        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2" rowspan="2">ระดับความสามารถ</th>
+        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2" rowspan="2">{trI18n('ระดับความสามารถ')}</th>
         ${catGroups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #666;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:8px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('')}
-        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
+        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center" rowspan="2">{trI18n('ทักษะโดยรวม')}</th>
       </tr>
       <tr style="background:#e5e7eb">
         ${orderedDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
@@ -2890,13 +2929,13 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
     </thead><tbody>
       ${summaryRowsHtml}
       <tr style="background:#f3f4f6;font-weight:700">
-        <td colspan="2" style="border:1px solid #999;text-align:center;padding:2px;font-size:9px">รวมพนักงานทั้งหมด</td>
+        <td colspan="2" style="border:1px solid #999;text-align:center;padding:2px;font-size:9px">{trI18n('รวมพนักงานทั้งหมด')}</td>
         ${orderedDefs.map(() => `<td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>`).join('')}
         <td style="text-align:center;border:1px solid #999;font-size:9px">${totalEmps}</td>
       </tr>
     </tbody></table>
   </div>
-  <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} คน</div>
+  <div style="margin-top:6px;font-size:8px;color:#555">พิมพ์วันที่ ${today} · จำนวนพนักงาน ${totalEmps} {trI18n('คน')}</div>
 </div>
 <div style="text-align:right;font-size:8px;color:#666;margin-top:2px">${fullCode(docFormSync('multi_skill', { form_code: 'FM-PD1-017' }))}${docFormSync('multi_skill', {}).effective_date ? ' · Effective Date : ' + docFormSync('multi_skill', {}).effective_date : ''}</div>
 <script>window.onload = () => { window.print(); }</script></body></html>`;
@@ -2907,12 +2946,13 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 
 function MultiSkillFormTab() {
   const vw = useWidth();
-  const { role, lineId: userLineId, sections: scopeSecs = [], signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
   const canExport = can('report', 'export', role);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
   const [employees,     setEmployees]     = useState([]);
   const [lines,         setLines]         = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [loading,       setLoading]       = useState(false);
   const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า)
   const [filterLine,    setFilterLine]    = useState('');
@@ -2997,14 +3037,16 @@ function MultiSkillFormTab() {
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = onlyShopfloorStaff(supabase.from('employees').select(sel).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
-    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) */
+    if (scope.lineIds?.length) q = q.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
-    const { data } = await q;
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
+    const { data } = scope.blocked ? { data: [] } : await q;
     setEmployees(data || []);
     setLoading(false);
   };
@@ -3084,17 +3126,18 @@ function MultiSkillFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
       <FilterBar style={{ marginBottom: 0 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         {/* กรองช่าง/สายสนับสนุนออกเหมือนแท็บสกิล — ต้องเขียนบนจอ (กฎความซื่อสัตย์ของจอ) */}
-        <span className="filter-count" title="ใบประเมินทักษะออกให้พนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)">
+        <span className="filter-count" title={trI18n('ใบประเมินทักษะออกให้พนักงานหน้างาน — ช่างและสายสนับสนุนไม่เข้าสูตร (กฎ staffKind.js)')}>
           ไม่รวม 🔧 ช่าง / 🗂️ สายสนับสนุน
         </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {employees.length > 0 && (
           <CsvBtn onClick={() => {
@@ -3123,7 +3166,7 @@ function MultiSkillFormTab() {
         <>
           {/* Document header inputs */}
           <div className="card">
-            <div style={{ fontWeight: 700, marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>ข้อมูลหัวเอกสาร</div>
+            <div style={{ fontWeight: 700, marginBottom: 12, color: 'var(--text2)', fontSize: 13 }}>{trI18n('ข้อมูลหัวเอกสาร')}</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10 }}>
               {/* 2026-09-07 ฝ่าย/ส่วน/แผนก = <select> จากผังองค์กร (ค่าที่ auto-fill จากไลน์แต่ไม่อยู่ในผัง ยังโชว์เป็นตัวเลือกไม่หายเงียบ) · หัวหน้าแผนก = <PersonSelect> */}
               {[
@@ -3133,16 +3176,16 @@ function MultiSkillFormTab() {
               ].map(({ label, val, set, opts, plain }) => (
                 <div key={label}>
                   <span style={lbSt}>{label}</span>
-                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
+                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
                     <option value="">—</option>
                     {val && !opts.includes(val) && <option value={val}>{plain ? val : `${val} ⚠ ไม่มีในผัง`}</option>}
-                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    {opts.map(o => <option key={o} value={o}>{trI18n(o)}</option>)}
                   </select>
                 </div>
               ))}
               <div>
-                <span style={lbSt}>หัวหน้าแผนก</span>
-                <PersonSelect value={headName} roles={['supervisor']} lineIds={filterLine ? [filterLine] : undefined} placeholder="ค้นชื่อหัวหน้าแผนก…"
+                <span style={lbSt}>{trI18n('หัวหน้าแผนก')}</span>
+                <PersonSelect value={headName} roles={['supervisor']} lineIds={filterLine ? [filterLine] : undefined} placeholder={trI18n('ค้นชื่อหัวหน้าแผนก…')}
                   onChange={({ name }) => setHeadName(name)} inputStyle={{ padding: '6px 30px 6px 10px' }} />
               </div>
             </div>
@@ -3154,25 +3197,25 @@ function MultiSkillFormTab() {
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[1], name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[2], name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
               ].map(({ label, name, setName, sig, setSig, autoRole }) => (
-                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
+                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 10, background: 'var(--bg2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={lbSt}>{label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{autoRole}</span>
                   </div>
                   {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
-                  <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder="ชื่อ-นามสกุล"
+                  <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder={trI18n('ชื่อ-นามสกุล')}
                     style={{ marginBottom: 6 }} inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12 }}
                     onChange={({ name: nm, signature_url }) => { setName(nm); if (signature_url) setSig(signature_url); }} />
                   {sig ? (
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
                       <button onClick={() => { if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig); setSig(null); }}
-                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
-                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
-                        📎 อัปโหลดลายเซ็น
+                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
+                        {trI18n('อัปโหลดลายเซ็น')}
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
                         const picked = e.target.files?.[0];
@@ -3195,11 +3238,11 @@ function MultiSkillFormTab() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <div>
                 <span style={{ fontWeight: 700, fontSize: 15 }}>MULTI SKILL OF OPERATORS</span>
-                <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
+                <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} {trI18n('คน ·')} {skillDefs.length} {trI18n('ทักษะ')}</span>
               </div>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  🖨️ Export PDF
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  Export PDF
                 </button>
               )}
             </div>
@@ -3207,10 +3250,10 @@ function MultiSkillFormTab() {
             {/* Legend */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               {MS_LEVELS.map(lv => (
-                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
                   <span style={{ fontSize: 11, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
-                    {lv.pct} · {lv.label}
+                    {lv.pct} · {trI18n(lv.label)}
                   </span>
                 </div>
               ))}
@@ -3224,7 +3267,7 @@ function MultiSkillFormTab() {
                   return (
                     <div key={emp.id} className="card" style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {positionLabel(emp.position)}</div>
@@ -3237,8 +3280,8 @@ function MultiSkillFormTab() {
                           const lv = levels[si];
                           const m = msStyle(lv);
                           return (
-                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${m.border}55` }}>
-                              {s.label} L{lv}
+                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
+                              {trI18n(s.label)} L{lv}
                             </span>
                           );
                         })}
@@ -3253,15 +3296,15 @@ function MultiSkillFormTab() {
               <thead>
                 <tr>
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3 }}>#</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>ชื่อ-สกุล</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>ตำแหน่ง</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>{trI18n('ชื่อ-สกุล')}</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>{trI18n('ตำแหน่ง')}</th>
                   {msVisibleGroups.map(g => (
-                    <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${g.color}15`, color: g.color, textAlign: 'center' }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
-                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
+                    <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center' }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {trI18n(g.label)}</div>
+                      {g.desc && <div style={{ fontSize: 11, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{trI18n(g.desc)}</div>}
                     </th>
                   ))}
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 44, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 44, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom' }}>{trI18n('ทักษะโดยรวม')}</th>
                 </tr>
                 <tr>
                   {msVisibleDefs.map((s, si) => {
@@ -3271,11 +3314,11 @@ function MultiSkillFormTab() {
                       <th key={s.name} style={{
                         minWidth: 56, maxWidth: 70, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom',
                         padding: '4px 3px 6px', border: '1px solid var(--border2)', background: 'var(--bg3)',
-                        borderLeft: firstInGroup ? `2px solid ${g.color}44` : undefined,
+                        borderLeft: firstInGroup ? `2px solid ${tint(g.color, 'line')}` : undefined,
                       }}>
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                           <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: s.color || (g?.color || '#888'), flexShrink: 0 }} />
-                          <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{s.label}</span>
+                          <span style={{ wordBreak: 'break-word', lineHeight: 1.3, whiteSpace: 'normal' }}>{trI18n(s.label)}</span>
                         </div>
                       </th>
                     );
@@ -3293,7 +3336,7 @@ function MultiSkillFormTab() {
                       const g = msVisibleGroups.find(g => g.skills.find(sk => sk.name === s.name));
                       const firstInGroup = g && g.skills[0].name === s.name;
                       return (
-                        <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', borderLeft: firstInGroup ? `2px solid ${g.color}22` : undefined }}>
+                        <td key={si} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '4px 2px', borderLeft: firstInGroup ? `2px solid ${tint(g.color, 'dim')}` : undefined }}>
                           {lv === null
                             ? <span style={{ color: 'var(--border2)', fontSize: 11 }}>—</span>
                             : <SkillGauge level={lv} size={30} />}
@@ -3312,23 +3355,23 @@ function MultiSkillFormTab() {
 
             {/* Summary count table */}
             <div style={{ marginTop: 16 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--text2)' }}>สรุปจำนวนพนักงานแยกตามระดับ</div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: 'var(--text2)' }}>{trI18n('สรุปจำนวนพนักงานแยกตามระดับ')}</div>
               <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>{trI18n('ระดับ')}</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>{trI18n('ความหมาย')}</th>
                     {msVisibleGroups.map(g => (
-                      <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${g.color}15`, color: g.color, textAlign: 'center', fontSize: 11, fontWeight: 800 }}>
-                        {g.icon} {g.label}
+                      <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center', fontSize: 11, fontWeight: 800 }}>
+                        {g.icon} {trI18n(g.label)}
                       </th>
                     ))}
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'rgba(34,197,94,0.12)', color: '#22c55e', width: 68, textAlign: 'center', fontSize: 11 }}>รวม</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 68, textAlign: 'center', fontSize: 11 }}>{trI18n('รวม')}</th>
                   </tr>
                   <tr>
                     {msVisibleDefs.map(s => (
-                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 11 }}>{s.label}</th>
+                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 11 }}>{trI18n(s.label)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3343,13 +3386,13 @@ function MultiSkillFormTab() {
                             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lv.pct}</span>
                           </div>
                         </td>
-                        <td style={{ border: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, color: 'var(--text2)' }}>{lv.label}</td>
+                        <td style={{ border: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, color: 'var(--text2)' }}>{trI18n(lv.label)}</td>
                         {counts.map((cnt, i) => (
                           <td key={i} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: cnt > 0 ? 700 : 400, color: cnt > 0 ? (lv.level > 0 ? c.color : 'var(--muted)') : 'var(--muted)' }}>
                             {cnt || ''}
                           </td>
                         ))}
-                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: total > 0 ? '#22c55e' : 'var(--muted)' }}>{total || ''}</td>
+                        <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: total > 0 ? 'var(--green)' : 'var(--muted)' }}>{total || ''}</td>
                       </tr>
                     );
                   })}
@@ -3374,11 +3417,11 @@ function MultiSkillFormTab() {
 //  ฟอร์มจริงใช้ handlePrint ของ AttendanceFormTab ที่สร้าง HTML เอง)
 
 const Loader = () => (
-  <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+  <div style={{ textAlign: 'center', padding: '30px 0', color: 'var(--muted)', fontSize: 13 }}>{trI18n('กำลังโหลด...')}</div>
 );
 
 const EmptyRow = ({ cols }) => (
-  <tr><td colSpan={cols} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>ไม่มีข้อมูล</td></tr>
+  <tr><td colSpan={cols} style={{ textAlign: 'center', padding: '20px 0', color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มีข้อมูล')}</td></tr>
 );
 
 // รูปพนักงาน — ไม่มีรูป (image_url null) หรือไฟล์โหลดไม่ได้ ให้แสดง placeholder 👤 ในเครื่อง
@@ -3397,10 +3440,10 @@ const Thumb = ({ src }) => {
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{
-    display: 'inline-block', fontSize: 11, borderRadius: 4, padding: '1px 5px', marginRight: 3,
-    background: ok ? 'rgba(34,197,94,0.15)' : 'rgba(231,76,60,0.15)',
+    display: 'inline-block', fontSize: 11, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginRight: 3,
+    background: ok ? 'var(--green-dim)' : 'var(--red-dim)',
     color: ok ? 'var(--green)' : 'var(--red)',
-    border: `1px solid ${ok ? 'rgba(34,197,94,0.3)' : 'rgba(231,76,60,0.3)'}`,
+    border: `1px solid ${ok ? 'var(--green-line)' : 'var(--red-line)'}`,
   }}>{ok ? '✓' : '✗'} {label}</span>
 );
 
@@ -3423,7 +3466,7 @@ const SHIFT_DEFS = [
 
 function SkillAllowanceTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = new Date();
   const [year,   setYear]   = useState(today.getFullYear());
@@ -3433,6 +3476,7 @@ function SkillAllowanceTab() {
   const [section, setSection] = useState('');
   const [team,   setTeam]   = useState(urlTeam);
   const [lines,     setLines]     = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [skillDefs, setSkillDefs] = useState([]);
   const [rows,   setRows]   = useState([]); // [{emp, shifts:{day:{},night:{}}}]
   const [loading, setLoading] = useState(false);
@@ -3456,6 +3500,41 @@ function SkillAllowanceTab() {
       .then(({ data }) => setSkillDefs(data || []));
   }, []);
 
+  /* 👨‍🔧 หัวหน้างานของไลน์ที่เลือก — **ของจริงจากทะเบียนพนักงาน** (28/10 · feedback user)
+     *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะ"* ⇒ `production_lines.head_name` ช่องเดียวตอบไม่ได้
+     กฎอยู่ใน utils/lineHeads.js ที่เดียว (จอตั้งค่าไลน์ใช้ชุดเดียวกัน) */
+  const [headEmps, setHeadEmps] = useState([]);
+  const [headProfiles, setHeadProfiles] = useState([]);
+  const [headSched, setHeadSched] = useState([]);
+  const lineObjSel = useMemo(() => lines.find(l => l.name === line) || null, [lines, line]);
+  useEffect(() => {
+    let alive = true;                       // กฎข้อ 4: await แล้ว setState ต้องมี guard
+    if (!lineObjSel) { setHeadEmps([]); setHeadProfiles([]); setHeadSched([]); return undefined; }
+    /* 🔴 ต้องครอบไลน์ลูกด้วย — หัวหน้าที่ดูแลไลน์แม่อาจสังกัดไลน์ลูก (headScopeLineIds อธิบายไว้) */
+    const ids = headScopeLineIds(lines, lineObjSel.id);
+    (async () => {
+      const [{ data: he }, { data: pf }, { data: sc }] = await Promise.all([
+        supabase.from('employees').select('id, name, position, team, line_id').eq('is_active', true).in('line_id', ids),
+        // บัญชีผู้ใช้ = ตอบ "ดูแลไลน์ไหน" เท่านั้น · role ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md)
+        supabase.from('profiles').select('full_name, role, team, line_id, employee_id').in('role', ['leader', 'supervisor']),
+        supabase.from('shift_schedules').select('*').eq('work_date', getWorkDate()),
+      ]);
+      if (!alive) return;
+      setHeadEmps(he || []); setHeadProfiles(pf || []); setHeadSched(sc || []);
+    })();
+    return () => { alive = false; };
+  }, [lineObjSel, lines]);
+  const headMaps = useMemo(() => buildScheduleMaps(headSched, lines), [headSched, lines]);
+  const lineHeads = useMemo(() => lineHeadsOf({
+    lineId: lineObjSel?.id, lines, employees: headEmps, profiles: headProfiles,
+    maps: headSched.length ? headMaps : null,
+    legacyName: lineObjSel?.head_name || '',
+  }), [lineObjSel, lines, headEmps, headProfiles, headSched, headMaps]);
+  /* ตัวเลือกที่ "ตรงกับใบที่กำลังออก" — เลือกทีมไว้ = เหลือหัวหน้าของทีมนั้น · ไม่เลือก = ทั้งหมด */
+  const headChoices = useMemo(() => (
+    team ? lineHeads.rows.filter(r => r.team === team) : lineHeads.rows
+  ), [lineHeads, team]);
+
   // ดึง Cost Center และหัวหน้างาน จากไลน์ที่เลือกอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
     const lineObj = lines.find(l => l.name === line);
@@ -3463,8 +3542,16 @@ function SkillAllowanceTab() {
     // เดิมไม่ fallback → HDF1/HDF2 ที่ยังไม่กรอก ทำให้ช่องหัวหน้าในใบค่าฝีมือโล่ง ทั้งที่ไลน์แม่มีชื่ออยู่
     const parentObj = lineObj?.parent_line_name ? lines.find(l => l.name === lineObj.parent_line_name) : null;
     setCostCenter(lineObj?.cost_center || parentObj?.cost_center || '');
-    setSignerHead(lineObj?.head_name || parentObj?.head_name || '');
   }, [line, lines]);
+
+  /* 🔴 เติมชื่อหัวหน้าให้เองเฉพาะตอน "ไม่กำกวม" — ใบมีช่องเซ็นช่องเดียว
+     เหลือคนเดียว (หรือเลือกทีมแล้วเหลือคนเดียว) = เติมให้ · มากกว่านั้น = **เว้นว่างแล้วให้คนเลือก**
+     เดาให้เองตอนมี 2-4 คน = ใบถูกเซ็นชื่อผิดกะโดยไม่มีใครรู้ (ของเดิมเติมจาก head_name ช่องเดียวเสมอ) */
+  useEffect(() => {
+    if (headChoices.length === 1) { setSignerHead(headChoices[0].name); return; }
+    if (!headChoices.length) { setSignerHead(lineHeads.legacyName || ''); return; }
+    setSignerHead('');
+  }, [headChoices, lineHeads.legacyName]);
 
   // ดึงชื่อผู้อนุมัติ ประจำส่วนงานอัตโนมัติ (ยังแก้ไขเองได้ถ้าต้องการ)
   useEffect(() => {
@@ -3490,14 +3577,9 @@ function SkillAllowanceTab() {
   };
 
   // mandatory scope: null = ไม่จำกัด · leader → ครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → ไลน์ในส่วนงานที่อยู่ใน scope
-  const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
-    }
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
-    return null;
-  }, [role, userLineId, scopeSecs, lines]);
+  const scopedLineNames = useMemo(
+    () => (scope.unlimited ? null : scope.names ? [...scope.names] : null),   // 🔭 ของกลาง (hook ด้านบน)
+    [scope]);
 
   const load = async () => {
     if (!workType) { toast.error('เลือก "ประเภทงาน" ก่อนดึงข้อมูล'); return; } // เดิม query ด้วย '' ได้ผลว่างโดยไม่บอกสาเหตุ
@@ -3655,13 +3737,13 @@ function SkillAllowanceTab() {
     }).join('');
 
     const headerBlock = `
-      <div style="text-align:right;font-size:${fz(12)};margin-bottom:2px">ฟอร์ม 2</div>
+      <div style="text-align:right;font-size:${fz(12)};margin-bottom:2px">{trI18n('ฟอร์ม 2')}</div>
       <table style="border:none;margin-bottom:${padV(6)};width:100%">
         <tr>
           <td style="border:1px solid #333;width:230px;padding:${padV(6)};vertical-align:middle">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="width:${Math.round(44*scale)}px;flex-shrink:0">${logoDataUrl ? `<img src="${logoDataUrl}" style="width:${Math.round(40*scale)}px;height:auto"/>` : ''}</div>
-              <div style="font-size:${fz(12)};font-weight:bold">บริษัทไทยซัมมิทโอโตโมทีฟ จำกัด</div>
+              <div style="font-size:${fz(12)};font-weight:bold">{trI18n('บริษัทไทยซัมมิทโอโตโมทีฟ จำกัด')}</div>
             </div>
           </td>
           <td style="border:none;text-align:center">
@@ -3678,7 +3760,7 @@ function SkillAllowanceTab() {
 
     const footerBlock = `
       <div style="margin-top:${padV(10)};font-size:${fz(11)};line-height:1.6">
-        <strong>หมายเหตุ :</strong><br/>
+        <strong>{trI18n('หมายเหตุ :')}</strong><br/>
         1. วันที่ 1-15 จะจ่ายในงวดวันที่ 22 ของทุกเดือน<br/>
         2. วันที่ 16-31 จะจ่ายในงวดวันที่ 7 ของทุกเดือน<br/>
         3. กรณีใบ Certification ขาดอายุจะถูกระงับการจ่ายค่าฝีมือ<br/>
@@ -3694,7 +3776,7 @@ function SkillAllowanceTab() {
             ['ผู้จัดการส่วน HRM', signerHRM],
           ].map(([label, name]) => `
             <td style="border:1px solid #333;width:25%;text-align:center;padding:${padV(8)} 4px;vertical-align:bottom">
-              <div style="font-size:${fz(11)};margin-bottom:2px">บันทึกโดย</div>
+              <div style="font-size:${fz(11)};margin-bottom:2px">{trI18n('บันทึกโดย')}</div>
               <div style="border-bottom:1px dotted #333;height:${Math.round(24*scale)}px;margin-bottom:4px"></div>
               <div style="font-size:${fz(11)}">${name ? `(${name})` : '( &nbsp; )'}</div>
               <div style="font-size:${fz(10)};color:#555">${label}</div>
@@ -3725,16 +3807,16 @@ function SkillAllowanceTab() {
   <thead>
     <tr><th colspan="${totalCols}" style="border:none;background:#fff;padding:0;text-align:left">${headerBlock}</th></tr>
     <tr>
-      <th rowspan="2">ลำดับ</th>
-      <th rowspan="2">เลขที่บัตรพนักงาน</th>
-      <th rowspan="2">ชื่อ - สกุล</th>
-      <th rowspan="2">กะ</th>
+      <th rowspan="2">{trI18n('ลำดับ')}</th>
+      <th rowspan="2">{trI18n('เลขที่บัตรพนักงาน')}</th>
+      <th rowspan="2">{trI18n('ชื่อ - สกุล')}</th>
+      <th rowspan="2">{trI18n('กะ')}</th>
       <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]}</th>
-      <th rowspan="2">รวม</th>
-      <th rowspan="2">ลายเซ็นพนักงาน</th>
-      <th rowspan="2">TA ตรวจสอบการทำงาน</th>
-      <th rowspan="2">ลายเซ็น TA</th>
-      <th rowspan="2">หมายเหตุ</th>
+      <th rowspan="2">{trI18n('รวม')}</th>
+      <th rowspan="2">{trI18n('ลายเซ็นพนักงาน')}</th>
+      <th rowspan="2">{trI18n('TA ตรวจสอบการทำงาน')}</th>
+      <th rowspan="2">{trI18n('ลายเซ็น TA')}</th>
+      <th rowspan="2">{trI18n('หมายเหตุ')}</th>
     </tr>
     <tr>
       ${days.map(d => `<th>${d}</th>`).join('')}
@@ -3767,31 +3849,31 @@ function SkillAllowanceTab() {
         <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder={ALL.line}
           onChange={setLine} />
         <select value={team} onChange={e => setTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span className="filter-label">ปี</span>
+        <span className="filter-label">{trI18n('ปี')}</span>
         <select value={year} onChange={e => setYear(Number(e.target.value))}>
           {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
             <option key={y} value={y}>{y + 543}</option>
           ))}
         </select>
-        <span className="filter-label">เดือน</span>
+        <span className="filter-label">{trI18n('เดือน')}</span>
         <select value={month} onChange={e => setMonth(Number(e.target.value))}>
-          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{trI18n(m)}</option>)}
         </select>
-        <span className="filter-label">งวด</span>
+        <span className="filter-label">{trI18n('งวด')}</span>
         <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
-          <option value={1}>งวด 1 (วันที่ 1-15)</option>
-          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          <option value={1}>{trI18n('งวด 1 (วันที่ 1-15)')}</option>
+          <option value={2}>{trI18n('งวด 2 (วันที่ 16-สิ้นเดือน)')}</option>
         </select>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {rows.length > 0 && (
-          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>{trI18n('กด Export ด้านล่างเพื่อพิมพ์')}</span>
         )}
         {rows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -3823,10 +3905,10 @@ function SkillAllowanceTab() {
       {/* รายละเอียดเอกสาร */}
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
-          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
-            <option value="">— เลือกประเภท —</option>
-            {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('ประเภทงาน')}</div>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
+            <option value="">{trI18n('— เลือกประเภท —')}</option>
+            {workTypes.map(w => <option key={w} value={w}>{trI18n(w)}</option>)}
           </select>
         </div>
         <div>
@@ -3837,34 +3919,76 @@ function SkillAllowanceTab() {
             onChange={r => setCostCenter(r.code)} style={{ width: 200 }} inputStyle={{ padding: '6px 10px', fontSize: 13 }} />
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('สิทธิ์ที่ได้รับ กะ 01 (คน)')}</div>
           <input value={rightsDay} onChange={e => setRightsDay(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 02 (คน)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('สิทธิ์ที่ได้รับ กะ 02 (คน)')}</div>
           <input value={rightsNight} onChange={e => setRightsNight(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('บันทึกโดย (หัวหน้างาน)')}</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
+          <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
+          {/* 👨‍🔧 รายชื่อหัวหน้างานจริงของไลน์นี้ (28/10 · feedback user "ไลน์นึงมีหัวหน้าได้ 2-3 คน")
+              🔴 ใบนี้มีช่องเซ็น "หัวหน้างาน" ช่องเดียว ⇒ มีหลายคน = **ให้คนเลือก ห้ามเดาให้** */}
+          {headChoices.length > 1 && (
+            <div style={{ marginTop: 5, maxWidth: 320 }}>
+              <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+                ⚠️ ไลน์นี้มีหัวหน้างาน {headChoices.length} {trI18n('คน')}{team ? ` ในทีม ${team}` : ' (ทุกกะ)'} — ใบมีช่องเซ็นช่องเดียว เลือกคนที่เซ็นใบนี้
+                {!team ? ' · เลือก "ทีม" ที่แถบกรองด้านบน แล้วระบบจะเหลือเฉพาะหัวหน้าของกะนั้น' : ''}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                {headChoices.map(r => (
+                  <button key={r.id} type="button" onClick={() => setSignerHead(r.name)}
+                    title={`${r.name}${r.team ? ` · ทีม ${r.team}` : ''}${r.shift ? ` · ${r.shift === 'day' ? 'กะเช้า' : 'กะดึก'}` : ' · ยังไม่รู้กะ'}`}
+                    style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
+                      border: `1px solid ${signerHead === r.name ? 'var(--accent)' : 'var(--border2)'}`,
+                      background: signerHead === r.name ? 'var(--accent-dim)' : 'var(--bg3)',
+                      color: 'var(--text)', fontWeight: signerHead === r.name ? 700 : 400 }}>
+                    {r.name}{r.shift ? (r.shift === 'day' ? ' · เช้า' : ' · ดึก') : r.team ? ` · ทีม ${r.team}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {/* ไม่มีใครในทะเบียน = บอกตรงๆ ว่าชื่อที่เห็นมาจากช่องพิมพ์เก่า (จอต้องไม่เงียบ) */}
+          {line && !lineHeads.rows.length && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, maxWidth: 320 }}>
+              ℹ️ ทะเบียนพนักงานยังไม่มีหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้
+              {lineHeads.legacyName ? ` — ที่เติมให้คือชื่อที่พิมพ์ไว้ในทะเบียนไลน์ ("${lineHeads.legacyName}")` : ''}
+              {' · ตั้งตำแหน่ง+ทีม+ไลน์ ให้เขาที่ /operator แล้วจะเลือกตามกะได้'}
+            </div>
+          )}
+          {/* 🔴 2 ทะเบียนไม่ตรงกัน — คนออกใบต้องรู้ว่าทำไมชื่อที่คาดว่าจะเห็นไม่ขึ้น (28/10) */}
+          {lineHeads.conflicts.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 5, maxWidth: 320 }}>
+              ⚠️ {lineHeads.conflicts.map(c => c.name).join(' · ')} — บัญชีผู้ใช้ตั้งเป็นหัวหน้าของไลน์นี้
+              แต่ทะเบียนพนักงานยังไม่ใช่ตำแหน่งหัวหน้า จึงไม่ขึ้นในรายชื่อ · แก้ที่ /operator
+            </div>
+          )}
+          {lineHeads.level === 'supervisor' && headChoices.length > 0 && (
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, maxWidth: 320 }}>
+              ℹ️ ไลน์นี้ยังไม่มี "หัวหน้าไลน์" ในทะเบียน — ที่เห็นคือหัวหน้าแผนก
+            </div>
+          )}
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการต้นสังกัด)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('บันทึกโดย (ผู้จัดการต้นสังกัด)')}</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerManager} roles={['manager']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerManager(name)} />
+          <PersonSelect value={signerManager} roles={['manager']} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerManager(name)} />
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (เจ้าหน้าที่ TA)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('บันทึกโดย (เจ้าหน้าที่ TA)')}</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerTA} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerTA(name)} />
+          <PersonSelect value={signerTA} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerTA(name)} />
         </div>
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการส่วน HRM)</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{trI18n('บันทึกโดย (ผู้จัดการส่วน HRM)')}</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerHRM} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHRM(name)} />
+          <PersonSelect value={signerHRM} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerHRM(name)} />
         </div>
       </div>
 
@@ -3873,18 +3997,18 @@ function SkillAllowanceTab() {
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <div>
-              <span style={{ fontWeight: 700, fontSize: 15 }}>ใบสรุปค่าฝีมือ</span>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>{trI18n('ใบสรุปค่าฝีมือ')}</span>
               <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year + 543}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+              <span style={{ background: 'var(--green-dim)', color: 'var(--green)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
                 {rows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  🖨️ Export PDF
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  Export PDF
                 </button>
               )}
             </div>
@@ -3892,14 +4016,14 @@ function SkillAllowanceTab() {
           <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>ลำดับ</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>รหัส</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>กะ</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>{trI18n('ลำดับ')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>{trI18n('รหัส')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>{trI18n('ชื่อ - สกุล')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>{trI18n('กะ')}</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 11 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 11 }}>{trI18n(d)}</th>
                 ))}
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>{trI18n('รวม')}</th>
               </tr>
             </thead>
             <tbody>
@@ -3908,9 +4032,9 @@ function SkillAllowanceTab() {
                   {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{i+1}</td>}
                   {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px', whiteSpace: 'nowrap' }}>{r.emp?.employee_id_code}</td>}
                   {si === 0 && <td rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '3px 6px' }}>{r.emp?.name}</td>}
-                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{sd.label}</td>
+                  <td style={{ border: '1px solid var(--border2)', padding: '3px 6px', textAlign: 'center' }}>{trI18n(sd.label)}</td>
                   {days.map(d => (
-                    <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', color: '#22c55e', fontWeight: 700 }}>
+                    <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', color: 'var(--green)', fontWeight: 700 }}>
                       {r.shifts[sd.key][d] ? '1' : ''}
                     </td>
                   ))}
@@ -3921,8 +4045,8 @@ function SkillAllowanceTab() {
               )))}
               {SHIFT_DEFS.map((sd, si) => (
                 <tr key={`sum-${sd.key}`} style={{ background: 'var(--bg3)', fontWeight: 700 }}>
-                  {si === 0 && <td rowSpan={2} colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>รวม</td>}
-                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>{sd.label}</td>
+                  {si === 0 && <td rowSpan={2} colSpan={3} style={{ border: '1px solid var(--border2)', textAlign: 'center', padding: '3px 6px' }}>{trI18n('รวม')}</td>}
+                  <td style={{ border: '1px solid var(--border2)', textAlign: 'center' }}>{trI18n(sd.label)}</td>
                   {days.map(d => (
                     <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', fontSize: 11 }}>
                       {rows.filter(r => r.shifts[sd.key][d]).length || ''}
@@ -3951,7 +4075,7 @@ function SkillAllowanceTab() {
    ══════════════════════════════════════════════════════════════ */
 function AttendanceFormTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today   = new Date();
   const orgSectionList = useOrgSections();
@@ -3970,6 +4094,7 @@ function AttendanceFormTab() {
      = หัวใบขึ้นเลขหนึ่ง ท้ายใบขึ้นอีกเลข บนกระดาษใบเดียวกัน · ช่องนี้ยังแก้รายใบได้เหมือนเดิม */
   const [formNo,  setFormNo]  = useState(() => docFormSync('attendance_record', { form_code: 'F-HR-001' }).form_code || 'F-HR-001');
   const [lines,   setLines]   = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
   const [loading, setLoading] = useState(false);
   const [calLoaded, setCalLoaded] = useState(false);
@@ -4039,15 +4164,15 @@ function AttendanceFormTab() {
     let empQ = supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id, staff_kind');
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
-    if (role === 'leader' && userLineId) {
-      const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
-      empQ = empQ.in('line_id', leaderFam.length ? leaderFam : [userLineId]);
-    } else if (scopeSecs.length)         empQ = empQ.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) */
+    if (scope.lineIds?.length)                     empQ = empQ.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) empQ = empQ.in('section', scopeSecs);
     if (line && familyIds.length) empQ = empQ.in('line_id', familyIds);
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
     if (team)           empQ = empQ.eq('team', team);
-    const { data: filteredEmps } = await empQ;
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
+    const { data: filteredEmps } = scope.blocked ? { data: [] } : await empQ;
     if (!filteredEmps?.length) { setEmpRows([]); setLoading(false); return; }
 
     const empMetaById = Object.fromEntries((filteredEmps || []).map(e => [e.id, e]));
@@ -4061,9 +4186,12 @@ function AttendanceFormTab() {
     for (let i = 0; i < empIds.length; i += BATCH) {
       const ids = empIds.slice(i, i + BATCH);
       const [{ data: batchLogs }, { data: batchBookings }] = await Promise.all([
-        supabase.from('daily_production_logs')
+        /* 🔴 เพดาน 1,000 แถว — batch 50 คน × 1 เดือน ≈ 1,500 แถว (วัดจริง 11/11/26:
+           daily_production_logs 4,338 แถว/เดือน) ⇒ ชนได้ · ขาดแล้ว "วันลา/OT" หายจากสรุป */
+        fetchAllPages(() => supabase.from('daily_production_logs')
           .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, leave_hours')
           .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids),
+          { orderBy: ['work_date', 'employee_id'] }).then(r => ({ data: r.rows, error: r.error })),
         supabase.from('ot_night_bookings')
           .select('work_date, employee_id, shift, ot_period')
           .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids)
@@ -4232,7 +4360,7 @@ function AttendanceFormTab() {
         </tr>
         <tr>
           ${days.map(d => makeDayRow2(d, r)).join('')}
-          <td colspan="8" style="border:1px solid #000;font-size:7px;text-align:right;padding:0 3px;height:12px">→ จำนวน ชม. ที่ทำ OT</td>
+          <td colspan="8" style="border:1px solid #000;font-size:7px;text-align:right;padding:0 3px;height:12px">{trI18n('→ จำนวน ชม. ที่ทำ OT')}</td>
           <td style="${tdOTStyle}">${totalOTHrs > 0 ? totalOTHrs : ''}</td>
         </tr>`;
     }).join('');
@@ -4260,8 +4388,8 @@ function AttendanceFormTab() {
       ${logoDataUrl ? `<img src="${logoDataUrl}" style="width:42px;height:auto;display:block;margin:0 auto"/>` : ''}
     </td>
     <td style="vertical-align:middle;padding:2px 8px">
-      <div style="font-size:11px;font-weight:bold;text-align:center">บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด</div>
-      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน</div>
+      <div style="font-size:11px;font-weight:bold;text-align:center">{trI18n('บริษัท ไทยซัมมิท โอโตโมทีฟ จำกัด')}</div>
+      <div style="font-size:10px;font-weight:bold;text-align:center;margin-top:2px">{trI18n('ใบบันทึกการมาทำงาน - การหยุดงานของพนักงาน')}</div>
       <div style="font-size:10px;text-align:center;margin-top:2px">${deptLabel}</div>
     </td>
     <td style="width:48%;vertical-align:top;padding:0">
@@ -4274,15 +4402,15 @@ function AttendanceFormTab() {
         <tr>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">เดือน ${THAI_MONTHS[month]} ${year+543}</td>
           <td style="border:1px solid #000;padding:2px 6px;text-align:center">งวด วันที่ ${dStr}</td>
-          <td style="border:1px solid #000;padding:2px 6px;text-align:center">จำนวนพนักงาน <b>${totalEmp}</b> คน</td>
+          <td style="border:1px solid #000;padding:2px 6px;text-align:center">{trI18n('จำนวนพนักงาน')} <b>${totalEmp}</b> {trI18n('คน')}</td>
         </tr>
         <tr>
           <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">
             ${sigDataUrl ? `<img src="${sigDataUrl}" style="max-height:36px;max-width:70px;object-fit:contain;display:block;margin:0 auto 2px"/>` : '<div style="height:36px"></div>'}
             หัวหน้าแผนก
           </td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">หัวหน้าส่วน</td>
-          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">ผู้จัดการ</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">{trI18n('หัวหน้าส่วน')}</td>
+          <td style="border:1px solid #000;height:52px;text-align:center;vertical-align:bottom;padding-bottom:2px;font-size:7px">{trI18n('ผู้จัดการ')}</td>
         </tr>
       </table>
     </td>
@@ -4308,18 +4436,18 @@ function AttendanceFormTab() {
   </colgroup>
   <thead>
     <tr>
-      <th rowspan="2" style="${thStyle}">ลำดับ</th>
-      <th rowspan="2" style="${thStyle}">ชื่อ - สกุล</th>
-      <th rowspan="2" style="${thStyle}">เลขที่บัตร</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('ลำดับ')}</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('ชื่อ - สกุล')}</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('เลขที่บัตร')}</th>
       ${dayHeaderRow1}
-      <th rowspan="2" style="${thStyle}width:13px">ส</th>
-      <th rowspan="2" style="${thStyle}width:13px">ป</th>
-      <th rowspan="2" style="${thStyle}width:13px">ก</th>
-      <th rowspan="2" style="${thStyle}width:14px">พ</th>
-      <th rowspan="2" style="${thStyle}width:14px">กธ</th>
-      <th rowspan="2" style="${thStyle}width:14px">บ</th>
-      <th rowspan="2" style="${thStyle}width:13px">ข</th>
-      <th rowspan="2" style="${thStyle}width:14px">พง</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ส')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ป')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ก')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('พ')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('กธ')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('บ')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ข')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('พง')}</th>
       <th rowspan="2" style="${thStyle}width:16px">OT</th>
     </tr>
     <tr>
@@ -4348,16 +4476,13 @@ function AttendanceFormTab() {
 
   const days = periodDays();
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const attLinesInScope = (role === 'leader' && userLineId)
-    ? lines.filter(l => String(l.id) === String(userLineId))
-    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  const attLinesInScope = scope.linesIn;          // 🔭 ของกลาง (hook ด้านบน)
   const attAllSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-  const attSections = (role === 'leader' && userLineId)
-    ? sortLike(attLinesInScope.map(l => l.section), orgSectionList)
-    : scopeSecs.length ? attAllSections.filter(s => inSectionScope(scopeSecs, s)) : attAllSections;
+  const attSections = scope.sectionsIn(attAllSections);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → ช่องหัวเอกสาร → spacer → ปุ่ม */}
       <FilterBar style={{ marginBottom: 0 }}>
         {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
@@ -4365,40 +4490,40 @@ function AttendanceFormTab() {
         <LineScopeSelect lines={attLinesInScope} sections={attSections} section={dept} line={line} unit={empDept} pickDept
           onChange={(sec, ln, { unit }) => { setDept(ln || unit ? '' : sec); setLine(ln); setEmpDept(unit || ''); }} />
         <select value={team} onChange={e => setTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
-        <span className="filter-label">ปี</span>
+        <span className="filter-label">{trI18n('ปี')}</span>
         <select value={year} onChange={e => setYear(Number(e.target.value))}>
           {[today.getFullYear()-1, today.getFullYear(), today.getFullYear()+1].map(y => (
             <option key={y} value={y}>{y+543}</option>
           ))}
         </select>
-        <span className="filter-label">เดือน</span>
+        <span className="filter-label">{trI18n('เดือน')}</span>
         <select value={month} onChange={e => setMonth(Number(e.target.value))}>
-          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{trI18n(m)}</option>)}
         </select>
-        <span className="filter-label">งวด</span>
+        <span className="filter-label">{trI18n('งวด')}</span>
         <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
-          <option value={1}>งวด 1 (วันที่ 1-15)</option>
-          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          <option value={1}>{trI18n('งวด 1 (วันที่ 1-15)')}</option>
+          <option value={2}>{trI18n('งวด 2 (วันที่ 16-สิ้นเดือน)')}</option>
         </select>
         <span className="spacer" />
         {/* เลขที่เอกสาร = ค่าหัวใบพิมพ์ (ไม่ใช่ตัวกรองมุมมอง) ⇒ อยู่หลัง spacer ชิดปุ่ม (UI-STANDARD §3.5) */}
-        <span className="filter-label">เลขที่เอกสาร</span>
+        <span className="filter-label">{trI18n('เลขที่เอกสาร')}</span>
         <input
           type="text"
           value={formNo}
           onChange={e => setFormNo(e.target.value)}
-          placeholder="เช่น F-HR-001"
+          placeholder={trI18n('เช่น F-HR-001')}
           style={{ width: 110 }}
         />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : '🔍 ดึงข้อมูล'}
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {empRows.length > 0 && (
-          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>{trI18n('กด Export ด้านล่างเพื่อพิมพ์')}</span>
         )}
         {empRows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -4434,19 +4559,19 @@ function AttendanceFormTab() {
       {empRows.length > 0 && (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
-            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)' }}>
-              ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
-            </div>
+            <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+              งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
+            </NoticeBar>
           )}
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>
+            <span style={{ fontWeight: 700 }}>{trI18n('ใบบันทึกการมาทำงาน')}</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  🖨️ Export PDF
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  Export PDF
                 </button>
               )}
             </div>
@@ -4455,13 +4580,13 @@ function AttendanceFormTab() {
             <thead>
               <tr>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>#</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>ชื่อ - สกุล</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>รหัส</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>{trI18n('ชื่อ - สกุล')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>{trI18n('รหัส')}</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 11 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 11 }}>{trI18n(d)}</th>
                 ))}
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT (ชม.)</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>{trI18n('รวม')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>{trI18n('OT (ชม.)')}</th>
               </tr>
             </thead>
             <tbody>
@@ -4478,14 +4603,14 @@ function AttendanceFormTab() {
                       const sunBg = isSunday(d) ? 'rgba(245,200,50,0.2)' : 'transparent';
                       return (
                         <td key={d} style={{ border: '1px solid var(--border2)', textAlign: 'center', background: sunBg }}>
-                          {info?.present ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✓</span>
-                            : info?.leave ? <span style={{ color: '#f59e0b', fontSize: 11 }}>{info.leave}</span>
+                          {info?.present ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓</span>
+                            : info?.leave ? <span style={{ color: 'var(--amber)', fontSize: 11 }}>{info.leave}</span>
                             : ''}
                           {info?.ot ? <span style={{ color: '#c05000', fontSize: 11, display: 'block' }}>OT</span> : ''}
                         </td>
                       );
                     })}
-                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: '#22c55e' }}>{totalP}</td>
+                    <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: 'var(--green)' }}>{totalP}</td>
                     <td style={{ border: '1px solid var(--border2)', textAlign: 'center', fontWeight: 700, color: '#c05000' }}>{totalOT || ''}</td>
                   </tr>
                 );

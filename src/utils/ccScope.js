@@ -26,7 +26,8 @@
    🧩 ตัวนี้ไม่สร้างต้นไม้ใหม่ — ใช้ดัชนีเดิม `buildOrgScope()` (`utils/orgScope.js`) ที่มี
       `canonicalScope` (รหัส → หน่วยเจ้าของ) + `scopeCovers` (หน่วยนี้ครอบหน่วยนั้นไหม) อยู่แล้ว
       และคำนวณ CC ต่อโหนดจาก `org_nodes` ชุดเดียวกับที่ `useOrgScope` โหลด (ไม่ยิงคิวรีเพิ่ม) */
-import { PLANT, isPlant, canonicalScope, scopeCovers } from './orgScope.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { PLANT, isPlant, canonicalScope, scopeCovers } from './orgScope.js';
+import { unitParentId } from './orgLayers.js';   // 🏢 ตกทอดรหัสหยุดที่ชั้นบน (plant/company) — 04/11   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const norm = (s) => (s ?? '').toString().trim();
 
@@ -48,7 +49,9 @@ export function buildCcIndex(nodes = []) {
     while (cur && hops < 12) {
       const cc = norm(cur.cost_center);
       if (cc) { out = { cc, from: cur, inherited: hops > 0, reason: hops > 0 ? 'inherited' : 'own' }; break; }
-      cur = cur.parent_id == null ? null : byId.get(String(cur.parent_id));
+      /* 🔴 แม่เป็นชั้นบน (plant/company) = จบสาย — รหัสของโรงงาน/บริษัทห้ามไหลลงมาเป็นรหัสของหน่วย */
+      const pid = unitParentId(cur, byId);
+      cur = pid == null ? null : byId.get(String(pid));
       hops += 1;
     }
     /* 🔴 ไม่เจอรหัสทั้งสาย = "ไม่รู้" ไม่ใช่ "ไม่มีสิทธิ์เฉยๆ" — จอต้องเขียนบอกว่าผังยังไม่ผูกรหัส */
@@ -217,9 +220,18 @@ export function canWriteScope(index, ctx = {}, target, { unknownTarget = 'block'
   }
   /* `scopeCovers(index, ของเรา, ของแถว)` = "หน่วยของเราครอบหน่วยของแถวไหม"
      ⇒ รับผิดชอบชั้นส่วนงาน แล้วแถวเป็นแผนก/ไลน์ใต้ส่วนงานนั้น = ครอบ (ตรงโจทย์ user) */
-  return mine.some(s => scopeCovers(index, s, target))
-    ? { ok: true, code: 'covered' }
-    : { ok: false, code: 'other_unit' };
+  if (mine.some(s => scopeCovers(index, s, target))) return { ok: true, code: 'covered' };
+  /* 🔴🔴 28/10 (เคสจริง · คำสั่ง user "ยุบเหลือแกนเดียว") — **หน่วยแม่ของขอบเขตเรา ไม่ใช่ "หน่วยอื่น"**
+     ติ๊ก CC = แผนก (เช่น BIG PRESS) ⇒ `mine` = แผนก · แต่จอจำนวนมากถามรวมๆ ว่า
+     "แก้ของ **ส่วนงาน PD1** ได้ไหม" ⇒ ลูกไม่ครอบแม่ ⇒ เดิมตอบ `other_unit` = **บล็อกทุกอย่าง**
+     วัด 28/10: บัญชีที่ติ๊ก CC โดนหมดทุกใบ (15/15) · หน้างานแจ้ง "เข้าไม่ได้ / ลิสต์ว่าง"
+     ⇒ ติ๊กแล้วได้สิทธิ์**น้อยลง** ซึ่งขัดกฎ 26/10 *"ห้ามคืนน้อยกว่าที่ `profiles` ตั้งไว้"*
+     ⇒ ตอบ `ok` พร้อมโค้ดแยก `partial_unit` = "รับผิดชอบ**บางส่วน**ของหน่วยนี้"
+     🔴 **ไม่ใช่การเปิดสิทธิ์ทั้งส่วนงาน** — ขอบเขตจริงยังถูกบีบที่ชั้นรายแถว/รายไลน์
+        (`canWriteLine` เทียบกับไลน์ตรงๆ ⇒ หัวหน้า SMALL PRESS ยังแตะ LINE A/B ไม่ได้เหมือนเดิม)
+        หลักเดียวกับกฎ "ช่องเลือกขอบเขต = ตัวกรองการดู ไม่ใช่ด่าน — ต้องเช็คซ้ำตอนเขียนจริง" */
+  if (mine.some(s => scopeCovers(index, target, s))) return { ok: true, code: 'partial_unit' };
+  return { ok: false, code: 'other_unit' };
 }
 
 /** ข้อความบนจอ — ห้ามเป็น toast error (ของหน่วยอื่น = ขอบเขตสิทธิ์ปกติ ไม่ใช่ความผิดพลาด) */

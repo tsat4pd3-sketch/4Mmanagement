@@ -18,6 +18,7 @@
 import React from 'react';
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 /* 🎨 สีสถานะมาจาก `statusTone.js` ชุดเดียวทั้งระบบ (มีด่าน `status-palette-single-source`)
    · `frame` = ม่วง **ไม่ใช่สถานะ** — เป็น "ชนิดของข้อมูล" (กรอบแผน) ที่ต้องไม่ชนกับสีสถานะคัมบัง 7 ตัว */
 const C = {
@@ -38,7 +39,7 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
 
   const chip = (color, text, title) => (
     <span title={title} style={{
-      fontSize: size, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
+      fontSize: size, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
       background: 'var(--card)', backgroundImage: `linear-gradient(${color}1f, ${color}1f)`,
       border: `1px solid ${color}66`, color, whiteSpace: 'nowrap',
     }}>{text}</span>
@@ -49,10 +50,10 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
     return (
       <span style={{
         fontSize: size, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '2px 10px', borderRadius: 20, border: `1px dashed ${C.frame}66`,
+        padding: '2px 10px', borderRadius: 'var(--r-pill)', border: `1px dashed ${C.frame}66`,
       }}>
-        <b style={{ color: C.frame }}>🧾 ยังไม่มีกรอบแผนของวันนี้</b>
-        {!compact && <span>— บอร์ดนี้เห็นเฉพาะใบที่สแกนเข้าระบบ (ว่าง ≠ ไม่มีงาน)</span>}
+        <b style={{ color: C.frame }}>{tr('ยังไม่มีกรอบแผนของวันนี้')}</b>
+        {!compact && <span>{tr('— บอร์ดนี้เห็นเฉพาะใบที่สแกนเข้าระบบ (ว่าง ≠ ไม่มีงาน)')}</span>}
       </span>
     );
   }

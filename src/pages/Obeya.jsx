@@ -12,6 +12,7 @@ import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
 
+import { tr } from '../utils/i18n';
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 const DeptDashboard = lazy(() => import('./DeptDashboard'));
 
@@ -50,9 +51,9 @@ const DeptDashboard = lazy(() => import('./DeptDashboard'));
 export default function Obeya() {
   /* ลำดับแท็บ (user 23/09): จอดู 2 ใบไว้หน้า · "ตั้งค่า/กรอก" ไว้ท้ายสุด — คนเปิดหน้านี้ส่วนใหญ่มาดู ไม่ได้มากรอก */
   const isMobile = useIsMobile();
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const [lines, setLines] = useState([]);
-  /* แท็บโผล่ตามสิทธิ์: บอร์ด/ตั้งค่า = `page:/obeya` · 📌 งานค้าง = `page:/dept-dashboard` (คีย์เดิม ไม่ seed ใหม่)
+  /* แท็บโผล่ตามสิทธิ์: บอร์ด/ตั้งค่า = `page:/obeya` · งานค้าง = `page:/dept-dashboard` (คีย์เดิม ไม่ seed ใหม่)
      ⚠️ ถ้าอ่านสิทธิ์ไม่ได้ทั้งคู่ (cache ยังไม่มา / harness ที่ไม่โหลด role_permissions) = โชว์ครบ —
      RoleRoute กั้นหน้าทั้งหน้าไว้แล้ว การซ่อนแท็บตรงนี้เป็นแค่ความสะดวก ห้ามทำให้จอเหลือแท็บว่าง (crashsweep จะเดินไม่ถึงแท็บอื่น) */
   const boardsOk = hasPermission('page:/obeya', role);
@@ -61,10 +62,10 @@ export default function Obeya() {
   const canTodo = todoOk || !boardsOk;
 
   const tabs = useMemo(() => ([
-    canBoards && { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน (รายเดือน)' },
-    canBoards && { key: 'sqdcm', label: '🖥️ จอ SQDCM (สัปดาห์/เดือน/ปี)' },
-    canTodo && { key: 'todo', label: '📌 งานค้างของส่วนงาน (วันนี้)' },
-    canBoards && { key: 'table', label: '⚙️ ตั้งค่า KPI / กรอกผล' },
+    canBoards && { key: 'kpi', label: 'บอร์ด KPI ส่วนงาน (รายเดือน)' },
+    canBoards && { key: 'sqdcm', label: 'จอ SQDCM (สัปดาห์/เดือน/ปี)' },
+    canTodo && { key: 'todo', label: 'งานค้างของส่วนงาน (วันนี้)' },
+    canBoards && { key: 'table', label: 'ตั้งค่า KPI / กรอกผล' },
   ].filter(Boolean)), [canBoards, canTodo]);
   const [tab, setTab] = useTabParam(tabs.map(t => t.key), tabs[0]?.key || 'kpi');
 
@@ -78,14 +79,14 @@ export default function Obeya() {
   }, [tab, lines.length]);
 
   const scopeSet = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections, lines });
+    const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
-  }, [lines, role, lineId, sections]);
+  }, [lines, role, lineId, sections, scopeIdx]);
 
   /* UI-STANDARD 2026-09-24: ทุกแท็บอยู่ใน <Page> กรอบเดียวกัน — เดิมแต่ละแท็บมีรากของตัวเอง
      (kpi/sqdcm ชิด sidebar x=0 · todo/table x=24) ⇒ หัวเพจกระโดดตอนสลับแท็บ
      โหมดจอ TV ของบอร์ดเป็น position:fixed เต็มจอ — ไม่ถูกกรอบนี้บีบ */
-  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>;
+  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>{tr('กำลังโหลด...')}</div>;
   let body;
   if (tab === 'sqdcm') body = <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
   else if (tab === 'todo') {
@@ -101,7 +102,7 @@ export default function Obeya() {
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
           title={OBEYA_TITLE} icon={OBEYA_ICON}
-          sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
+          sub={tr('ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด')}
         />
         <Suspense fallback={loadingNote}>
           <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />

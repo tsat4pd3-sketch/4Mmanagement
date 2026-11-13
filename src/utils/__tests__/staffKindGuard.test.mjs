@@ -57,6 +57,11 @@ const ALLOW = [
   { file: 'src/pages/Report.jsx', match: "select('id, name, employee_id_code, section, department, team, staff_kind')",
     why: 'แท็บ "รายบุคคล" = ประวัติการมาทำงานของคนคนนั้น — ใครเช็คชื่อได้ต้องเปิดดูเดือนของเขาได้ '
        + 'กรอง = ช่าง/ธุรการที่เช็คชื่อทุกวัน เปิดประวัติไม่ได้เลย (Office PD4 6 คน เช็คชื่อ 28/28 วัน)' },
+  /* 28/10 — คิวรี "ใครเป็นหัวหน้างานของไลน์นี้" ไม่ใช่การนับคน (ดูหัวข้อใน utils/lineHeads.js) */
+  { file: 'src/pages/Report.jsx', match: "select('id, name, position, team, line_id')",
+    why: 'ถามว่า "หัวหน้างานของไลน์นี้คือใคร" ไม่ได้นับกำลังคน — และตัวสำรองคือ **หัวหน้าแผนก** '
+       + 'ซึ่ง staff_kind=support ⇒ กรองแล้วไลน์ที่ไม่มีหัวหน้าไลน์ (GOR/LWR BAR/HYDROFORM) จะไม่เหลือใครเลย '
+       + 'ชั้นตำแหน่งตัดสินที่ lineHeadsOf() ที่เดียว (HEAD_LEVELS) ห้ามกรองซ้ำฝั่งคิวรี' },
   { file: 'src/pages/Report.jsx', match: 'department, team, line_id, staff_kind',
     why: 'รายงาน OT รายบุคคล = ชั่วโมง OT ที่ต้องจ่ายเงินจริงของคนคนนั้น '
        + 'กรองสายสนับสนุน/ช่างออก = OT ของเขาหายจากรายงานเงียบๆ (แกนกำลังคนกรองที่แท็บสกิลแทน)' },

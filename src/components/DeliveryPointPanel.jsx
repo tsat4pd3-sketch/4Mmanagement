@@ -30,6 +30,7 @@ import { slocOfLine, slocCodeOfLine } from '../utils/storageLoc';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
 
+import { tr } from '../utils/i18n';
 const inputSt = {
   width: '100%', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)',
@@ -142,21 +143,21 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
   return (
     /* พับด้วย CollapseCard ของกลาง (05/10) — ปุ่ม "+ เพิ่มจุดส่ง" อยู่หัวการ์ด เห็นแม้พับอยู่ */
     <CollapseCard id="deliveryPoints" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
-      title={<>🎯 จุดส่งงานหน้าไลน์{open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} จุด{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}</>}
+      title={<>{tr('🎯 จุดส่งงานหน้าไลน์')}{open && rows.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>{active.length} {tr('จุด')}{inactive.length ? ` · ปิดแล้ว ${inactive.length}` : ''}</span>}</>}
       right={open && canManage && isLeaf && !form && !missing && (
-        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', 'var(--accent-ink)'), flexShrink: 0 }}>+ เพิ่มจุดส่ง</button>
+        <button onClick={() => setForm(emptyForm(lineName))} style={{ ...btnSt('var(--accent)', 'var(--accent-ink)'), flexShrink: 0 }}>{tr('+ เพิ่มจุดส่ง')}</button>
       )}>
       <>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>{tr('ป้าย QR ที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7)')}</div>
         <div>
           <ReadOnlyNote show={!canManage} role={role} what="ตั้งจุดส่งงานของไลน์" permKey="delivery_point:manage" compact />
 
           {missing && (
-            <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 12px' }}>
+            <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               ⚠️ ยังไม่ได้ apply migration <code>20260903_line_delivery_points.sql</code> (DR) — ตั้งจุดส่งยังไม่ได้ แจ้ง admin
             </div>
           )}
-          {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>โหลดจุดส่งไม่สำเร็จ: {loadErr}</div>}
+          {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>{tr('โหลดจุดส่งไม่สำเร็จ:')} {loadErr}</div>}
 
           {/* ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ ⇒ `line_names` เก็บ**ชื่อไลน์ลูก**เสมอ
               (เก็บชื่อไลน์แม่ = ขอบเขตของจุดเปลี่ยนเองเงียบๆ วันที่มีคนเพิ่มไลน์ใหม่เข้าใต้แม่
@@ -164,9 +165,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
               🔴 แต่ "ตั้งไม่ได้" ≠ "ทางตัน" — แร็คเดียวรับของให้ทั้งแผนกมีจริง (Apron Assy)
               ⇒ ให้ปุ่มตั้งจุดเดียวที่ติ๊กไลน์ลูกครบให้เลย (แก้ออกได้) 05/10 */}
           {!isLeaf && !missing && !form && (
-            <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
-              🏢 <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ
-              จุดส่งจึงผูกกับ<b>ไลน์ย่อย</b>: <span>{kids.join(' · ')}</span>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+              🏢 <b>{lineName}</b> {tr('เป็นไลน์แม่ (มีไลน์ย่อย')} {kids.length} ไลน์) — ของถูกส่งเข้าไลน์ย่อยเสมอ
+              จุดส่งจึงผูกกับ<b>{tr('ไลน์ย่อย')}</b>: <span>{kids.join(' · ')}</span>
               {/* 🔴 14/10: ปุ่มนี้เคยเด่นค้างไว้แม้ไลน์ย่อยมีจุดครบแล้ว = จอชวนกดซ้ำ → ได้จุดซ้ำซ้อน
                   (เกิดจริงที่ GOR: Assy GOR + Laser GOR มีจุดของตัวเองแล้ว แต่ปุ่มยังเชียร์ให้ตั้งจุดรวม)
                   ⇒ ไลน์ย่อยที่ยังไม่มีจุด = ตัวตัดสินว่าจะเชียร์หรือแค่บอก · **ห้ามซ่อนปุ่มทิ้ง**
@@ -179,15 +180,15 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                   <div style={{ marginTop: 10 }}>
                     <button onClick={() => setForm({ ...emptyForm(null), line_names: leafKids })}
                       style={allSet ? btnSt('var(--bg2)', 'var(--text2)', 'var(--border)') : btnSt('var(--accent)', 'var(--accent-ink)')}>
-                      + ตั้งจุดเดียวให้ไลน์ย่อยทั้ง {leafKids.length} ไลน์
+                      {tr('+ ตั้งจุดเดียวให้ไลน์ย่อยทั้ง')} {leafKids.length} {tr('ไลน์')}
                     </button>
                     <div style={{ fontSize: 11, color: allSet ? '#22c55e' : 'var(--muted)', marginTop: 6, lineHeight: 1.45 }}>
                       {allSet
-                        ? <>✅ <b>ไลน์ย่อยมีจุดส่งครบทุกไลน์แล้ว</b> — จะเพิ่ม<b>จุดที่ 2</b> ของไลน์ไหน ให้เลือกไลน์นั้นข้างบนแล้วกด “+ เพิ่มจุดส่ง”
-                            · ปุ่มนี้ไว้ใช้ตอนมี<b>แร็ครวม</b>ที่รับของให้ทุกไลน์พร้อมกันเท่านั้น</>
-                        : <>ใช้เมื่อ<b>แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
+                        ? <>✅ <b>{tr('ไลน์ย่อยมีจุดส่งครบทุกไลน์แล้ว')}</b> {tr('— จะเพิ่ม')}<b>{tr('จุดที่ 2')}</b> ของไลน์ไหน ให้เลือกไลน์นั้นข้างบนแล้วกด “+ เพิ่มจุดส่ง”
+                            · ปุ่มนี้ไว้ใช้ตอนมี<b>{tr('แร็ครวม')}</b>{tr('ที่รับของให้ทุกไลน์พร้อมกันเท่านั้น')}</>
+                        : <>{tr('ใช้เมื่อ')}<b>{tr('แร็ค/จุดวางเดียวรับของให้ทั้งพื้นที่')}</b> — ระบบจะติ๊กไลน์ย่อยให้ครบ แก้ออกได้
                             · ถ้าแต่ละไลน์มีจุดของตัวเอง ให้ไปตั้งทีละไลน์แทน
-                            · <b>ยังไม่มีจุด {todo.length} ไลน์:</b> {todo.join(' · ')}</>}
+                            · <b>{tr('ยังไม่มีจุด')} {todo.length} {tr('ไลน์:')}</b> {todo.join(' · ')}</>}
                     </div>
                   </div>
                 );
@@ -197,7 +198,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
 
           {isLeaf && !missing && rows.length === 0 && !form && (
             <div style={{ fontSize: 12.5, color: '#f59e0b' }}>
-              ⚠️ ไลน์นี้ยังไม่มีจุดส่งงาน — สโตร์กด "จัดส่งแล้ว" ได้แต่ระบบ<b>ตรวจไม่ได้</b>ว่าวางถูกจุดไหม (ใบจะถูกมาร์ก "ไลน์ยังไม่ตั้งจุดส่ง")
+              ⚠️ ไลน์นี้ยังไม่มีจุดส่งงาน — สโตร์กด "จัดส่งแล้ว" ได้แต่ระบบ<b>{tr('ตรวจไม่ได้')}</b>ว่าวางถูกจุดไหม (ใบจะถูกมาร์ก "ไลน์ยังไม่ตั้งจุดส่ง")
             </div>
           )}
 
@@ -210,23 +211,23 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                 // ยืนที่ไลน์แม่ = จุดนี้เป็นของไลน์ลูก (ไม่ใช่ "ใช้ร่วมกับ") — เขียนให้ตรงว่าของไลน์ไหน
                 const viaChild = !pLines.includes(lineName);
                 return (
-                  <div key={r.id} style={{ border: `1px solid ${off ? 'var(--border)' : 'rgba(34,197,94,0.35)'}`, borderRadius: 10, padding: '9px 12px', background: off ? 'var(--bg3)' : 'var(--bg2)', opacity: off ? 0.7 : 1 }}>
+                  <div key={r.id} style={{ border: `1px solid ${off ? 'var(--border)' : 'rgba(34,197,94,0.35)'}`, borderRadius: 'var(--r-md)', padding: '9px 12px', background: off ? 'var(--bg3)' : 'var(--bg2)', opacity: off ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                       {r.code && <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13, color: off ? 'var(--muted)' : '#22c55e' }}>{r.code}</span>}
                       <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', flex: '1 1 120px' }}>{r.name}</span>
                       {r.storage_location
-                        ? <span title="พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้" style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏬 {r.storage_location}</span>
+                        ? <span title={tr('พื้นที่ SAP (Storage Location) ของไลน์ที่จุดนี้รับของให้')} style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>{r.storage_location}</span>
                         /* 🔴 จุดที่ไม่มีรหัสคลัง = ด่าน "ส่งถูกพื้นที่ SAP ไหม" ไม่ทำงานกับจุดนี้
                            ต้องเขียนบนจอ ห้ามเงียบ — **ไม่ใช่ "ลืมกด backfill" ต้องมีคนลงทะเบียนพื้นที่ก่อน**
                            วัดจริง 13/10: ไลน์ปั๊ม A/B/C/D ลงทะเบียนแล้ว (P407/P406/P401/P405) จุดได้รหัสครบ
                            · ที่ยังว่าง = 7 จุดของ PD2 (ASSEMBLY 1 + Line D1–D6 + SPARE PART) ที่ยังไม่มี SLoc */
-                        : <span title="จุดนี้ยังไม่ผูกพื้นที่ SAP — ระบบตรวจไม่ได้ว่าสโตร์ส่งถูกพื้นที่ไหม" style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>🏬 ไม่ผูกพื้นที่ SAP</span>}
-                      {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>⏸ ปิดใช้งาน</span>}
+                        : <span title={tr('จุดนี้ยังไม่ผูกพื้นที่ SAP — ระบบตรวจไม่ได้ว่าสโตร์ส่งถูกพื้นที่ไหม')} style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>{tr('ไม่ผูกพื้นที่ SAP')}</span>}
+                      {off && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('⏸ ปิดใช้งาน')}</span>}
                     </div>
                     {!r.storage_location && (
                       <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3, lineHeight: 1.45 }}>
                         ด่าน "ส่งถูกพื้นที่ไหม" ยังไม่ทำงานกับจุดนี้ — ลงทะเบียนพื้นที่ของไลน์ที่
-                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง”</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
+                        <Link to="/line-stock?tab=zones" style={{ color: '#f59e0b', fontWeight: 800 }}> {tr('📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง”')}</Link> แล้วกด ✏️ แก้ + บันทึกจุดนี้ซ้ำ
                       </div>
                     )}
                     {others.length > 0 && (
@@ -238,9 +239,9 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                     {canManage && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                         <button onClick={() => setForm({ id: r.id, code: r.code || '', name: r.name || '', line_names: Array.isArray(r.line_names) ? r.line_names : [lineName], note: r.note || '', is_active: r.is_active !== false })}
-                          style={btnSt('var(--bg3)', 'var(--text)', 'var(--border2)')}>✏️ แก้</button>
+                          style={btnSt('var(--bg3)', 'var(--text)', 'var(--border2)')}>{tr('✏️ แก้')}</button>
                         <button onClick={() => toggleActive(r)} style={btnSt('transparent', off ? '#22c55e' : '#f59e0b', off ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.5)')}>
-                          {off ? '▶ เปิดใช้งาน' : '⏸ ปิดใช้งาน'}
+                          {off ? tr('▶ เปิดใช้งาน') : tr('⏸ ปิดใช้งาน')}
                         </button>
                       </div>
                     )}
@@ -252,26 +253,26 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
 
           {active.length > 0 && (
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 10 }}>
-              🖨️ พิมพ์ป้าย QR ไปติดหน้างานที่ <Link to="/qr-labels?kind=delivery" style={{ color: 'var(--accent)', fontWeight: 700 }}>พิมพ์ป้าย QR → 🎯 จุดส่งงาน</Link>
+              พิมพ์ป้าย QR ไปติดหน้างานที่ <Link to="/qr-labels?kind=delivery" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('พิมพ์ป้าย QR → 🎯 จุดส่งงาน')}</Link>
             </div>
           )}
 
           {/* ฟอร์มเพิ่ม/แก้ — draft + ปุ่มบันทึก (§5.4) */}
           {form && (
-            <div style={{ marginTop: 12, border: '1px solid var(--border2)', borderRadius: 10, padding: 12, background: 'var(--bg3)' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{form.id ? '✏️ แก้จุดส่ง' : '+ จุดส่งใหม่'}</div>
+            <div style={{ marginTop: 12, border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 12, background: 'var(--bg3)' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{form.id ? tr('✏️ แก้จุดส่ง') : tr('+ จุดส่งใหม่')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px,100%), 1fr))', gap: 10, alignItems: 'start' }}>
-                <label style={{ fontSize: 12, color: 'var(--text2)' }}>ชื่อจุด *
+                <label style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('ชื่อจุด *')}
                   <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder='เช่น "จุดรับของหน้า OP10"' style={inputSt} />
                 </label>
-                <label style={{ fontSize: 12, color: 'var(--text2)' }}>รหัสสั้นบนป้าย (ให้คนอ่าน/พิมพ์มือ)
-                  <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น DP-60A" style={{ ...inputSt, fontFamily: 'monospace' }} />
+                <label style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('รหัสสั้นบนป้าย (ให้คนอ่าน/พิมพ์มือ)')}
+                  <input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder={tr('เช่น DP-60A')} style={{ ...inputSt, fontFamily: 'monospace' }} />
                 </label>
               </div>
-              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>ไลน์ที่รับของที่จุดนี้ (ไลน์ย่อยที่สุดเท่านั้น · จุดเดียวใช้หลายไลน์ได้)</div>
+              <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text2)' }}>{tr('ไลน์ที่รับของที่จุดนี้ (ไลน์ย่อยที่สุดเท่านั้น · จุดเดียวใช้หลายไลน์ได้)')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 5 }}>
                 {(form.line_names || []).map(n => (
-                  <span key={n} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                  <span key={n} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-lg)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                     {n}
                     {(form.line_names || []).length > 1 && (
                       <button onClick={() => setForm(f => ({ ...f, line_names: f.line_names.filter(x => x !== n) }))} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}>✕</button>
@@ -280,7 +281,7 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                 ))}
                 <LineSelect lines={leafLines.filter(l => !(form.line_names || []).includes(l.name))} value={addLine}
                   onChange={(v) => { if (v) setForm(f => ({ ...f, line_names: [...(f.line_names || []), v] })); setAddLine(''); }}
-                  placeholder="+ เพิ่มไลน์ที่ใช้จุดนี้ร่วม" role={role} lineId={lineId} sections={sections}
+                  placeholder={tr('+ เพิ่มไลน์ที่ใช้จุดนี้ร่วม')} role={role} lineId={lineId} sections={sections}
                   style={{ width: 240, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
               </div>
               {/* 🏬 มุม SAP ที่จะถูกแปะบนจุด — derive จากไลน์ที่เลือก (ตกทอดจากไลน์แม่) · ยังไม่ผูก = บอก ไม่เดา */}
@@ -292,11 +293,11 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                 return (
                   <div style={{ marginTop: 8, fontSize: 11.5, color: codes.length > 1 ? '#ef4444' : 'var(--text2)' }}>
                     {codes.length > 1
-                      ? <>🔴 ไลน์ที่เลือกอยู่คนละพื้นที่ SAP ({codes.join(' / ')}) — แยกเป็นคนละจุด</>
+                      ? <>{tr('🔴 ไลน์ที่เลือกอยู่คนละพื้นที่ SAP (')}{codes.join(' / ')}) — แยกเป็นคนละจุด</>
                       : codes.length === 1
-                        ? <>🏬 พื้นที่ SAP: <b style={{ fontFamily: 'monospace' }}>{codes[0]}</b>{info.find(i => i.s)?.s.via !== info.find(i => i.s)?.n ? ` (ตกทอดจาก ${info.find(i => i.s).s.via})` : ''}</>
+                        ? <>{tr('🏬 พื้นที่ SAP:')} <b style={{ fontFamily: 'monospace' }}>{codes[0]}</b>{info.find(i => i.s)?.s.via !== info.find(i => i.s)?.n ? ` (ตกทอดจาก ${info.find(i => i.s).s.via})` : ''}</>
                         : null}
-                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง” กด ✏️ ที่รหัสแล้วติ๊กไลน์)</span>}
+                    {unmapped.length > 0 && <span style={{ color: '#f59e0b' }}>{codes.length ? ' · ' : ''}⚠ {unmapped.join(', ')} {tr('ยังไม่ผูกรหัสคลัง SAP (ผูกที่ 📦 สต๊อกในไลน์ → 🏬 พื้นที่ SAP / โซนคลัง → “ทะเบียนรหัสคลัง” กด ✏️ ที่รหัสแล้วติ๊กไลน์)')}</span>}
                   </div>
                 );
               })()}
@@ -304,8 +305,8 @@ export default function DeliveryPointPanel({ lineName, lines = [] }) {
                 <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inputSt} />
               </label>
               <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-                <button onClick={() => setForm(null)} disabled={saving} style={btnSt('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={btnSt('var(--accent)', 'var(--accent-ink)')}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+                <button onClick={() => setForm(null)} disabled={saving} style={btnSt('transparent', 'var(--muted)', 'var(--border2)')}>{tr('ยกเลิก')}</button>
+                <button onClick={save} disabled={saving} style={btnSt('var(--accent)', 'var(--accent-ink)')}>{saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button>
               </div>
             </div>
           )}

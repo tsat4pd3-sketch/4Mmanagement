@@ -57,6 +57,10 @@ docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.
                        #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
                        #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
+                       #     E-WORKFLOW-DESIGN (ใบงานที่ user สร้างเอง · ตาราง wf_* ต้องอยู่ Main · ไม่ย้ายใบเดิม 17 ใบ ·
+                       #       มีคำถามค้าง §14 ต้องได้คำตอบก่อนลงมือ)
+                       #     MARKETING-QNEX-DESIGN (ต้นน้ำ Marketing → NM → โรงงาน · ตาราง mkt_* ต้องอยู่ Main ·
+                       #       ชุดตัวอย่าง FORD มีราคา/PO — อยู่นอก git · flowchart ของ Marketing อยู่ docs/marketing/)
                        #   ⚠️ ไฟล์ *-DESIGN.md ที่ "ทำแล้ว" = เหตุผลเบื้องหลัง · ของจริงอยู่ docs/modules/
 ```
 
@@ -89,6 +93,20 @@ toast.info('กำลังโหลด...')
 const { role, lineId, team, section, sections, fullName } = useContext(UserContext)
 // sections = ขอบเขตส่วนงานผลลัพธ์สุดท้าย (array · [] = ไม่จำกัด)
 ```
+
+### ไฟล์แนบ (รูป + เอกสาร) — `src/utils/fileAttach.js` (ของกลาง 2026-11-01)
+```js
+import { uploadAttachmentInfo, removeAttachment, attachFileName, isImageAttachment, ATTACH_MAX_MB } from '../utils/fileAttach'
+import FilePick from '../components/FilePick'
+
+const info = await uploadAttachmentInfo('ojt-files', `ojt/${id}`, file)  // null = ปฏิเสธ/ล้ม (toast แล้ว)
+// → { url, name, size, type } · HEIC→JPEG · GIF มีเพดาน · รูปบีบ 2560px · uploadOpts() ในตัว
+removeAttachment('ojt-files', url)        // best-effort
+<FilePick onFile={addFile} label="📎 แนบรูป / เอกสาร" />
+```
+🔴 **ห้ามก๊อปสูตรอัปไฟล์ไปไว้ในหน้า** — ย้ายออกมาจาก `NpiUi.uploadNpiFile` 01/11
+(`uploadNpiFile`/`removeNpiFile`/`FilePick`/`fileName` ของ NpiUi = wrapper บางๆ ของตัวนี้ · จอ NPI ไม่เปลี่ยน)
+· bucket ใหม่ต้องสร้างใน migration พร้อม policy 4 cmd (ต้นแบบ `20261101_ojt_attachments_main.sql`)
 
 ### Skill Fit Scoring (`src/utils/` — ใช้ในหน้าจัดคนเข้าสถานี)
 ```js

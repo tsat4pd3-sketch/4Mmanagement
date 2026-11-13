@@ -18,6 +18,7 @@ import { appendHistoryOptions } from '../utils/pickerOptions';
 import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSets, canEdit, today, onChanged, partWriteOf }) {
   /* 🔐 ชั้นที่ 3 — แผน tooling ผูกพาร์ท · ขั้นงานผูกแผน ⇒ ไล่หาไลน์ของพาร์ทแล้วตัดสิน (utils/npiScope.js)
      🔴 ย้ายแผนข้ามพาร์ทได้ (ช่อง "พาร์ท" ในโมดัล) ⇒ เช็คทั้งพาร์ทเดิมและพาร์ทที่เลือกใหม่ */
@@ -122,19 +123,19 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('แผนพัฒนาเครื่องมือ (')}{rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
-            <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
+            <option value="">{tr(ALL.part)}</option>{parts.map(p => <option key={p.id} value={p.id}>{tr(p.part_no)}</option>)}
           </select>
         </div>
-        {canEdit && <button style={btn()} onClick={() => setPlanModal({ part_id: filterPart || parts[0]?.id || '', tool_name: '', tool_kind: 'die', maker_name: '', maker_kind: 'external', po_no: '', die_set_code: '', plan_start: today, plan_end: '', actual_start: '', actual_end: '', status: 'planned', owner_name: '', note: '', _seedSteps: true })}>+ แผน tooling</button>}
+        {canEdit && <button style={btn()} onClick={() => setPlanModal({ part_id: filterPart || parts[0]?.id || '', tool_name: '', tool_kind: 'die', maker_name: '', maker_kind: 'external', po_no: '', die_set_code: '', plan_start: today, plan_end: '', actual_start: '', actual_end: '', status: 'planned', owner_name: '', note: '', _seedSteps: true })}>{tr('+ แผน tooling')}</button>}
       </div>
-      {!parts.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>เพิ่มพาร์ทในโปรเจคก่อน</div>}
-      {parts.length > 0 && !rows.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีแผน tooling — กด + แผน tooling (ระบบเสนอขั้นงานตามชนิดให้)</div>}
+      {!parts.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tr('เพิ่มพาร์ทในโปรเจคก่อน')}</div>}
+      {parts.length > 0 && !rows.length && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tr('ยังไม่มีแผน tooling — กด + แผน tooling (ระบบเสนอขั้นงานตามชนิดให้)')}</div>}
 
       {range && rows.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-          <span>ช่วงแสดง {fmtDate(range.start)} → {fmtDate(range.end)} ({range.days} วัน)</span>
+          <span>{tr('ช่วงแสดง')} {fmtDate(range.start)} → {fmtDate(range.end)} ({range.days} วัน)</span>
           <span>▮ แผน · ▮ จริง · เส้นแดง = วันนี้</span>
         </div>
       )}
@@ -147,43 +148,43 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         const kind = TOOL_KIND[t.tool_kind] || TOOL_KIND.other;
         const die = t.die_set_code ? dieSets.find(d => d.set_code === t.die_set_code) : null;
         return (
-          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8 }}>
+          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               <div onClick={() => toggle(t.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                   <LightDot light={r.light} /><span>{kind.icon}</span><span style={{ fontWeight: 800, fontSize: 13 }}>{t.tool_name}</span>
-                  <Pill label={TOOL_STATUS[t.status]?.label} color={TOOL_STATUS[t.status]?.color} small />
+                  <Pill label={tr(TOOL_STATUS[t.status]?.label)} color={TOOL_STATUS[t.status]?.color} small />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                  {p?.part_no || '—'} · {kind.label} · ผู้ทำ {t.maker_name || '—'} ({t.maker_kind === 'internal' ? 'ภายใน' : 'ภายนอก'}) · {r.done}/{r.total} ขั้น · {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · ล่าช้า {r.delayed}</span> : null}
-                  {t.die_set_code && <> · 🧱 {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
+                  {p?.part_no || '—'} · {tr(kind.label)} {tr('· ผู้ทำ')} {t.maker_name || '—'} ({t.maker_kind === 'internal' ? tr('ภายใน') : tr('ภายนอก')}) · {r.done}/{r.total} {tr('ขั้น ·')} {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> {tr('· ล่าช้า')} {r.delayed}</span> : null}
+                  {t.die_set_code && <> · {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title={tr('ไม่พบใน die_sets')}>{t.die_set_code} {tr('(ไม่พบในทะเบียน)')}</span>}</>}
                 </div>
               </div>
               <GanttRow plan={[t.plan_start, t.plan_end]} actual={[t.actual_start, t.actual_end]} range={range} todayPos={todayPos} pct={r.pct} light={r.light} />
               <div style={{ whiteSpace: 'nowrap' }}>
-                {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPlanModal({ ...t, plan_start: t.plan_start || '', plan_end: t.plan_end || '', actual_start: t.actual_start || '', actual_end: t.actual_end || '', maker_name: t.maker_name || '', po_no: t.po_no || '', die_set_code: t.die_set_code || '', owner_name: t.owner_name || '', note: t.note || '' })}>✏️</button> <DeleteButton onClick={() => delPlan(t)} title="ลบ" /> </>}
+                {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPlanModal({ ...t, plan_start: t.plan_start || '', plan_end: t.plan_end || '', actual_start: t.actual_start || '', actual_end: t.actual_end || '', maker_name: t.maker_name || '', po_no: t.po_no || '', die_set_code: t.die_set_code || '', owner_name: t.owner_name || '', note: t.note || '' })}>✏️</button> <DeleteButton onClick={() => delPlan(t)} title={tr('ลบ')} /> </>}
                 <button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => toggle(t.id)}>{open ? '▲' : '▼'}</button>
               </div>
             </div>
             {open && (
               <div style={{ padding: '6px 10px 10px' }}>
-                {!st.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีขั้นงาน</div>}
+                {!st.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีขั้นงาน')}</div>}
                 {st.map(s => {
                   const lt = stepLight(s, today);
                   return (
                     <div key={s.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '4px 0', borderTop: '1px solid var(--border)' }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}><LightDot light={lt} size={10} /><span style={{ fontSize: 12.5, fontWeight: 700 }}>{s.seq}. {s.name}</span><Pill label={`${s.progress_pct}%`} color={(LIGHT[lt] || LIGHT.grey).color} small /></div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>แผน {s.plan_start ? fmtDate(s.plan_start) : '—'}→{s.plan_end ? fmtDate(s.plan_end) : '—'} · จริง {s.actual_start ? fmtDate(s.actual_start) : '—'}→{s.actual_end ? fmtDate(s.actual_end) : '—'} · {s.responsible_name || '—'}{s.note ? ` · ${s.note}` : ''}</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('แผน')} {s.plan_start ? fmtDate(s.plan_start) : '—'}→{s.plan_end ? fmtDate(s.plan_end) : '—'} {tr('· จริง')} {s.actual_start ? fmtDate(s.actual_start) : '—'}→{s.actual_end ? fmtDate(s.actual_end) : '—'} · {s.responsible_name || '—'}{s.note ? ` · ${s.note}` : ''}</div>
                       </div>
                       <GanttRow plan={[s.plan_start, s.plan_end]} actual={[s.actual_start, s.actual_end]} range={range} todayPos={todayPos} pct={s.progress_pct} light={lt} thin />
                       <div style={{ whiteSpace: 'nowrap' }}>
-                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setStepModal({ ...s, plan_start: s.plan_start || '', plan_end: s.plan_end || '', actual_start: s.actual_start || '', actual_end: s.actual_end || '', responsible_name: s.responsible_name || '', note: s.note || '' })}>✏️</button> <DeleteButton onClick={() => delStep(s)} title="ลบ" /></>}
+                        {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setStepModal({ ...s, plan_start: s.plan_start || '', plan_end: s.plan_end || '', actual_start: s.actual_start || '', actual_end: s.actual_end || '', responsible_name: s.responsible_name || '', note: s.note || '' })}>✏️</button> <DeleteButton onClick={() => delStep(s)} title={tr('ลบ')} /></>}
                       </div>
                     </div>
                   );
                 })}
-                {canEdit && <button style={{ ...ghost, marginTop: 6 }} onClick={() => setStepModal({ tooling_id: t.id, name: '', seq: (st[st.length - 1]?.seq || 0) + 10, plan_start: '', plan_end: '', actual_start: '', actual_end: '', progress_pct: 0, responsible_name: '', status: 'not_started', note: '' })}>+ ขั้นงาน</button>}
+                {canEdit && <button style={{ ...ghost, marginTop: 6 }} onClick={() => setStepModal({ tooling_id: t.id, name: '', seq: (st[st.length - 1]?.seq || 0) + 10, plan_start: '', plan_end: '', actual_start: '', actual_end: '', progress_pct: 0, responsible_name: '', status: 'not_started', note: '' })}>{tr('+ ขั้นงาน')}</button>}
               </div>
             )}
           </div>
@@ -192,34 +193,34 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
       {planModal && (
         <Modal title={planModal.id ? `แก้ไขแผน ${planModal.tool_name}` : 'เพิ่มแผน tooling'} onClose={() => setPlanModal(null)} width={680}
-          footer={<><button style={ghost} onClick={() => setPlanModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePlan}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button></>}>
+          footer={<><button style={ghost} onClick={() => setPlanModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={savePlan}>{saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="พาร์ท *"><select style={inp} value={planModal.part_id} onChange={e => setPlanModal({ ...planModal, part_id: e.target.value })}><option value="">—</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}</select></Field>
-            <Field label="ชนิด"><select style={inp} value={planModal.tool_kind} onChange={e => setPlanModal({ ...planModal, tool_kind: e.target.value })}>{Object.entries(TOOL_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
-            <Field label="ชื่อเครื่องมือ *" span={2}><input style={inp} value={planModal.tool_name} onChange={e => setPlanModal({ ...planModal, tool_name: e.target.value })} placeholder="OP10 DRAW DIE / CHECKING FIXTURE RH" /></Field>
+            <Field label={tr('พาร์ท *')}><select style={inp} value={planModal.part_id} onChange={e => setPlanModal({ ...planModal, part_id: e.target.value })}><option value="">—</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}</select></Field>
+            <Field label={tr('ชนิด')}><select style={inp} value={planModal.tool_kind} onChange={e => setPlanModal({ ...planModal, tool_kind: e.target.value })}>{Object.entries(TOOL_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}</select></Field>
+            <Field label={tr('ชื่อเครื่องมือ *')} span={2}><input style={inp} value={planModal.tool_name} onChange={e => setPlanModal({ ...planModal, tool_name: e.target.value })} placeholder="OP10 DRAW DIE / CHECKING FIXTURE RH" /></Field>
             {/* 2026-09-08: maker_name เก็บชื่อ text เหมือนเดิม (npi_* อยู่ Main · suppliers อยู่ DR — คนละ project ผูก FK ไม่ได้) */}
-            <Field label="ผู้ทำ (maker)" hint="เลือกจากทะเบียน supplier (/products แท็บ 🏭) — พิมพ์เองได้พร้อมป้าย"><SupplierSelect value={planModal.maker_name || ''} kinds={['tooling', 'internal']} onChange={r => setPlanModal({ ...planModal, maker_name: r.supplier })} inputStyle={inp} /></Field>
-            <Field label="ทำที่"><select style={inp} value={planModal.maker_kind} onChange={e => setPlanModal({ ...planModal, maker_kind: e.target.value })}><option value="external">ภายนอก</option><option value="internal">ภายใน (JIG/DIE shop)</option></select></Field>
+            <Field label={tr('ผู้ทำ (maker)')} hint={tr('เลือกจากทะเบียน supplier (/products แท็บ 🏭) — พิมพ์เองได้พร้อมป้าย')}><SupplierSelect value={planModal.maker_name || ''} kinds={['tooling', 'internal']} onChange={r => setPlanModal({ ...planModal, maker_name: r.supplier })} inputStyle={inp} /></Field>
+            <Field label={tr('ทำที่')}><select style={inp} value={planModal.maker_kind} onChange={e => setPlanModal({ ...planModal, maker_kind: e.target.value })}><option value="external">{tr('ภายนอก')}</option><option value="internal">{tr('ภายใน (JIG/DIE shop)')}</option></select></Field>
             <Field label="P/O"><input style={inp} value={planModal.po_no} onChange={e => setPlanModal({ ...planModal, po_no: e.target.value })} /></Field>
-            <Field label="สถานะ"><MetaSelect value={planModal.status} onChange={v => setPlanModal({ ...planModal, status: v })} meta={TOOL_STATUS} /></Field>
-            <Field label="แผนเริ่ม"><input type="date" style={inp} value={planModal.plan_start} onChange={e => setPlanModal({ ...planModal, plan_start: e.target.value })} /></Field>
-            <Field label="แผนส่งมอบ" hint="เว้นว่าง = ใช้วันจบขั้นสุดท้าย"><input type="date" style={inp} value={planModal.plan_end} onChange={e => setPlanModal({ ...planModal, plan_end: e.target.value })} /></Field>
-            <Field label="เริ่มจริง"><input type="date" style={inp} value={planModal.actual_start} onChange={e => setPlanModal({ ...planModal, actual_start: e.target.value })} /></Field>
-            <Field label="ส่งมอบจริง"><input type="date" style={inp} value={planModal.actual_end} onChange={e => setPlanModal({ ...planModal, actual_end: e.target.value })} /></Field>
-            <Field label="ผูกชุดแม่พิมพ์ (die_sets) หลัง transfer" hint="ทะเบียนที่ /die-registry">
+            <Field label={tr('สถานะ')}><MetaSelect value={planModal.status} onChange={v => setPlanModal({ ...planModal, status: v })} meta={TOOL_STATUS} /></Field>
+            <Field label={tr('แผนเริ่ม')}><input type="date" style={inp} value={planModal.plan_start} onChange={e => setPlanModal({ ...planModal, plan_start: e.target.value })} /></Field>
+            <Field label={tr('แผนส่งมอบ')} hint={tr('เว้นว่าง = ใช้วันจบขั้นสุดท้าย')}><input type="date" style={inp} value={planModal.plan_end} onChange={e => setPlanModal({ ...planModal, plan_end: e.target.value })} /></Field>
+            <Field label={tr('เริ่มจริง')}><input type="date" style={inp} value={planModal.actual_start} onChange={e => setPlanModal({ ...planModal, actual_start: e.target.value })} /></Field>
+            <Field label={tr('ส่งมอบจริง')}><input type="date" style={inp} value={planModal.actual_end} onChange={e => setPlanModal({ ...planModal, actual_end: e.target.value })} /></Field>
+            <Field label={tr('ผูกชุดแม่พิมพ์ (die_sets) หลัง transfer')} hint={tr('ทะเบียนที่ /die-registry')}>
               <SearchSelect value={dieOpts.find(o => dieCodeOf(o) === planModal.die_set_code)?.id || ''} text={planModal.die_set_code || ''}
-                options={dieOpts} placeholder="ค้น set_code / part / model…" emptyText="ไม่พบชุดแม่พิมพ์ — ลงทะเบียนที่ /die-registry ก่อน"
+                options={dieOpts} placeholder={tr('ค้น set_code / part / model…')} emptyText={tr('ไม่พบชุดแม่พิมพ์ — ลงทะเบียนที่ /die-registry ก่อน')}
                 inputStyle={{ fontFamily: 'monospace' }}
                 onChange={({ text, opt }) => setPlanModal({ ...planModal, die_set_code: opt ? dieCodeOf(opt) : text })} />
             </Field>
             {/* ผู้รับผิดชอบ = user ระบบ → PersonSelect แทน datalist npi-users (2026-09-07) */}
-            <Field label="ผู้รับผิดชอบ"><PersonSelect value={planModal.owner_name || ''} history={ownerHist} onChange={r => setPlanModal({ ...planModal, owner_name: r.name })} /></Field>
-            <Field label="หมายเหตุ" span={2}><input style={inp} value={planModal.note} onChange={e => setPlanModal({ ...planModal, note: e.target.value })} /></Field>
+            <Field label={tr('ผู้รับผิดชอบ')}><PersonSelect value={planModal.owner_name || ''} history={ownerHist} onChange={r => setPlanModal({ ...planModal, owner_name: r.name })} /></Field>
+            <Field label={tr('หมายเหตุ')} span={2}><input style={inp} value={planModal.note} onChange={e => setPlanModal({ ...planModal, note: e.target.value })} /></Field>
           </div>
           {!planModal.id && (
             <label style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center', marginTop: 10 }}>
               <input type="checkbox" checked={!!planModal._seedSteps} onChange={e => setPlanModal({ ...planModal, _seedSteps: e.target.checked })} />
-              สร้างขั้นงานจากแม่แบบชนิด "{TOOL_KIND[planModal.tool_kind]?.label}" ({stepTemplates.filter(s => s.tool_kind === planModal.tool_kind).length} ขั้น · วันแผนต่อเนื่องจากวันเริ่ม — แก้ทีหลังได้)
+              สร้างขั้นงานจากแม่แบบชนิด "{TOOL_KIND[planModal.tool_kind]?.label}" ({stepTemplates.filter(s => s.tool_kind === planModal.tool_kind).length} {tr('ขั้น · วันแผนต่อเนื่องจากวันเริ่ม — แก้ทีหลังได้)')}
             </label>
           )}
         </Modal>
@@ -227,18 +228,18 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
       {stepModal && (
         <Modal title={stepModal.id ? `ขั้น ${stepModal.name}` : 'เพิ่มขั้นงาน'} onClose={() => setStepModal(null)} width={600}
-          footer={<><button style={ghost} onClick={() => setStepModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveStep}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setStepModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveStep}>{tr('บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ชื่อขั้นงาน *" span={2}><input style={inp} value={stepModal.name} onChange={e => setStepModal({ ...stepModal, name: e.target.value })} /></Field>
-            <Field label="ลำดับ"><input type="number" style={inp} value={stepModal.seq} onChange={e => setStepModal({ ...stepModal, seq: e.target.value })} /></Field>
-            <Field label="ความคืบหน้า %" hint="100 = เสร็จ"><input type="number" min={0} max={100} style={inp} value={stepModal.progress_pct} onChange={e => setStepModal({ ...stepModal, progress_pct: e.target.value })} /></Field>
-            <Field label="แผนเริ่ม"><input type="date" style={inp} value={stepModal.plan_start} onChange={e => setStepModal({ ...stepModal, plan_start: e.target.value })} /></Field>
-            <Field label="แผนจบ"><input type="date" style={inp} value={stepModal.plan_end} onChange={e => setStepModal({ ...stepModal, plan_end: e.target.value })} /></Field>
-            <Field label="เริ่มจริง"><input type="date" style={inp} value={stepModal.actual_start} onChange={e => setStepModal({ ...stepModal, actual_start: e.target.value })} /></Field>
-            <Field label="จบจริง"><input type="date" style={inp} value={stepModal.actual_end} onChange={e => setStepModal({ ...stepModal, actual_end: e.target.value })} /></Field>
-            <Field label="สถานะ"><MetaSelect value={stepModal.status} onChange={v => setStepModal({ ...stepModal, status: v, progress_pct: v === 'completed' ? 100 : stepModal.progress_pct })} meta={STEP_STATUS} /></Field>
-            <Field label="ผู้รับผิดชอบ"><PersonSelect value={stepModal.responsible_name || ''} history={respHist} onChange={r => setStepModal({ ...stepModal, responsible_name: r.name })} /></Field>
-            <Field label="หมายเหตุ" span={2}><input style={inp} value={stepModal.note} onChange={e => setStepModal({ ...stepModal, note: e.target.value })} /></Field>
+            <Field label={tr('ชื่อขั้นงาน *')} span={2}><input style={inp} value={stepModal.name} onChange={e => setStepModal({ ...stepModal, name: e.target.value })} /></Field>
+            <Field label={tr('ลำดับ')}><input type="number" style={inp} value={stepModal.seq} onChange={e => setStepModal({ ...stepModal, seq: e.target.value })} /></Field>
+            <Field label={tr('ความคืบหน้า %')} hint={tr('100 = เสร็จ')}><input type="number" min={0} max={100} style={inp} value={stepModal.progress_pct} onChange={e => setStepModal({ ...stepModal, progress_pct: e.target.value })} /></Field>
+            <Field label={tr('แผนเริ่ม')}><input type="date" style={inp} value={stepModal.plan_start} onChange={e => setStepModal({ ...stepModal, plan_start: e.target.value })} /></Field>
+            <Field label={tr('แผนจบ')}><input type="date" style={inp} value={stepModal.plan_end} onChange={e => setStepModal({ ...stepModal, plan_end: e.target.value })} /></Field>
+            <Field label={tr('เริ่มจริง')}><input type="date" style={inp} value={stepModal.actual_start} onChange={e => setStepModal({ ...stepModal, actual_start: e.target.value })} /></Field>
+            <Field label={tr('จบจริง')}><input type="date" style={inp} value={stepModal.actual_end} onChange={e => setStepModal({ ...stepModal, actual_end: e.target.value })} /></Field>
+            <Field label={tr('สถานะ')}><MetaSelect value={stepModal.status} onChange={v => setStepModal({ ...stepModal, status: v, progress_pct: v === 'completed' ? 100 : stepModal.progress_pct })} meta={STEP_STATUS} /></Field>
+            <Field label={tr('ผู้รับผิดชอบ')}><PersonSelect value={stepModal.responsible_name || ''} history={respHist} onChange={r => setStepModal({ ...stepModal, responsible_name: r.name })} /></Field>
+            <Field label={tr('หมายเหตุ')} span={2}><input style={inp} value={stepModal.note} onChange={e => setStepModal({ ...stepModal, note: e.target.value })} /></Field>
           </div>
         </Modal>
       )}
@@ -248,17 +249,17 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
 /** แถว Gantt: แท่งแผน (จาง) + แท่งจริง/ความคืบหน้า (เข้ม) + เส้นวันนี้ */
 function GanttRow({ plan, actual, range, todayPos, pct, light, thin }) {
-  if (!range) return <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีวันแผน</div>;
+  if (!range) return <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ยังไม่มีวันแผน')}</div>;
   const pb = barPos(plan[0], plan[1], range);
   const ab = barPos(actual[0], actual[1] || null, range);
   const c = (LIGHT[light] || LIGHT.grey).color;
   const h = thin ? 10 : 16;
   return (
-    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 4, border: '1px solid var(--border)' }}>
-      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 3 }}>
-        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 3, opacity: 0.9 }} />}
+    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>
+      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 'var(--r-xs)' }}>
+        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 'var(--r-xs)', opacity: 0.9 }} />}
       </div>}
-      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 2 }} />}
+      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 'var(--r-xs)' }} />}
       {todayPos && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPos.left}%`, width: 2, background: '#ef4444' }} />}
     </div>
   );

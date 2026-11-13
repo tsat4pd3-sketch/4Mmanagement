@@ -31,6 +31,7 @@
 | `mtn` | 🔧 ซ่อมบำรุง (Maintenance) | ทีมซ่อมบำรุง (MTN/JIG/DIE) — หน้า PM ทั้งหมด, ผังเครื่องจักร, ฐานข้อมูลเครื่องจักร (seed: `20260713_mtn_role.sql`) |
 | `engineer` | ⚙️ งานวิศวกรรม (Engineering) | process engineering — Product Master `products:create/edit` (BOM/EC/New Model) โดยไม่พ่วงอำนาจจัดการผลิต/อนุมัติ QA/งาน PM · **ตั้งใจไม่รวมกับ qa/mtn** เพราะอำนาจอนุมัติคุณภาพกับ master เครื่องจักรต้องแยกคนถือ (seed: `20260713_engineer_planner_store_roles.sql`) |
 | `engineer_nm` | 🚀 วิศวกรรมรุ่นใหม่ (New Model Engineering) | **ทีม Engineering New Model — เห็นแค่กลุ่มหน้า NM** (seed แรก: `/npi` + `/pe-docs` · ขอบเขตวันนี้ดูกล่อง 🧪 ใต้ตาราง) (seed: `page:/npi`, `page:/pe-docs`, `npi:edit`, `pe:edit`) · ไม่ให้ `npi:approve`/`pe:approve`/`npi:manage_templates` (ปิดเฟส·อนุมัติ PSW·ออก revision·ยืนยัน master PFMEA·แก้แม่แบบกลาง = ของเจ้าของเอกสาร) เปิดเพิ่มได้ที่ `/permissions` · **ทำไมไม่ใช้ `engineer` เดิม:** role นั้นถือ `/products` `/machine-database` `/dashboard` + approve อยู่แล้วและมี user จริงใช้ — สิทธิ์เข้าหน้าเป็น*ต่อ role* ไม่ใช่ต่อ user จึงหั่นไม่ได้ (migration `20260918_engineer_nm_role.sql` — **apply แล้ว 2026-09-18** · ⚠️ ALTER TYPE ADD VALUE + seed ต้องรันคนละท่อน) |
+| `marketing` | 💼 การตลาด (Marketing · Q-neX) | **ต้นน้ำของสายธาร Marketing → New Model → โรงงาน** — `page:/rfq` + `rfq:edit` + `rfq:award` (RFQ · ส่ง CRD → สร้างโปรเจค NPI · ผลได้งาน · ใบแจ้งจัดทำ F-MKT-001/002) + `page:/npi` `page:/nm-board` **ดูอย่างเดียว** (ไม่ให้ `npi:edit`) · ใช้เว็บ edition ก่อน SOP ร่วมกับ `engineer_nm` — **คนละ role เพราะชุดสิทธิ์ต่างกันจริง** (ออก RFQ/Award ≠ ทำ APQP) · ทำครบ 5 จุด (enum `20261030a` · ROLE_META · seed `20261030b` · ไม่มี role array ต้องแก้ · F5) — **apply แล้ว 2026-10-30** · 📄 `docs/modules/mkt-rfq.md` §4 |
 | `planner_store` | 📦 แผนงาน-คลัง (Planner & Store) | ฝั่งคลัง/แผนงาน — Store, Kanban, Rack, Rundown, อัพโหลด Forecast (`heijunka:operate`, `line_stock:issue/manage_rounds`, `rack_center:operate`, `demand:upload`) — แยกจาก `sale` ที่โฟกัส Delivery/Ship-to (seed เดียวกัน) |
 | `display` | 📺 จอแสดงผล (View Only) | ดูอย่างเดียว (จอแสดงผลลอย ไม่ login เป็นคน) |
 
@@ -50,6 +51,19 @@
 - **⚠️ กับดัก Supabase ตัด 1000 แถว/query (เจอจริง 2026-08-03):** `role_permissions` โตเกิน 1000 แถวแล้ว (1,135) — query ที่ไม่ `.range()` ได้แค่ 1000 แถวแรก **แถวที่ seed ทีหลัง (เช่น bucket `dept_admin`) หายเงียบ** = สิทธิ์ใน DB ถูกแต่ปุ่ม/เมนูไม่โผล่ (fail-closed) · แก้แล้ว: `loadPermissions()` + หน้า `/permissions` ดึงแบบแบ่งหน้า · **โค้ดใหม่ที่ select ตารางนี้ (หรือตารางใดที่โตได้เกิน 1000) ต้อง paginate เสมอ**
   - **⚠️ กับดักซ้อน — "paginate ตัวที่เคยพังไปแล้ว 1 ตัว" ไม่พอ ต้องดูทั้ง `Promise.all` (เจอรอบที่ 3 · 2026-08-27):** `LineStock.jsx load()` มี 6 query ในก้อนเดียว แต่ paginate แค่ `line_stock_summary` ตัวที่เคยมีคนแจ้งบั๊ก · อีก 4 ตัว (`bom_items` 408 · `dr_products` 287 · `kanban_standards` · `parts_master` 287) เป็น `select()` เปล่า — **ยังไม่ถึง 1000 วันนี้ แต่เป็นตารางที่โตตามการลงข้อมูล** · ตัวที่เจ็บที่สุดคือ **`bom_items` เพราะเป็นที่มาของ "ไลน์ลูกปลายทาง" ใน `StockMoveToChild`** → ตกหล่นเมื่อไหร่ พาร์ทนั้นกลายเป็น **"⚠ ใช้หลายไลน์ ต้องเลือกเอง"** ทั้งที่จริงชี้ไลน์เดียวชัดเจน = **เสนอผิดแบบเงียบ แล้วคนเลือกปลายทางผิด → หักสต็อกผิดตัว ย้อนยาก** · **กติกา: เจอ `Promise.all` ที่มีตัวหนึ่ง paginate แล้ว = สัญญาณว่าอีกตัวถูกลืม ให้ไล่ทั้งก้อนเสมอ** · และ **`fetchAllPages` คืน `{rows, error, truncated}` ต้องเช็ค 2 ตัวหลังแล้วบอกผู้ใช้ ห้ามอ่านแต่ `rows`** (โหลดไม่ครบ = จอดูปกติทุกอย่าง แต่ข้อเสนอ/ชื่อพาร์ท/min-max หายไปเฉยๆ)
 - `admin` bypass เสมอ (return true ทันทีไม่ query cache) กันกรณี config ผิดจนตัวเองเข้าไม่ได้
+- **🔐 สิทธิ์มีผลกับเครื่องที่เปิดค้าง (2026-11-03 · ประชุมหน้างาน 02/11 ข้อ A5 "cache ยังมีปัญหาเรื่องสิทธิ์")**
+  · อาการ: แอดมินแก้ role/ขอบเขตที่ `/add-user` หรือติ๊กที่ `/permissions` แล้ว **คนที่ถูกแก้ยังเห็นเมนู/ปุ่มเดิม** จนรีเฟรช/ล้างเบราว์เซอร์
+  · ต้นเหตุ ① **โปรไฟล์ตัวเอง** (`role`/`sections`/`resp_cost_centers`/`is_dept_admin`/`line_id`/`mtn_teams`/`account_kind`/`scope_depth` + `org_assignments`)
+    โหลดใน `fetchProfile()` (App.jsx) **เฉพาะตอน auth event** — `profiles` ไม่อยู่ใน publication realtime (และไม่ควรเข้า: ทุกแถวของทุกคนจะวิ่งถึงทุกเครื่อง)
+    ② realtime ของ `role_permissions` มีอยู่แล้ว แต่ **ไม่ replay event ที่พลาดตอน socket หลุด** (แท็บเล็ตพักจอ/เน็ตสะดุด)
+    · ฝั่ง DB (`has_perm()`) อ่านสดทุกคิวรีอยู่แล้ว — ปัญหาอยู่ฝั่งจอล้วน
+  · ทางแก้ = **probe ลายเซ็นเล็ก** `src/utils/usePermFreshness.js` (กฎ pure `src/utils/permFreshness.js` · เทส `permFreshness.test.mjs`)
+    ยิงตอน login (จด baseline) · กลับมาที่แท็บ (visibility/focus/online · เพดาน `LIVE.PERMS` 2 นาที) · กันเหนียวทุก `RATE.BOARD` ตอนแท็บมองเห็น
+    ลายเซ็น = `profiles.updated_at` + แถวมอบหมายของตัวเอง (+วันทำงานเมื่อมีมอบหมาย) · `role_permissions` count + `max(updated_at)` (trigger คุมทั้งคู่)
+    เปลี่ยน ⇒ `fetchProfile()` / `loadPermissions(true)` + bump `permsVersion` · ขอบเขตเปลี่ยนจริง (`profileScopeKey`) ⇒ toast บอกผู้ใช้ (แก้รูป/ลายเซ็นตัวเองไม่เตือน)
+  · 🔴 probe อ่านไม่ได้ = "ไม่รู้" — ไม่โหลด ไม่ลบ baseline (= พฤติกรรมเดิม) · **ห้ามเอา probe ไปตัดสินสิทธิ์**
+  · ⚠️ ข้อมูลที่หน้าเปิดค้างโหลดมาด้วยขอบเขตเก่า **ไม่ถูกโหลดใหม่ให้** (เมนู/ปุ่ม/ด่านอัปเดตทันที) — toast บอกให้รีเฟรชหน้า
+  · ไม่แตะ schema/RLS · ไม่มี migration · ถอยได้ด้วย revert คอมมิทเดียว
 - แก้ได้จากหน้า `/permissions` (`src/pages/PermissionsManagement.jsx`) — ตาราง matrix role × permission key, toggle แล้ว upsert ทันที
 - permission key รูปแบบ `page:/route` สำหรับสิทธิ์เข้าหน้า, `resource:action` สำหรับสิทธิ์ทำงานในหน้า (เช่น `products:create`, `oee:set_target`) — โหลดจาก `permission_catalog` แสดงในแท็บ "สิทธิ์การทำงาน"
 - **⚠️ กฎเหล็ก — เพิ่มหน้า/สิทธิ์ใหม่ ต้องลง "ทะเบียน" ด้วย ไม่งั้น admin ปรับจาก UI ไม่ได้เลย (audit 2026-08-06):** `role_permissions` เก็บ**ค่า** แต่ตัวที่ทำให้ "โผล่ให้ติ๊ก" ในหน้า `/permissions` เป็นคนละที่ — seed แถวอย่างเดียวไม่พอ:
@@ -1092,3 +1106,57 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
    `prodRoutine.js` · `operator.jsx` · `DeptDashboard.jsx` ฯลฯ) role ใหม่ที่ไม่ถูกเติมในจุดพวกนี้ = **เงียบ ไม่ใช่ error**
 3. RLS ที่อ้าง role ตรงๆ (ถ้ามี) + เอกสาร/ด่าน
 ⇒ ทางที่ได้ผลเท่ากันโดยไม่จ่ายข้อ 1-3 คือ **`supervisor` + Cost Center ของแผนก** (ชั้นสิทธิ์ที่ 3 แกน CC ทำงานตามลำดับชั้นอยู่แล้ว)
+
+
+## 👀 `viewer` — ผู้ทดลองใช้ ดูอย่างเดียว (2026-11-02)
+
+คำสั่ง user: *"user ไว้ให้นายเราลองเข้ามาทดสอบดูโปรแกรม แต่จะไม่สามารถแก้ไขอะไรหรือลงข้อมูลอะไรได้"*
+
+- **กลไก:** มีแต่คีย์ `page:*` · **ไม่มีคีย์ action แม้แต่ตัวเดียว** ⇒ `can()` เท็จทุกปุ่ม · RLS ฝั่ง Main (`has_perm`) บล็อกเขียน
+  ⚠️ ฝั่ง DR เป็น anon ⇒ กันได้ที่ชั้นปุ่ม/handler เท่านั้น (known gap เดิม — คนตั้งใจยิง API ตรงยังเขียนได้)
+- **ทำไมไม่ใช้ `display`:** นั่นคือ "จอ TV" (24 หน้า · วนหน้าอัตโนมัติ · ไม่ auto-logout · `axis:'device'`) ไม่ใช่คน
+- **หน้าที่ไม่ให้เห็น:** ตั้งค่าทั้งหมด (`/qa-setup` `/pm-setup` `/process-setup` `/linesetup` `/org-setup` `/layout-setup`
+  `/storage-maintenance` `/notification-config` `/display-rotation`) · `/announcements` · `/audit-log` ·
+  `/register` + `/checkin` (เขียนโดยมี `can()` คุมบาง) · `/remote` (สั่งจอ TV)
+- **ตั้งค่าบัญชีที่ `/add-user`:** ชุดสิทธิ์ `👀 ผู้ทดลองใช้` · ขอบเขต **ทั้งโรงงาน** (`scope_depth='all'`) · ส่วนงาน/ไลน์ **ว่าง**
+  (ว่าง ⇒ `canWriteUnit` fail-closed อีกชั้น) · `account_kind='shared'` ถ้าเป็นบัญชีกลางให้หลายคนลอง
+- migration `20261102_role_viewer_main.sql` (2 บล็อก — enum ต้อง commit ก่อน seed · 55P04)
+- 🔴 **ห้ามเพิ่มคีย์ action ให้ role นี้** — ถ้าวันหน้าอยากให้ "ลองกด" ได้ ให้ทำ sandbox แยก ไม่ใช่เปิดคีย์บนฐานจริง
+
+
+## 🧩 ช่อง ③ ส่วนงาน + ④ Cost Center ยุบเป็นช่องเดียว "หน่วยที่ดูแล ตามผังองค์กร" (2026-11-02)
+
+คำสั่ง user: *"ปัญหาเรื่อง 3 กับ 4 ที่ควรจะรวมกันจะแก้จบเมื่อไหร่ ที่จริงเลือก 4 มันครอบคลุมอยู่แล้ว มันตามผังองค์กร"*
+(ต่อจาก 28/10 *"ยุบเหลือแกนเดียว · CC ละเอียดกว่า"*)
+
+- **จอ `/add-user`:** ช่องติ๊กส่วนงาน (③ เดิม) **ถูกถอด** · เหลือต้นไม้ CC ช่องเดียว · ③ กลายเป็น "สรุปผล" ที่ระบบ derive
+  👁️ เห็นข้อมูลของ = ส่วนงานแม่ของหน่วยที่ติ๊ก · ✏️ แก้ได้ = หน่วยที่ติ๊กตามลำดับชั้น (ccScope เดิม)
+- **DB ไม่เปลี่ยน:** `profiles.sections` ยังถูกเขียน (40 จออ่านช่องนี้) แต่ค่ามาจาก `effectiveSections()` ใน
+  **`src/utils/scopePicker.js`** (pure · 8 เทส) — ห้ามคำนวณเองในหน้า
+- 🔴 **กฎห้ามแคบลงเงียบ (บทเรียน 26/10):** ไม่ติ๊ก CC = คืน `sections` เดิมเป๊ะ · ค่าเดิมที่แปลงเป็น CC ไม่ได้
+  (หน่วยไม่มีรหัส/หายจากผัง/รหัสตกทอด) = **คงไว้** โชว์เป็นชิปกรอบประ กด ✕ ถอดเองได้
+- เปิดบัญชีเก่าที่มี `sections` แต่ไม่มี CC → ระบบ **ติ๊ก CC ให้ล่วงหน้า** (เฉพาะโหนดที่มีรหัสของตัวเอง) ครั้งเดียวต่อบัญชี
+  ⇒ บันทึกครั้งถัดไป บัญชีนั้นย้ายมาใช้แกน CC โดยค่าที่เห็นเท่าเดิม (round-trip test ยืนยัน)
+- ด่าน `scope-picker-single-field` ใน regressionGuards — ห้ามเอาช่องติ๊กส่วนงานกลับมา
+- ⚠️ ยังไม่แตะ: `/permissions` · `writeScope.js` (ยังมี 2 แกน section/CC ภายใน — จอไม่ต้องรู้) · การ derive เป็นแค่ชั้น UI บันทึก
+
+## 🔄 ขอบเขตจริงอ่าน `org_assignments` — รักษาการ/รับผิดชอบเพิ่ม ทับได้ทาง "กว้างขึ้น" เท่านั้น (2026-11-02)
+
+คำสั่ง user: *"ตำแหน่งจริงของ HR เป็นพื้นฐาน และเพิ่มความรับผิดชอบงานที่อาจจะรักษาการแทนตำแหน่งนั้น"* →
+*"ลุยต่อ ให้ขอบเขตจริงอ่าน org_assignments เลย"*
+
+- **ชั้น:** `profiles` (sections · resp_cost_centers · scope_depth) = **ฐาน** · `org_assignments` (head/acting · มีวันเริ่ม-สิ้นสุด)
+  = **ชั้นทับ** ⇒ ขอบเขตจริง = ฐาน ∪ หน่วยที่ได้รับมอบ · **ไม่มีทางที่มอบหมายทำให้ใครแคบลง**
+- **จุดเดียว:** `src/utils/assignmentOverlay.js` → `applyAssignments({ sections, respCostCenters }, rows, { nodes, ccIdx, today })`
+  · `sections` ว่าง (ไม่จำกัด) → คงว่าง · มอบหมาย `scope_depth='all'` → ว่าง · ไม่งั้น ∪ ส่วนงานบนสุดของหน่วยที่มอบ
+  · `respCostCenters` ∪ CC ของหน่วย (ตกทอดจากแม่ตาม `ccOfNode`) · วันมีผล = `isGranting(row, today)` ตัวเดียวกับจอ /org-setup
+  · **ผัง/ทะเบียนอ่านไม่ได้ = คืนค่าเดิมเป๊ะ + `failed`** ห้ามเดา · โหนดถูกลบ = ข้ามแถวนั้น (บอกใน `applied[].skipped`)
+- **ต่อสาย:** `App.jsx fetchProfile` — อ่าน `org_assignments` กรอง `profile_id` (admin ไม่อ่าน · 1 คิวรี/login) → ทับก่อน
+  `setUserSections`/`setUserRespCcs` · ดัชนีผัง (`scopeIdx`) โหลดเมื่อ **ตั้ง CC ไว้ หรือ มีมอบหมายที่มีผล** (เดิมเฉพาะ CC)
+  · ผลทับส่งออก `UserContext.assignOverlay` (`null` = ไม่มี · `{ failed, reason, applied }`) · โหมดจำลอง (ViewAs) = `null`
+- **จอต้องเขียนบอก:** การ์ดผู้ใช้ใน sidebar — มีมอบหมาย = "🔄 รักษาการ <หน่วย>" (hover เห็นวันหมดอายุ) ·
+  อ่านไม่ได้ = "⚠️ รักษาการ: อ่านไม่ได้ — ใช้ขอบเขตบัญชีอย่างเดียว"
+- **วัดก่อน merge (5 แถวจริง):** 4 แถวค่าเท่าเดิม · 1 แถว (mtn รักษาการ Maintenance) ได้ CC Maintenance เพิ่ม = หน่วยเดียวกับ
+  `section` เดิม ⇒ ไม่มีใครแคบลง · รายละเอียด `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4.8
+- ด่าน `assignment-overlay-widen-only` (regressionGuards) — ห้ามเขียนกฎวันที่เองใน App.jsx · ห้ามให้ overlay แตะ DB
+- ⚠️ งานข้อมูลที่เหลือ: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ยังไม่มีแถวมอบหมาย — ลงที่ `/org-setup › มอบหมายหน่วย` (ใส่วันสิ้นสุด)

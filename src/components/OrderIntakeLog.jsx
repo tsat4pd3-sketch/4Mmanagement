@@ -4,7 +4,7 @@
  * ที่มา (user 2026-09-09): *"สิ่งที่อัพโหลดไป ให้มี log และ tab เข้าไปดูด้วยสิ รวมถึงงาน add order"*
  *
  * ตอบคำถามเดียว: **"ยอดนี้มาจากไหน ใครทำ เมื่อไหร่"** → รวม 3 ทางเข้าในไทม์ไลน์เดียว
- * (📄 EDI 862/830 · 📥 e-SMART ที่ลูกค้ายืนยัน · ➕ คีย์มือ order ด่วน)
+ * (📄 EDI 862/830 · e-SMART ที่ลูกค้ายืนยัน · ➕ คีย์มือ order ด่วน)
  *
  * ⚠️ อ่านอย่างเดียว ไม่มีปุ่มเขียนข้อมูล → ไม่ต้อง seed permission key ใหม่ (ใช้ page:/customer-demand เดิม)
  * ⚠️ การรวม/กรอง/สรุป อยู่ `src/utils/orderIntakeLog.js` (pure · เทส 12 เคส) — ห้ามคำนวณซ้ำในไฟล์นี้
@@ -21,6 +21,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 
+import { tr as trI18n } from '../utils/i18n';
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)',
   borderRadius: 'var(--radius-lg)', padding: 16,
@@ -147,7 +148,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} onReload={load} loading={loading}
       >
         <select value={shipTo} onChange={e => setShipTo(e.target.value)}>
-          <option value="">{ALL.customer}</option>
+          <option value="">{trI18n(ALL.customer)}</option>
           {Object.keys(shipToMap || {}).sort().map(c => (
             <option key={c} value={c}>{custLabel ? custLabel(c) : c}</option>
           ))}
@@ -158,15 +159,15 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <button onClick={() => setKind('all')} style={chip(kind === 'all', 'var(--accent)')}>{ALL.type}</button>
           {Object.entries(INTAKE_KINDS).map(([k, m]) => (
-            <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{m.label} ({sum[k] || 0})</button>
+            <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{trI18n(m.label)} ({sum[k] || 0})</button>
           ))}
-          <span className="filter-count">รวม {sum.total} รายการ</span>
+          <span className="filter-count">{trI18n('รวม')} {sum.total} {trI18n('รายการ')}</span>
         </div>
         {sum.esmart > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>
             ผลจาก e-SMART ในช่วงนี้ — อัพเดท <b style={{ color: '#22c55e' }}>{sum.ordersUpdated}</b> ใบ ·
             สร้างใหม่ <b style={{ color: '#0ea5e9' }}>{sum.ordersCreated}</b> ใบ
-            {sum.ordersSkipped > 0 && <> · <b style={{ color: '#f59e0b' }}>{sum.ordersSkipped}</b> รายการที่ไม่ได้แตะ (ทำไปแล้ว/จับคู่ไม่ได้)</>}
+            {sum.ordersSkipped > 0 && <> · <b style={{ color: '#f59e0b' }}>{sum.ordersSkipped}</b> {trI18n('รายการที่ไม่ได้แตะ (ทำไปแล้ว/จับคู่ไม่ได้)')}</>}
           </div>
         )}
       </div>
@@ -177,7 +178,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         </div>
       ))}
 
-      {loading && <div style={{ ...card, fontSize: 12, color: 'var(--text2)' }}>⏳ กำลังโหลด…</div>}
+      {loading && <div style={{ ...card, fontSize: 12, color: 'var(--text2)' }}>{trI18n('⏳ กำลังโหลด…')}</div>}
 
       {!loading && !shown.length && (
         <div style={{ ...card, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
@@ -193,7 +194,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         {dayGroups.map(g => (
           <CollapseCard key={g.day} id={`intake_${g.day}`} storePrefix="oil"
             defaultOpen={g.day === todayKey}
-            title={<>{g.label}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> · วันนี้</span>}
+            title={<>{trI18n(g.label)}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> {trI18n('· วันนี้')}</span>}
               <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 12 }}> — {g.summary}</span></>}
             count={g.items.length}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -209,7 +210,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
       {hidden > 0 && (
         <button onClick={() => setLimit(l => l + PAGE)}
           style={{ ...inputSt, cursor: 'pointer', fontWeight: 800, padding: '10px', width: '100%' }}>
-          ▼ แสดงอีก {Math.min(PAGE, hidden)} (ทั้งหมด {shown.length})
+          {trI18n('▼ แสดงอีก')} {Math.min(PAGE, hidden)} {trI18n('(ทั้งหมด')} {shown.length})
         </button>
       )}
     </div>
@@ -225,7 +226,7 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
       background: 'var(--card)', backgroundImage: `linear-gradient(${m.color}0a, ${m.color}0a)`,
     }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{trI18n(m.label)}</span>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', flex: '1 1 220px', minWidth: 0, wordBreak: 'break-word' }}>
           {e.title}
         </span>
@@ -239,15 +240,15 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
             const lagMin = Math.round((new Date(e.at).getTime() - made.getTime()) / 60000);
             const late = Number.isFinite(lagMin) && lagMin > 120;   // อัพช้ากว่า 2 ชม. = ข้อมูลเก่าแล้ว
             return (
-              <>🕐 ออกไฟล์ <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
+              <>{trI18n('🕐 ออกไฟล์')} <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
                 {Number.isFinite(lagMin) && lagMin >= 0 && (
-                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> (อัพหลังจากนั้น {lagMin} นาที)</span>
+                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> {trI18n('(อัพหลังจากนั้น')} {lagMin} นาที)</span>
                 )}
                 <br />
               </>
             );
           })()}
-          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>ไม่ระบุผู้ทำ</span>}
+          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>{trI18n('ไม่ระบุผู้ทำ')}</span>}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
@@ -255,21 +256,21 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         {e.detail && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{e.detail}</span>}
         {e.kind === 'esmart' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            📄 {fmt(e.stats.rows)} แถว{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
-            {' · '}✏️ อัพเดท <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
-            {' · '}➕ สร้าง <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
-            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>🔒 ไม่แตะ {fmt(e.stats.skipped)}</span></>}
+            {fmt(e.stats.rows)} {trI18n('แถว')}{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
+            {' · '}{trI18n('✏️ อัพเดท')} <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
+            {' · '}{trI18n('➕ สร้าง')} <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
+            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>{trI18n('ไม่แตะ')} {fmt(e.stats.skipped)}</span></>}
           </span>
         )}
-        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>📄 {fmt(e.stats.rows)} แถว</span>}
+        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{fmt(e.stats.rows)} {trI18n('แถว')}</span>}
         {e.kind === 'manual' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--text)' }}>{fmt(e.stats.qty)}</b> ชิ้น · สถานะ {e.ref?.status || '—'}
+            <b style={{ color: 'var(--text)' }}>{fmt(e.stats.qty)}</b> {trI18n('ชิ้น · สถานะ')} {e.ref?.status || '—'}
           </span>
         )}
         {canOpen && (
           <button onClick={onToggle} style={{ ...chip(open, m.color), marginLeft: 'auto', fontSize: 11 }}>
-            {open ? '▲ ปิดรายละเอียด' : '▼ ดูรายการที่ลูกค้าดึง'}
+            {open ? trI18n('▲ ปิดรายละเอียด') : trI18n('▼ ดูรายการที่ลูกค้าดึง')}
           </button>
         )}
       </div>
@@ -291,8 +292,8 @@ function PullBatchDetail({ batchId }) {
     return () => { alive = false; };
   }, [batchId]);
 
-  if (err) return <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>🔴 อ่านรายการไม่ได้: {err}</div>;
-  if (!rows) return <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>⏳ กำลังโหลด…</div>;
+  if (err) return <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>{trI18n('🔴 อ่านรายการไม่ได้:')} {err}</div>;
+  if (!rows) return <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>{trI18n('⏳ กำลังโหลด…')}</div>;
   if (!rows.length) {
     return (
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
@@ -304,13 +305,13 @@ function PullBatchDetail({ batchId }) {
   const td = { padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border)' };
   const tdR = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   return (
-    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
+    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
         <thead><tr style={{ background: 'var(--bg2)' }}>
-          <th style={th}>เลขพาร์ทลูกค้า</th><th style={th}>MAT</th><th style={th}>เวลาที่ลูกค้าดึง</th>
-          <th style={{ ...th, textAlign: 'right' }}>ภาชนะ</th>
-          <th style={{ ...th, textAlign: 'right' }}>ต่อภาชนะ</th>
-          <th style={{ ...th, textAlign: 'right' }}>รวม</th>
+          <th style={th}>{trI18n('เลขพาร์ทลูกค้า')}</th><th style={th}>MAT</th><th style={th}>{trI18n('เวลาที่ลูกค้าดึง')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('ภาชนะ')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('ต่อภาชนะ')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('รวม')}</th>
           <th style={th}>Dock</th>
         </tr></thead>
         <tbody>

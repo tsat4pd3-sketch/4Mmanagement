@@ -552,6 +552,36 @@
 
 ---
 
+## 🏢 ชั้นบนของผัง (company_group → spg → company → plant) — กฎอยู่ `src/utils/orgLayers.js` (2026-11-04)
+
+ผังจริงของกลุ่ม (template Com Code 03/11): Group → SPG → Company (SAP 4 หลัก) → Plant → ส่วนงาน · วันนี้ `org_nodes` ยังมีแต่ชั้นหน่วย
+- **ห้ามเขียน "ราก = parent_id ว่าง" / "ขึ้นตรง = `!parent_id`" ใหม่** — ถาม `unitRoots()` / `isOrphanDept()` / `unitParentId()` (ด่าน `org-upper-layers-ready`)
+- **การตกทอดทุกชนิด (CC · ส่วนงาน · ขอบเขต) หยุดที่ชั้นบน** — รหัส/ขอบเขตของ plant/company ไม่ไหลลงหน่วย (`unitChain()` · `ccOfNode` ใช้ `unitParentId`)
+- `orphanDepts(deptNodes, allNodes)` — ไม่ส่ง `allNodes` = แม่ที่หาไม่เจอถือว่าเป็นหน่วย (พฤติกรรมเดิม) ⇒ จอที่โหลดแค่ department ต้องส่งผังทั้งต้นก่อนจะมีโหนด plant
+- DB `org_nodes_kind_check` รับ 8 kind แล้ว (`20261104_org_nodes_upper_kinds_main.sql` apply แล้ว) · **ยังไม่มีแถวชั้นบน** — เงื่อนไขก่อนเติม → `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4 ขั้น 0
+
+## 🏭 ทะเบียน `cost_centers` ครบทุกโรงงานในเครือ — จากไฟล์บัญชี "Activity Rate 2027" (2026-11-03)
+
+user ส่ง `cost_center.xlsx` (Activity Rate 2027 · 4,795 แถว = cost center × activity type) + template Com Code ของกลุ่ม
+⇒ migration `20261103_cost_centers_sap_2027_main.sql` (**apply แล้วผ่าน MCP 03/11 · ตรวจกลับแล้ว**) · ทะเบียน 63 → **746 รหัส · 12 บริษัท · 18 plant**
+
+**ที่อ่านออกจาก template + ไฟล์ (ใช้ตัดสินโครงสร้างต่อจากนี้):**
+- Group → **SPG** (1000 Holding · 2000 AMF · 3000 Int&Ext · 4000 Mocy · 5000 DFM · 6000 EV · 7000 OGI · 8000 Composites · 9000 Other)
+  → **Company** (SAP 4 หลัก / SAP B1 3 หลัก) → **Plant** · Employee ID 7 หลัก = **Com Code 3 หลัก (= 3 หลักแรกของรหัส SAP) + running 4**
+- **เรา = TSAT (SAP 2100 · Com Code 210) ใต้ SPG 2000 AMF · plant 2140 = TSAT-P4** · TSAT มี 2110 P1 · 2130 P3 (โรงแม่พิมพ์กลาง: Die Design/Fitting · Basic/Copy Machine · Laser/Wire cut · QA+Project Control ของตัวเอง) · 2140 P4
+- รหัส CC 10 หลัก = plant 4 + หลักที่ 5 (4 ส่วน · 5 แผนก · 6 กลุ่ม/ไลน์ · 9 dummy) + 5 หลัก — **เชื่อถือได้เฉพาะเครือ TSAT** (บริษัทอื่น level = null ตามกฎ 22/10)
+- พนักงานเรา 230 คนรหัส `210xxxx` ตรง template แล้ว · ผู้รับเหมา STM/PTA/ASC 157 คน **ไม่อยู่ใน template** (ต้องเป็นแกน "นายจ้าง" ไม่ยัดเข้า Com Code)
+
+**กติกาที่ใช้นำเข้า (อยู่ในหัว migration):** company/plant_code ตามไฟล์ ห้ามแกะจากรหัส · แถวเดิม 63 แถวไม่แตะ name/section/level/is_active ·
+เติม `note = "SAP2027 <plant> · <ชื่อตามบัญชี>"` เป็น alias · **TCT 78 รหัส ชื่อในไฟล์เพี้ยน (คอลัมน์เลื่อน = ชื่อของ TSLA) ⇒ name ว่าง ให้บัญชีเติม** ·
+Dummy 13 รหัส is_active=false · 🔴 **ไลน์เก่า P4 ที่ SAP ยังมีรหัสแต่ไม่เดินแล้ว (user ยืนยัน 03/11) 8 ตัว ⇒ is_active=false ไม่เพิ่มโหนดในผัง**:
+`2140661302` C2-Finishing · `2140661402` D2-110T · `2140661501` E1-Transfer · `2140671101` RADIATOR · `2140672101` FRONT FLOOR · `2140673101/102/103` Assembly C
+
+**❌ ไม่นำเข้า rate 2027** — เทียบกับ `cost_center_rates` ชุด 2026 พบแถว PD1 (661101/661201/661301/661401/661402) ค่า DLAB/DP/IDP/OH **สลับช่องกันในไฟล์**
+(เช่น 661101 DLAB=0 · OH=0.199 ทั้งที่ปี 2026 DL 431.80) ⇒ รอไฟล์ที่บัญชียืนยัน · แถว HDF/GOR/LWR/D1-D6 ดูปกติ
+**ค้าง:** รหัส 9 หลักในฐาน (`214053120` MTN · `214055654` QA · `214057100` ทั่วไป) ยังอยู่ — ลบไม่ได้จนกว่านับปลายทางครบ (`costCenterRefs.js`)
+· TSAP คอลัมน์ plant 2900 แต่รหัส 2910 (เก็บตามไฟล์ · รอบัญชียืนยัน) · บริษัทอื่นยังไม่มีใน `org_nodes` (ตั้งใจ — ผังเราคือ P4)
+
 ## Cost Center = ทะเบียน `cost_centers` (Main) — 2026-09-08 · ทะเบียน
 
 รหัส cost center เคยพิมพ์เอง 3 ที่ (production_lines · org_nodes · cost_center_rates) join ด้วยสตริง · ตอนนี้ Main `cost_centers`
@@ -1082,6 +1112,13 @@ user ส่งผังทางการของส่วน PE มา (FM-HRM
    โหนด · ไม่กรอง = ส่วนงานที่ชื่อซ้ำกับแผนกจะนับของกันเอง (และ rename จะเขียนข้ามชั้น)
 2. 🔴 **`cost_centers` ไม่มีคอลัมน์ `id`** (PK = `code`) ⇒ `extra[].pk` · เผลอ `.select('id')`
    = คิวรีล้ม = `rename` รายงานจำนวนผิดโดยไม่มีใครรู้
+3. 🔴 **คอลัมน์ปนชั้นที่ไม่มีคอลัมน์บอกชั้น (`cost_centers.section`) → ติด `mixedKinds`** (2026-11-04)
+   ถ้ามีโหนด active **ต่างชั้น** ถือคีย์เดียวกัน (แผนก "QA" ใต้ส่วนงาน "QA") แถวพวกนั้นแยกไม่ออกว่าเป็นของใคร
+   ⇒ `loadOrgNodeRefs` **ไม่นับมาบล็อก** (คืน `ambiguous` + โน้ตใน confirm ลบ) · `renameOrgRefs(…, nodes)`
+   **ไม่ไล่เขียนทับ** (คืน `skipped` + toast บอก) · ตัวตัดสิน `mixedKeyHolders()`
+   เคสจริง: ลบแผนก QA (CC 214055654 ที่ไม่มีจริง) ไม่ได้ เพราะ CC 5 แถวของส่วนงาน QA ถูกนับเป็นของแผนก
+   + บัญชี 22 ใบที่ `profiles.org_node_id` ค้างชี้แผนกนั้น (ฐานพนักงานย้ายไปแล้ว · หน้าจอไม่มีช่องแก้)
+   — ล้างด้วย `profiles.org_node_id = employees.org_node_id` ของพนักงานที่ผูก (กฎ "ฐานพนักงานชนะ" ของ `syncPatch`)
 
 #### 🔑 เปลี่ยน "ชื่อที่คนอ่าน" โดยคีย์ไม่ขยับ — ย้ายตัวย่อไปไว้ที่ `code`
 
@@ -1380,3 +1417,11 @@ QC ของแผนก **QA** ไปประจำไลน์ **HYDROFORM** 
 · 🔴 กฎความซื่อสัตย์ของใบ — **ห้ามเดาชื่อ**: ไม่มีหัวหน้า = `—` + ท้ายใบบอกว่าขาดกี่หน่วย ·
   คนที่ไม่มี `grade` ต้องมีแถว "ไม่ระบุระดับ" ในตารางอัตรากำลัง **ห้ามตัดทิ้ง** ·
   โหมดทั้งโรงงานต้องบอกว่ามีพนักงานกี่คนยังไม่ผูกหน่วย (ไม่ถูกนับ) · อ่านตารางไหนไม่ได้ต้องขึ้นบนใบ
+
+## 🪞 แผนก = กลุ่มไลน์ชื่อเดียวกัน → picker โชว์แถวเดียว (2026-10-30)
+
+user: *"ทำไมตรงนี้ยังเจอซ้ำกันอยู่"* — `OrgScopePicker` โชว์ `📂 LINE APRON ASSY` แล้วตามด้วย `🔗 LINE APRON ASSY` (เช่นกัน HYDROFORM · Assembly Line B - FORD)
+เพราะผังมีแผนก 1 ตัวที่ผูกไลน์แม่ 1 ตัวชื่อเดียวกัน ⇒ 2 แถวครอบไลน์ชุดเดียวกันเป๊ะ
+- `buildOrgScope()` ติดธง **`merged: true`** ที่ option `line_group` เมื่อ **แผนกมีกลุ่มเดียว + ชื่อตรงกัน** (เทียบ `norm()` กับทั้ง name และ code ของแผนก) · ไลน์ลูก `depth` ขยับขึ้น 1 ชั้น
+- `OrgScopePicker` กรอง `merged` ออกจากลิสต์ (ทั้ง native/rich) — **option/key/`parentOf`/`linesOf` ยังอยู่ครบ** ⇒ ขอบเขตที่เคยบันทึกเป็น `line_group:X` ยังอ่านออก/ยังครอบไลน์ถูก
+- 🔴 **ไม่ใช่การแก้ข้อมูล** — แผนกกับกลุ่มไลน์ยังเป็น 2 แกนตามกติกา 06/10 · แผนกที่มีหลายกลุ่ม หรือชื่อไม่ตรง ยังโชว์ครบ

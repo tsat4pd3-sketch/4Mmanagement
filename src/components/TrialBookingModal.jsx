@@ -18,17 +18,22 @@ import CustomerSelect from './CustomerSelect';
 import PersonSelect from './PersonSelect';
 import MachineSelect from './MachineSelect';
 import { toast } from './Toast';
+import { useTrialReasonsState, trialReasonLabels, DEFAULT_TRIAL_REASONS } from '../utils/useTrialReasons'; // 🧪 ทะเบียน (05/11)
+import { registryFailText } from '../utils/useMasterRows.js';
 
+import { tr } from '../utils/i18n';
 /* เหตุผลที่ขอเครื่อง — ชุดตั้งต้นจากสายงาน APQP/NPI ที่โรงงานใช้จริง (ดู npi_tooling_step_templates)
    🔴 มี "อื่นๆ" ให้พิมพ์เองเสมอ — ทีมที่ไม่มีเหตุผลในลิสต์ต้องไม่ถูกบังคับให้เลือกผิด */
-const REASONS = ['T0 tryout', 'T1 tryout / แก้ไข', 'Run@Rate', 'ECI / เปลี่ยนแบบ', '4M change', 'ทดลองวัสดุใหม่'];
+/* เหตุผลมาจากทะเบียน DR `trial_reasons` (/production-plan แท็บ ⚙️ ตั้งค่า · 05/11 — เดิม hardcode 6 ตัวที่นี่) */
 
 const label = { fontSize: 11.5, color: 'var(--muted)', display: 'block', marginBottom: 3 };
 const row = { display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit, minmax(min(190px,100%), 1fr))' };
 
 export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd }) {
+  const reasonState = useTrialReasonsState();
+  const reasons = trialReasonLabels(reasonState.rows);
   const [f, setF] = useState({
-    part_no: '', part_name: '', customer: '', reason: REASONS[1], reason_free: '',
+    part_no: '', part_name: '', customer: '', reason: DEFAULT_TRIAL_REASONS[1], reason_free: '',
     requested_by: '', machine_no: '', die_no: '', qty: 50, hours: 4, mins: 0, note: '',
   });
   const set = (k) => (v) => setF(o => ({ ...o, [k]: v }));
@@ -66,66 +71,69 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>🧪 จองเครื่องทดลองงานใหม่</div>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('จองเครื่องทดลองงานใหม่')}</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
               {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
             </div>
           </div>
           {/* ปิดได้จาก ✕ / ยกเลิก เท่านั้น (ชั้น backdrop ไม่รับคลิก — ดูคอมเมนต์ด้านบน) */}
-          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
+          <button type="button" onClick={onClose} aria-label={tr('ปิด')} title={tr('ปิด')}
             style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18,
               cursor: 'pointer', lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
         </div>
 
         <div style={row}>
           <div>
-            <label style={label}>Part No. ของลูกค้า</label>
+            <label style={label}>{tr('Part No. ของลูกค้า')}</label>
             <input value={f.part_no} onChange={e => set('part_no')(e.target.value)}
-              placeholder="เช่น MB3B-16E060-CH" style={{ width: '100%', fontFamily: 'monospace' }} />
+              placeholder={tr('เช่น MB3B-16E060-CH')} style={{ width: '100%', fontFamily: 'monospace' }} />
           </div>
           <div>
-            <label style={label}>ชื่องาน</label>
+            <label style={label}>{tr('ชื่องาน')}</label>
             <input value={f.part_name} onChange={e => set('part_name')(e.target.value)}
-              placeholder="เช่น BRKT RR NEW MODEL" style={{ width: '100%' }} />
+              placeholder={tr('เช่น BRKT RR NEW MODEL')} style={{ width: '100%' }} />
           </div>
         </div>
         {/* 🔴 ความซื่อสัตย์: บอกตรงๆ ว่าทำไมไม่ให้เลือกจากทะเบียนสินค้า */}
-        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 6, padding: '6px 9px' }}>
-          ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>ไม่สร้างพาร์ทลงทะเบียนสินค้าให้</b>
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
+          ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>{tr('ไม่สร้างพาร์ทลงทะเบียนสินค้าให้')}</b>
           เพราะพาร์ทอาจยังไม่เกิดจริง · เก็บ Part No. ไว้บนใบนี้ก่อน พอเลข MAT ออกค่อยผูกเข้าระบบทีหลัง
         </div>
 
         <div style={row}>
           <div>
-            <label style={label}>ลูกค้า</label>
+            <label style={label}>{tr('ลูกค้า')}</label>
             <CustomerSelect value={f.customer} onChange={set('customer')} inputStyle={{ width: '100%' }} />
           </div>
           <div>
-            <label style={label}>ผู้ขอ (PE / ผู้ประสาน)</label>
+            <label style={label}>{tr('ผู้ขอ (PE / ผู้ประสาน)')}</label>
             <PersonSelect value={f.requested_by} onChange={set('requested_by')} inputStyle={{ width: '100%' }} />
           </div>
         </div>
 
         <div style={row}>
           <div>
-            <label style={label}>เหตุผลที่ขอ</label>
+            <label style={label}>{tr('เหตุผลที่ขอ')}</label>
             <select value={f.reason} onChange={e => set('reason')(e.target.value)} style={{ width: '100%' }}>
-              {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-              <option value="อื่นๆ">อื่นๆ (พิมพ์เอง)</option>
+              {/* ค่าที่เลือกไว้แต่ทะเบียนไม่มี (เช่นค่าตั้งต้นที่ถูกปิดใช้) ต้องยังโชว์ ไม่ให้ช่องขึ้นตัวแรกแทน */}
+              {f.reason && f.reason !== 'อื่นๆ' && !reasons.includes(f.reason) && <option value={f.reason}>{tr(f.reason)}</option>}
+              {reasons.map(r => <option key={r} value={r}>{tr(r)}</option>)}
+              <option value="อื่นๆ">{tr('อื่นๆ (พิมพ์เอง)')}</option>
             </select>
+            {reasonState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนเหตุผลจองเครื่องทดลอง', reasonState.stale)}</div>}
             {f.reason === 'อื่นๆ' && (
               <input value={f.reason_free} onChange={e => set('reason_free')(e.target.value)}
-                placeholder="ระบุเหตุผล" style={{ width: '100%', marginTop: 5 }} />
+                placeholder={tr('ระบุเหตุผล')} style={{ width: '100%', marginTop: 5 }} />
             )}
           </div>
           <div>
-            <label style={label}>เครื่องที่ขอ</label>
+            <label style={label}>{tr('เครื่องที่ขอ')}</label>
             <MachineSelect value={f.machine_no} lines={[lineName]} onChange={set('machine_no')} inputStyle={{ width: '100%' }} />
           </div>
           <div>
-            <label style={label}>แม่พิมพ์ / จิ๊ก</label>
+            <label style={label}>{tr('แม่พิมพ์ / จิ๊ก')}</label>
             <select value={f.die_no} onChange={e => set('die_no')(e.target.value)} style={{ width: '100%' }}>
-              <option value="">— ไม่ระบุ —</option>
+              <option value="">{tr('— ไม่ระบุ —')}</option>
               {dies.map(d => <option key={d.id} value={d.set_code}>{d.set_code}{d.part_name ? ` · ${d.part_name}` : ''}</option>)}
             </select>
           </div>
@@ -134,25 +142,25 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
         <div style={row}>
           <div>
             {/* 🔴 ช่องนี้แทน qty × CT — พาร์ทใหม่ไม่มี CT ให้คำนวณ (ดูหัวไฟล์) */}
-            <label style={label}>⏱️ ขอใช้เครื่อง <b style={{ color: 'var(--accent)' }}>(บังคับ)</b></label>
+            <label style={label}>{tr('⏱️ ขอใช้เครื่อง')} <b style={{ color: 'var(--accent)' }}>{tr('(บังคับ)')}</b></label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="number" min="0" max="48" value={f.hours} onChange={e => set('hours')(e.target.value)}
-                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>ชม.</span>
+                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>{tr('ชม.')}</span>
               <input type="number" min="0" max="59" step="5" value={f.mins} onChange={e => set('mins')(e.target.value)}
-                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>นาที</span>
+                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>{tr('นาที')}</span>
             </div>
           </div>
           <div>
-            <label style={label}>ทดลองกี่ชิ้น</label>
+            <label style={label}>{tr('ทดลองกี่ชิ้น')}</label>
             <input type="number" min="1" value={f.qty} onChange={e => set('qty')(e.target.value)}
               style={{ width: '100%', textAlign: 'right' }} />
           </div>
         </div>
 
         <div>
-          <label style={label}>หมายเหตุ</label>
+          <label style={label}>{tr('หมายเหตุ')}</label>
           <textarea value={f.note} onChange={e => set('note')(e.target.value)} rows={2}
-            placeholder="เช่น ต้องมี QA ยืนดูด้วย / ใช้เหล็กล็อตพิเศษ" style={{ width: '100%' }} />
+            placeholder={tr('เช่น ต้องมี QA ยืนดูด้วย / ใช้เหล็กล็อตพิเศษ')} style={{ width: '100%' }} />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
@@ -161,9 +169,9 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
               ? `จะจองเวลาเครื่อง ${Math.floor(estMin / 60)}:${String(estMin % 60).padStart(2, '0')} ชม. ต่อท้ายคิว`
               : '⚠️ ยังไม่ได้ระบุเวลา — วางลงไทม์ไลน์ไม่ได้'}
           </span>
-          <button onClick={onClose}>ยกเลิก</button>
+          <button onClick={onClose}>{tr('ยกเลิก')}</button>
           <button onClick={submit} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800 }}>
-            + เข้าแผน
+            {tr('+ เข้าแผน')}
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
+import { tr } from '../utils/i18n';
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
 
@@ -62,22 +63,45 @@ export default function OrgScopePicker({
   failed = '',
   index, value, onChange, scopeSet = null, sections = [], kinds = null, costCenter = true,
   plantLabel = SCOPE_KIND_META.plant.label, native = true, pickable = null, width = 260, style, inputStyle, disabled, title, id,
+  ccOnly = false,   // 💰 Obeya/KPI "สรุปตาม cost center" — ลิสต์หลัก = รหัส CC หนึ่งแถวต่อรหัส (1 รหัสครอบหลายไลน์ · 30/10 คำสั่ง user)
 }) {
-  const ccAllowed = costCenter && (!kinds || kinds.includes('cost_center'));
+  const ccAllowed = !ccOnly && costCenter && (!kinds || kinds.includes('cost_center'));   // ccOnly: รหัสอยู่ช่องหลักแล้ว
   const all = useMemo(() => {
     if (!index) return [];
     let list = filterScopeOptions(index, { scopeSet, sections });
+    list = list.filter(o => !o.merged);   // 🪞 กลุ่มไลน์ชื่อเดียวกับแผนก (กลุ่มเดียว) = แถวซ้ำ ซ่อน (orgScope.js · 30/10) — option ยังอยู่ใน index
     if (kinds && kinds.length) list = list.filter(o => o.kind === 'plant' || kinds.includes(o.kind));
     if (plantLabel == null) list = list.filter(o => o.kind !== 'plant');
     return list;
-  }, [index, scopeSet, sections, kinds, plantLabel]);
+  }, [index, scopeSet, sections, kinds, plantLabel, ccOnly]);
 
   // 🔴 แยก 2 ลิสต์ตั้งแต่ต้น — ผังองค์กรห้ามมีรหัส cc ปน
-  const opts = useMemo(() => all.filter(o => o.kind !== 'cost_center'), [all]);
   const ccOpts = useMemo(() => all.filter(o => o.kind === 'cost_center'), [all]);
+  /* 💰 ccOnly (30/10 · user: "ใน 1 cost center อาจมีหลายไลน์ แต่มุม Obeya/KPI ต้องสรุปตาม cost center")
+     ⇒ ช่องหลัก = รหัส CC หนึ่งแถวต่อรหัส (option kind `cost_center` ของ index · ไลน์ = ทุกไลน์ที่ถือรหัสนั้น `ccLines`)
+       จัดกลุ่มตามหน่วยบนสุดในผัง (`cc_group`) · ไม่มีช่องรหัสแยก/ชิปรหัสอีก (ซ้ำกับช่องหลัก)
+     · ค่าที่ถืออยู่เป็น "หน่วย" (URL/นิยามเก่า/ส่วนงานของ user) ที่มีรหัสเดียว ⇒ แสดงเป็นแถวรหัสนั้น · หลายรหัส/ไม่มีรหัส = ghost ⚠ ไม่หายเงียบ */
+  const opts = useMemo(() => {
+    if (!ccOnly) return all.filter(o => o.kind !== 'cost_center');
+    const plant = all.filter(o => o.kind === 'plant');
+    const groups = new Map();
+    ccOpts.forEach((o) => {
+      const g = o.cc_group || 'รหัสที่ผังยังไม่ผูกหน่วย';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g).push(o);
+    });
+    const out = [...plant];
+    groups.forEach((items, g) => { out.push({ key: `ccgroup:${g}`, kind: 'ccgroup', label: g, depth: 0 }); items.forEach(o => out.push(o)); });
+    return out;
+  }, [all, ccOpts, ccOnly]);
 
   const isCc = value?.kind === 'cost_center';
-  const curKey = isPlant(value) ? 'plant' : scopeKey(value.kind, value.value);
+  const unitCcKey = useMemo(() => {   // ccOnly: หน่วย → รหัสเดียวของมัน (ถ้ามีและอยู่ในลิสต์)
+    if (!ccOnly || !index?.ccOf || !value || isPlant(value) || isCc) return null;
+    const { code, multi } = index.ccOf(value.kind, value.value);
+    return !multi && code && ccOpts.some(o => o.value === code) ? scopeKey('cost_center', code) : null;
+  }, [ccOnly, index, value, isCc, ccOpts]);
+  const curKey = isPlant(value) ? 'plant' : (unitCcKey || scopeKey(value.kind, value.value));
   /* 🔗 เลือก cc อยู่ ⇒ ช่องผังแสดง "หน่วยเจ้าของรหัส" (แคบสุดที่อยู่ในตัวเลือก) — เดิมถอยไป "ทั้งโรงงาน" แล้วคนอ่านว่า
      "กำลังดูทั้งโรงงาน" ทั้งที่กรองด้วยรหัสของ BIG PRESS อยู่ (user 12/10) · รหัสที่ผังไม่ผูกใคร = 'plant' ตามจริง */
   const ccOwner = useMemo(() => {
@@ -86,11 +110,11 @@ export default function OrgScopePicker({
     return owners.find(w => all.some(o => o.key === scopeKey(w.kind, w.value))) || null;
   }, [isCc, index, value, all]);
   const ownerKey = ccOwner ? scopeKey(ccOwner.kind, ccOwner.value) : null;
-  const orgKey = isCc ? (ownerKey || 'plant') : curKey;
+  const orgKey = isCc && !ccOnly ? (ownerKey || 'plant') : curKey;
   // ค่าที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (นอกขอบเขต/ผังเปลี่ยน) ต้องไม่หายเงียบ — โชว์เป็นแถว ⚠
-  const known = all.some(o => o.key === curKey);
+  const known = (ccOnly ? opts : all).some(o => o.key === curKey);
   const ghost = !known && curKey !== 'plant'
-    ? { key: curKey, kind: value.kind, value: value.value, depth: 0, label: `${index?.labelOf?.(value.kind, value.value) || value.value} ⚠ ไม่อยู่ในตัวเลือกของคุณ` }
+    ? { key: curKey, kind: value.kind, value: value.value, depth: 0, label: `${index?.labelOf?.(value.kind, value.value) || value.value} ⚠ ${ccOnly && !isCc ? 'หน่วยนี้ไม่มีรหัส cost center เดียว — เลือกรหัสจากลิสต์' : 'ไม่อยู่ในตัวเลือกของคุณ'}` }
     : null;
 
   const emit = (key) => onChange?.(parseScopeKey(key));
@@ -137,12 +161,12 @@ export default function OrgScopePicker({
       style={{ width: 210, fontSize: 13, ...inputStyle, ...(isCc ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : null) }}>
       <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
-      {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {ccGroups.map(g => (
-        <optgroup key={g.label} label={g.label}>
+        <optgroup key={g.label} label={tr(g.label)}>
           {g.items.map(o => (
             <option key={o.key} value={o.key}>
-              {`💰 ${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
+              {`${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
             </option>
           ))}
         </optgroup>
@@ -152,13 +176,13 @@ export default function OrgScopePicker({
 
   const ownerChip = isCc && ccOwner ? (
     <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
-      style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
-      ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
+      style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+      {tr('↑ ทั้ง')} {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
   /* ⚠️ ผังโหลดไม่สำเร็จ — ต้องเห็นข้างช่องทั้ง 2 โหมด (native select ไม่มีที่เขียนในลิสต์) */
   const failNote = failed
-    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} — ตัวเลือกไม่ครบ</span>
+    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} {tr('— ตัวเลือกไม่ครบ')}</span>
     : null;
   const wrap = (node) => (ccSelect || ccHint || ownerChip || failNote
     ? (
@@ -168,13 +192,13 @@ export default function OrgScopePicker({
         {ccHint && (ccHint.code
           ? (
             <button type="button" onClick={() => emit(scopeKey('cost_center', ccHint.code))} title={ccHint.title}
-              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
               {ccHint.text}
             </button>
           )
           : (
             <span title={ccHint.title}
-              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
+              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-pill)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
               {ccHint.text}
             </span>
           ))}
@@ -184,7 +208,7 @@ export default function OrgScopePicker({
     )
     : node);
 
-  if (!native) {
+  if (!native && !ccOnly) {
     /* โหมดค้นหา: ช่องเดียวแต่แยก "กลุ่ม" ชัด + พิมพ์รหัส cc แล้วเจอหน่วยงานเจ้าของรหัส */
     const orgRows = [...(ghost ? [ghost] : []), ...opts].map(o => ({
       id: o.key,
@@ -211,8 +235,8 @@ export default function OrgScopePicker({
     return (
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : ''} options={sOpts}
         onChange={({ id: k }) => { if (k) emit(k); else if (plantLabel != null) emit('plant'); }}
-        placeholder={ccAllowed ? 'ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…' : 'ค้นส่วนงาน / แผนก / ไลน์…'}
-        emptyText="ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup"
+        placeholder={ccAllowed ? tr('ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…') : tr('ค้นส่วนงาน / แผนก / ไลน์…')}
+        emptyText={tr('ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup')}
         loadFail={failed ? `⚠️ ${failed} — ตัวเลือกขอบเขตไม่ครบ (ไม่ได้แปลว่าผังมีแค่นี้)` : ''}
         maxRows={999} disabled={disabled} inputId={id} style={{ width, ...style }} inputStyle={inputStyle} />
     );
@@ -224,6 +248,8 @@ export default function OrgScopePicker({
   const flush = () => { if (cur && cur.items.length) groups.push(cur); cur = null; };
   opts.forEach((o) => {
     if (o.kind === 'plant') { flush(); groups.push({ label: null, items: [o] }); return; }
+    if (o.kind === 'ccgroup') { flush(); cur = { label: `💰 ${o.label}`, items: [] }; return; }
+    if (o.kind === 'cost_center') { if (!cur) cur = { label: null, items: [] }; cur.items.push(o); return; }   // แถวรหัสอยู่ใต้หัวกลุ่มของมัน (parentKey เป็น plant แต่ห้ามแตกกลุ่ม)
     if (o.kind === 'division') { flush(); cur = { label: `${o.icon || '🏢'} ${o.label}`, items: [], div: o }; return; }
     if (o.parentKey === 'plant') { flush(); cur = { label: null, items: [o] }; return; }
     if (!cur) cur = { label: null, items: [] };
@@ -231,10 +257,16 @@ export default function OrgScopePicker({
   });
   flush();
   // ฝ่ายเองก็เลือกได้ — เป็น option แรกในกลุ่มของมัน (optgroup label กดไม่ได้)
-  const canPick = (o) => o.kind === 'plant' || !pickable || pickable.includes(o.kind);
+  const canPick = (o) => o.kind === 'plant' || o.kind === 'cost_center' || !pickable || pickable.includes(o.kind);
+  /* แถวรหัส (ccOnly): 💰 รหัส · ชื่อในทะเบียน CC (ไม่มี = หน่วยเจ้าของ) · (N ไลน์) เมื่อรหัสครอบหลายไลน์ — บอกตรงๆ ว่า 1 รหัสรวมหลายไลน์ */
+  const ccLabel = (o) => {
+    const nm = o.cc_name || (o.owners?.[0] ? index.labelOf(o.owners[0].kind, o.owners[0].value) : '');
+    const n = index?.lineNamesOf ? index.lineNamesOf('cost_center', o.value).length : 0;
+    return `💰 ${o.value}${nm ? ` · ${nm}` : ''}${n > 1 ? ` (${n} ไลน์)` : ''}`;
+  };
   const render = (o) => (
     <option key={o.key} value={o.key} disabled={!canPick(o)}>
-      {o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : optionLabel(o)}
+      {o.kind === 'plant' ? `${SCOPE_KIND_META.plant.icon} ${plantLabel}` : o.kind === 'cost_center' ? ccLabel(o) : optionLabel(o)}
     </option>
   );
   return wrap(
@@ -243,10 +275,10 @@ export default function OrgScopePicker({
       /* เลือกหน่วยเจ้าของซ้ำตอนกรองด้วย cc = เลิกกรองด้วยรหัส (select ไม่ยิง change ถ้าค่าเท่าเดิม ⇒ จับที่ click ของ option ไม่ได้ · ใช้ชิป ↑ แทน) */
       onChange={e => emit(e.target.value)}
       style={{ width, fontSize: 13, ...style, ...inputStyle }}>
-      {ghost && !isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && !isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {groups.map((g, i) => (g.label
         ? (
-          <optgroup key={i} label={g.label}>
+          <optgroup key={i} label={tr(g.label)}>
             {g.div && (!kinds || kinds.includes('division')) && (
               <option value={g.div.key} disabled={!canPick(g.div)}>{`${g.div.icon || '🏢'} ${g.div.label} (ทั้งฝ่าย)`}</option>
             )}

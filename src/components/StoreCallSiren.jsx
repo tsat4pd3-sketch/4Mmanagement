@@ -21,6 +21,8 @@
    6. ยังไม่ apply migration (42703) = เลิกกรอง `store_ack_at` แล้วดังตามใบ `pending` ต่อไป
       **ห้ามให้ไซเรนล้มเพราะคอลัมน์ยังไม่มี**                                                      */
 
+import { useNavigate } from 'react-router-dom';
+import { storeOfMat } from '../utils/storeOps';
 import { useState, useEffect, useMemo, useCallback, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
@@ -33,8 +35,10 @@ import { liveChannel } from '../utils/liveChannel';
 import { checkWriteRows } from '../utils/dbWrite';
 import { getActor } from '../utils/actorStamp';
 import { reqSourceMeta } from '../utils/replenishGate';
+import useIsMobile from '../utils/useIsMobile';
 import useSiren, { SIREN_PATTERN_CALL } from '../utils/useSiren';
 
+import { tr } from '../utils/i18n';
 /* egress: จอแขวนเปิดค้างทั้งวัน ⇒ เลือกเฉพาะคอลัมน์ที่ใช้ (กฎเหล็ก DB ข้อ 11) */
 const COLS = 'id, line_name, mat_no, part_name, request_qty, requested_at, requested_by, source, store_ack_at';
 const COLS_NO_ACK = 'id, line_name, mat_no, part_name, requested_at, requested_by, request_qty, source';
@@ -56,12 +60,26 @@ const agoMin = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso
  * @param {number} [p.slot=0]  ช่องวางแถบ/ชิป (0 = บนสุด) — ต้องต่างกันเมื่อ mount คู่กับไซเรนอื่น
  */
 export default function StoreCallSiren({ slot = 0 }) {
+  /* 📱 มือถือโชว์ทีละใบ (05/11) — แถบขึ้นบรรทัดใหม่แล้วสูง ~270px/ใบ
+     3 ใบ = 894px บนจอ 844px ⇒ ปุ่ม "รับทราบ" ของใบล่างสุดตกนอกจอ กดไม่ได้เลย
+     (แถบเป็น `position: fixed` เลื่อนหน้าตามไม่ได้) · ที่เหลือไปอยู่บรรทัด "+ อีก N ใบ" ข้างล่าง
+     🔴 จอคอม/จอ TV ยังได้ 3 ใบเท่าเดิม (ด่าน desktopdiff) */
+  const isMobile = useIsMobile();
+  const maxBars = isMobile ? 1 : MAX_BARS;
   const { role } = useContext(UserContext);
   /* 🔑 กด "รับทราบ" = เขียน `wip_replenish_requests` ซึ่ง RLS รัดด้วย has_perm ⇒ ต้องเช็คฝั่งจอด้วย
      คีย์ = `heijunka:operate` (คีย์เดียวกับการทำงานบนคิวสโตร์) · ไม่มีสิทธิ์ก็ยังต้อง**ปิดเสียงได้**
      แต่ปิดแบบ "เฉพาะจอนี้" ไม่เขียนฐาน — จอแขวนที่ล็อกอินเป็น display ห้ามดังค้างตลอดกาล
      (รีโหลดหน้าแล้วดังใหม่ = ถูกต้อง เพราะงานยังค้างจริง) */
   const canAck = can('heijunka', 'operate', role);
+  /* 🔍 04/11 (user: "มีปุ่มกดจากแจ้งเตือนเข้าไปหาหน้าที่ต้องเตรียมงานเลยได้มั้ย")
+     พาไปจอทำรายการ (/line-stock › 🏬 งานสโตร์ › ตู้ตามเลขพาร์ท) + กรองให้เหลือพาร์ทใบนี้ · state = ส่งต่อแม้อยู่หน้าเดิมแล้ว */
+  const navigate = useNavigate();
+  const goPrep = (a) => {
+    if (canAck) ack(a);
+    const st = storeOfMat(a.mat_no);   // ตู้ตามเลขพาร์ท (04/11 เลิกแท็บคิวเติม WIP)
+    navigate(`/line-stock?tab=out&store=${st}`, { state: { storeFocus: { store: st, q: a.mat_no || '', at: Date.now() } } });
+  };
   const [hushed, setHushed] = useState(() => new Set());   // id ที่ปิดเสียงเฉพาะจอนี้
   const [rows, setRows] = useState([]);
   const [loadErr, setLoadErr] = useState(false);
@@ -125,7 +143,7 @@ export default function StoreCallSiren({ slot = 0 }) {
     /* อ่านใบไม่ได้ ต้องขึ้นให้เห็น — "เงียบ" กับ "ไม่มีใบ" หน้าตาเหมือนกันจากข้างนอก */
     if (loadErr) return (
       <div style={fixed({ bottom: chipBottom, right: 12, display: 'flex', alignItems: 'center', gap: 7,
-        background: 'rgba(28,10,10,0.95)', border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10,
+        background: 'rgba(28,10,10,0.95)', border: '1px solid rgba(239,68,68,0.6)', borderRadius: 'var(--r-md)',
         padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' })}>
         ⚠️ อ่านใบขอเบิกจากไลน์ไม่ได้ — ยังบอกไม่ได้ว่ามีไลน์เรียกของหรือไม่
       </div>
@@ -133,11 +151,11 @@ export default function StoreCallSiren({ slot = 0 }) {
     if (!muted) return null;
     /* ชิปสถานะความพร้อม — ห้ามกระพริบ/ห้ามแดง (UI-CONVENTIONS §2) */
     return (
-      <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
+      <div onClick={unlockNow} title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่')}
         style={fixed({ bottom: chipBottom, right: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7,
-          background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10,
+          background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)',
           padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' })}>
-        🔇 เสียงเตือน "ไลน์เรียกของ" ยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+        เสียงเตือน "ไลน์เรียกของ" ยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
     );
   }
@@ -145,46 +163,53 @@ export default function StoreCallSiren({ slot = 0 }) {
   return (
     <div style={fixed({ top: 12 + slot * 86, left: '50%', transform: 'translateX(-50%)',
       width: 'min(96vw, 620px)', display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' })}>
-      {alerts.slice(0, MAX_BARS).map(a => {
+      {alerts.slice(0, maxBars).map(a => {
         const wait = agoMin(a.requested_at);
         return (
-          <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12,
-            background: 'rgba(8,20,14,0.96)', border: '2px solid #22c55e', borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
+          /* 📱 `andon-bar` = ให้แถบขึ้นบรรทัดใหม่ได้บนมือถือ (index.css · media query เท่านั้น)
+             ไม่มีคลาสนี้ = ข้อความถูกปุ่มบีบจนเหลือกว้าง 0 บนจอ 390px (มีด่าน) */
+          <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12,
+            background: 'rgba(8,20,14,0.96)', border: '2px solid #22c55e', borderRadius: 'var(--r-lg)', padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
             <span style={{ fontSize: 22 }}>📦</span>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>
-                📦 ไลน์เรียกของ — {a.line_name || 'ไม่ระบุไลน์'}
+                ไลน์เรียกของ — {a.line_name || 'ไม่ระบุไลน์'}
               </div>
               {/* ชื่อชิ้นงานต้องผ่าน <MatLabel> — Part No. → Part Name → MAT SAP (ด่าน matOrderSweep) */}
               <MatLabel mat={a.mat_no} name={a.part_name} size={12.5} />
               <div style={{ fontSize: 12, color: '#c6efd8' }}>
                 ขอ {Number(a.request_qty || 0).toLocaleString()} ชิ้น
-                {' · '}แจ้ง {hhmm(a.requested_at)}{wait != null ? ` (รอมาแล้ว ${wait.toLocaleString()} นาที)` : ''}
+                {' · '}{tr('แจ้ง')} {hhmm(a.requested_at)}{wait != null ? ` (รอมาแล้ว ${wait.toLocaleString()} นาที)` : ''}
                 {a.requested_by ? ` · โดย ${a.requested_by}` : ''}
                 {' · '}{reqSourceMeta(a.source).short}
               </div>
             </div>
             {muted && (
-              <span onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ"
+              <span onClick={unlockNow} title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ')}
                 style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
-                🔇 แตะเพื่อเปิดเสียง
+                แตะเพื่อเปิดเสียง
               </span>
             )}
+            <button onClick={() => goPrep(a)} title={tr('ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)')}
+              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
+                padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+              {tr('ไปเตรียมงาน')}
+            </button>
             <button onClick={() => ack(a)}
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'
                             : 'บัญชีนี้ไม่มีสิทธิ์บันทึกรับทราบ (heijunka:operate) — ปิดได้เฉพาะเสียงบนจอนี้ รีโหลดแล้วดังใหม่'}
               style={{ flexShrink: 0, background: canAck ? '#22c55e' : 'var(--bg3)', color: canAck ? '#04140a' : 'var(--text2)',
-                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 8,
+                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-              {canAck ? 'รับทราบ · หยุดเสียง' : '🔇 ปิดเสียงเฉพาะจอนี้'}
+              {canAck ? tr('รับทราบ · หยุดเสียง') : tr('🔇 ปิดเสียงเฉพาะจอนี้')}
             </button>
           </div>
         );
       })}
-      {alerts.length > MAX_BARS && (
+      {alerts.length > maxBars && (
         <div style={{ pointerEvents: 'auto', background: 'rgba(8,20,14,0.96)', border: '1px solid rgba(34,197,94,0.5)',
-          borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
-          + อีก {alerts.length - MAX_BARS} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ดูทั้งหมดที่ บอร์ดคัมบัง → 🔄 คิวเติม WIP
+          borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
+          + อีก {alerts.length - maxBars} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ทำรายการที่ Line Stock → 📤 ขาออก (ตู้ตามเลขพาร์ท)
         </div>
       )}
     </div>

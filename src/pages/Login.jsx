@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import tsLogo from '../assets/TS logo.png';
+import { tr } from '../utils/i18n';
+import tsLogo from '../assets/TS logo transparent.png';   // พื้นโปร่งใส — ใบพิมพ์ยังใช้ TS logo.png (พื้นขาว) เหมือนเดิม
 
 const ThaiSummitLogo = ({ size = 48 }) => (
   <img
@@ -94,7 +95,7 @@ export default function Login() {
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 18, letterSpacing: '1px', color: 'var(--text)',
           }}>
-            4M · VX Production System
+            Enterprise Shopfloor Management
           </div>
           <div style={{
             fontSize: 11, color: 'var(--muted)', marginTop: 4,
@@ -133,8 +134,8 @@ export default function Login() {
           {error && (
             <div style={{
               fontSize: 13, color: 'var(--red)',
-              background: 'rgba(224,92,74,0.1)',
-              border: '1px solid rgba(224,92,74,0.25)',
+              background: 'var(--red-dim)',
+              border: '1px solid var(--red-line)',
               borderRadius: 'var(--radius)', padding: '10px 14px',
             }}>
               {error}
@@ -144,24 +145,24 @@ export default function Login() {
           <button type="submit" disabled={loading} style={{
             marginTop: 6, padding: '13px',
             background: loading ? 'var(--muted)' : 'var(--accent)',
-            color: loading ? 'var(--text2)' : '#0a1f0c',
+            color: loading ? 'var(--text2)' : 'var(--accent-ink)',
             border: 'none', borderRadius: 'var(--radius)',
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase',
             cursor: loading ? 'not-allowed' : 'pointer',
           }}>
-            {loading ? 'กำลังเข้าสู่ระบบ...' : 'SIGN IN'}
+            {loading ? tr('กำลังเข้าสู่ระบบ...') : 'SIGN IN'}
           </button>
         </form>
 
         {/* Brand footer */}
-        <div style={{
+        <div className="login-brand-foot" style={{
           marginTop: 28, textAlign: 'center',
           fontSize: 11, color: 'var(--muted2)',
           fontFamily: 'var(--font-display)',
-          letterSpacing: '1.5px', textTransform: 'uppercase',
+          letterSpacing: 0, textTransform: 'uppercase', whiteSpace: 'nowrap',   // บรรทัดเดียวในการ์ด 400px (06/11 · ฟอนต์ขั้นต่ำ 11 ⇒ ลดระยะตัวอักษรแทน · วัดจริง ≤ 326px)
         }}>
-          Thai Summit Group — VX Production Intelligence
+          Thai Summit Group — Enterprise Shopfloor Management
         </div>
       </div>
     </div>

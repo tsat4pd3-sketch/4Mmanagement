@@ -7,6 +7,7 @@ import { DEMAND_SKIP_STATUS } from '../utils/monitorSystem';
 import { ROW_PRESETS, BOARD_DEFAULTS, boardKeyOfSheet, partRowKey, dedupeByKey } from '../utils/monitorBoards';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
+import { tr } from '../utils/i18n';
 /* ══ 📦 MonitorFgSync — สร้าง/อัพเดทบอร์ด "FG ทุกตัว" จากออเดอร์ลูกค้า (2026-10-06) ═══════
    คำขอ user: *"อยากไห้มอนิเตอร์ได้ทุก product FG ก็ได้ด้วยที่อัพจาก 862 830"*
 
@@ -171,24 +172,24 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
       <div className="modal" style={{ maxWidth: 760, width: 'min(96vw, 760px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-display)' }}>
-            📦 สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)
+            {tr('สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)')}
           </h3>
-          <button type="button" onClick={onClose} aria-label="ปิด"
+          <button type="button" onClick={onClose} aria-label={tr('ปิด')}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
 
         {err ? <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: FS + 1 }}>🔴 {err}</div> : null}
 
         {busy && !preview ? (
-          <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังอ่านออเดอร์ลูกค้า…</div>
+          <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังอ่านออเดอร์ลูกค้า…')}</div>
         ) : null}
 
         {preview ? (
           <>
             <div style={{ ...card, fontSize: FS + 0.5, lineHeight: 1.8, marginBottom: 10 }}>
-              อ่านออเดอร์ที่มีวันส่งตั้งแต่ <b>{preview.from}</b> ถึงปัจจุบันขึ้นไป ({BACK_DAYS} วันย้อนหลัง)
-              — เจอ FG <b>{fmt(totMats)}</b> พาร์ท / <b>{preview.groups.length}</b> ลูกค้า
-              {' · '}จะเพิ่มขึ้นบอร์ดใหม่ <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> พาร์ท
+              อ่านออเดอร์ที่มีวันส่งตั้งแต่ <b>{preview.from}</b> {tr('ถึงปัจจุบันขึ้นไป (')}{BACK_DAYS} วันย้อนหลัง)
+              — เจอ FG <b>{fmt(totMats)}</b> {tr('พาร์ท /')} <b>{preview.groups.length}</b> ลูกค้า
+              {' · '}{tr('จะเพิ่มขึ้นบอร์ดใหม่')} <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> พาร์ท
               <div style={{ color: 'var(--muted)', fontSize: FS }}>
                 เพิ่มอย่างเดียว ไม่ลบของเดิม · ยอดลูกค้าสั่ง/ผลิตเข้า ระบบอ่านสดทุกครั้ง ไม่ได้ก๊อปมาเก็บ
               </div>
@@ -207,7 +208,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
                 <div key={g.customer} style={{ ...card, padding: '9px 12px', fontSize: FS + 0.5 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                     <b>{g.customer}</b>
-                    <span style={{ color: 'var(--muted)' }}>{fmt(g.mats.length)} พาร์ท · ออเดอร์ {fmt(g.orderRows)} แถว</span>
+                    <span style={{ color: 'var(--muted)' }}>{fmt(g.mats.length)} {tr('พาร์ท · ออเดอร์')} {fmt(g.orderRows)} {tr('แถว')}</span>
                     <span style={{ marginLeft: 'auto', fontWeight: 800, color: g.fresh.length ? 'var(--accent)' : 'var(--muted)' }}>
                       {g.board ? (g.fresh.length ? `+${fmt(g.fresh.length)} พาร์ทใหม่` : 'ครบแล้ว') : '🆕 บอร์ดใหม่'}
                     </span>
@@ -229,15 +230,15 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
               <button type="button" onClick={onClose} disabled={busy}
-                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
-                ยกเลิก
+                style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+                {tr('ยกเลิก')}
               </button>
               <button type="button" onClick={apply} disabled={busy || !preview.groups.length}
-                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
+                style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
                   background: busy || !preview.groups.length ? 'var(--bg3)' : 'var(--accent)',
                   color: busy || !preview.groups.length ? 'var(--muted)' : 'var(--accent-ink)',
                   cursor: busy || !preview.groups.length ? 'default' : 'pointer' }}>
-                {busy ? 'กำลังซิงก์…' : '📦 สร้าง/อัพเดทบอร์ด'}
+                {busy ? tr('กำลังซิงก์…') : tr('📦 สร้าง/อัพเดทบอร์ด')}
               </button>
             </div>
           </>

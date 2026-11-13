@@ -14,6 +14,7 @@ import {
 } from '../utils/capacityPatterns';
 import { jphTable, jphSummary } from '../utils/jph';
 
+import { tr } from '../utils/i18n';
 /* ─── 📊 Capacity — แท็บใน /production-plan (2026-09-24) ────────────────────────
    user ส่งสไลด์ `Capacity_TSATP.4_update_June_26.pptx` มาพร้อมภาพหน้านี้ แล้วบอกว่า
    *"capacity โรงงานเราดูกันแบบนี้ แต่ในโปรแกรมเราเป็นแบบนี้ คนจะดูไม่เข้าใจ"*
@@ -187,7 +188,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
   };
 
   if (!linesWithDemand.length) {
-    return <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>ยังไม่มี forecast ของไลน์ใน scope — แท็บนี้คิดเพดานจากความต้องการรายเดือน</div>;
+    return <div style={{ ...card, color:'var(--muted)', fontSize:13 }}>{tr('ยังไม่มี forecast ของไลน์ใน scope — แท็บนี้คิดเพดานจากความต้องการรายเดือน')}</div>;
   }
 
   return (
@@ -196,28 +197,28 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       <FilterBar>
         <LineSelect lines={linesWithDemand} value={activeLine?.name || ''} onChange={setLineName} {...scope} placeholder={null} />
         <select value={oeeMode} onChange={e => setOeeMode(e.target.value)}>
-          <option value="actual">OEE จริง (median 60 วัน)</option>
-          <option value="target">OEE เป้า (A×P×Q)</option>
+          <option value="actual">{tr('OEE จริง (median 60 วัน)')}</option>
+          <option value="target">{tr('OEE เป้า (A×P×Q)')}</option>
         </select>
         <span className="spacer" />
         <button style={btn('var(--bg3)', 'var(--text)')} onClick={() => setShowReg(v => !v)}>
-          {showReg ? '▲ ปิดทะเบียนรูปแบบกะ' : '⚙️ ทะเบียนรูปแบบกะ'}
+          {showReg ? tr('▲ ปิดทะเบียนรูปแบบกะ') : tr('⚙️ ทะเบียนรูปแบบกะ')}
         </button>
       </FilterBar>
 
       {/* ── OEE 2 เส้น เทียบกันเสมอ ─────────────────────────────────────── */}
       <div style={{ ...card, display:'flex', flexWrap:'wrap', gap:18, alignItems:'center' }}>
         <div>
-          <div style={{ fontSize:11, color:'var(--muted)' }}>OEE จริง (median 60 วัน)</div>
+          <div style={{ fontSize:11, color:'var(--muted)' }}>{tr('OEE จริง (median 60 วัน)')}</div>
           <div style={{ fontSize:20, fontWeight:800, color: oee.hasActual ? '#22c55e' : 'var(--muted)' }}>
             {oee.hasActual ? `${(oee.actual * 100).toFixed(1)}%` : 'ยังไม่มีประวัติ'}
           </div>
         </div>
         <div style={{ fontSize:18, color:'var(--muted)' }}>vs</div>
         <div>
-          <div style={{ fontSize:11, color:'var(--muted)' }}>OEE เป้า (A×P×Q)</div>
+          <div style={{ fontSize:11, color:'var(--muted)' }}>{tr('OEE เป้า (A×P×Q)')}</div>
           <div style={{ fontSize:20, fontWeight:800, color:'#f59e0b' }}>{(oee.target * 100).toFixed(1)}%</div>
-          {tgErr && <div style={{ fontSize:11, color:'#ef4444', fontWeight:700 }}>⚠️ โหลดเป้าไม่ได้ — นี่คือค่ามาตรฐาน ไม่ใช่เป้าที่ทีมตั้ง</div>}
+          {tgErr && <div style={{ fontSize:11, color:'#ef4444', fontWeight:700 }}>{tr('⚠️ โหลดเป้าไม่ได้ — นี่คือค่ามาตรฐาน ไม่ใช่เป้าที่ทีมตั้ง')}</div>}
         </div>
         {oee.hasActual && (
           <div style={{ fontSize:12, color: oee.actual >= oee.target ? '#22c55e' : '#ef4444', fontWeight:700 }}>
@@ -225,9 +226,9 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           </div>
         )}
         <div style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', maxWidth:340, lineHeight:1.6 }}>
-          ตัวเลขในตาราง/กราฟด้านล่างคิดจาก <b>{oeeMode === 'target' ? 'OEE เป้า' : 'OEE จริง'}</b> — สลับได้ที่แถบบน
+          ตัวเลขในตาราง/กราฟด้านล่างคิดจาก <b>{oeeMode === 'target' ? tr('OEE เป้า') : tr('OEE จริง')}</b> — สลับได้ที่แถบบน
           {!oee.hasActual && oeeMode === 'actual' && (
-            <div style={{ color:'#f59e0b' }}>⚠️ ไลน์นี้ยังไม่มีประวัติ OEE — ช่องที่ต้องใช้ OEE จะว่าง สลับไปโหมดเป้าเพื่อดูภาพได้</div>
+            <div style={{ color:'#f59e0b' }}>{tr('⚠️ ไลน์นี้ยังไม่มีประวัติ OEE — ช่องที่ต้องใช้ OEE จะว่าง สลับไปโหมดเป้าเพื่อดูภาพได้')}</div>
           )}
         </div>
       </div>
@@ -235,14 +236,14 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       {/* ── ⚙️ ทะเบียนรูปแบบกะ (แก้ได้เอง ไม่ต้องแก้โค้ด) ───────────────── */}
       {showReg && (
         <div style={card}>
-          <div style={{ fontSize:14, fontWeight:800, marginBottom:4 }}>⚙️ ทะเบียนรูปแบบกะ — เพดานกำลังผลิต</div>
+          <div style={{ fontSize:14, fontWeight:800, marginBottom:4 }}>{tr('ทะเบียนรูปแบบกะ — เพดานกำลังผลิต')}</div>
           <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.65, marginBottom:10 }}>
-            ค่าเริ่มต้นถอดจากสไลด์ <b>Capacity_TSATP.4_update_June_26</b> — ทุกไลน์ในสไลด์ใช้ <b>2 shift = วันทำงาน × 15.5 ชม.</b> ⇒ 1 กะ = 7.75 ชม. (465 นาที)
+            ค่าเริ่มต้นถอดจากสไลด์ <b>Capacity_TSATP.4_update_June_26</b> {tr('— ทุกไลน์ในสไลด์ใช้')} <b>2 shift = วันทำงาน × 15.5 ชม.</b> ⇒ 1 กะ = 7.75 ชม. (465 นาที)
             <br />
-            ⚠️ ตัวเลขนี้ <b>ตั้งใจให้ต่าง</b> จาก 490 นาที/กะ ที่แท็บรายวันใช้ (08:00–17:30 หักพัก 80 นาที) —
+            ⚠️ ตัวเลขนี้ <b>{tr('ตั้งใจให้ต่าง')}</b> จาก 490 นาที/กะ ที่แท็บรายวันใช้ (08:00–17:30 หักพัก 80 นาที) —
             490 = เวลาเดินเครื่องได้ · 465 = เวลาที่ฝ่ายวางแผนใช้คิดเพดานรายเดือน
             <br />
-            🔴 เพดานต่างกันที่ <b>จำนวนวัน</b> ด้วย ไม่ใช่แค่ชั่วโมง/วัน (“+ ทำเสาร์” เอาเสาร์มานับเพิ่ม · “Max” = ทุกวันในเดือน)
+            🔴 เพดานต่างกันที่ <b>{tr('จำนวนวัน')}</b> ด้วย ไม่ใช่แค่ชั่วโมง/วัน (“+ ทำเสาร์” เอาเสาร์มานับเพิ่ม · “Max” = ทุกวันในเดือน)
           </div>
           {patErr && (
             <div style={{ fontSize:12, color:'#f59e0b', marginBottom:8 }}>
@@ -252,11 +253,11 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
               <thead><tr>
-                <th style={{ ...th, textAlign:'left' }}>รูปแบบกะ</th>
-                <th style={th}>ชั่วโมง/วัน</th>
-                <th style={{ ...th, textAlign:'left' }}>นับวันจาก</th>
-                <th style={th}>เพดานเดือนนี้ (ชม.)</th>
-                <th style={{ ...th, textAlign:'left' }}>หมายเหตุ</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('รูปแบบกะ')}</th>
+                <th style={th}>{tr('ชั่วโมง/วัน')}</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('นับวันจาก')}</th>
+                <th style={th}>{tr('เพดานเดือนนี้ (ชม.)')}</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('หมายเหตุ')}</th>
               </tr></thead>
               <tbody>
                 {patterns.map(p => {
@@ -265,9 +266,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   return (
                     <tr key={p.key}>
                       <td style={{ ...td, textAlign:'left', fontWeight:700 }}>
-                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:3, background:p.color || 'var(--muted)', marginRight:6 }} />
-                        {p.label}
-                      </td>
+                        <span style={{ display:'inline-block', width:10, height:10, borderRadius: 'var(--r-xs)', background:p.color || 'var(--muted)', marginRight:6 }} />{tr(p.label)}</td>
                       <td style={td}>
                         {canEdit && !patErr ? (
                           <input type="number" step="0.25" min="0.25" max="24" style={{ width: 92 }}
@@ -279,7 +278,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                         {canEdit && !patErr ? (
                           <select value={cur.day_source}
                             onChange={e => setDraft(x => ({ ...x, [p.key]: { ...cur, day_source: e.target.value } }))}>
-                            {Object.entries(DAY_SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            {Object.entries(DAY_SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
                           </select>
                         ) : DAY_SOURCE_LABEL[p.day_source]}
                       </td>
@@ -302,7 +301,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
 
       {/* ── กราฟ: แท่งภาระงาน + เส้นเพดานแต่ละรูปแบบกะ (หน่วยเดียวกันหมด = ชม.) ── */}
       <div style={card}>
-        <div style={{ fontSize:14, fontWeight:800 }}>📊 ภาระงาน vs เพดานกำลังผลิต — {activeLine?.name}</div>
+        <div style={{ fontSize:14, fontWeight:800 }}>{tr('ภาระงาน vs เพดานกำลังผลิต —')} {activeLine?.name}</div>
         <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
           หน่วย = ชั่วโมง · <b>ActWorkload</b> = เวลามาตรฐานที่ต้องใช้ (จำนวนชิ้น × CT) ·
           <b> RworkOEE</b> = เวลาจริงที่ต้องใช้เมื่อคิด OEE ({usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'}) ·
@@ -337,24 +336,24 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
 
       {/* ── ตาราง 12 เดือน — ศัพท์ตรงกับสไลด์ ────────────────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:14, fontWeight:800, marginBottom:8 }}>📅 12 เดือนข้างหน้า</div>
+        <div style={{ fontSize:14, fontWeight:800, marginBottom:8 }}>{tr('12 เดือนข้างหน้า')}</div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:860 }}>
             <thead><tr>
-              <th style={{ ...th, textAlign:'left' }}>เดือน</th>
-              <th style={th}>วันทำงาน</th>
-              <th style={th}>จำนวนชิ้น<div style={{ fontWeight:400, fontSize:11 }}>รวมทุกลูกค้า</div></th>
+              <th style={{ ...th, textAlign:'left' }}>{tr('เดือน')}</th>
+              <th style={th}>{tr('วันทำงาน')}</th>
+              <th style={th}>{tr('จำนวนชิ้น')}<div style={{ fontWeight:400, fontSize:11 }}>{tr('รวมทุกลูกค้า')}</div></th>
               {custCols.map(c => (
                 <th key={c.customer} style={{ ...th, color: c.customer === NO_CUST ? '#f59e0b' : 'var(--muted)' }}>
-                  {c.customer}<div style={{ fontWeight:400, fontSize:11 }}>ชิ้น</div>
+                  {c.customer}<div style={{ fontWeight:400, fontSize:11 }}>{tr('ชิ้น')}</div>
                 </th>
               ))}
-              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:11 }}>เพดาน (ชม.)</div></th>
-              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:11 }}>ภาระงาน (ชม.)</div></th>
-              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:11 }}>ต้องใช้จริง (ชม.)</div></th>
-              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:11 }}>เพดาน×OEE</div></th>
-              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:11 }}>เหลือ/ขาด</div></th>
-              <th style={{ ...th, textAlign:'left' }}>ต้องเปิดกะแบบไหน</th>
+              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:11 }}>{tr('เพดาน (ชม.)')}</div></th>
+              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:11 }}>{tr('ภาระงาน (ชม.)')}</div></th>
+              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:11 }}>{tr('ต้องใช้จริง (ชม.)')}</div></th>
+              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:11 }}>{tr('เพดาน×OEE')}</div></th>
+              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:11 }}>{tr('เหลือ/ขาด')}</div></th>
+              <th style={{ ...th, textAlign:'left' }}>{tr('ต้องเปิดกะแบบไหน')}</th>
             </tr></thead>
             <tbody>
               {rows.map(r => (
@@ -364,7 +363,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   <td style={{ ...td, fontWeight:700 }}>
                     {r.pcs.toLocaleString()}
                     {r.noCt > 0 && (
-                      <div style={{ fontSize:11, color:'#f59e0b' }} title="พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้">
+                      <div style={{ fontSize:11, color:'#f59e0b' }} title={tr('พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้')}>
                         ⚠️ {r.noCt.toLocaleString()} ชิ้นไม่มี CT
                       </div>
                     )}
@@ -383,8 +382,8 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   </td>
                   <td style={{ ...td, textAlign:'left' }}>
                     {!r.workloadHr ? <span style={{ color:'var(--muted)' }}>—</span>
-                      : !r.fitPattern ? <span style={{ color:'#ef4444', fontWeight:800 }}>🚨 เกินทุกรูปแบบ — ต้องเพิ่มไลน์/คน</span>
-                      : <span style={{ color:r.fitPattern.color, fontWeight:800 }}>{r.fitPattern.label}</span>}
+                      : !r.fitPattern ? <span style={{ color:'#ef4444', fontWeight:800 }}>{tr('เกินทุกรูปแบบ — ต้องเพิ่มไลน์/คน')}</span>
+                      : <span style={{ color:r.fitPattern.color, fontWeight:800 }}>{tr(r.fitPattern.label)}</span>}
                   </td>
                 </tr>
               ))}
@@ -392,7 +391,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           </table>
         </div>
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.7 }}>
-          🔴 <b>ActWorkload คิดจากเวลามาตรฐาน (ชิ้น × CT)</b> ไม่ใช่กำลังผลิตจริง — ถ้าใช้ของจริงแล้วหารด้วย OEE อีก จะคิด OEE ซ้ำสองรอบ
+          🔴 <b>{tr('ActWorkload คิดจากเวลามาตรฐาน (ชิ้น × CT)')}</b> ไม่ใช่กำลังผลิตจริง — ถ้าใช้ของจริงแล้วหารด้วย OEE อีก จะคิด OEE ซ้ำสองรอบ
           <br />
           🔴 งานคู่ RH/LH ถูกยุบเป็น shot เดียวแล้ว (ปั๊มทีเดียวได้ 2 ชิ้น — บวกทั้งสองข้าง = ภาระ 2 เท่า)
         </div>
@@ -400,16 +399,16 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
 
       {/* ── ⏱️ JPH มาตรฐาน vs ของจริง (คำขอ user 25/09) ────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:14, fontWeight:800 }}>⏱️ JPH — ชิ้น/ชั่วโมง: มาตรฐาน vs ของจริง</div>
+        <div style={{ fontSize:14, fontWeight:800 }}>{tr('⏱️ JPH — ชิ้น/ชั่วโมง: มาตรฐาน vs ของจริง')}</div>
         <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.7, marginBottom:10 }}>
-          <b>มาตรฐาน</b> = 3600 ÷ CT (เพดานทฤษฎี เครื่องเดินไม่หยุด) ·
-          <b> ควรได้ (×OEE)</b> = มาตรฐาน × OEE {usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'} ·
-          <b> ของจริง</b> = ยอดผลิตต่อกะ (median จากใบที่ปิดแล้ว) ÷ {netMin ? (netMin / 60).toFixed(2) : '—'} ชม.ทำงานสุทธิ
+          <b>{tr('มาตรฐาน')}</b> = 3600 ÷ CT (เพดานทฤษฎี เครื่องเดินไม่หยุด) ·
+          <b> {tr('ควรได้ (×OEE)')}</b> = มาตรฐาน × OEE {usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'} ·
+          <b> {tr('ของจริง')}</b> = ยอดผลิตต่อกะ (median จากใบที่ปิดแล้ว) ÷ {netMin ? (netMin / 60).toFixed(2) : '—'} ชม.ทำงานสุทธิ
           <br />
-          🔴 <b>“ของจริง” นับจากใบผลิตที่ปิดจริงเท่านั้น</b> — พาร์ทที่ใบปิดยังไม่ถึง 3 กะ ระบบมีแต่ค่าที่คำนวณจาก CT×OEE
-          ซึ่งเอามาเทียบกับ “ควรได้” ไม่ได้ (มันคือตัวเลขเดียวกัน) จึงขึ้นว่า <b>ไม่มีของจริง</b>
+          🔴 <b>{tr('“ของจริง” นับจากใบผลิตที่ปิดจริงเท่านั้น')}</b> — พาร์ทที่ใบปิดยังไม่ถึง 3 กะ ระบบมีแต่ค่าที่คำนวณจาก CT×OEE
+          ซึ่งเอามาเทียบกับ “ควรได้” ไม่ได้ (มันคือตัวเลขเดียวกัน) จึงขึ้นว่า <b>{tr('ไม่มีของจริง')}</b>
           <br />
-          🔴 <b>งานคู่ RH/LH ไม่คูณ 2</b> — CT คือเวลาต่อ 1 จังหวะ ชั่วโมงนั้นได้พาร์ทคู่อีกเท่าตัวพร้อมกัน (ติดป้าย 👯 ไว้)
+          🔴 <b>{tr('งานคู่ RH/LH ไม่คูณ 2')}</b> — CT คือเวลาต่อ 1 จังหวะ ชั่วโมงนั้นได้พาร์ทคู่อีกเท่าตัวพร้อมกัน (ติดป้าย 👯 ไว้)
         </div>
 
         {jph.sum && (
@@ -426,25 +425,25 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
               </div>
             ))}
             <div style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', maxWidth:330, lineHeight:1.6 }}>
-              เทียบได้ <b style={{ color:'var(--text)' }}>{jph.sum.comparable}</b> จาก {jph.sum.total} พาร์ท
-              {jph.sum.noCt > 0 && <> · ไม่มี CT {jph.sum.noCt}</>}
-              {jph.sum.noActual > 0 && <> · ไม่มีของจริง {jph.sum.noActual}</>}
-              {jph.sum.ctSuspect > 0 && <span style={{ color:'#ef4444' }}> · 🔴 CT น่าจะผิด {jph.sum.ctSuspect}</span>}
-              {jph.sum.mismatch > 0 && <span style={{ color:'#f59e0b' }}> · ⚠️ ไม่สอดคล้อง {jph.sum.mismatch}</span>}
+              เทียบได้ <b style={{ color:'var(--text)' }}>{jph.sum.comparable}</b> {tr('จาก')} {jph.sum.total} พาร์ท
+              {jph.sum.noCt > 0 && <> {tr('· ไม่มี CT')} {jph.sum.noCt}</>}
+              {jph.sum.noActual > 0 && <> {tr('· ไม่มีของจริง')} {jph.sum.noActual}</>}
+              {jph.sum.ctSuspect > 0 && <span style={{ color:'#ef4444' }}> {tr('· 🔴 CT น่าจะผิด')} {jph.sum.ctSuspect}</span>}
+              {jph.sum.mismatch > 0 && <span style={{ color:'#f59e0b' }}> {tr('· ⚠️ ไม่สอดคล้อง')} {jph.sum.mismatch}</span>}
             </div>
           </div>
         )}
 
         {!jph.rows.length ? (
-          <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทที่มีความต้องการในไลน์นี้</div>
+          <div style={{ fontSize:13, color:'var(--muted)' }}>{tr('ไม่มีพาร์ทที่มีความต้องการในไลน์นี้')}</div>
         ) : (
-          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius:8 }}>
+          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:940 }}>
               <thead><tr>
                 {[['MAT / ชื่องาน', 'left'], ['ลูกค้า', 'left'], ['ยอด 12 ด. (ชิ้น)', 'right'], ['CT (วิ)', 'right'],
                   ['JPH มาตรฐาน', 'right'], ['ควรได้ (×OEE)', 'right'], ['JPH ของจริง', 'right'],
                   ['ทำได้ %', 'right'], ['สถานะ', 'left']].map(([h, al]) => (
-                  <th key={h} style={{ ...th, textAlign: al, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{h}</th>
+                  <th key={h} style={{ ...th, textAlign: al, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{tr(h)}</th>
                 ))}
               </tr></thead>
               <tbody>
@@ -454,7 +453,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                     <tr key={r.mat_no}>
                       <td style={{ ...td, textAlign:'left' }}>
                         <span style={{ fontFamily:'monospace', fontWeight:700 }}>{r.mat_no}</span>
-                        {r.paired && <span title="งานคู่ RH/LH — 1 จังหวะได้ 2 ชิ้น"> 👯</span>}
+                        {r.paired && <span title={tr('งานคู่ RH/LH — 1 จังหวะได้ 2 ชิ้น')}> 👯</span>}
                         {r.name && <div style={{ fontSize:11, color:'var(--muted)', whiteSpace:'normal' }}>{r.name}</div>}
                       </td>
                       <td style={{ ...td, textAlign:'left', color: r.customer ? 'var(--text2)' : 'var(--muted)' }}>
@@ -467,10 +466,10 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                       <td style={{ ...td, fontWeight:800, color: r.actual == null ? 'var(--muted)' : '#22c55e' }}>{n1(r.actual)}</td>
                       <td style={{ ...td, fontWeight:700, color: r.ratio == null ? 'var(--muted)' : m.color }}>{pct(r.ratio)}</td>
                       <td style={{ ...td, textAlign:'left' }}>
-                        <span style={{ fontSize:11, fontWeight:700, color:m.color }}>{m.label}</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:m.color }}>{tr(m.label)}</span>
                         {r.note && <div style={{ fontSize:11, color:'var(--muted)', whiteSpace:'normal', maxWidth:300 }}>{r.note}</div>}
                         {r.flag !== 'no_actual' && r.n > 0 && (
-                          <div style={{ fontSize:11, color:'var(--muted)' }}>จาก {r.n} กะที่ปิดแล้ว</div>
+                          <div style={{ fontSize:11, color:'var(--muted)' }}>{tr('จาก')} {r.n} {tr('กะที่ปิดแล้ว')}</div>
                         )}
                       </td>
                     </tr>

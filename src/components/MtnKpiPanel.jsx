@@ -8,6 +8,8 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { urlParam } from '../utils/urlInit';
+import { tr as trI18n } from '../utils/i18n';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
    ย้ายมาจากแท็บ `?tab=kpi` ของ `/mtn-repair` เมื่อ 2026-09-22 (คำสั่ง user: *"ฟังก์ชันของช่าง
@@ -70,6 +72,23 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
       const b = minutesBetween(o.report_at, o.repair_done_at); if (b != null) bd.push(b);
     }
     const avg = a => (a.length ? Math.round(a.reduce((s, x) => s + x, 0) / a.length) : null);
+    /* 📐 ค่ากลาง + p90 (11/11 · คำสั่ง user) — **ค่าเฉลี่ยใช้ไม่ได้กับชุดนี้**
+       วัดจริง 932 ใบที่ผูก downtime ได้: ใบที่กดปุ่มย้อนหลัง (34%) ดัน MDT เฉลี่ยเป็น
+       2,584 นาที ทั้งที่ค่ากลางอยู่ที่ 63.5 ⇒ ค่าเฉลี่ยสะท้อน "ความช้าของการกดปุ่ม"
+       ไม่ใช่ "ความช้าของการซ่อม" · ค่ากลางไม่สะเทือน ⇒ ใช้เป็นตัวหลัก เฉลี่ยไว้ข้างๆ
+       🔴 ไม่ทิ้งค่าเฉลี่ย — ส่วนต่างระหว่าง 2 ตัวคือตัวบอกว่ามีใบกดย้อนหลังเยอะแค่ไหน */
+    const pct = (a, q) => {
+      if (!a.length) return null;
+      const v = [...a].sort((x, y) => x - y);
+      const i = (v.length - 1) * q;
+      const lo = Math.floor(i), hi = Math.ceil(i);
+      return Math.round(lo === hi ? v[lo] : v[lo] + (v[hi] - v[lo]) * (i - lo));
+    };
+    const box = (a) => ({ p50: pct(a, 0.5), avg: avg(a), p90: pct(a, 0.9), n: a.length });
+    /* ใบที่ "เวลาในใบยาวเกินกว่าจะเป็นเวลาที่เครื่องหยุดจริง" — เกณฑ์ 24 ชม. เขียนบนจอตรงๆ
+       🔴 ไม่ใช่การจัดหมวด/เดาสาเหตุ เป็นแค่การนับตามเกณฑ์ที่ประกาศไว้ (จอต้องเขียนเกณฑ์เสมอ) */
+    const LATE_MIN = 24 * 60;
+    const lateN = bd.filter(v => v > LATE_MIN).length;
     // ความพึงพอใจ (KPI หน่วยงานซ่อม) — เฉลี่ยรวม + รายด้าน จากใบที่มีการประเมิน
     const rated = rows.filter(o => satAvg(o.satisfaction) != null);
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
@@ -77,12 +96,14 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
       const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3);
       return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length };
     });
-    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd), satOverall, satByDim, satN: rated.length };
+    return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd),
+             respBox: box(resp), ttrBox: box(ttr), bdBox: box(bd), lateN, lateHr: LATE_MIN / 60,
+             satOverall, satByDim, satN: rated.length };
   }, [rows]);
 
   // h = คำแปลของชื่อย่อสากล — ต้องอ่านได้บนจอเลย ห้ามซ่อนใน tooltip อย่างเดียว (จอ TV ไม่มี hover)
   const Card = ({ t, v, c, h }) => (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, flex: 1, minWidth: 170 }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>
       {h && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}
@@ -100,22 +121,40 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
       </TimeRangeBar>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.7 }}>
-        📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
-        · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
-        <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
+        <InfoMore label={trI18n('ตัวเลขนี้นับจากอะไร · ต่างจาก OBEYA ยังไง')} id="mtnkpi-def">
+        📋 <b style={{ color: 'var(--text2)' }}>{trI18n('นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว')}</b> — วัดการตอบสนองของทีมช่าง
+        · ส่วน <b style={{ color: 'var(--text2)' }}>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
+        <b style={{ color: 'var(--text2)' }}> {trI18n('downtime จริงของเครื่อง')}</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
         {/* 🏛️ 13/10 user ถาม "ข้อมูลพวกนี้ต้องตรงกับ OBEYA ไหม" — บอร์ด KPI ใช้สูตรทางการ (730 ชม./เครื่อง/เดือน · รายปฏิทินเดือน)
             จึงไม่เท่ากับหน้านี้ที่ใช้เวลาเดินเครื่องจริง/ช่วงวันที่เลือก — เขียนไว้ตรงนี้ ไม่งั้นกลายเป็น "2 จอตอบคนละเลข" */}
         <div>
-          🏛️ <b style={{ color: 'var(--text2)' }}>บอร์ด OBEYA (KPI ส่งกลุ่ม)</b> คิด MTBF/MTTR/Machine Break Down จาก downtime ชุดเดียวกัน
-          แต่ใช้<b style={{ color: 'var(--text2)' }}>สูตรทางการ KPI Guideline</b> (ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล)
+          🏛️ <b style={{ color: 'var(--text2)' }}>{trI18n('บอร์ด OBEYA (KPI ส่งกลุ่ม)')}</b> คิด MTBF/MTTR/Machine Break Down จาก downtime ชุดเดียวกัน
+          แต่ใช้<b style={{ color: 'var(--text2)' }}>{trI18n('สูตรทางการ KPI Guideline')}</b> (ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล)
           — ตัวเลขจึงต่างจากหน้านี้ที่ใช้เวลาเดินเครื่องจริงและช่วงวันที่เลือก ไม่ใช่ข้อมูลคนละชุด
         </div>
+        </InfoMore>
+        {/* ⏱️ "เวลาในใบ ≠ เวลาที่เครื่องหยุด" (11/11 · คำสั่ง user — ทีม MTN ดึงเลขไปส่งส่วนกลางไม่ได้)
+            วัดจริง 932 ใบที่ผูก downtime ได้: 615 ใบ (66%) กด "ซ่อมเสร็จ" **หลังไลน์เดินไปแล้ว**
+            ⇒ MDT เฉลี่ยทั้งก้อน 890 นาที เทียบ downtime จริง 25.6 นาที = 35 เท่า
+            🔴 เขียนบนจอ ไม่ซ่อน — คนอ่านต้องรู้ว่าเลขนี้วัด "การกดปุ่ม" ปนอยู่ด้วย
+            🔴 เกณฑ์ 24 ชม. ต้องเขียนให้เห็น ไม่ใช่ตัดเงียบ (นับเฉยๆ ไม่ได้จัดหมวด/เดาสาเหตุ) */}
+        {stat.lateN > 0 && (
+          <div style={{ color: 'var(--amber)' }}>
+            ⏱️ <b>{stat.lateN} {trI18n('จาก')} {stat.n} {trI18n('ใบ')}</b> {trI18n('มีเวลาแจ้ง→ซ่อมเสร็จเกิน')} {stat.lateHr} ชม.
+            — ส่วนใหญ่คือ<b>{trI18n('กดปุ่มย้อนหลัง')}</b> ไม่ใช่เครื่องหยุดนานขนาดนั้น
+            {' '}{trI18n('⇒ จอนี้จึงโชว์')} <b>{trI18n('ค่ากลาง')}</b> เป็นตัวหลัก · ค่าเฉลี่ยอยู่ในบรรทัดใต้การ์ด
+            {' '}(ยิ่งค่าเฉลี่ยห่างค่ากลางมาก ยิ่งแปลว่ากดย้อนหลังเยอะ)
+            <div style={{ color: 'var(--muted)' }}>
+              เวลาที่เครื่องหยุดจริงดูที่ <b>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> ล่างสุดของหน้านี้ (นับจาก downtime) — เลขที่ส่งกลุ่มใช้ฐานนั้น ไม่ใช่เวลาในใบ MO
+            </div>
+          </div>
+        )}
         {/* พาเรโตถูกย้ายไปแท็บ QC7 (แยกตามชนิดสินทรัพย์) — ต้องมีทางไปให้ชัด ไม่ใช่หายเงียบ */}
         {onGoQc7 && (
           <div>
-            🧪 อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
+            อยากดู <b style={{ color: 'var(--text2)' }}>{trI18n('พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม')}</b> {trI18n('แยกตามชนิดอุปกรณ์ →')}{' '}
             <button type="button" onClick={onGoQc7} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
-              ไปแท็บ QC 7 Tools
+              {trI18n('ไปแท็บ QC 7 Tools')}
             </button>
           </div>
         )}
@@ -124,22 +163,27 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* 📏 ใบนี้คือ **ฐานของค่าเฉลี่ยทุกใบทางขวา** — เขียนไว้ให้ชัด ไม่งั้น MTTR ที่คิดจาก 2 ใบ
             กับที่คิดจาก 200 ใบ ดูน่าเชื่อถือเท่ากันบนจอ (UI §6.18 ข้อ 4) */}
         <Card t="งานที่ปิด (ในช่วง)" v={`${stat.n} ใบ`} h="ฐานที่ใช้คิด MTTA / MTTR / MDT ทุกตัวทางขวา" />
-        <Card t="MTTA — เข้าดำเนินการเฉลี่ย" v={fmtMin(stat.resp)} c="#3b82f6" h="Mean Time To Acknowledge = แจ้ง → ช่างรับงาน" />
-        <Card t="MTTR — เวลาซ่อมเฉลี่ย" v={fmtMin(stat.ttr)} c="#f59e0b" h="Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง และหักช่วงที่ส่งซ่อมภายนอกออกแล้ว)" />
-        <Card t="MDT — หยุดรวมเฉลี่ย" v={fmtMin(stat.bd)} c="#ef4444" h="Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)" />
+        {/* 📐 ค่ากลางเป็นตัวหลัก เฉลี่ยอยู่ในบรรทัดคำอธิบาย (11/11 · คำสั่ง user)
+            ใบที่กดปุ่มย้อนหลังดันค่าเฉลี่ยพุ่ง แต่ไม่สะเทือนค่ากลาง ⇒ 2 ตัวห่างกันมาก = สัญญาณ */}
+        <Card t="MTTA — เข้าดำเนินการ (ค่ากลาง)" v={fmtMin(stat.respBox.p50)} c="#3b82f6"
+          h={`Mean Time To Acknowledge = แจ้ง → ช่างรับงาน · เฉลี่ย ${fmtMin(stat.respBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.respBox.p90)}`} />
+        <Card t="MTTR — เวลาซ่อม (ค่ากลาง)" v={fmtMin(stat.ttrBox.p50)} c="#f59e0b"
+          h={`Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง · หักช่วงส่งซ่อมนอกแล้ว) · เฉลี่ย ${fmtMin(stat.ttrBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.ttrBox.p90)}`} />
+        <Card t="MDT — หยุดรวม (ค่ากลาง)" v={fmtMin(stat.bdBox.p50)} c="#ef4444"
+          h={`Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR) · เฉลี่ย ${fmtMin(stat.bdBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.bdBox.p90)}`} />
         <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'}
           c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
       {stat.satN > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)</div>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{trI18n('ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)')}</div>
           {stat.satByDim.map(d => {
             const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0;
             const col = d.avg == null ? 'var(--muted)' : d.avg >= 2.5 ? '#22c55e' : d.avg >= 2 ? '#f59e0b' : '#ef4444';
             return (
               <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</div>
-                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
+                <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trI18n(d.label)}</div>
+                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
                 <div style={{ width: 70, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: col }}>{d.avg != null ? `${d.avg.toFixed(2)}/3` : '—'}</div>
               </div>
             );
@@ -155,10 +199,10 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
             ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+          ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-          นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง
+          นับจาก <b style={{ color: 'var(--text2)' }}>{trI18n('downtime จริงของเครื่อง')}</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง
         </div>
         <MachineReliability machines={machines} lineObjs={lineObjs} scopeLines={scopeLines} />
       </div>

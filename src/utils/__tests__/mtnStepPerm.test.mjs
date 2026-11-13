@@ -567,6 +567,23 @@ test('orderReporterText: มีฟิลด์เดียว/ไม่มีเ
 
 /* ── 🗑️→🚫 moRemoveMode — ลบได้เฉพาะใบที่ยังไม่มีเลข (2026-10-14 · คำสั่ง user) ────── */
 import { moRemoveMode, OPEN_MO_STATUSES } from '../mtnStepPerm.js';
+test('🔗 moRemoveMode: ใบปลายทางของการส่งต่อ ลบไม่ได้แม้ยังไม่ออกเลข (11/11)', () => {
+  /* เคสจริง: ใบลูกที่ทีมปลายทางยังไม่กดรับ **ยังไม่มีเลข MO** ⇒ เกณฑ์เดิมให้ "ลบได้"
+     ลบแล้ว FK `on delete set null` ล้างลิงก์ ⇒ ใบแม่ยัง transferred (จบ) = ปัญหาหายจากระบบ
+     วัด 11/11: โดนไปแล้ว 4 ใบ (ทีม JIG ลบตอน pending 3 ใบ ยืนยันจาก audit_log) */
+  const child = { status: 'pending', mo_no: null, transferred_from_mo: 'PRO-BM-220926-0461' };
+  const r = moRemoveMode(child);
+  assert.equal(r.mode, 'cancel', 'ใบที่ถูกส่งต่อมา ต้องยกเลิก ไม่ใช่ลบ');
+  assert.match(r.why, /ส่งต่อ/, 'ต้องบอกเหตุผลบนจอว่าทำไมลบไม่ได้');
+  assert.match(r.why, /PRO-BM-220926-0461/, 'ต้องบอกว่ามาจากใบไหน');
+  // ใบธรรมดาที่ยังไม่ออกเลข = ลบได้เหมือนเดิมเป๊ะ (ห้ามเหวี่ยงไปบล็อกทั้งหมด)
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '' }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '   ' }).mode, 'delete');
+  // ใบที่ส่งต่อมาแล้วออกเลขแล้ว ก็ยังเป็น cancel ตามเกณฑ์เดิม
+  assert.equal(moRemoveMode({ status: 'repaired', mo_no: 'JIG-1', transferred_from_mo: 'PRO-9' }).mode, 'cancel');
+});
+
 test('🔴 moRemoveMode: ใบที่ออกเลขแล้ว ลบไม่ได้ — ยกเลิกเท่านั้น', () => {
   // เคสจริงที่ทำให้ต้องมีกฎนี้: ใบสถานะ repaired ถูก delete ไป ⇒ ค่าแรง/อะไหล่หายถาวร
   const r = moRemoveMode({ status: 'repaired', mo_no: 'MTN.2026/10-5' });
@@ -629,4 +646,110 @@ test('🔴 ใบทีม MTN ที่ status=checked ขั้นถัดไ
   assert.equal(nextStepOf(o), 5);
   assert.equal(stageOf(nextStepOf(o), { mtnForm: true }), 'handover');
   assert.equal(stepMeta(5, { mtnForm: true }).title, 'รับมอบ / ติดตามผล');
+});
+
+/* ═══ 🔧 ขั้น 4 ของใบทีมเครื่องมือ (JIG/DIE) = หัวหน้าแผนกช่าง ไม่ใช่ผู้แจ้ง ═══  2026-10-27
+   คำสั่ง user: *"สำหรับ MO ของ jig กับ DIE งานซ่อมนอกไลน์ step 4 ต้องเป็นหัวหน้าแผนกช่าง
+   ก่อน QA ไม่ใช่ผู้แจ้ง"* · ระดับที่เซ็นได้ = หัวหน้าแผนก + วิศวกร (rank ≥ 30)
+   🔴 ทีม PRODUCTION ต้องไม่เปลี่ยน — ซ่อมในไลน์ ผู้แจ้งเห็นเครื่องกลับมาเดิน จึงตรวจรับเองถูกแล้ว */
+import { moWaitMeta as waitMetaTool } from '../mtnStepPerm.js';
+import { isToolTeamRow } from '../mtnMoForm.js';
+
+const TOOL_BASE = { can: () => false, seeded: () => true, hasTeams: true };
+const jigOrder  = { mtn_dept: 'jig_maintenance', status: 'repaired', reported_by_name: 'สมชาย' };
+const dieOrder  = { mtn_dept: 'die_maintenance', status: 'repaired', reported_by_name: 'สมชาย' };
+const prodOrder = { mtn_dept: 'production', status: 'repaired', reported_by_name: 'สมชาย' };
+
+test('🔧 isToolTeamRow — JIG/DIE ใช่ · PRODUCTION/MTN ไม่ใช่ · ไม่รู้ = ไม่ใช่ (ถอยไปพฤติกรรมเดิม)', () => {
+  assert.equal(isToolTeamRow(jigOrder), true);
+  assert.equal(isToolTeamRow(dieOrder), true);
+  assert.equal(isToolTeamRow(prodOrder), false);
+  assert.equal(isToolTeamRow({ mtn_dept: 'maintenance' }), false);
+  assert.equal(isToolTeamRow({}), false, 'ไม่รู้ทีม = ไม่ย้ายช่องเซ็นเงียบๆ');
+  assert.equal(isToolTeamRow({ item_type: 'JIG เชื่อม' }), true, 'ไม่ระบุทีม → เดาจากชนิดอุปกรณ์');
+});
+
+test('🔧 ขั้น 4 ใบ JIG/DIE = ฝั่งช่าง · ล็อกทีม · rank ≥ 30 — ใบ PRODUCTION คงเดิม', () => {
+  const tool = stepMeta(4, { toolTeam: true });
+  assert.equal(tool.side, 'mtn');
+  assert.equal(tool.byReporter, false, 'ผู้แจ้งไม่ใช่เจ้าของช่องนี้แล้ว');
+  assert.equal(tool.teamSide, true, 'ต้องล็อกทีมใครทีมมันเหมือนขั้น 2/3');
+  assert.equal(tool.minRank, 30, 'หัวหน้าแผนก(50) + วิศวกร(30) — ทีม Die ยังไม่มี dept_head');
+  assert.equal(tool.stage, 'accept_work', 'stage ห้ามเปลี่ยน (ตัวกรอง ?wait= / คิวงาน อ้างค่านี้)');
+  assert.equal(tool.key, 'accept_work', 'คีย์สิทธิ์เดิม — ไม่ต้อง seed ใหม่');
+
+  const prod = stepMeta(4, {});
+  assert.equal(prod.side, 'reporter');
+  assert.equal(prod.byReporter, true);
+  assert.equal(prod.minRank, undefined);
+});
+
+test('🔧 ฟอร์ม MTN ชนะ toolTeam เสมอ (ทีม MTN ไม่ใช่ทีมเครื่องมือ)', () => {
+  assert.equal(stepMeta(4, { mtnForm: true, toolTeam: true }).stage,
+    stepMeta(4, { mtnForm: true }).stage);
+});
+
+test('🔧 ผู้แจ้งเซ็นขั้น 4 ของใบ JIG ไม่ได้แล้ว · ใบ PRODUCTION ยังได้', () => {
+  const asReporter = (order) => canDoStep(4, { ...TOOL_BASE, order, fullName: 'สมชาย', actorSide: 'reporter', posRank: 40 });
+  assert.equal(asReporter(jigOrder).ok, false);
+  assert.equal(asReporter(jigOrder).code, 'wrong_side');
+  assert.equal(asReporter(dieOrder).ok, false);
+  assert.equal(asReporter(prodOrder).ok, true, '🔴 ทีมผลิตห้ามเปลี่ยน — ผู้แจ้งยังตรวจรับเอง');
+});
+
+test('🔧 ใบ JIG: ช่าง(20) ไม่ผ่าน · วิศวกร(30) ในทีมผ่าน · วิศวกรทีมอื่นไม่ผ่าน', () => {
+  const inTeam = (posRank) => canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'ช่าง',
+    actorSide: 'mtn', posRank, inOrderTeam: true, can: k => k === 'service_own_team' });
+  assert.equal(inTeam(20).code, 'rank_too_low');
+  assert.equal(inTeam(30).ok, true);
+  assert.equal(inTeam(50).ok, true);
+  const otherTeam = canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'ช่าง',
+    actorSide: 'mtn', posRank: 50, inOrderTeam: false, can: k => k === 'service_own_team' });
+  assert.equal(otherTeam.code, 'other_team', 'ล็อกทีมใครทีมมันต้องยังกัด');
+});
+
+test('🔧 ไม่รู้ตำแหน่ง (posRank null) = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ', () => {
+  const r = canDoStep(4, { ...TOOL_BASE, order: jigOrder, fullName: 'บัญชีกลาง',
+    actorSide: 'mtn', posRank: null, inOrderTeam: true, can: k => k === 'service_own_team' });
+  assert.equal(r.ok, true, 'ไม่รู้ ≠ ปฏิเสธ (บัญชีกลางทีมช่างยังเซ็นได้)');
+});
+
+test('🔧 คิวงาน: ใบ JIG ที่ซ่อมเสร็จ รอ "หัวหน้าแผนกช่าง" ไม่ใช่ผู้เปิดใบ', () => {
+  const w = waitMetaTool(jigOrder);
+  assert.equal(w.step, 4);
+  assert.equal(w.stage, 'accept_work');
+  assert.match(w.meta.who, /หัวหน้าแผนกช่าง/);
+  assert.equal(w.meta.side, 'mtn');
+  assert.match(waitMetaTool(prodOrder).meta.who, /ผู้เปิดใบ/);
+});
+
+test('🔧 ป้ายปุ่ม/เหตุผลตอนกดไม่ได้ ต้องพูดถึงฝั่งช่าง', () => {
+  assert.match(stepLabel(4, { toolTeam: true }), /หัวหน้าแผนกช่าง/);
+  assert.match(stepLabel(4, {}), /ผู้เปิดใบ/);
+  const hint = stepDenyHint(4, { toolTeam: true, wrongSide: true }).join(' ');
+  assert.match(hint, /หัวหน้าแผนกช่าง/);
+  assert.match(hint, /ฝั่งซ่อมบำรุง/, 'ต้องบอกว่าเป็นช่องของฝั่งช่าง ไม่ใช่ของฝ่ายที่แจ้ง');
+});
+
+test('moFlow — แถบขั้นตอนใบ MO: ข้าม QA = skipped ไม่ใช่ done · ใบ MTN 8 ขั้นแยกด้วยเวลาเซ็น · ตีกลับหยุดที่ขั้นถัดไป · สถานะแปลก = known:false', async () => {
+  const { moFlow } = await import('../mtnStepPerm.js');
+  const st = (f) => f.steps.map(s => s.state + (s.tone ? '/' + s.tone : ''));
+  const p = moFlow({ status: 'pending', current_step: 1 });
+  assert.deepEqual(st(p), ['done', 'current', 'todo', 'todo', 'todo', 'todo', 'todo']);
+  assert.match(p.waiting, /หัวหน้าช่าง/);
+  // ข้าม QA (ไม่เกี่ยวกับคุณภาพ) → ขั้น 5 ⏭ · ขั้น 6 current
+  assert.deepEqual(st(moFlow({ status: 'checked', current_step: 4, qa_skipped_at: 'x', mtn_dept: 'die' })), ['done', 'done', 'done', 'done', 'skipped', 'current', 'todo']);
+  // รอ QA จริง
+  assert.equal(moFlow({ status: 'checked', current_step: 4, mtn_dept: 'die' }).steps[4].state, 'current');
+  // ใบ MTN (8 ขั้น · ไม่มี QA) ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็น
+  const h = moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: null, approve_at: null });
+  assert.equal(h.steps.length, 8); assert.equal(h.steps[5].state, 'current');
+  assert.equal(moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: 'x', approve_at: null }).steps[6].state, 'current');
+  // ปิดแล้ว = ครบ · ตีกลับ = ขั้นถัดไปเป็นสีแดง ไม่เขียวยาว
+  assert.ok(moFlow({ status: 'closed', current_step: 7, mtn_dept: 'die', qa_at: 'x' }).steps.every(s => s.state === 'done'));
+  const r = moFlow({ status: 'rejected', current_step: 1 });
+  assert.equal(r.steps[1].tone, 'bad'); assert.equal(r.closed, true); assert.equal(r.waiting, null);
+  // ส่งซ่อมภายนอก = ใบยังเปิด รอ supplier
+  assert.match(moFlow({ status: 'waiting_vendor', current_step: 3 }).waiting, /supplier/);
+  assert.equal(moFlow({ status: 'weird' }).known, false);
 });

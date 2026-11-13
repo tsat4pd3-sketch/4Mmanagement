@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 
+import { tr } from '../utils/i18n';
 /*
   CollapseCard — section ย่อ/ขยายได้ตาม UI-CONVENTIONS
   หัวโชว์ชื่อ+จำนวนเสมอ · จำสถานะใน localStorage (key = `${storePrefix}_collapse_${id}`)
@@ -23,10 +24,10 @@ export default function CollapseCard({ id, title, count, defaultOpen = true, sto
   cbRef.current = onOpenChange;
   useEffect(() => { cbRef.current?.(open); }, [open]);
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px', marginBottom: 16, ...style }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '12px 16px', marginBottom: 16, ...style }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div onClick={toggle} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 800 }}>{title}{count != null && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({count})</span>}</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>{tr(title)}{count != null && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({count})</span>}</div>
           {/* ลูกศรอยู่ขวาเหมือนเดิม — ย้ายตำแหน่ง = 5 หน้าที่ใช้อยู่หน้าตาเปลี่ยนโดยไม่มีใครขอ */}
           <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, flexShrink: 0 }}>{open ? '▲' : '▼'}</span>
         </div>

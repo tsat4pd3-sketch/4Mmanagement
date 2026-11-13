@@ -5,6 +5,7 @@ import useTabParam from '../utils/useTabParam';
 import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
 
+import { tr } from '../utils/i18n';
 /* ── 🔧 ศูนย์ PM — รวม 5 หน้างานซ่อมบำรุงตามแผนเป็นหน้าเดียว (2026-08-26) ──────────────
    ที่มา (feedback หน้างาน): *"หน้าที่เกี่ยวกับ PM 3 หน้า มันควรจะรวมเป็นหน้าเดียวหรือไม่
    เพื่อไม่ต้องกดกลับไปกลับมา เพราะเหมือนจะเป็น workflow ที่ทำงานด้วยกันอยู่แล้ว"*
@@ -36,19 +37,19 @@ const MaintenanceLevels = lazy(() => import('./MaintenanceLevels'));
 /* เรียงตาม "ความถี่ที่ใช้จริง" ไม่ใช่ลำดับ workflow —
    ช่างเปิดจอมาเพื่อ *ตรวจ* ทุกวัน ส่วน *ตั้งค่า* นานๆ ครั้ง (หลักเดียวกับ DailyChecker) */
 const TABS = [
-  { key: 'check',    label: '✅ ตรวจอุปกรณ์',        page: '/pm-check',        Comp: PMCheckData,
+  { key: 'check',    label: 'ตรวจอุปกรณ์',        page: '/pm-check',        Comp: PMCheckData,
     hint: 'บันทึกผลตรวจตามจุดที่ตั้งไว้ — ตรวจครบแล้วรอบถัดไปเลื่อนให้เอง' },
-  { key: 'plan',     label: '📅 แผน PM',              page: '/pm-schedule',     Comp: PMSchedule,
+  { key: 'plan',     label: 'แผน PM',              page: '/pm-schedule',     Comp: PMSchedule,
     hint: 'ปฏิทิน/ไทม์ไลน์ว่าเครื่องไหนครบกำหนดวันไหน + ผลตรวจจริงของวันนั้น' },
-  { key: 'forecast', label: '🔮 ล่วงหน้า (Planner)',  page: '/pm-forecast',     Comp: PmForecast,
+  { key: 'forecast', label: 'ล่วงหน้า (Planner)',  page: '/pm-forecast',     Comp: PmForecast,
     hint: 'คาดวันที่จะต้อง PM + buffer ที่ต้องผลิตเผื่อก่อนเครื่องหยุด' },
   /* 3 ระดับ Preventive → Predictive → Prescriptive (2026-09-23) — อ่านอย่างเดียว
      piggyback สิทธิ์ page:/pm-forecast (ทุก role เข้าได้อยู่แล้ว) ⇒ ไม่ต้อง seed สิทธิ์ใหม่ · ไม่มี route แยก */
-  { key: 'levels',   label: '🧭 3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
+  { key: 'levels',   label: '3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
     hint: 'แผนบอกว่าถึงเวลาไหม → ข้อมูลเสียจริงบอกว่าแย่ลงไหม → ระบบแนะนำว่าควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร' },
-  { key: 'coord',    label: '🗓️ ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
+  { key: 'coord',    label: 'ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
     hint: 'งาน PM ที่กินหลายวัน — นัด Production ล่วงหน้า + ช่วง Production Support' },
-  { key: 'setup',    label: '⚙️ ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
+  { key: 'setup',    label: 'ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
     hint: 'ลงทะเบียนอุปกรณ์ + จุดที่ต้องตรวจ + รอบเวลา/ยอดผลิต' },
 ];
 
@@ -64,16 +65,16 @@ export default function PmHub() {
     <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) · sub = คำอธิบายแท็บที่เลือก
             — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
-        <PageHeader title="ซ่อมบำรุงตามแผน (PM)" icon="🔧"
-          sub={cur?.hint || 'ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง'}
+        <PageHeader title={tr('ซ่อมบำรุงตามแผน (PM)')} icon="🔧"
+          sub={tr(cur?.hint) || tr('ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง')}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
 
       {cur ? (
-        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}>
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>}>
           <Hub><cur.Comp /></Hub>
         </Suspense>
       ) : (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>ยังไม่มีสิทธิ์เข้าหน้างาน PM ใดในหน้านี้</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('ยังไม่มีสิทธิ์เข้าหน้างาน PM ใดในหน้านี้')}</div>
       )}
     </Page>
   );

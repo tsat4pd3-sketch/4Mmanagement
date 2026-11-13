@@ -10,6 +10,7 @@
 
 | โมดูล | ไฟล์ |
 |---|---|
+| 🪜 แถบขั้นตอน StepFlow (ใบไหนใส่แล้ว/ไม่ใส่ + กฎ) | `step-flow.md` |
 | Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13) | `docs/modules/adoption-outlook.md` |
 | 🔗 Audit AM↔PM ทั้งโปรเจค — 2 ระบบ AM ไม่ sync · null due = "ปกติ" · ลำดับแก้ 3 รอบ (2026-10-08 · ยังไม่แก้) | `docs/modules/am-pm-linkage-audit.md` |
 | 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21) | `docs/modules/bbs-safety.md` |
@@ -25,6 +26,8 @@
 | หลักฐาน/ตัวเลขเบื้องหลัง "กฎเหล็กการเขียน DB จาก client" | `docs/modules/db-write-rules.md` |
 | 🔗 สายธารความต้องการ (Demand Flow) — `/flow-tower` (audit + หน้าจริง · 2026-08-19) | `docs/modules/demand-flow-tower.md` |
 | Deploy | `docs/modules/deploy.md` |
+| 🏷️ แยก frontend ของ New Model (2 เว็บจากโค้ดชุดเดียว · edition) | `docs/modules/nm-frontend-split.md` |
+| 💼 RFQ / เสนอราคา — Marketing (Q-neX เฟส 1 · `/rfq` · 2026-10-30) | `docs/modules/mkt-rfq.md` |
 | 🚨 ระบบล่ม 21/10 (ช่องต่อฐานข้อมูลเต็ม) + กฎ "ถอยเมื่อ 503" | `docs/modules/conn-outage-2026-10-21.md` |
 | Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06) | `docs/modules/dept-dashboard-tv.md` |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` |
@@ -39,6 +42,8 @@
 | ตั้งค่าผัง/Floorplan — แยก display ออกจาก setup (2026-07-16) | `docs/modules/floorplan-setup.md` |
 | 4M Approval Workflow — ประวัติเหตุการณ์ `[Auto]` ท่วมคิว | `docs/modules/four-m-workflow.md` |
 | Group Overview — 🏢 ภาพรวมกลุ่มบริษัท TSG (MOCKUP หลายบริษัท · 2026-08-05) | `docs/modules/group-overview.md` |
+| Announcement Mockup — 📢 ประกาศ/ชี้แจงบริษัท Issue → Approve → Publish (MOCKUP · 2026-10-29) | `docs/modules/announcement-mockup.md` |
+| Overseas Travel Mockup — ✈️ เบิกเงินเดินทางต่างประเทศ 7 ขั้น 5 ฝ่าย (MOCKUP · 2026-10-29) | `docs/modules/overseas-travel-mockup.md` |
 | Improvements — โปรเจคปรับปรุง Kaizen (2026-07-12) | `docs/modules/improvements-kaizen.md` |
 | 🎯 ตั้งค่าจุดตรวจ — ระบบเดียว PM (อุปกรณ์) + QA (ชิ้นงาน) · ชิ้นส่วนกลาง `components/inspect/` (2026-10-15) | `docs/modules/inspection-point-setup.md` |
 | Kanban Auto-Calc — คำนวณ kanban จาก forecast (แท็บ 🎴 คำนวณ Kanban ใน /planner-sales · 2026-07-16..17) | `docs/modules/kanban-auto-calc.md` |
@@ -70,6 +75,9 @@
 | Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15) | `docs/modules/production-plan.md` |
 | ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน) | `docs/modules/production-problem-report-bins.md` |
 | 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user) | `docs/modules/program-update.md` |
+| 🌐 ปุ่มสลับ ไทย/English — ชั้นภาษาโครงหลัก `tr()` (2026-11-02 · คำสั่ง user) | `docs/modules/i18n.md` |
+| 🦺 ข้อกำหนด PPE รายหน่วยงาน (4 ชั้น) + ผลตรวจรายคน (`/ppe-setup` · 2026-11-10 · คำสั่ง user) | `docs/modules/ppe-requirements.md` |
+| 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร — ต้นทาง · รหัสลับต่อต้นทาง · สุขภาพการส่ง · gen flow (`/integrations` · 2026-11-11) | `docs/modules/integration-hub.md` |
 | QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04) | `docs/modules/qa-inspection.md` |
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` |
 | QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user) | `docs/modules/qr-equipment-scan.md` |
@@ -101,3 +109,4 @@
 - `build-gates.md` — ที่มาของทุกด่านใน `npm run build` + เคสจริงที่ทำให้ต้องมี
 - `doc-forms.md` — ขั้นตอน register เอกสาร export เข้าทะเบียน `/doc-forms`
 - `employee-identity.md` — สร้างตัวตนพนักงานเข้าฐาน (`/register` + โมดัลใน `/add-user`) · กฎ `newEmployeeRow()` · กับดัก `staff_kind` default เงียบ
+- `qa-inspector-scopes.md` — QC ประจำไลน์ (`qa_inspector_scopes`) · แยก 3 แกน สังกัด/เห็น/ตรวจให้หน่วยไหน · กฎ `src/utils/qaScope.js`

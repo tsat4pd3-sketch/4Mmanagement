@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { loadAffectsLanes } from '../utils/affectsLanes';
 import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk, statusOf } from '../utils/statusTone';
 import { useLatestRequest } from '../utils/useLatestRequest';
@@ -19,6 +20,8 @@ import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import InfoMore from '../components/InfoMore';
+import { tr } from '../utils/i18n';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
    โจทย์ผู้บริหาร: "ระบบนี้ตอนนี้คุมโรงงานเราโรงเดียว ถ้าจะดูภาพรวมหลายบริษัทในกลุ่มทำได้มั้ย"
@@ -129,14 +132,14 @@ const COUNTRY_META = [
    หมุดไหนเป็นกลุ่มไหน (ไอคอนในหมุด + ฟิลเตอร์กลุ่ม) และการ์ดโซนต้องโชว์ส่วนผสมของกลุ่มธุรกิจ
    หมุดบนแผนที่ใช้ lat/lon จริงของบริษัท → กรอบโซนคำนวณจากหมุด (ดู ThailandZoneMap) */
 const ZONES = [
-  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', thaiMap: true, desc: '🇹🇭 บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
-  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: '#f59e0b', thaiMap: true, desc: '🇹🇭 ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
-  { key: 'vietnam', name: 'เวียดนาม', icon: '🇻🇳', color: '#a78bfa', desc: 'Hanoi' },
+  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: 'var(--blue)', thaiMap: true, desc: '🇹🇭 บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
+  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: 'var(--amber)', thaiMap: true, desc: '🇹🇭 ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
+  { key: 'vietnam', name: 'เวียดนาม', icon: '🇻🇳', color: 'var(--blue)', desc: 'Hanoi' },
   { key: 'indonesia', name: 'อินโดนีเซีย', icon: '🇮🇩', color: '#f472b6', desc: 'Karawang' },
   { key: 'china', name: 'จีน', icon: '🇨🇳', color: '#fb7185', desc: 'Guangzhou' },
   { key: 'india', name: 'อินเดีย', icon: '🇮🇳', color: '#34d399', desc: 'Chennai' },
-  { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: '#60a5fa', desc: 'Howell, Michigan' },
-  { key: 'south_africa', name: 'แอฟริกาใต้', icon: '🇿🇦', color: '#fbbf24', desc: 'Durban' },
+  { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: 'var(--blue)', desc: 'Howell, Michigan' },
+  { key: 'south_africa', name: 'แอฟริกาใต้', icon: '🇿🇦', color: 'var(--amber)', desc: 'Durban' },
 ];
 
 /* ── ประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ) ────────────────────────────────────────────────
@@ -145,12 +148,12 @@ const ZONES = [
    กลุ่มพลาสติก/มอเตอร์ไซค์ต้องมี injection/painting/assembly เพิ่ม จึงต่อท้ายไว้ที่นี่และ
    ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
 const LTYPES = [
-  { value: 'stamping', label: '🔩 ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
+  { value: 'stamping', label: 'ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
   ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other', 'outsource'].includes(t.value)),
-  { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
-  { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
-  { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
-  { value: 'other', label: '📦 อื่นๆ / ยังไม่ตั้งประเภท' },
+  { value: 'injection', label: 'ฉีด / Injection', extra: true },
+  { value: 'painting', label: 'พ่นสี / Painting', extra: true },
+  { value: 'assembly', label: 'ประกอบ / Assembly', extra: true },
+  { value: 'other', label: 'อื่นๆ / ยังไม่ตั้งประเภท' },
 ];
 /* ยุบประเภทไลน์ที่เป็นงานเดียวกันในสายตาผู้บริหาร — ไฮโดรฟอร์มก็คือ metal forming เหมือนปั๊ม
    ⚠️ ยุบเฉพาะ "การแสดงผลในหน้านี้" เท่านั้น — ค่าใน `production_lines.line_type` ไม่ถูกแก้
@@ -249,7 +252,7 @@ export default function GroupOverview() {
       ]);
       const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), defs = need(defRes, 'ของเสีย');
       // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนทับพัก · กฎเหล็ก OEE downtime ทับพัก)
-      const effBySess = dtMinBySession(sessions, dts || [], brk || [], { lines: plRes.data || [] });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const effBySess = dtMinBySession(sessions, dts || [], brk || [], { lines: plRes.data || [], affectsBy: await loadAffectsLanes() });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
       const pairOf = (m) => pairMap?.[m] ?? null;   // null = ยังไม่รู้คู่ ⇒ ไม่ยุบ (ห้ามแปลงเป็น {} — จะกลายเป็น "รู้แล้วว่าไม่มีคู่")
       const ordBySess = {}; (orders || []).forEach(o => { (ordBySess[o.session_id] ||= []).push(o); });
@@ -436,12 +439,12 @@ export default function GroupOverview() {
               <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.code || it.name}</span>
               {/* ป้ายจริง/จำลอง ใช้กับ "บริษัท" เท่านั้น — โซน/กลุ่มธุรกิจเป็นก้อนรวม (มีทั้งของจริงและจำลอง) */}
               {it.companies
-                ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
+                ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} {tr('บริษัท')}</span>
                 : it.real
-                  ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                  : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{tr('จริง')}</span>
+                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{tr('จำลอง')}</span>}
             </button>
-            <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+            <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
               <div style={{ width: `${clamp(it.actual / maxT * 100, 0, 100)}%`, height: '100%', background: pctCol(it.pct), opacity: 0.85, position: 'relative' }} />
               <span style={{ position: 'absolute', left: 8, top: 0, lineHeight: '22px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
@@ -461,7 +464,7 @@ export default function GroupOverview() {
   const lv1Switch = (
     <span style={{ marginLeft: 'auto' }}>
       <Segmented value={lv1View} onChange={setLv1View}
-        options={[{ value: 'map', label: '🌏 แผนที่' }, { value: 'rank', label: '📊 เทียบรายโซน' }]} />
+        options={[{ value: 'map', label: 'แผนที่' }, { value: 'rank', label: 'เทียบรายโซน' }]} />
     </span>
   );
   const crumbBtn = (label, onClick, active) => (
@@ -479,8 +482,8 @@ export default function GroupOverview() {
         icon="🏢"
         title={<>
           {ORG.code} — ภาพรวมกลุ่มบริษัท
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 999, padding: '2px 10px' }}>
-            🧪 MOCKUP · ตัวอย่างหน้าจอ
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-pill)', padding: '2px 10px' }}>
+            MOCKUP · ตัวอย่างหน้าจอ
           </span>
         </>}
         sub={<>
@@ -494,27 +497,27 @@ export default function GroupOverview() {
           </span>
           <span style={{ display: 'block', marginTop: 3 }}>
             {fmtThaiDate(usedDate || date)}
-            {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
+            {usedDate && usedDate !== date && <span style={{ color: 'var(--amber)' }}> {tr('(ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)')}</span>}
           </span>
         </>}
         filters={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
-          <Segmented label="แกนมอง" value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
-            options={[{ value: 'map', label: '🗺️ ตามพื้นที่' }, { value: 'biz', label: '🗂️ ตามกลุ่มธุรกิจ' }]} />
+          <Segmented label={tr('แกนมอง')} value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
+            options={[{ value: 'map', label: 'ตามพื้นที่' }, { value: 'biz', label: 'ตามกลุ่มธุรกิจ' }]} />
           <span className="sep" />
-          <span className="filter-label">วันงาน</span>
+          <span className="filter-label">{tr('วันงาน')}</span>
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
           <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
         </>}
-        actions={<button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load}>{tr('รีเฟรช')}</button>}
       />
 
       {/* ── จริง vs จำลอง — บรรทัดเดียวที่เห็นตลอด (กันเข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว · ห้ามพับ)
            รายละเอียดวิธีอ่านพับไว้ใน InfoMore (UX audit 05/10: เดิมกล่องเส้นประ 4 บรรทัดดันเนื้อหาลง) ── */}
       <InfoMore id="group_overview_mock" tone="warn" size={12.5}
-        lead={<><b style={{ color: '#22c55e' }}>TSAT4 = ข้อมูลจริง</b> (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> · หน้านี้ไม่เขียนข้อมูล</>}>
-        โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>พื้นที่</b> ({ZONES.length} โซน/ประเทศ) ได้จากปุ่ม "แกนมอง" — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b>
+        lead={<><b style={{ color: 'var(--green)' }}>TSAT4 = ข้อมูลจริง</b> (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: 'var(--amber)' }}>{tr('ตัวเลขจำลอง')}</b> {tr('· หน้านี้ไม่เขียนข้อมูล')}</>}>
+        โครงองค์กร: <b>{ORG.code}</b> {tr('→ กลุ่มธุรกิจ (')}{ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>{tr('พื้นที่')}</b> ({ZONES.length} โซน/ประเทศ) ได้จากปุ่ม "แกนมอง" — <b>{tr('กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป')}</b>
         · ตัวเลขจำลองปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบคงที่ ไม่เปลี่ยนทุกครั้งที่รีเฟรช) · ยังไม่มีทะเบียนบริษัท/โรงงานจริง — ดู "ถ้าจะรองรับหลายบริษัทจริง" ท้ายหน้า
       </InfoMore>
 
@@ -523,21 +526,11 @@ export default function GroupOverview() {
       {!loading && !!baseLines.length && (
         <div style={{ ...card, padding: '10px 13px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-            <span className="filter-label" style={{ fontWeight: 700 }}>🏭 ประเภทไลน์:</span>
-            {[{ value: null, label: ALL.type }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => {
-              const on = ltFilter === t.value;
-              return (
-                <button key={t.value || 'all'} onClick={() => setLtFilter(t.value)} style={{
-                  fontSize: 12.5, fontWeight: 700, padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
-                  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
-                  border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                }}>
-                  {t.label}
-                  {t.value && <span style={{ marginLeft: 5, opacity: 0.75 }}>{tree.typeCount[t.value]}</span>}
-                  {t.extra && <span title="ยังไม่มีใน master ประเภทไลน์ปัจจุบัน (ต้องเพิ่มถ้าทำ multi-company จริง)" style={{ marginLeft: 4, opacity: 0.7 }}>*</span>}
-                </button>
-              );
-            })}
+            <span className="filter-label" style={{ fontWeight: 700 }}>{tr('ประเภทไลน์:')}</span>
+            <TabBar size="sm" value={ltFilter ?? ''} onChange={k => setLtFilter(k || null)} style={{ flex: 1, minWidth: 240 }}
+              tabs={[{ value: null, label: ALL.type }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => ({
+                key: t.value ?? '', label: `${t.label}${t.extra ? ' *' : ''}`, badge: t.value ? tree.typeCount[t.value] : undefined,
+                title: t.extra ? 'ยังไม่มีใน master ประเภทไลน์ปัจจุบัน (ต้องเพิ่มถ้าทำ multi-company จริง)' : undefined }))} />
             <InfoMore size={11.5}>
               ประเภทไลน์ของ <b>TSAT4</b> มาจากที่ตั้งไว้ในหน้า ⚙️ ตั้งค่าผังไลน์ ·
               <b> ไฮโดรฟอร์มนับรวมใน "ปั๊มขึ้นรูป / Metal Forming"</b> (งานขึ้นรูปโลหะเหมือนกัน — รวมเฉพาะการแสดงผลหน้านี้) ·
@@ -547,15 +540,15 @@ export default function GroupOverview() {
           {ltFilter && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 7 }}>
               กำลังดูเฉพาะไลน์ <b style={{ color: 'var(--text)' }}>{ltLabel(ltFilter)}</b> — ตัวเลขทุกช่องในหน้านี้นับเฉพาะไลน์ประเภทนี้
-              {tree.hiddenComps > 0 && <> · ซ่อน <b>{tree.hiddenComps}</b> บริษัทที่ไม่มีไลน์ประเภทนี้</>}
+              {tree.hiddenComps > 0 && <> {tr('· ซ่อน')} <b>{tree.hiddenComps}</b> {tr('บริษัทที่ไม่มีไลน์ประเภทนี้')}</>}
             </div>
           )}
         </div>
       )}
 
-      {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
+      {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>{tr('กำลังโหลดข้อมูล...')}</div>}
       {!loading && loadErr && (
-        <div role="alert" style={{ ...card, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+        <div role="alert" style={{ ...card, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
           🔴 โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอนี้ยังเชื่อไม่ได้ (ไม่ใช่ "ไม่มีผลิต")
           <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, wordBreak: 'break-all' }}>{loadErr}</div>
         </div>
@@ -571,7 +564,7 @@ export default function GroupOverview() {
         {/* ── KPI ของขอบเขตที่กำลังดู ── */}
         <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(auto-fit, minmax(min(190px, 100%), 1fr))' }}>
           <Kpi
-            label={compNode ? '🏭 ไลน์ผลิต' : bizNode ? '🏢 บริษัทใน' + (sel.axis === 'map' ? 'โซนนี้' : 'กลุ่มธุรกิจ') : (sel.axis === 'map' ? '🗺️ โซนพื้นที่' : '🗂️ กลุ่มธุรกิจ')}
+            label={compNode ? tr('🏭 ไลน์ผลิต') : bizNode ? tr('🏢 บริษัทใน') + (sel.axis === 'map' ? tr('โซนนี้') : tr('กลุ่มธุรกิจ')) : (sel.axis === 'map' ? tr('🗺️ โซนพื้นที่') : tr('🗂️ กลุ่มธุรกิจ'))}
             /* 📏 ใส่หน่วยกำกับเสมอ — เลขนับลอยๆ ตอบไม่ได้ว่านับอะไร (UI §6.18 ข้อ 4) */
             value={compNode ? `${compNode.lines.length} ไลน์`
               : bizNode ? `${bizNode.companies.length} บริษัท`
@@ -579,13 +572,13 @@ export default function GroupOverview() {
             sub={compNode ? `บริษัท ${compNode.code}`
               : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
                 : `${tree.allComps.length} บริษัท · ${tree.allLines.length} ไลน์`} />
-          <Kpi label="📦 ผลิตรวม" value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
+          <Kpi label={tr('ผลิตรวม')} value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
             sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
-          <Kpi label="⚙️ OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
-            sub="ถ่วงด้วยเวลารับภาระของแต่ละไลน์" />
-          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? '#f59e0b' : undefined} />
-          <Kpi label="🚫 ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? '#ef4444' : undefined} />
-          <Kpi label="👷 คนเข้างาน" value={pplText(scope.present, scope.head)}
+          <Kpi label={tr('OEE (ถ่วงน้ำหนัก)')} value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
+            sub={tr('ถ่วงด้วยเวลารับภาระของแต่ละไลน์')} />
+          <Kpi label={tr('Downtime นอกแผน')} value={fmtNum(scope.dtMin)} sub={tr('นาที')} color={scope.dtMin > 0 ? 'var(--amber)' : undefined} />
+          <Kpi label={tr('ของเสีย')} value={fmtNum(scope.ng)} sub={tr('ชิ้น (NG + สงสัย)')} color={scope.ng > 0 ? 'var(--red)' : undefined} />
+          <Kpi label={tr('คนเข้างาน')} value={pplText(scope.present, scope.head)}
             sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : 'ยังไม่มีรายชื่อพนักงานผูกไลน์'} />
         </div>
 
@@ -596,10 +589,10 @@ export default function GroupOverview() {
           {sel.axis === 'map' && lv1View === 'map' && (
             <div style={card}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>🌏 แผนที่โรงงานทั่วโลก</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{tr('แผนที่โรงงานทั่วโลก')}</div>
                 {lv1Switch}
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {tree.allComps.length} โรงงาน · {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
+                  {tree.allComps.length} {tr('โรงงาน ·')} {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
                 </span>
               </div>
               <WorldFactoryMap
@@ -616,12 +609,12 @@ export default function GroupOverview() {
           {(sel.axis !== 'map' || lv1View === 'rank') && (
           <div style={card}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>📊 เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{tr('เทียบผลการผลิต')}{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
               {sel.axis === 'map' && lv1Switch}
             </div>
             <RankBars items={axisNodes} onPick={(g) => setSel(s => ({ ...s, node: g.key, comp: null }))} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>คลิกชื่อเพื่อดูบริษัทข้างใน</b>
+              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>{tr('คลิกชื่อเพื่อดูบริษัทข้างใน')}</b>
             </div>
           </div>
           )}
@@ -639,7 +632,7 @@ export default function GroupOverview() {
                       <span style={{ fontSize: 24 }}>{g.icon}</span>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 16, fontWeight: 700 }}>{g.name}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{g.desc}</div>
+                        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr(g.desc)}</div>
                       </div>
                     </div>
 
@@ -651,20 +644,20 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิต / เป้า</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ผลิต / เป้า')}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(g.pct), fontVariantNumeric: 'tabular-nums' }}>
                           {fmtNum(g.actual)} / {fmtNum(g.target)} <span style={{ fontSize: 12 }}>({g.pct == null ? '—' : g.pct + '%'})</span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
+                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', marginTop: 5 }}>
                           <div style={{ width: `${clamp(g.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(g.pct) }} />
                         </div>
                       </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? '#f59e0b' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(g.ng)} color={g.ng > 0 ? '#ef4444' : undefined} />
-                      <Mini label="👷 คน" value={pplText(g.present, g.head)} />
+                      <Mini label="DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="NG" value={fmtNum(g.ng)} color={g.ng > 0 ? 'var(--red)' : undefined} />
+                      <Mini label={tr('คน')} value={pplText(g.present, g.head)} />
                     </div>
 
                     {/* (05/10) เลิกแถวชิป "ส่วนผสมกลุ่มธุรกิจ" ของโซน — ซ้ำกับไอคอนกลุ่มที่นำหน้าชิปบริษัทข้างล่างอยู่แล้ว
@@ -673,9 +666,9 @@ export default function GroupOverview() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                       {g.companies.map(c => (
                         <button key={c.key} onClick={() => setPickComp(c)} style={{
-                          fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
-                          background: c.real ? 'rgba(34,197,94,0.13)' : 'var(--bg3)',
-                          border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
+                          fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                          background: c.real ? 'var(--green-dim)' : 'var(--bg3)',
+                          border: `1px ${c.real ? 'solid var(--green)' : 'dashed var(--border2)'}`,
                           color: 'var(--text)',
                         }}>
                           {sel.axis === 'map' ? c.groupMeta.icon : c.flag} {c.code}
@@ -687,7 +680,7 @@ export default function GroupOverview() {
 
                   <button onClick={() => setSel(s => ({ ...s, node: g.key, comp: null }))}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 10 }}>
-                    ▸ ดูบริษัทในกลุ่ม ({g.companies.length})
+                    {tr('ดูบริษัทในกลุ่ม (')}{g.companies.length})
                   </button>
                 </div>
               );
@@ -701,7 +694,7 @@ export default function GroupOverview() {
           {sel.axis === 'map' && bizNode.thaiMap && (
             <div style={card}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-                🗺️ {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
+                {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
               </div>
               <ThailandZoneMap
                 zones={[bizNode]}
@@ -715,10 +708,10 @@ export default function GroupOverview() {
           )}
 
           <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{tr('เทียบผลการผลิตรายบริษัท —')} {bizNode.icon} {bizNode.name}</div>
             <RankBars items={bizNode.companies} onPick={(c) => setPickComp(c)} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-              เรียงตาม OEE · <b>คลิกชื่อบริษัทเพื่อดูรายไลน์</b>
+              เรียงตาม OEE · <b>{tr('คลิกชื่อบริษัทเพื่อดูรายไลน์')}</b>
             </div>
           </div>
 
@@ -740,8 +733,8 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       {c.real
-                        ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
-                        : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
+                        ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{tr('ข้อมูลจริง')}</span>
+                        : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{tr('จำลอง')}</span>}
                     </div>
 
                     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '10px 0 8px' }}>
@@ -752,32 +745,32 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิต / เป้า</div>
+                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ผลิต / เป้า')}</div>
                         <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(c.pct), fontVariantNumeric: 'tabular-nums' }}>
                           {fmtNum(c.actual)} / {fmtNum(c.target)} <span style={{ fontSize: 12 }}>({c.pct == null ? '—' : c.pct + '%'})</span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
+                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', marginTop: 5 }}>
                           <div style={{ width: `${clamp(c.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(c.pct) }} />
                         </div>
                       </div>
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? '#f59e0b' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(c.ng)} color={c.ng > 0 ? '#ef4444' : undefined} />
-                      <Mini label="👷 คน" value={pplText(c.present, c.head)} />
+                      <Mini label="DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="NG" value={fmtNum(c.ng)} color={c.ng > 0 ? 'var(--red)' : undefined} />
+                      <Mini label={tr('คน')} value={pplText(c.present, c.head)} />
                     </div>
 
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 9, minHeight: 34 }}>
                       {c.worst && c.worst.target > c.worst.actual
-                        ? <>⚠️ ไลน์ที่ตามหลังมากสุด: <b style={{ color: 'var(--text)' }}>{c.worst.line}</b> ขาด {fmtNum(c.worst.target - c.worst.actual)} ชิ้น</>
-                        : <>✅ ทุกไลน์ทำได้ตามเป้า</>}
+                        ? <>{tr('⚠️ ไลน์ที่ตามหลังมากสุด:')} <b style={{ color: 'var(--text)' }}>{c.worst.line}</b> {tr('ขาด')} {fmtNum(c.worst.target - c.worst.actual)} {tr('ชิ้น')}</>
+                        : <>{tr('✅ ทุกไลน์ทำได้ตามเป้า')}</>}
                     </div>
                   </div>
 
                   <button onClick={() => setPickComp(c)}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
-                    ▸ เปิดบริษัทนี้ ({c.lines.length} ไลน์)
+                    {tr('เปิดบริษัทนี้ (')}{c.lines.length} {tr('ไลน์)')}
                   </button>
                 </div>
               );
@@ -790,19 +783,19 @@ export default function GroupOverview() {
           <div style={card}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>
-                🏭 {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
+                {compNode.flag} {compNode.code} {tr('— รายไลน์ (')}{compNode.lines.length})
               </div>
               {compNode.real
-                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>{tr('ข้อมูลจริง')}</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>{tr('ตัวเลขจำลอง')}</span>}
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{compNode.name} · {compNode.region}</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 640 }}>
                 <thead><tr>
-                  <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
-                  <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th>
-                  <th style={THR}>NG</th><th style={THR}>คน</th>
+                  <th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ประเภท')}</th><th style={THR}>{tr('เป้า')}</th><th style={THR}>{tr('ผลิตได้')}</th>
+                  <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th>
+                  <th style={THR}>NG</th><th style={THR}>{tr('คน')}</th>
                 </tr></thead>
                 <tbody>
                   {[...compNode.lines].sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).map(l => {
@@ -815,8 +808,8 @@ export default function GroupOverview() {
                         <td style={TDR}>{fmtNum(l.actual)}</td>
                         <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
                         <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                        <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
-                        <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                        <td style={{ ...TDR, color: l.dtMin > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
+                        <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                         <td style={{ ...TDR, color: l.head ? undefined : 'var(--muted)' }}>{l.head ? `${fmtNum(l.present)}/${fmtNum(l.head)}` : '—'}</td>
                       </tr>
                     );
@@ -826,7 +819,7 @@ export default function GroupOverview() {
             </div>
             {compNode.real && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-                ตัวเลขชุดนี้มาจากฐานข้อมูลจริง — ตรงกับที่เห็นใน <b>/oee-analytics</b> และ <b>/factory-map</b> (ใช้สูตรกลางชุดเดียวกัน)
+                ตัวเลขชุดนี้มาจากฐานข้อมูลจริง — ตรงกับที่เห็นใน <b>/oee-analytics</b> {tr('และ')} <b>/factory-map</b> (ใช้สูตรกลางชุดเดียวกัน)
               </div>
             )}
           </div>
@@ -835,49 +828,49 @@ export default function GroupOverview() {
         {/* ── ไลน์ที่ต้องดูแลด่วน (ตามขอบเขตที่กำลังดู) ── */}
         <div style={card}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
-            🚨 ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
-            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)</span>
+            ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
+            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>{tr('เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)')}</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 700 }}>
               <thead><tr>
-                {!compNode && <th style={TH}>กลุ่มธุรกิจ</th>}
-                {!compNode && <th style={TH}>บริษัท</th>}
-                <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>ขาดเป้า</th>
-                <th style={THR}>ผลิต/เป้า</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th>
+                {!compNode && <th style={TH}>{tr('กลุ่มธุรกิจ')}</th>}
+                {!compNode && <th style={TH}>{tr('บริษัท')}</th>}
+                <th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ประเภท')}</th><th style={THR}>{tr('ขาดเป้า')}</th>
+                <th style={THR}>{tr('ผลิต/เป้า')}</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th><th style={THR}>NG</th>
               </tr></thead>
               <tbody>
                 {(hotAll ? hotspots : hotspots.slice(0, 5)).map((l, i) => {
                   const lp = +(l.actual / l.target * 100).toFixed(1);
                   return (
                     <tr key={`${l.comp?.key}-${l.line}-${i}`}>
-                      {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {l.comp?.groupMeta?.short}</td>}
+                      {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {tr(l.comp?.groupMeta?.short)}</td>}
                       {!compNode && (
                         <td style={TD}>
                           <button onClick={() => setPickComp(l.comp)} style={{
                             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                             color: 'var(--accent)', fontSize: 13, fontWeight: 700,
                           }}>{l.comp?.flag} {l.comp?.code}</button>
-                          {!l.comp?.real && <span style={{ fontSize: 11, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
+                          {!l.comp?.real && <span style={{ fontSize: 11, color: 'var(--amber)', marginLeft: 5 }}>{tr('(จำลอง)')}</span>}
                         </td>
                       )}
                       <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
                       <td style={{ ...TD, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ltShort(l.ltype)}</td>
-                      <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
+                      <td style={{ ...TDR, color: 'var(--red)', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
                       <td style={{ ...TDR, color: pctCol(lp) }}>{fmtNum(l.actual)}/{fmtNum(l.target)} ({lp}%)</td>
                       <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                      <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
-                      <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                      <td style={{ ...TDR, color: l.dtMin > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
+                      <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                     </tr>
                   );
                 })}
-                {!hotspots.length && <tr><td style={TD} colSpan={compNode ? 7 : 9}>✅ ทุกไลน์ทำได้ตามเป้า</td></tr>}
+                {!hotspots.length && <tr><td style={TD} colSpan={compNode ? 7 : 9}>{tr('✅ ทุกไลน์ทำได้ตามเป้า')}</td></tr>}
               </tbody>
             </table>
           </div>
           {hotspots.length > 5 && (
             <button onClick={() => setHotAll(v => !v)} style={{ ...btn, marginTop: 8, fontSize: 12.5, padding: '5px 12px' }}>
-              {hotAll ? '▴ แสดง 5 อันดับแรก' : `▾ แสดงอีก ${hotspots.length - 5} ไลน์`}
+              {hotAll ? 'แสดง 5 อันดับแรก' : `แสดงอีก ${hotspots.length - 5} ไลน์`}
             </button>
           )}
         </div>
@@ -898,40 +891,40 @@ export default function GroupOverview() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 19, fontWeight: 800 }}>{pickComp.code}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-                  {pickComp.groupMeta.icon} {pickComp.groupMeta.short} · {pickComp.region}
+                  {pickComp.groupMeta.icon} {tr(pickComp.groupMeta.short)} · {pickComp.region}
                 </div>
               </div>
               {pickComp.real
-                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '2px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '2px 7px' }}>จำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{tr('ข้อมูลจริง')}</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{tr('จำลอง')}</span>}
               <button className="tbtn" onClick={() => setPickComp(null)} style={{ ...btn, padding: '3px 9px' }}>✕</button>
             </div>
 
             {/* สรุปสั้นๆ ให้ตัดสินใจได้ก่อนเลือกทาง */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, margin: '13px 0 15px' }}>
               <Mini label="OEE" value={pickComp.oee == null ? '—' : pickComp.oee + '%'} color={oeeCol(pickComp.oee)} />
-              <Mini label="ผลิต/เป้า" value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
-              <Mini label="🔧 DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? '#f59e0b' : undefined} />
-              <Mini label="🚫 NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? '#ef4444' : undefined} />
+              <Mini label={tr('ผลิต/เป้า')} value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
+              <Mini label="DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
+              <Mini label="NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? 'var(--red)' : undefined} />
             </div>
 
-            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>จะดูแบบไหน?</div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>{tr('จะดูแบบไหน?')}</div>
 
             {/* 1) เข้าผังโรงงานของบริษัทนั้น */}
             <button
               disabled={!pickComp.real}
               onClick={() => { if (pickComp.real) { setPickComp(null); navigate('/factory-map'); } }}
               style={{
-                width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, marginBottom: 9,
+                width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--r-md)', marginBottom: 9,
                 background: pickComp.real ? 'var(--bg3)' : 'var(--bg2)',
                 border: `1px solid ${pickComp.real ? 'var(--accent)' : 'var(--border)'}`,
                 color: 'var(--text)', cursor: pickComp.real ? 'pointer' : 'not-allowed', opacity: pickComp.real ? 1 : 0.72,
               }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800 }}>🗺️ เข้าหน้าผังโรงงาน (Floor Plan) ของ {pickComp.code}</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>{tr('เข้าหน้าผังโรงงาน (Floor Plan) ของ')} {pickComp.code}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                 {pickComp.real
                   ? 'เปิดผังรวมโรงงานจริง — เห็นทุกไลน์บนผัง สีตามสถานะ กดเข้าไลน์ดูรายละเอียดได้'
-                  : <>ยังไม่มีผังของบริษัทจำลอง — <b>ระบบจริง</b>: แต่ละบริษัทมีผังของตัวเอง (ผูกบริษัทเข้ากับผังโรงงาน) กดแล้วเด้งเข้าผังของบริษัทนั้นได้เลย</>}
+                  : <>{tr('ยังไม่มีผังของบริษัทจำลอง —')} <b>{tr('ระบบจริง')}</b>{tr(': แต่ละบริษัทมีผังของตัวเอง (ผูกบริษัทเข้ากับผังโรงงาน) กดแล้วเด้งเข้าผังของบริษัทนั้นได้เลย')}</>}
               </div>
             </button>
 
@@ -940,10 +933,10 @@ export default function GroupOverview() {
               setSel(st => ({ ...st, node: st.axis === 'map' ? pickComp.zone : pickComp.groupMeta.key, comp: pickComp.key }));
               setPickComp(null);
             }} style={{
-              width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10,
+              width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
             }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800 }}>📊 ดูภาพรวมในหน้านี้ ({pickComp.lines.length} ไลน์)</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>{tr('ดูภาพรวมในหน้านี้ (')}{pickComp.lines.length} ไลน์)</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                 อยู่หน้าเดิม — เห็นตารางรายไลน์ (เป้า/ผลิต/OEE/DT/NG/คน) แล้วกดย้อนกลับขึ้นโซนหรือกลุ่มได้ทันที
               </div>
@@ -953,7 +946,7 @@ export default function GroupOverview() {
               <button onClick={() => { setPickComp(null); navigate('/factory-map'); }} style={{
                 ...btn, width: '100%', marginTop: 9, fontSize: 12.5, padding: '8px 10px',
               }}>
-                🔎 ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)
+                {tr('ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)')}
               </button>
             )}
           </div>
@@ -966,23 +959,23 @@ export default function GroupOverview() {
           background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', padding: 0,
           fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
         }}>
-          <span>{showHow ? '▼' : '▶'}</span> 🛠️ ถ้าจะรองรับหลายบริษัทในกลุ่มจริง ต้องทำอะไรบ้าง
-          <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>(สรุปเชิงเทคนิค)</span>
+          <span>{showHow ? '▼' : '▶'}</span> {tr('🛠️ ถ้าจะรองรับหลายบริษัทในกลุ่มจริง ต้องทำอะไรบ้าง')}
+          <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>{tr('(สรุปเชิงเทคนิค)')}</span>
         </button>
         {showHow && (
           <div style={{ fontSize: 13, lineHeight: 1.85, marginTop: 10, color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--text)' }}>ทำได้ครับ — โครงระบบปัจจุบันรองรับได้โดยไม่ต้องเขียนใหม่</b> เพราะทุกอย่างผูกกับ “ไลน์ / ส่วนงาน” อยู่แล้ว
+            <b style={{ color: 'var(--text)' }}>{tr('ทำได้ครับ — โครงระบบปัจจุบันรองรับได้โดยไม่ต้องเขียนใหม่')}</b> เพราะทุกอย่างผูกกับ “ไลน์ / ส่วนงาน” อยู่แล้ว
             แค่ต่อ <b>ผังองค์กรที่มีอยู่ (`org_nodes`)</b> ขึ้นไปอีก 2 ชั้น (กลุ่มธุรกิจ → บริษัท) · งานหลักที่ต้องทำ:
             <ol style={{ margin: '8px 0 0', paddingLeft: 22 }}>
-              <li><b>ขยาย <code>org_nodes.kind</code> ให้มี <code>business_group</code> + <code>company</code></b> (ปัจจุบันมี section / department / line) — โครงต้นไม้ parent_id เดิมรองรับอยู่แล้ว ไม่ต้องสร้างตารางใหม่ · เพิ่ม <code>company_id</code> ที่ <code>production_lines</code> + <code>profiles</code></li>
-              <li><b>ตารางข้อมูลรายวันไม่ต้องแก้</b> (production_sessions / prod_orders / downtime_logs / defect_logs) — สืบบริษัท↔กลุ่มธุรกิจผ่านไลน์ได้ทั้งหมด</li>
-              <li><b>ขยาย scope ของ user</b> จาก “ส่วนงาน (sections)” เป็น “บริษัท → ส่วนงาน” — ต่อยอด <code>effectiveSections()</code> เดิม + เพิ่ม role ระดับกลุ่ม (ผู้บริหาร TSG เห็นทุกบริษัท / ผู้จัดการบริษัทเห็นเฉพาะของตัวเอง)</li>
-              <li><b>Master data ที่ต้องแยกต่อบริษัท:</b> ปฏิทินบริษัท · นโยบายเวลาพัก · เป้า OEE · ทะเบียนเอกสาร (เลขฟอร์มคนละชุด) · ห้อง Telegram แจ้งเตือน · ผังโรงงาน</li>
-              <li><b>2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้</b> — แยกด้วย <code>company_id</code> ในโครงเดิม ไม่ต้องแตก project ต่อบริษัท (ถ้าบริษัทต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)</li>
-              <li><b>จอนี้ (Group Overview)</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง</li>
+              <li><b>{tr('ขยาย')} <code>org_nodes.kind</code> {tr('ให้มี')} <code>business_group</code> + <code>company</code></b> {tr('(ปัจจุบันมี section / department / line) — โครงต้นไม้ parent_id เดิมรองรับอยู่แล้ว ไม่ต้องสร้างตารางใหม่ · เพิ่ม')} <code>company_id</code> {tr('ที่')} <code>production_lines</code> + <code>profiles</code></li>
+              <li><b>{tr('ตารางข้อมูลรายวันไม่ต้องแก้')}</b> {tr('(production_sessions / prod_orders / downtime_logs / defect_logs) — สืบบริษัท↔กลุ่มธุรกิจผ่านไลน์ได้ทั้งหมด')}</li>
+              <li><b>{tr('ขยาย scope ของ user')}</b> {tr('จาก “ส่วนงาน (sections)” เป็น “บริษัท → ส่วนงาน” — ต่อยอด')} <code>effectiveSections()</code> {tr('เดิม + เพิ่ม role ระดับกลุ่ม (ผู้บริหาร TSG เห็นทุกบริษัท / ผู้จัดการบริษัทเห็นเฉพาะของตัวเอง)')}</li>
+              <li><b>{tr('Master data ที่ต้องแยกต่อบริษัท:')}</b> {tr('ปฏิทินบริษัท · นโยบายเวลาพัก · เป้า OEE · ทะเบียนเอกสาร (เลขฟอร์มคนละชุด) · ห้อง Telegram แจ้งเตือน · ผังโรงงาน')}</li>
+              <li><b>{tr('2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้')}</b> {tr('— แยกด้วย')} <code>company_id</code> {tr('ในโครงเดิม ไม่ต้องแตก project ต่อบริษัท (ถ้าบริษัทต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)')}</li>
+              <li><b>{tr('จอนี้ (Group Overview)')}</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง</li>
             </ol>
-            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12.5 }}>
-              <b>ข้อควรระวัง:</b> แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
+            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
+              <b>{tr('ข้อควรระวัง:')}</b> แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
               ไม่งั้นตัวเลขเทียบข้ามบริษัทไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐานกลางของกลุ่ม ไม่ใช่งานเขียนโปรแกรม
             </div>
           </div>
@@ -1012,7 +1005,7 @@ function Kpi({ label, value, sub, color }) {
 
 function Mini({ label, value, color }) {
   return (
-    <div style={{ background: 'var(--bg3)', borderRadius: 6, padding: '5px 7px' }}>
+    <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '5px 7px' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>

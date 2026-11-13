@@ -21,6 +21,7 @@ import SearchSelect from './SearchSelect'
 import { planReadiness, SPARE_HORIZON_DAYS } from '../utils/pmSpares'
 import { loadSpareParts, loadPmSpareDemand } from '../lib/pmSpareData'
 
+import { tr } from '../utils/i18n';
 const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }))
 const fmtYmd = (ymd) => {
   if (!ymd) return '—'
@@ -31,19 +32,19 @@ const inp = { padding: '7px 9px', borderRadius: 8, border: '1px solid var(--bord
 const btn = (c, solid) => ({ padding: '7px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: solid ? 'none' : `1px solid ${c}55`, background: solid ? c : `${c}14`, color: solid ? '#fff' : c })
 const th = { padding: '8px 9px', textAlign: 'left', fontSize: 12, fontWeight: 800, color: 'var(--muted)', whiteSpace: 'nowrap' }
 const td = { padding: '7px 9px', fontSize: 12.5, borderTop: '1px solid var(--border)', verticalAlign: 'top' }
-const Chip = ({ c, children }) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 12, fontSize: 11.5, fontWeight: 800, color: c, border: `1px solid ${c}66`, background: `${c}1a`, whiteSpace: 'nowrap' }}>{children}</span>
+const Chip = ({ c, children }) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-lg)', fontSize: 11.5, fontWeight: 800, color: c, border: `1px solid ${c}66`, background: `${c}1a`, whiteSpace: 'nowrap' }}>{children}</span>
 
 function Shell({ title, sub, onClose, children, width = 680 }) {
   return (
     // ฟอร์มมีข้อมูลที่กรอก — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · modal-scroll = เลื่อนถึงปุ่มล่างได้
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
             {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
           </div>
-          <button onClick={onClose} aria-label="ปิด" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} aria-label={tr('ปิด')} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {children}
       </div>
@@ -138,14 +139,14 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
   }
 
   return (
-    <Shell title="🔩 อะไหล่ที่ใช้ใน PM รอบหนึ่ง" onClose={onClose}
-      sub={<>{eqLabel || '—'}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} · รอบ: <b>{row.cycleText || '—'}</b>{row.nextDue ? ` · PM ครั้งถัดไป ${row.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}` : ''}</>}>
+    <Shell title={tr('อะไหล่ที่ใช้ใน PM รอบหนึ่ง')} onClose={onClose}
+      sub={<>{eqLabel || '—'}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} {tr('· รอบ:')} <b>{row.cycleText || '—'}</b>{row.nextDue ? ` · PM ครั้งถัดไป ${row.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}` : ''}</>}>
       {loadErr && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {loadErr}</div>}
-      {loading ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div> : (<>
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+      {loading ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div> : (<>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อะไหล่', 'ใช้ต่อรอบ', 'คงเหลือ', 'สถานะ', ''].map(h => <th key={h} style={th}>{h}</th>)}
+              {['อะไหล่', 'ใช้ต่อรอบ', 'คงเหลือ', 'สถานะ', ''].map(h => <th key={h} style={th}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {!ready.items.length && (
@@ -156,17 +157,17 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
               {ready.items.map(i => (
                 <tr key={i.line.id}>
                   <td style={td}>
-                    <b style={{ color: 'var(--text)' }}>{i.part?.name || 'อะไหล่ถูกลบจากทะเบียน'}</b>
+                    <b style={{ color: 'var(--text)' }}>{i.part?.name || tr('อะไหล่ถูกลบจากทะเบียน')}</b>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{[i.part?.code, i.part?.shelf && `ชั้น ${i.part.shelf}`].filter(Boolean).join(' · ') || '—'}</div>
                   </td>
                   <td style={td}>
                     {canEdit
-                      ? <input type="number" min="0" step="any" defaultValue={i.qty} onBlur={e => updQty(i.line, e.target.value)} style={{ ...inp, width: 80 }} aria-label="จำนวนต่อรอบ" />
+                      ? <input type="number" min="0" step="any" defaultValue={i.qty} onBlur={e => updQty(i.line, e.target.value)} style={{ ...inp, width: 80 }} aria-label={tr('จำนวนต่อรอบ')} />
                       : fmtN(i.qty)} <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>{i.part?.unit || ''}</span>
                   </td>
                   <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{fmtN(i.stock)}</td>
-                  <td style={td}>{i.missing ? <Chip c="#9aa3a0">ไม่อยู่ในทะเบียน</Chip> : i.ok ? <Chip c="#3dd65c">✓ พอ</Chip> : <Chip c="#ef4444">ขาด {fmtN(i.qty - (i.stock || 0))}</Chip>}</td>
-                  <td style={{ ...td, textAlign: 'right' }}>{canEdit && <button onClick={() => delLine(i.line)} title="เอาออกจากแผน" style={{ ...btn('#8b8b96'), padding: '4px 9px', fontSize: 12 }}>✕</button>}</td>
+                  <td style={td}>{i.missing ? <Chip c="#9aa3a0">{tr('ไม่อยู่ในทะเบียน')}</Chip> : i.ok ? <Chip c="#3dd65c">{tr('✓ พอ')}</Chip> : <Chip c="#ef4444">{tr('ขาด')} {fmtN(i.qty - (i.stock || 0))}</Chip>}</td>
+                  <td style={{ ...td, textAlign: 'right' }}>{canEdit && <button onClick={() => delLine(i.line)} title={tr('เอาออกจากแผน')} style={{ ...btn('#8b8b96'), padding: '4px 9px', fontSize: 12 }}>✕</button>}</td>
                 </tr>
               ))}
             </tbody>
@@ -177,28 +178,28 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 10 }}>
             <div style={{ flex: '1 1 260px', minWidth: 0 }}>
               <SearchSelect value={pick.id} text={pick.text} options={options} onChange={({ id, text }) => setPick({ id: id || '', text: text || '' })}
-                placeholder="🔎 ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)" emptyText="ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่" />
+                placeholder={tr('ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)')} emptyText={tr('ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่')} />
             </div>
-            <input type="number" min="0" step="any" value={pickQty} onChange={e => setPickQty(e.target.value)} style={{ ...inp, width: 80 }} aria-label="จำนวนต่อรอบ" />
-            <button onClick={addLine} disabled={busy || !pick.id} style={{ ...btn('#3dd65c', true), opacity: pick.id ? 1 : 0.5 }}>+ เพิ่ม</button>
+            <input type="number" min="0" step="any" value={pickQty} onChange={e => setPickQty(e.target.value)} style={{ ...inp, width: 80 }} aria-label={tr('จำนวนต่อรอบ')} />
+            <button onClick={addLine} disabled={busy || !pick.id} style={{ ...btn('#3dd65c', true), opacity: pick.id ? 1 : 0.5 }}>{tr('+ เพิ่ม')}</button>
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 14, padding: '10px 12px', borderRadius: 10, background: 'var(--bg3)' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 14, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
           <span style={{ flex: '1 1 240px', fontSize: 12.5, color: 'var(--text2)' }}>
             {ready.allOk == null ? 'ผูกอะไหล่ก่อน แล้วจึงเบิกตามแผนได้'
               : ready.allOk ? '✅ อะไหล่พร้อมสำหรับ PM รอบถัดไป'
-                : <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ ขาด {ready.shortCount} รายการ — เบิกทั้งชุดไม่ได้จนกว่าจะรับของเข้า</span>}
+                : <span style={{ color: '#ef4444', fontWeight: 700 }}>{tr('⚠️ ขาด')} {ready.shortCount} {tr('รายการ — เบิกทั้งชุดไม่ได้จนกว่าจะรับของเข้า')}</span>}
           </span>
           {canIssue
-            ? <button onClick={issue} disabled={busy || !ready.allOk} title={ready.allOk ? 'ตัดสต็อกทุกรายการในครั้งเดียว' : 'มีอะไหล่ไม่พอ'}
-                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>📦 เบิกอะไหล่ตามแผน PM</button>
-            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>เบิกได้เฉพาะผู้มีสิทธิ์เบิกอะไหล่</span>}
+            ? <button onClick={issue} disabled={busy || !ready.allOk} title={ready.allOk ? tr('ตัดสต็อกทุกรายการในครั้งเดียว') : tr('มีอะไหล่ไม่พอ')}
+                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>{tr('เบิกอะไหล่ตามแผน PM')}</button>
+            : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('เบิกได้เฉพาะผู้มีสิทธิ์เบิกอะไหล่')}</span>}
         </div>
 
         {history.length > 0 && (
           <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 4 }}>ประวัติเบิกให้ PM ใบนี้</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 4 }}>{tr('ประวัติเบิกให้ PM ใบนี้')}</div>
             {history.slice(0, 8).map(h => (
               <div key={h.id} style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0', borderTop: '1px dashed var(--border)' }}>
                 {new Date(h.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
@@ -243,20 +244,20 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
   const c = bad ? '#ef4444' : s.belowMin ? '#f59a3f' : '#4a90e0'
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: `1px solid ${c}55`, background: `${c}12` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 'var(--r-md)', border: `1px solid ${c}55`, background: `${c}12` }}>
         <span style={{ fontSize: 13, color: 'var(--text)', flex: '1 1 280px' }}>
-          🔩 <b>อะไหล่สำหรับ PM {s.horizonDays} วันข้างหน้า</b>{' '}
-          {state.error ? <span style={{ color: '#ef4444' }}>— {state.error} (ตัวเลขไม่ครบ)</span>
-            : !s.parts && !s.noDuePlans ? <span style={{ color: 'var(--muted)' }}>— ยังไม่มีแผน PM ไหนผูกอะไหล่ (กดปุ่ม 🔩 ในมุมมองตาราง)</span>
+          🔩 <b>{tr('อะไหล่สำหรับ PM')} {s.horizonDays} {tr('วันข้างหน้า')}</b>{' '}
+          {state.error ? <span style={{ color: '#ef4444' }}>— {state.error} {tr('(ตัวเลขไม่ครบ)')}</span>
+            : !s.parts && !s.noDuePlans ? <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่มีแผน PM ไหนผูกอะไหล่ (กดปุ่ม 🔩 ในมุมมองตาราง)')}</span>
               : <span style={{ color: 'var(--muted)' }}>
                   — ต้องใช้ {s.parts} รายการ
-                  {bad && <> · <b style={{ color: '#ef4444' }}>ขาด {s.short}</b></>}
-                  {s.orderLate > 0 && <> · <b style={{ color: '#ef4444' }}>สั่งไม่ทัน leadtime {s.orderLate}</b></>}
-                  {s.belowMin > 0 && <> · ต่ำกว่า safety {s.belowMin}</>}
-                  {s.noDuePlans > 0 && <> · แผนที่ยังไม่มีวัน PM {s.noDuePlans} (คาดไม่ได้)</>}
+                  {bad && <> · <b style={{ color: '#ef4444' }}>{tr('ขาด')} {tr(s.short)}</b></>}
+                  {s.orderLate > 0 && <> · <b style={{ color: '#ef4444' }}>{tr('สั่งไม่ทัน leadtime')} {s.orderLate}</b></>}
+                  {s.belowMin > 0 && <> {tr('· ต่ำกว่า safety')} {s.belowMin}</>}
+                  {s.noDuePlans > 0 && <> {tr('· แผนที่ยังไม่มีวัน PM')} {s.noDuePlans} {tr('(คาดไม่ได้)')}</>}
                 </span>}
         </span>
-        {(s.parts > 0 || s.noDuePlans > 0) && <button onClick={() => setOpen(true)} style={btn(c)}>ดูรายการ</button>}
+        {(s.parts > 0 || s.noDuePlans > 0) && <button onClick={() => setOpen(true)} style={btn(c)}>{tr('ดูรายการ')}</button>}
       </div>
       {open && <SpareDemandModal demand={d} error={state.error} onClose={() => setOpen(false)} onOpenPlan={onOpenPlan} />}
     </>
@@ -267,13 +268,13 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
   const [openRow, setOpenRow] = useState(null)
   const s = demand.summary
   return (
-    <Shell title={`🔩 อะไหล่ที่ PM ${s.horizonDays} วันข้างหน้าต้องใช้`} width={920} onClose={onClose}
-      sub="รวมทุกครั้งที่ PM จะเกิดในช่วงนี้ (รายสัปดาห์ = หลายครั้ง) ทุกทีม เทียบสต็อกคงเหลือ · ขาด = ต้องสั่ง/รับของเข้าก่อนวันที่ระบุ">
-      {error && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {error} — ตัวเลขด้านล่างไม่ครบ</div>}
-      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+    <Shell title={`อะไหล่ที่ PM ${s.horizonDays} วันข้างหน้าต้องใช้`} width={920} onClose={onClose}
+      sub={tr('รวมทุกครั้งที่ PM จะเกิดในช่วงนี้ (รายสัปดาห์ = หลายครั้ง) ทุกทีม เทียบสต็อกคงเหลือ · ขาด = ต้องสั่ง/รับของเข้าก่อนวันที่ระบุ')}>
+      {error && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {error} {tr('— ตัวเลขด้านล่างไม่ครบ')}</div>}
+      <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr style={{ background: 'var(--bg3)' }}>
-            {['อะไหล่', 'ต้องใช้', 'คงเหลือ', 'หลังใช้', 'ใช้ครั้งแรก', 'เริ่มขาด', 'ต้องสั่งภายใน', 'PM ที่ใช้'].map(h => <th key={h} style={th}>{h}</th>)}
+            {['อะไหล่', 'ต้องใช้', 'คงเหลือ', 'หลังใช้', 'ใช้ครั้งแรก', 'เริ่มขาด', 'ต้องสั่งภายใน', 'PM ที่ใช้'].map(h => <th key={h} style={th}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
             {demand.rows.map(r => (
@@ -282,25 +283,25 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
                   <b style={{ color: 'var(--text)' }}>{r.part.name}</b>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{[r.part.code, r.part.shelf && `ชั้น ${r.part.shelf}`].filter(Boolean).join(' · ') || '—'}</div>
                 </td>
-                <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{fmtN(r.needQty)} {r.part.unit || ''}{r.estimate && <div style={{ fontSize: 11, color: 'var(--muted)' }}>≈ ประมาณเผื่อ (นับตามวันเดิน)</div>}</td>
+                <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{fmtN(r.needQty)} {r.part.unit || ''}{r.estimate && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('≈ ประมาณเผื่อ (นับตามวันเดิน)')}</div>}</td>
                 <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>{fmtN(r.stock)}</td>
                 <td style={td}>
-                  {r.shortQty > 0 ? <Chip c="#ef4444">ขาด {fmtN(r.shortQty)}</Chip>
-                    : r.belowMin ? <Chip c="#f59a3f">เหลือ {fmtN(r.after)} · ต่ำกว่า safety</Chip>
-                      : <Chip c="#3dd65c">เหลือ {fmtN(r.after)}</Chip>}
+                  {r.shortQty > 0 ? <Chip c="#ef4444">{tr('ขาด')} {fmtN(r.shortQty)}</Chip>
+                    : r.belowMin ? <Chip c="#f59a3f">{tr('เหลือ')} {fmtN(r.after)} {tr('· ต่ำกว่า safety')}</Chip>
+                      : <Chip c="#3dd65c">{tr('เหลือ')} {fmtN(r.after)}</Chip>}
                 </td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtYmd(r.firstUseYmd)}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap', color: r.firstShortYmd ? '#ef4444' : 'var(--muted)' }}>{fmtYmd(r.firstShortYmd)}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {!r.firstShortYmd ? <span style={{ color: 'var(--muted)' }}>—</span>
-                    : r.orderByYmd == null ? <span style={{ color: '#f59a3f' }}>ไม่รู้ leadtime</span>
-                      : r.orderLate ? <b style={{ color: '#ef4444' }}>เลยมาแล้ว ({fmtYmd(r.orderByYmd)})</b>
+                    : r.orderByYmd == null ? <span style={{ color: '#f59a3f' }}>{tr('ไม่รู้ leadtime')}</span>
+                      : r.orderLate ? <b style={{ color: '#ef4444' }}>{tr('เลยมาแล้ว (')}{fmtYmd(r.orderByYmd)})</b>
                         : <b>{fmtYmd(r.orderByYmd)}</b>}
-                  {r.leadDays != null && r.firstShortYmd && <div style={{ fontSize: 11, color: 'var(--muted)' }}>leadtime {r.leadDays} วัน</div>}
+                  {r.leadDays != null && r.firstShortYmd && <div style={{ fontSize: 11, color: 'var(--muted)' }}>leadtime {r.leadDays} {tr('วัน')}</div>}
                 </td>
                 <td style={td}>
                   <button onClick={() => setOpenRow(openRow === r.part.id ? null : r.part.id)} style={{ ...btn('#8b8b96'), padding: '3px 9px', fontSize: 12 }}>
-                    {r.uses.length} ครั้ง {openRow === r.part.id ? '▴' : '▾'}
+                    {r.uses.length} {tr('ครั้ง')} {openRow === r.part.id ? '▴' : '▾'}
                   </button>
                   {openRow === r.part.id && (
                     <div style={{ marginTop: 4 }}>
@@ -320,8 +321,8 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
         </table>
       </div>
       {demand.noDue.length > 0 && (
-        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 10, border: '1px solid #f59a3f55', background: '#f59a3f12', fontSize: 12.5, color: 'var(--text2)' }}>
-          ⚠️ <b>{demand.noDue.length} แผนผูกอะไหล่แล้ว แต่ยังไม่มีวัน PM ครั้งถัดไป</b> — ระบบคาดความต้องการของแผนเหล่านี้ไม่ได้
+        <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px solid #f59a3f55', background: '#f59a3f12', fontSize: 12.5, color: 'var(--text2)' }}>
+          ⚠️ <b>{demand.noDue.length} {tr('แผนผูกอะไหล่แล้ว แต่ยังไม่มีวัน PM ครั้งถัดไป')}</b> — ระบบคาดความต้องการของแผนเหล่านี้ไม่ได้
           (ตั้งรอบ/วัน PM ที่ปุ่ม 📅): {demand.noDue.map(p => p.name).join(' · ')}
         </div>
       )}

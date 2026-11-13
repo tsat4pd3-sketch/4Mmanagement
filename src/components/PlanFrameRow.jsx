@@ -23,6 +23,7 @@ import { layoutLots, reorderTo, UNKNOWN_BOX_MIN_PCT } from '../utils/planTimelin
 import MatLabel, { useMatIndex } from './MatLabel';
 import { matText } from '../utils/matLabel';
 
+import { tr } from '../utils/i18n';
 const FRAME = '#a78bfa';
 const ST = {
   done:    { c: '#22c55e', mark: '✓',  label: 'ครบตามกรอบแล้ว' },
@@ -99,7 +100,7 @@ export default function PlanFrameRow({
               onDrop={canDrag ? (e) => { e.preventDefault(); e.stopPropagation(); drop(shiftKey, boxIndex); } : undefined}
               style={{
               position: 'absolute', top: 4, bottom: 4, left: `${left}%`, width: `${Math.min(w, 100 - left)}%`,
-              boxSizing: 'border-box', borderRadius: 5, overflow: 'hidden',
+              boxSizing: 'border-box', borderRadius: 'var(--r-xs)', overflow: 'hidden',
               border: `1.5px dashed ${st.c}cc`,
               background: 'var(--card)', backgroundImage: b.noCt
                 ? `repeating-linear-gradient(45deg, ${st.c}26 0 5px, transparent 5px 10px)`
@@ -112,7 +113,7 @@ export default function PlanFrameRow({
               <span style={{ fontSize: 11, fontWeight: 800, color: st.c, flexShrink: 0 }}>{st.mark}</span>
               {b.lot.mat_no
                 ? <MatLabel mat={b.lot.mat_no} name={b.lot.part_name} size={11} style={{ flexWrap: 'nowrap', overflow: 'hidden' }} />
-                : <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700 }}>จองเครื่อง</span>}
+                : <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700 }}>{tr('จองเครื่อง')}</span>}
               {qty > 0 && (
                 <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
                   {qty.toLocaleString()}
@@ -124,7 +125,7 @@ export default function PlanFrameRow({
         {/* 🔴 บอกบนจอว่ากี่ล็อตที่ตำแหน่งเชื่อไม่ได้ — ห้ามปล่อยให้ดูเหมือนเวลาจริงทั้งแถว */}
         {unknownCount > 0 && (
           <span style={{ position: 'absolute', right: 4, top: 7, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}
-            title="ล็อตที่ยังไม่รู้ CT — วางตามลำดับ ไม่ใช่เวลาจริง">⚠ {unknownCount} ล็อตไม่รู้ CT</span>
+            title={tr('ล็อตที่ยังไม่รู้ CT — วางตามลำดับ ไม่ใช่เวลาจริง')}>⚠ {unknownCount} {tr('ล็อตไม่รู้ CT')}</span>
         )}
       </div>
     );
@@ -138,12 +139,12 @@ export default function PlanFrameRow({
         background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}14, ${FRAME}14)`,
         ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3 } : null),
       }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME, lineHeight: 1.25 }}>🧾 กรอบแผน</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME, lineHeight: 1.25 }}>{tr('กรอบแผน')}</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
           แพลนนิ่งตีไว้ {totalLots} ล็อต
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
-          {canDrag ? '🧲 ลากสลับลำดับได้' : 'ยังไม่ใช่ใบผลิต'}
+          {canDrag ? tr('🧲 ลากสลับลำดับได้') : tr('ยังไม่ใช่ใบผลิต')}
         </div>
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>

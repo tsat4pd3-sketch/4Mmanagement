@@ -18,6 +18,7 @@
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
 import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession, orderPlanQty } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
 const num = v => (v == null || v === '' ? null : (Number.isFinite(+v) ? +v : null));
@@ -43,10 +44,12 @@ const bySession = rows => {
  * @param lines     production_lines (name, flow_mode, parallel_stations) — ใช้หา N เครื่องขนาน
  * @param breakPolicies break_policies ที่ is_active — **ต้องส่ง** ไม่งั้น A/P สด ≠ ค่าที่ stamp ตอนปิดกะ (2026-09-14)
  * @param pairMap   mat_no → pair_mat_no (งานคู่ gang die / RH-LH) — **ต้องส่ง** ไม่งั้นเวลามาตรฐานของ %P นับ 2 เท่า (2026-09-18)
+ * @param affectsBy จาก `loadAffectsLanes()` (utils/affectsLanes.js) — "เครื่องไหนหยุดแล้วครอบกี่เลน"
+ *                  ไม่ส่ง = ทุกเครื่องครอบ 1 เลน (พฤติกรรมเดิม) ⇒ ของกลางของไลน์ขนานถูกหารเลนเกินจริง
  */
 export function buildVsmLive({
   boxes = [], sessions = [], orders = [], downtimes = [], defects = [],
-  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {},
+  ctMap = {}, lines = [], nowMs = Date.now(), breakPolicies = [], pairMap = {}, affectsBy = null,
 }) {
   const ordBy = bySession(orders);
   const dtBy = bySession(downtimes);
@@ -65,12 +68,18 @@ export function buildVsmLive({
     if (lineCache[key]) return lineCache[key];
 
     const ss = sessByLine[key] || [];
-    const openSess = ss.find(s => s.status === 'open' || s.status === 'pending_close') || null;
+    const liveSess = ss.filter(s => SESSION_STATUSES_LIVE.includes(s.status));
+    const openSess = liveSess[0] || null;
     const closed = ss.filter(s => s.status === 'closed');
     const sessionIds = ss.map(s => s.id);
 
     const lineDts = sessionIds.flatMap(id => dtBy[id] || []);
-    const openDts = lineDts.filter(isOpenDT);
+    /* 🔴 Andon ต้องมี "กะที่ยังเปิด" รองรับ — แถวเปิดค้างในกะที่ปิดไปแล้ว = คนลืมปิดรายการ
+       ไม่ใช่เครื่องหยุดอยู่ (กฎ `dtOpenKind` · utils/downtimeRules 09/11)
+       เดิมนับรวม ⇒ ไลน์ที่ปิดกะไปแล้วแต่มีแถวค้าง ขึ้น status 'down' แดงทั้งสายตลอดวัน */
+    const liveIds = new Set(liveSess.map(s => s.id));
+    const openDts = lineDts.filter(d => isOpenDT(d) && liveIds.has(d.session_id));
+    const forgottenDt = lineDts.filter(d => isOpenDT(d) && !liveIds.has(d.session_id)).length;
     // planned เปิดค้าง = แสดงแบบสงบ (นับสต๊อก/ไม่มีแผน) — ห้ามนับเป็น Andon แต่ห้ามซ่อน
     const alarms = openDts.filter(d => !isPlannedDT(d))
       .map(d => ({
@@ -101,6 +110,8 @@ export function buildVsmLive({
       breakPolicies,
       // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
       pairMap,
+      // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
+      affectsLanes: affectsBy,
     }) : null;
 
     /* OEE กะที่ปิดแล้ววันนี้ = ค่า stamp ถ่วงเวลารับภาระ (plannedMin จาก DT category='planned')
@@ -110,7 +121,7 @@ export function buildVsmLive({
           ไม่ตรงกับ /oee-analytics ทั้งที่เป็นกะชุดเดียวกัน */
     let closedOee = null;
     if (closed.length) {
-      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies, { lines });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
+      const dtEffBy = dtMinBySession(closed, closed.flatMap(s => dtBy[s.id] || []), breakPolicies, { lines, affectsBy });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const withLoad = closed.map(s => ({ ...s, plannedMin: dtEffBy[s.id]?.planned || 0 }));
       const v = wavg(withLoad, s => num(s.oee), wLoad);
       closedOee = v == null ? null : Math.round(v * 10) / 10;
@@ -128,6 +139,7 @@ export function buildVsmLive({
       live,                      // ผลจาก computeLiveOee (null = ยังประเมินไม่ได้/ไม่มีกะเปิด)
       closedOee,                 // OEE กะที่ปิดแล้ววันนี้ (stamp · ถ่วงน้ำหนัก)
       alarms, plannedOpen,
+      forgottenDt,               // แถวเปิดค้างในกะที่ปิดแล้ว = ต้องไปตามปิด (ไม่ใช่ Andon แต่ห้ามซ่อน)
     };
     return lineCache[key];
   };
@@ -161,6 +173,7 @@ export function buildVsmLive({
     closed: perLine.filter(([, v]) => v.status === 'closed').length,
     idle: perLine.filter(([, v]) => v.status === 'idle').length,
     plannedOpen: perLine.reduce((a, [, v]) => a + v.plannedOpen.length, 0),
+    forgottenDt: perLine.reduce((a, [, v]) => a + v.forgottenDt, 0),
     alarms: perLine.flatMap(([, v]) => v.alarms.map(a => ({ line: v.name, ...a })))
       .sort((a, b) => (b.openMin || 0) - (a.openMin || 0)),
   };

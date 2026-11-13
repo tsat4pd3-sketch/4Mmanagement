@@ -399,3 +399,37 @@ test('machineReliability: summary.phaseGaps นับเหตุผลครบ
   assert.equal(summary.phaseGaps.no_ack, 1);
   assert.equal(summary.phaseGaps.after_end, 1, 'เคสที่หน้างานเจอเยอะสุด — ใบ MO ตามหลังเครื่อง');
 });
+
+/* ══ 🏷️ ตัด '/' ที่ฝั่งข้อความที่หน้างานกรอกด้วย (11/11) ═══════════════════════
+   ทะเบียน `SP-72` · หน้างานลง downtime เป็น `SP-72/NF85` ⇒ เดิมหล่นเป็น "ไม่อยู่ในทะเบียน"
+   🔴 ต้องตรงกับ kpi_mtn_rollup ฝั่ง SQL (กฎ CLAUDE.md §machine_no "ตรรกะต้องตรงกัน") */
+
+test('resolveEquip: ทะเบียนไม่มี "/" แต่หน้างานกรอกมี "/" ต้องจับคู่ได้', () => {
+  const ix = buildEquipIndex([{ machine_no: 'SP-72', equipment_kind: 'machine' }]);
+  const r = resolveEquip('SP-72/NF85', ix);
+  assert.equal(r.machine?.machine_no, 'SP-72');
+  assert.equal(r.via, 'prefix', '🔴 จับคู่แบบหลวม ต้องไม่รายงานเป็น exact');
+  /* ตรงตัวยังต้องเป็น exact เหมือนเดิม (ห้ามถอยไปใช้ชั้นหลวมเมื่อมีตัวตรง) */
+  assert.equal(resolveEquip('SP-72', ix).via, 'exact');
+  assert.equal(resolveEquip('sp 72', ix).via, 'exact', 'ต่างแค่รูปแบบ = ยังเป็น exact');
+});
+
+test('🔴 ชั้นใหม่ต้องไม่ยุบแม่พิมพ์ที่ชื่อขึ้นต้นเหมือนกัน (prefix ชนกัน = ห้ามเดา)', () => {
+  const ms = [
+    { machine_no: 'BMP RPA RH/LH (OP10)' },
+    { machine_no: 'BMP RPA RH/LH (OP20)' },
+  ];
+  const ix = buildEquipIndex(ms);
+  /* prefix `BMPRPARH` ชนกัน 2 ตัว ⇒ ดัชนีทิ้งไปแล้ว ⇒ ชั้นใหม่ก็ต้องจับไม่ได้ */
+  assert.equal(resolveEquip('BMP RPA RH/LH (OP10)', ix).machine?.machine_no, 'BMP RPA RH/LH (OP10)',
+    'ตรงตัวเป๊ะยังต้องเจอ');
+  assert.equal(resolveEquip('BMP RPA RH/บางอย่างที่ไม่มีในทะเบียน', ix).machine, null,
+    'ชนกัน = ปล่อยเป็นไม่รู้ ห้ามเดาไปตัวใดตัวหนึ่ง');
+});
+
+test('🔴 ไม่เจอจริงๆ ยังต้องคืน null (ชั้นใหม่ห้ามทำให้ทุกอย่างจับคู่ได้มั่ว)', () => {
+  const ix = buildEquipIndex([{ machine_no: 'SP-72' }]);
+  assert.equal(resolveEquip('JIG-005', ix).machine, null);
+  assert.equal(resolveEquip('CONVEYOR', ix).machine, null);
+  assert.equal(resolveEquip('', ix).machine, null);
+});

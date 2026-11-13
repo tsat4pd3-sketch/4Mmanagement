@@ -41,6 +41,7 @@
       (`oee.js` pure เหมือนกัน import ได้)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith, shiftStartDate } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { lineFamilyKey, scopeKeyByFamily } from './machineNo.js';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -91,6 +92,22 @@ export function resolveEquip(rawNo, index) {
   if (hit) return { machine: hit, via: 'exact', key };
   const p = index.prefix?.get(key);
   if (p) return { machine: p, via: 'prefix', key };
+  /* ── ตัด `/` ที่ **ฝั่งข้อความที่หน้างานกรอก** ด้วย ─────────────────  2026-11-11
+     2 ชั้นบนตัด `/` เฉพาะฝั่ง*ทะเบียน* (ทะเบียน `SP-78/NF56` · หน้างานพิมพ์ `SP-78`)
+     แต่ของจริงกลับทางก็มี: **ทะเบียน `SP-72` · หน้างานลง downtime เป็น `SP-72/NF85`**
+     ⇒ เดิมหล่นเป็น "ไม่อยู่ในทะเบียน" ทั้งที่เป็นเครื่องเดียวกัน
+     วัดจริง (ก.ย.–10 พ.ย. · กรอง downtime ตามแผนออก) ชนิด machine:
+       ก.ย. +37.1 ชม. (+12.7%) · ต.ค. +14.3 ชม. (+1.8%) ที่เคยตกไปอยู่ถัง unknown
+     🔴 ต้องตรงกับ `kpi_mtn_rollup` ฝั่ง SQL (migration 20261111_…_machine_key_dr.sql)
+        — กฎ CLAUDE.md §machine_no: "ตรรกะต้องตรงกัน" แก้ที่ไหนต้องแก้คู่กัน
+     🔴 ยังเป็น `via:'prefix'` เหมือนเดิม (จอติดป้ายว่า "จับคู่แบบหลวม") ห้ามรายงานเป็น exact */
+  const base = baseEquipKey(rawNo);
+  if (base && base !== key) {
+    const h2 = index.exact?.get(base);
+    if (h2) return { machine: h2, via: 'prefix', key };
+    const p2 = index.prefix?.get(base);
+    if (p2) return { machine: p2, via: 'prefix', key };
+  }
   return { machine: null, via: null, key };
 }
 
@@ -303,8 +320,19 @@ export function machineReliability({
     if (!typedKey) { noMachineNo++; continue; }
     /* 🔴 จัดกลุ่มด้วย "เครื่องในทะเบียน" ไม่ใช่ข้อความที่พิมพ์ — ไม่งั้นเครื่องเดียวกัน
        ที่คนพิมพ์คนละแบบ ("SP-78" · "SP78" · "SP-78/NF56") กลายเป็นคนละแถว
-       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน) */
-    const key = machine ? normEquipKey(machine.machine_no) : typedKey;
+       แล้วทั้ง MTTR และ MTBF เพี้ยนทั้งคู่ (จำนวนครั้งถูกหารออกเป็นหลายก้อน)
+
+       🏭 **เครื่องนอกทะเบียน ต้องผูก "สายไลน์" ด้วย** (30/10 · คำสั่ง user)
+       `machine_no` เป็นข้อความระดับทั้งโรงงาน ⇒ "CONVEYOR" ของสาย HYDROFORM (PD3)
+       กับของสาย LWR BAR (PD4) เป็นคนละตัวจริง แต่เคยถูกนับเป็นแถวเดียว
+       🔴 ผูกที่ **สาย** ไม่ใช่ชื่อไลน์ดิบ — แม่กับลูกคือที่เดียวกัน (ลงทั้ง `LWR BAR`/`Laser LWR` = ปกติ)
+       🔴 ไม่รู้สาย (ไม่ส่ง `lineFamilyOf`/หาไลน์ไม่เจอ) = คีย์เดิม **ห้ามเดา** */
+    const rowLine = machine?.line_name
+      || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : '') || '';
+    const famKey = (!machine && lineFamilyOf && rowLine)
+      ? lineFamilyKey(lineFamilyOf(rowLine)) : '';
+    const key = machine ? normEquipKey(machine.machine_no)
+                        : scopeKeyByFamily(typedKey, famKey);
 
     let r = acc.get(key);
     if (!r) {
@@ -314,7 +342,7 @@ export function machineReliability({
         machineName: machine?.machine_name || '',
         kind: machine?.equipment_kind ?? null,
         kindKnown: !!machine,
-        lineName: machine?.line_name || (sessionLineOf ? (sessionLineOf(d?.session_id) || '') : ''),
+        lineName: rowLine,
         inMaster: !!machine, via,
         stops: 0, openStops: 0, closedStops: 0, dtMin: 0, dtMinOp: 0,
         plannedStops: 0, plannedMin: 0, plannedMinOp: 0,

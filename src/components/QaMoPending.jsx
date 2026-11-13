@@ -17,6 +17,7 @@ import { OPEN_MO_STATUSES, moWaitMeta } from '../utils/mtnStepPerm';
 import { ageDays, OLD_DAYS } from '../utils/myQueue';
 import SearchInput from './SearchInput';
 
+import { tr } from '../utils/i18n';
 /* เพดานต่อคิวรีของ PostgREST (กฎเหล็กข้อ 5) — ได้ครบพอดี = อาจมีมากกว่านี้ ⇒ ต้องเขียนบอก */
 const LIMIT = 1000;
 const COLS = [
@@ -77,11 +78,11 @@ export default function QaMoPending() {
     <div>
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, fontWeight: 800 }}>🔧 ใบซ่อมที่รอ QA ตรวจหลังซ่อม</span>
+          <span style={{ fontSize: 14, fontWeight: 800 }}>{tr('ใบซ่อมที่รอ QA ตรวจหลังซ่อม')}</span>
           <button onClick={load} disabled={busy}
             style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none',
                      cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
-            {busy ? 'กำลังโหลด…' : 'โหลดใหม่'}
+            {busy ? tr('กำลังโหลด…') : tr('โหลดใหม่')}
           </button>
           <div style={{ marginLeft: 'auto', minWidth: 190 }}>
             <SearchInput value={q} onChange={setQ} fields="เลข MO / ไลน์ / เครื่อง / อุปกรณ์" />
@@ -92,22 +93,22 @@ export default function QaMoPending() {
         {fail && (
           <div style={{ fontSize: 12, color: 'var(--accent2)', marginTop: 8, lineHeight: 1.6 }}>
             ⚠️ อ่านรายการใบซ่อมไม่สำเร็จ: {fail}<br />
-            <span style={{ color: 'var(--muted)' }}>ยังไม่ทราบว่ามีใบรอตรวจกี่ใบ — ไม่ใช่ว่าไม่มี</span>
+            <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ทราบว่ามีใบรอตรวจกี่ใบ — ไม่ใช่ว่าไม่มี')}</span>
           </div>
         )}
-        {busy && !fail && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>กำลังอ่านข้อมูล…</div>}
+        {busy && !fail && <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>{tr('กำลังอ่านข้อมูล…')}</div>}
 
         {!busy && !fail && view && (
           <div style={{ fontSize: 12.5, marginTop: 8, lineHeight: 1.7 }}>
             {rows.length === 0 ? (
-              <span style={{ color: 'var(--accent)' }}>✅ ไม่มีใบซ่อมรอ QA ตรวจ</span>
+              <span style={{ color: 'var(--accent)' }}>{tr('✅ ไม่มีใบซ่อมรอ QA ตรวจ')}</span>
             ) : (
               <>
-                <b style={{ fontSize: 15 }}>{rows.length.toLocaleString()} ใบ</b> รอตรวจ
-                {capped && <span style={{ color: 'var(--accent2)' }}> (อย่างน้อย — ชนเพดานคิวรี นับได้ไม่ครบ)</span>}
-                {view.oldest != null && <> · เก่าสุด <b style={{ color: view.oldest >= OLD_DAYS ? 'var(--accent2)' : 'inherit' }}>{view.oldest} วัน</b></>}
-                {view.over > 0 && <> · ค้างเกิน {OLD_DAYS} วัน <b style={{ color: 'var(--accent2)' }}>{view.over} ใบ</b></>}
-                {q.trim() && <> · ตรงคำค้น {view.list.length.toLocaleString()} ใบ</>}
+                <b style={{ fontSize: 15 }}>{rows.length.toLocaleString()} {tr('ใบ')}</b> รอตรวจ
+                {capped && <span style={{ color: 'var(--accent2)' }}> {tr('(อย่างน้อย — ชนเพดานคิวรี นับได้ไม่ครบ)')}</span>}
+                {view.oldest != null && <> {tr('· เก่าสุด')} <b style={{ color: view.oldest >= OLD_DAYS ? 'var(--accent2)' : 'inherit' }}>{view.oldest} {tr('วัน')}</b></>}
+                {view.over > 0 && <> {tr('· ค้างเกิน')} {OLD_DAYS} {tr('วัน')} <b style={{ color: 'var(--accent2)' }}>{view.over} {tr('ใบ')}</b></>}
+                {q.trim() && <> {tr('· ตรงคำค้น')} {view.list.length.toLocaleString()} {tr('ใบ')}</>}
                 {view.noSection > 0 && (
                   <div style={{ color: 'var(--accent2)', fontSize: 11.5 }}>
                     ⚠️ ในนั้น <b>{view.noSection}</b> ใบไม่ระบุส่วนงาน — ไม่เข้าคิวของหน่วยงานไหนเลย
@@ -126,7 +127,7 @@ export default function QaMoPending() {
               <tr style={{ background: 'var(--bg2)', textAlign: 'left' }}>
                 {['เลข MO', 'วันที่แจ้ง', 'ค้าง', 'ส่วนงาน', 'ไลน์ / เครื่อง', 'อุปกรณ์', 'อาการ'].map(h => (
                   <th key={h} style={{ padding: '7px 9px', fontWeight: 800, whiteSpace: 'nowrap',
-                                       borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                       borderBottom: '1px solid var(--border)' }}>{tr(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -146,7 +147,7 @@ export default function QaMoPending() {
                     {r.age == null ? '—' : `${r.age} วัน`}
                   </td>
                   <td style={{ padding: '6px 9px', whiteSpace: 'nowrap' }}>
-                    {String(r.dept_section || '').trim() || <span style={{ color: 'var(--accent2)' }}>ไม่ระบุ</span>}
+                    {String(r.dept_section || '').trim() || <span style={{ color: 'var(--accent2)' }}>{tr('ไม่ระบุ')}</span>}
                   </td>
                   <td style={{ padding: '6px 9px' }}>{[r.line_name, r.machine_no].filter(Boolean).join(' / ') || '—'}</td>
                   <td style={{ padding: '6px 9px' }}>{r.item_type || '—'}</td>

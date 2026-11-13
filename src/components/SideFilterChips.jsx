@@ -14,6 +14,7 @@
 */
 import { SIDES, UNKNOWN_SIDE } from '../utils/logisticSide';
 
+import { tr } from '../utils/i18n';
 /**
  * value    — '' (ทั้งหมด) | 'inbound' | 'outbound' | 'unknown'
  * counts   — { inbound, outbound, unknown } จำนวนรายการต่อฝั่ง (จาก splitBySide)
@@ -36,21 +37,21 @@ export default function SideFilterChips({ value, onChange, counts = {}, total, u
 
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>ฝั่งงาน:</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>{tr('ฝั่งงาน:')}</span>
       {chips.map(c => {
         const on = value === c.key;
         const dim = c.count === 0 && c.key !== '';
         return (
-          <button key={c.key || 'all'} type="button" onClick={() => onChange(c.key)} title={c.desc}
+          <button key={c.key || 'all'} type="button" onClick={() => onChange(c.key)} title={tr(c.desc)}
             style={{
-              padding: '5px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 12, fontWeight: 800,
+              padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 800,
               fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
               background: on ? `${c.color}22` : 'var(--bg2)',
               color: on ? c.color : dim ? 'var(--muted)' : 'var(--text2)',
               border: `1px solid ${on ? c.color : 'var(--border)'}`,
               opacity: dim ? 0.55 : 1,
             }}>
-            {c.icon} {c.short} <span style={{ fontWeight: 900 }}>{c.count}</span>
+            {c.icon} {tr(c.short)} <span style={{ fontWeight: 900 }}>{c.count}</span>
           </button>
         );
       })}

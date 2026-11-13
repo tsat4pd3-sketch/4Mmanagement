@@ -1,6 +1,7 @@
 import { groupByZone, textOn } from '../utils/statusZones';
 import { partCardGrid } from './PartCard';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🗂️ StatusZones — คิวการ์ดแบ่งโซนตามสถานะ (2026-10-02 · UI §6.23.1)
 
    แต่ละโซน = กรอบของตัวเอง + หัวโซนแถบสีหนา (ชื่อขั้น · จำนวนใบ · ต้องทำอะไรต่อ) + กริดการ์ด
@@ -22,13 +23,13 @@ export default function StatusZones({ rows, zones, statusOf, renderCard, emptyTe
             background: 'var(--card)', backgroundImage: `linear-gradient(${z.color}26, ${z.color}26)`,
             borderBottom: `1px solid ${z.color}66`,
           }}>
-            <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>{z.label}</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>{tr(z.label)}</span>
             <span style={{
-              minWidth: 32, textAlign: 'center', padding: '2px 10px', borderRadius: 999,
+              minWidth: 32, textAlign: 'center', padding: '2px 10px', borderRadius: 'var(--r-pill)',
               background: z.color, color: textOn(z.color), fontSize: 15, fontWeight: 800,
               fontVariantNumeric: 'tabular-nums',
             }}>{z.rows.length}</span>
-            {z.hint && <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{z.hint}</span>}
+            {z.hint && <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr(z.hint)}</span>}
           </header>
           <div style={{ padding: 12 }}>
             {z.rows.length === 0
