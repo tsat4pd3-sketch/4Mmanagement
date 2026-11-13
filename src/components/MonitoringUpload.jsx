@@ -188,6 +188,14 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
 
     // ② ออเดอร์ล่วงหน้า — เฉพาะดิวตั้งแต่วันนี้ไป (ดิวเก่าเป็นประวัติ ไม่ใช่ backlog)
     const future = rec.orders.filter(o => !o.past);
+    /* ⏳ ของเดิม (2 คำขอแยกกัน) — **รู้ตัวแล้วว่ามีบั๊ก แต่ยังแก้ไม่ได้** (13/11)
+       🔴 ลบกับใส่เป็นคนละ transaction: ถ้าตัวใส่ล้มหลังตัวลบสำเร็จ (เน็ตสะดุด/ไฟล์ใหญ่)
+          **ออเดอร์หายทั้งชุด ไม่มีอะไรย้อนให้** — จอขึ้นว่าบันทึกไม่สำเร็จ แต่ของเดิมหายไปแล้ว
+       ทางแก้เขียนไว้แล้วใน `supabase/migrations/20261113c_audit_skip_bulk_dr.sql`
+       (RPC `fn_monitoring_orders_replace` = ลบ+ใส่ใน transaction เดียว + audit สรุป 1 แถว
+        แทน N แถว — ตารางนี้กิน **28.2% ของ `audit_log` ทั้งตาราง**)
+       ⚠️ **migration นั้นยังไม่ได้ apply** ⇒ ยังเรียก RPC ไม่ได้ ต้องคงของเดิมไว้ก่อน
+          apply แล้วค่อยสลับมาเรียก RPC (ส่งทั้งก้อนในคำขอเดียว ห้ามแบ่ง chunk) */
     if (ok) ok = checkWrite(await supabaseDR.from('customer_shipping_orders')
       .delete().eq('source', 'monitoring').eq('status', 'pending'), 'ล้างออเดอร์รอบก่อน');
     if (ok && future.length) {
