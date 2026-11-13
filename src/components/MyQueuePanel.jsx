@@ -27,7 +27,7 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
 import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
-import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm } from '../utils/permissions';
+import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm, isSharedAccount } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { pendingYellow } from '../utils/qualityBin';
 import {
@@ -274,6 +274,7 @@ export function useMyQueue(open = false) {
              (actorSideOf + positionRank + สิทธิ์ mtn_repair) ⇒ ใบที่ขึ้นว่า "รอคุณเซ็น" = ใบที่กดเซ็นได้จริง */
           actorSide: actorSideOf({ mtnTeams: teams, role, sections: secs, isAm: isAmTeam }),
           posRank: positionRank(position),
+          isShared: isSharedAccount(),   // 🖥️ บัญชีกลางเซ็นช่องที่ล็อกตำแหน่งไม่ได้ (13/11) ⇒ ไม่ขึ้นว่า "รอคุณเซ็น"
           can: (a) => canPerm('mtn_repair', a, role),
           seeded: (a) => isActionSeeded('mtn_repair', a),
           hasTeams: teams.length > 0,

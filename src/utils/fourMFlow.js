@@ -43,3 +43,25 @@ export function fourMFlow(log = {}) {
   });
   return { steps, waiting: known ? (WAITING[status] || null) : null, closed: status === 'approved' || status === 'rejected', known };
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════════════
+   🚫 กันอนุมัติใบตัวเอง (2026-11-13 · คำสั่ง user) — คู่กับ trigger `protect_four_m_status()`
+      (migration 20261113_four_m_no_self_approve_main.sql) **ตรรกะต้องตรงกัน**
+   · ขั้น SV (pending): ผู้กดต้องไม่ใช่คนเปิดใบ (`created_by`)
+   · ขั้น QA (pending_qa): ผู้กดต้องไม่ใช่คนเปิดใบ และไม่ใช่คนที่เซ็นขั้น SV ไปแล้ว
+   · `created_by`/`sv_approved_by` ว่าง = ไม่รู้เจ้าของ ⇒ ไม่บล็อก
+   · ไม่รู้ว่าผู้ดูคือใคร (`uid` ว่าง) = ไม่บล็อกที่จอ (ฐานบล็อกซ้ำอยู่แล้ว) แต่คืน `unknown_self:true` ให้จอเขียนบอก
+   คืน null = กดได้ · คืน { code, text } = กดไม่ได้ พร้อมเหตุผลที่จอต้องเขียน
+   ═══════════════════════════════════════════════════════════════════════════════════════ */
+export function fourMSelfBlock(log = {}, uid = null) {
+  const status = String(log?.status || '').trim();
+  if (status !== 'pending' && status !== 'pending_qa') return null;
+  if (!uid) return null;
+  if (log?.created_by && log.created_by === uid) {
+    return { code: 'own_log', text: 'ใบนี้คุณเป็นคนเปิด — ต้องให้คนอื่นอนุมัติ' };
+  }
+  if (status === 'pending_qa' && log?.sv_approved_by && log.sv_approved_by === uid) {
+    return { code: 'signed_sv', text: 'คุณเซ็นขั้น SV ของใบนี้แล้ว — ขั้น QA ต้องเป็นคนอื่น' };
+  }
+  return null;
+}

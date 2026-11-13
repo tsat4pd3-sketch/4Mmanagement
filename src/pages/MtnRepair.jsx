@@ -2292,7 +2292,9 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
           <tr><td colspan="2" style="padding:2px 4px;border-bottom:1px solid #000;height:1px">${line('วันที่รับแจ้ง', beD(o.report_at), '85px')} ${line('เวลา', beTime(o.report_at), '40px')}</td></tr>
           <tr>
             <td class="sgc" style="width:50%;border-right:1px solid #000">${sg('ผู้รับ MO (ซ่อมบำรุง)', o.accepted_by, sgn(o.accepted_by_uid, null), o.accept_at)}</td>
-            <td class="sgc" style="width:50%">${sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, sgn(o.mo_approved_by_uid, o.mo_approve_sign), o.mo_approved_at)}</td>
+            <td class="sgc" style="width:50%">${o.mo_ack_at
+              ? sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by, sgn(o.mo_approved_by_uid, o.mo_approve_sign), o.mo_ack_at)
+              : sg('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง)', o.mo_approved_by ? `${o.mo_approved_by} (รอรับทราบ)` : '', null, null)}</td>
           </tr>
         </table>
       </td>
@@ -2468,7 +2470,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
      (คำสั่ง user 2026-09-15 — เกณฑ์อยู่ที่ mtnApprovalState() ใน mtnMoForm.js ที่เดียว) */
   const mtnForm = isMtnFormOrder(o);
   const appr = mtnForm ? mtnApprovalState(o) : null;
-  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, ...stepPerms(role) };
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, isShared: isSharedAccount(), ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -2486,11 +2488,35 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       /* 🔒 บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้คนไปขอ role เพิ่ม ทั้งที่ปัญหาคือ "ตำแหน่งไม่ถึง"
          (ทางแก้ที่ถูกคือไปแก้ตำแหน่งในบัญชีที่ /add-user ไม่ใช่ขอสิทธิ์) */
       if (v.code === 'already_signed') return toast.error('ใบนี้เซ็นไปแล้ว');
+      if (v.code === 'shared_account') return toast.error('บัญชีกลางเซ็นช่องผู้จัดการไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีของตัวเอง');
       if (v.code === 'rank_too_low')
         return toast.error('ช่องนี้ต้องเป็นระดับหัวหน้าแผนก/ผู้จัดการขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)');
       if (v.code === 'out_of_scope')
         return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ส่วนงานอื่น'} — "ผู้จัดการต้นสังกัด" เซ็นได้เฉพาะใบในขอบเขตที่ตัวเองรับผิดชอบ (ดูแลควบแผนก ให้แอดมินเพิ่มขอบเขตที่ /add-user)`);
+      if (v.code === 'wrong_side' || v.code === 'other_team')
+        return toast.error('ช่องนี้เป็นของ ผจก.ส่วนซ่อมบำรุง ทีมที่รับใบนี้เท่านั้น');
       return toast.error('เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ (mtn_repair:approve) เท่านั้น');
+    }
+    /* ✍️ ช่องเซ็น 4 ฟอร์ม MTN — ผจก.ส่วนซ่อมบำรุง กดรับทราบเอง (13/11 · คำสั่ง user) */
+    if (kind === 'mtn_mgr') {
+      if (!confirmSign({
+        what: 'รับทราบใบ MO (ผจก.ส่วนซ่อมบำรุง)',
+        orderNo: o.mo_no || o.id,
+        actor: fullName || '—',
+        as: 'ผู้จัดการส่วนซ่อมบำรุง',
+      })) return;
+      setSignBusy(kind);
+      const nowIso = new Date().toISOString();
+      const res = await supabaseDR.from('mtn_orders').update({
+        mo_approved_by: fullName || o.mo_approved_by || null, mo_approve_sign: signatureUrl || null,
+        mo_ack_at: nowIso, mo_approved_by_uid: getActor()?.uid || null, updated_at: nowIso,
+      }).eq('id', o.id).is('mo_ack_at', null).select('id');
+      setSignBusy('');
+      if (!checkWrite(res, 'รับทราบใบ MO')) return;
+      if (!res.data?.length) return toast.error('บันทึกไม่สำเร็จ — ใบนี้อาจถูกรับทราบไปแล้วจากอีกเครื่อง (ปิดแล้วเปิดใหม่)');
+      toast.success('รับทราบใบ MO แล้ว');
+      onReload && onReload();
+      return;
     }
     /* 🔴 ถามยืนยันก่อนเสมอ — ลายเซ็นเป็น one-way เซ็นแล้วเจ้าตัวแก้เองไม่ได้
        (คำสั่ง user 28/10: "กดพลาดคือพลาดเลย") · ข้อความต้องบอกว่าเซ็นอะไร ใบไหน ในนามใคร */
@@ -3042,6 +3068,35 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           )}
         </div>
       )}
+      {/* ✍️ ช่องเซ็น 4 ฟอร์ม MTN — ผจก.ส่วนซ่อมบำรุง กดรับทราบเอง (13/11 · คำสั่ง user) · ไม่บล็อกงาน */}
+      {mtnForm && (o.mo_approved_by || o.mo_ack_at) && (() => {
+        const ack = canSignMtnApproval('mtn_mgr', stepCtx);
+        return (
+          <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 800 }}>
+              {o.mo_ack_at ? '✅ ผจก.ส่วนซ่อมบำรุง รับทราบแล้ว' : '✍️ รอ ผจก.ส่วนซ่อมบำรุง รับทราบ (ไม่บล็อกงาน)'}
+            </div>
+            <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>
+              {o.mo_ack_at
+                ? <b style={{ color: 'var(--accent)' }}>✔ {o.mo_approved_by || '—'} · {fmtDateTime(o.mo_ack_at)}</b>
+                : <span style={{ color: 'var(--muted)' }}>ยังไม่รับทราบ{o.mo_approved_by ? ` (ช่างระบุไว้: ${o.mo_approved_by})` : ''}</span>}
+            </div>
+            {!o.mo_ack_at && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {ack.ok
+                  ? <button onClick={() => signApproval('mtn_mgr')} disabled={signBusy === 'mtn_mgr'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'mtn_mgr' ? trI18n('กำลังบันทึก…') : trI18n('รับทราบใบ MO (ผจก.ส่วนซ่อมบำรุง)')}</button>
+                  : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{({
+                      rank_too_low: 'รับทราบได้เฉพาะระดับผู้จัดการ',
+                      shared_account: 'บัญชีกลางเซ็นไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีตัวเอง',
+                      wrong_side: 'ช่องนี้เป็นของฝั่งซ่อมบำรุง',
+                      other_team: 'ช่องนี้เป็นของ ผจก. ทีมที่รับใบนี้',
+                    })[ack.code] || 'รับทราบได้เฉพาะ ผจก. ที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติ'}</span>}
+                {ack.ok && posRank == null && <span style={{ fontSize: 11, color: 'var(--amber)' }}>⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบไม่ได้ตรวจระดับ</span>}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {/* ✍️ ลายเซ็นผู้จัดการของใบ MTN — "บล็อกงาน" กับ "รับทราบตามหลัง" ต้องหน้าตาต่างกันชัด
              (งานซ่อมขึ้นกล่องแดงว่ารออนุมัติ = หน้างานจะหยุดรอทั้งที่ไม่ต้องรอ) */}
       {mtnForm && appr && (appr.missing.length > 0 || o.dept_manager_at || o.plant_manager_at) && (
@@ -3069,6 +3124,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>{
                 ({
                   rank_too_low: 'เซ็นช่องนี้ได้เฉพาะระดับหัวหน้าแผนกขึ้นไป',
+                      shared_account: 'บัญชีกลางเซ็นไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีตัวเอง',
                   out_of_scope: `ใบนี้เป็นของ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ส่วนงานอื่น'} — เซ็นได้เฉพาะใบในขอบเขตที่ตัวเองรับผิดชอบ`,
                 })[canSignMtnApproval(appr.missing[0], stepCtx).code]
                 || 'เซ็นได้เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ'
@@ -3231,7 +3287,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           🔒 <b>{trI18n('บัญชีนี้ทำขั้นถัดไปไม่ได้')}</b> — {trI18n(next.label)}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
-              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
+              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low', sharedAccount: canDoStep(next.step, stepCtx).code === 'shared_account',
               orderLine: o.line_name, orderSection: o.dept_section, mtnForm, toolTeam: isToolTeamOrder(o),
               awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {/* 🔴 ระบบปล่อยผ่านเพราะ "ไม่รู้ฝั่ง/ตำแหน่งของคนกด" ⇒ ต้องเขียนบนจอ ห้ามเงียบ
@@ -3628,7 +3684,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const inReporterScope = orderInReporterScope(o, reporterScope || {});
       // 🔒 ด่านอนุมัติของใบ MTN (งานปรับปรุง/สร้าง) — เกณฑ์เดียวกับตัวซ่อนปุ่มใน DetailDrawer
       const approvalBlocked = isMtnForm && mtnApprovalState(o).blocked;
-      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, ...stepPerms(role) };
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, isShared: isSharedAccount(), ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -3656,8 +3712,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           return toast.error(meta?.side === 'reporter'
             ? `ช่องนี้เป็นของฝ่ายที่แจ้ง (${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'เจ้าของค่าใช้จ่าย'}) — ฝั่งช่างเซ็นแทนไม่ได้`
             : 'ช่องนี้เป็นของฝั่งซ่อมบำรุง — ฝ่ายที่แจ้งเซ็นแทนไม่ได้');
+        if (verdict.code === 'shared_account')
+          return toast.error(`ช่องนี้เป็นลายเซ็นของ${meta?.whoShort || 'ผู้มีตำแหน่ง'} — บัญชีกลางเซ็นแทนไม่ได้ ให้เจ้าของตำแหน่ง login ด้วยบัญชีของตัวเอง`);
         if (verdict.code === 'rank_too_low')
-          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
+          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : verdict.needRank <= 30 ? 'วิศวกร / หัวหน้า' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
         if (verdict.code === 'out_of_scope')
           return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)
@@ -3765,9 +3823,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         const { error: eUpd } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
         if (eUpd) { setSaving(false); return toast.error(eUpd.message); }
         /* ฟอร์ม MTN มีลายเซ็น ผจก.ส่วนซ่อมบำรุง กลางใบ (อนุมัติให้เดินงาน) คนละจุดกับ "รับรองโดย" ท้ายใบ */
-        if (isMtnForm && f.mo_approved_by && !isReject) {
+        /* 🔴 ช่างระบุ "ชื่อ" ผจก. ได้อย่างเดียว — เวลา/ลายเซ็นมาตอน ผจก. กดรับทราบเอง (`mo_ack_at` · 13/11)
+           ห้ามเขียน mo_approved_at/mo_ack_at จากขั้นนี้ (= ช่องอนุมัติที่เจ้าตัวไม่ได้กด) · ใบที่รับทราบแล้วห้ามเปลี่ยนชื่อ */
+        if (isMtnForm && f.mo_approved_by && !isReject && !o.mo_ack_at && f.mo_approved_by !== o.mo_approved_by) {
           checkWrite(await supabaseDR.from('mtn_orders')
-            .update({ mo_approved_by: f.mo_approved_by, mo_approved_at: o.mo_approved_at || new Date().toISOString() }).eq('id', o.id),
+            .update({ mo_approved_by: f.mo_approved_by }).eq('id', o.id).is('mo_ack_at', null),
             'บันทึกผู้อนุมัติ MO (ช่องกลางใบพิมพ์จะว่าง)');
         }
         // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
@@ -4051,6 +4111,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               <Field label={trI18n('ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง) — ช่องกลางใบ')}>
                 <PersonSelect value={f.mo_approved_by} source="profiles" roles={DEPT_HEAD_ROLES} onChange={res => set('mo_approved_by', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder={trI18n('ค้นชื่อ ผจก.ส่วนซ่อมบำรุง')} />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{trI18n('คนละช่องกับ “รับรองโดย” ท้ายใบ (ขั้น 7) — ฟอร์มกระดาษเซ็น 2 จุดคนละวัน')}</div>
+                <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2 }}>{trI18n('ระบุชื่อเท่านั้น — ช่องนี้จะขึ้น “รอรับทราบ” จนกว่า ผจก. คนนั้นจะ login มากดรับทราบเอง (ลายเซ็น/วันที่มาตอนนั้น)')}</div>
               </Field>
             )}
             {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ (')}{isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
