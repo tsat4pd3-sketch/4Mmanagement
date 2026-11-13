@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { tr } from '../utils/i18n';
 import tsLogo from '../assets/TS logo transparent.png';   // พื้นโปร่งใส — ใบพิมพ์ยังใช้ TS logo.png (พื้นขาว) เหมือนเดิม
 
 const ThaiSummitLogo = ({ size = 48 }) => (
@@ -150,7 +151,7 @@ export default function Login() {
             fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase',
             cursor: loading ? 'not-allowed' : 'pointer',
           }}>
-            {loading ? 'กำลังเข้าสู่ระบบ...' : 'SIGN IN'}
+            {loading ? tr('กำลังเข้าสู่ระบบ...') : 'SIGN IN'}
           </button>
         </form>
 

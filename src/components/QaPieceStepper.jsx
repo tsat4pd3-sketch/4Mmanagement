@@ -22,6 +22,7 @@ import { qaFileUrl } from '../lib/qaImages';
 import SignedDecimalInput from './SignedDecimalInput';
 import { calcOf, calcFormula, qaCalcDraft } from '../utils/inspectCalc';
 
+import { tr } from '../utils/i18n';
 const JUDGE = {
   ok: { label: 'ผ่าน', color: '#22c55e' },
   ng: { label: 'ไม่ผ่าน', color: '#ef4444' },
@@ -178,28 +179,28 @@ export default function QaPieceStepper({
         <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: 12 }}>
           <div style={{ fontSize: 12.5, marginBottom: 8, lineHeight: 1.6 }}>
             ชิ้นที่ตกในรอบนี้: {failedInRound.map(p => `ชิ้น ${p.piece_no} (${(p.failed_items || []).map(f => `#${f.balloon_no}`).join(', ') || '—'})`).join(' · ') || '—'}
-            <br />ฝ่ายผลิตบันทึกว่าแก้ไขอะไร แล้ว QA กลับมาตรวจต่อ ต้องผ่านติดกัน {SEQ_RULE.PASSES_TO_ACCEPT} ชิ้นถึงยอมรับ (ตกอีกชิ้นเดียว = alarm ซ้ำ)
+            <br />{tr('ฝ่ายผลิตบันทึกว่าแก้ไขอะไร แล้ว QA กลับมาตรวจต่อ ต้องผ่านติดกัน')} {SEQ_RULE.PASSES_TO_ACCEPT} ชิ้นถึงยอมรับ (ตกอีกชิ้นเดียว = alarm ซ้ำ)
           </div>
           {canAction ? (
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : '2fr 1fr', alignItems: 'start' }}>
-              <textarea style={{ ...inputSt, minHeight: 64, gridColumn: isMobile ? undefined : '1 / -1' }} placeholder="แก้ไขอะไร / ปรับอะไร (บังคับกรอก)"
+              <textarea style={{ ...inputSt, minHeight: 64, gridColumn: isMobile ? undefined : '1 / -1' }} placeholder={tr('แก้ไขอะไร / ปรับอะไร (บังคับกรอก)')}
                 value={act.text} onChange={e => setAct(a => ({ ...a, text: e.target.value }))} />
               {/* คนทำ action = ผู้ปฏิบัติงาน/หัวหน้าไลน์ (ไม่จำเป็นต้องเป็น user ระบบ) → PersonSelect profiles ∪ employees
                   คนในไลน์ของพาร์ทขึ้นก่อน · พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
               <PersonSelect source="both" value={act.by} lines={part?.line_name ? [part.line_name] : undefined}
-                placeholder="ชื่อคนทำ action" inputStyle={{ fontSize: fs }}
+                placeholder={tr('ชื่อคนทำ action')} inputStyle={{ fontSize: fs }}
                 onChange={r => setAct(a => ({ ...a, by: r.name }))} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
                 <input type="checkbox" checked={act.fourM} onChange={e => setAct(a => ({ ...a, fourM: e.target.checked }))} style={{ width: 'auto' }} />
-                เปิดใบ 4M จากการแก้ไขนี้
+                {tr('เปิดใบ 4M จากการแก้ไขนี้')}
                 {act.fourM && (
                   <select style={{ ...inputSt, width: 'auto', padding: '4px 8px' }} value={act.category} onChange={e => setAct(a => ({ ...a, category: e.target.value }))}>
-                    {FOUR_M.map(c => <option key={c} value={c}>{c}</option>)}
+                    {FOUR_M.map(c => <option key={c} value={c}>{tr(c)}</option>)}
                   </select>
                 )}
               </label>
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>บันทึก action แล้วให้ QA ตรวจต่อ</button>
+                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>{tr('บันทึก action แล้วให้ QA ตรวจต่อ')}</button>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                   ใบ 4M เปิดเมื่อ action เป็นการเปลี่ยน คน/เครื่อง/วัตถุดิบ/วิธี — เข้าคิวอนุมัติหัวหน้า → QA ตามปกติ · rework ชิ้นเดียวไม่ต้องเปิด
                 </span>
@@ -232,16 +233,16 @@ export default function QaPieceStepper({
                     name={i.characteristic} description={`สเปค: ${specLabel(i)}${i.method ? ` · ${i.method}` : ''}`} />}
                   <div style={{ flex: '1 1 180px', minWidth: 160 }}>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{i.characteristic}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>สเปค: {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('สเปค:')} {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>
                   </div>
                   {i.item_type === 'variable' && calcOf(i) && (
-                    <span title="จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้" style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
+                    <span title={tr('จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้')} style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
                       <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>{calcFormula(calcOf(i), id => labelById[id])} =</span>
                       <b>{d.value !== '' && d.value != null ? d.value : '…'}</b>
                     </span>
                   )}
                   {i.item_type === 'variable' && !calcOf(i) && (
-                    <SignedDecimalInput placeholder="ค่าที่วัด" value={d.value ?? ''}
+                    <SignedDecimalInput placeholder={tr('ค่าที่วัด')} value={d.value ?? ''}
                       onChange={v => setD(i.id, { value: v, judge: d.judge === 'na' ? null : d.judge })}
                       style={{ ...inputSt, width: isMobile ? 110 : 96, padding: '6px 8px' }} />
                   )}
@@ -259,10 +260,10 @@ export default function QaPieceStepper({
                     <span style={{ fontSize: 12, fontWeight: 700, color: JUDGE[j].color, whiteSpace: 'nowrap' }}>{j === 'na' ? 'ข้าม' : `อัตโนมัติ: ${JUDGE[j].label}`}</span>
                   )}
                   {/* จุดคำนวณข้ามเองเมื่อจุด A/B ถูกข้าม — ไม่มีปุ่มข้ามของตัวเอง */}
-                  {!calcOf(i) && (<button className="tbtn" title="ไม่ได้ตรวจจุดนี้ในชิ้นนี้" onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
-                    style={btn(d.judge === 'na' ? JUDGE.na.color : 'var(--bg2)', d.judge === 'na' ? '#fff' : 'var(--muted)', { padding: isMobile ? '9px 10px' : '6px 9px', borderColor: 'var(--border2)' })}>ข้าม</button>)}
+                  {!calcOf(i) && (<button className="tbtn" title={tr('ไม่ได้ตรวจจุดนี้ในชิ้นนี้')} onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
+                    style={btn(d.judge === 'na' ? JUDGE.na.color : 'var(--bg2)', d.judge === 'na' ? '#fff' : 'var(--muted)', { padding: isMobile ? '9px 10px' : '6px 9px', borderColor: 'var(--border2)' })}>{tr('ข้าม')}</button>)}
                   {j === 'ng' && (
-                    <input style={{ ...inputSt, flex: '1 1 100%', border: '1px solid rgba(239,68,68,0.5)' }} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
+                    <input style={{ ...inputSt, flex: '1 1 100%', border: '1px solid rgba(239,68,68,0.5)' }} placeholder={tr('เสียอย่างไร / เจอที่ไหน (บังคับกรอก)')}
                       value={d.note ?? ''} onChange={e => setD(i.id, { note: e.target.value })} />
                   )}
                 </div>
@@ -270,7 +271,7 @@ export default function QaPieceStepper({
             })}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
-            <button disabled={busy} onClick={passAllAttr} style={btn('var(--bg3)', 'var(--text2)')} title="ติ๊กผ่านให้จุดที่ยังไม่ตอบ (ยกเว้นจุดที่ต้องกรอกค่าวัด)">✓ ผ่านทุกจุดที่เหลือ</button>
+            <button disabled={busy} onClick={passAllAttr} style={btn('var(--bg3)', 'var(--text2)')} title={tr('ติ๊กผ่านให้จุดที่ยังไม่ตอบ (ยกเว้นจุดที่ต้องกรอกค่าวัด)')}>{tr('✓ ผ่านทุกจุดที่เหลือ')}</button>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: result === 'fail' ? '#ef4444' : result === 'pass' ? '#22c55e' : 'var(--muted)', fontWeight: 700 }}>
               {result === 'fail' ? `ชิ้นนี้ตก ${failedItems.length} จุด` : result === 'pass' ? 'ชิ้นนี้ผ่านทุกจุด' : `เหลืออีก ${missing.length} จุด`}
@@ -283,7 +284,7 @@ export default function QaPieceStepper({
         </>
       )}
       {state === 'inspecting' && !canRecord && (
-        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีสิทธิ์บันทึกผลตรวจ (qa:record) — ดูอย่างเดียว</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีสิทธิ์บันทึกผลตรวจ (qa:record) — ดูอย่างเดียว')}</div>
       )}
       {state === 'accepted' && (
         <div style={{ fontSize: 12.5, color: '#22c55e' }}>
@@ -293,26 +294,26 @@ export default function QaPieceStepper({
 
       {/* ── modal disposition ของชิ้นที่ตก — ฟอร์ม: ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) ── */}
       {dispo && (
-        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>✕ ชิ้นที่ {seq?.nextPiece} ตก {dispo.payload.failedItems.length} จุด — จะทำอะไรกับชิ้นนี้</div>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>{tr('✕ ชิ้นที่')} {seq?.nextPiece} {tr('ตก')} {dispo.payload.failedItems.length} {tr('จุด — จะทำอะไรกับชิ้นนี้')}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
               {dispo.payload.failedItems.map(f => `#${f.balloon_no} ${f.characteristic}${f.value != null && f.value !== '' ? ` = ${f.value}` : ''} (${f.spec_text})${f.note ? ` — ${f.note}` : ''}`).join(' · ')}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               {Object.entries(DISPOSITION).map(([k, m]) => (
                 <button key={k} onClick={() => setDispo(d => ({ ...d, disposition: k }))}
-                  style={btn(dispo.disposition === k ? m.color : 'var(--bg3)', dispo.disposition === k ? '#fff' : m.color, { borderColor: m.color })}>{m.label}</button>
+                  style={btn(dispo.disposition === k ? m.color : 'var(--bg3)', dispo.disposition === k ? '#fff' : m.color, { borderColor: m.color })}>{tr(m.label)}</button>
               ))}
             </div>
-            <textarea style={{ ...inputSt, minHeight: 64 }} placeholder="remark: จะซ่อมยังไง / กักไว้ที่ไหน / ทำไมทิ้ง (บังคับกรอก)"
+            <textarea style={{ ...inputSt, minHeight: 64 }} placeholder={tr('remark: จะซ่อมยังไง / กักไว้ที่ไหน / ทำไมทิ้ง (บังคับกรอก)')}
               value={dispo.remark} onChange={e => setDispo(d => ({ ...d, remark: e.target.value }))} />
             {dispo.disposition === 'scrap' && (
-              <div style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>ระบบจะสร้างรายการ 🔴 ถังแดง 1 ชิ้นผูกกับใบตรวจนี้ให้ทันที</div>
+              <div style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>{tr('ระบบจะสร้างรายการ 🔴 ถังแดง 1 ชิ้นผูกกับใบตรวจนี้ให้ทันที')}</div>
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button onClick={() => setDispo(null)} style={btn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
-              <button disabled={busy} onClick={submitDispo} style={btn('#ef4444', '#fff', { fontWeight: 800 })}>บันทึกชิ้นที่ {seq?.nextPiece} (ตก)</button>
+              <button onClick={() => setDispo(null)} style={btn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>
+              <button disabled={busy} onClick={submitDispo} style={btn('#ef4444', '#fff', { fontWeight: 800 })}>{tr('บันทึกชิ้นที่')} {seq?.nextPiece} {tr('(ตก)')}</button>
             </div>
           </div>
         </div>

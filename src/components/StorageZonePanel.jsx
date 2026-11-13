@@ -20,6 +20,7 @@ import { can } from '../utils/permissions';
 import ReadOnlyNote from './ReadOnlyNote';
 import { ZONE_KINDS, zoneKindMeta, zoneFill, zoneHealth, zoneHealthText, WAREHOUSE_LOCATIONS } from '../utils/storageZones';
 
+import { tr } from '../utils/i18n';
 const CAT_COLOR = { good: 'var(--accent)', ok: 'var(--accent2)', bad: '#e5484d', idle: 'var(--muted)' };
 
 export default function StorageZonePanel() {
@@ -127,21 +128,21 @@ export default function StorageZonePanel() {
 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)' }}>
-          ทะเบียนโซนจัดเก็บในคลัง — เริ่มจาก<b>ระบบ setup แผนผัง</b>ก็ได้: วาดกรอบบนผังรวม → เลือก
+          ทะเบียนโซนจัดเก็บในคลัง — เริ่มจาก<b>{tr('ระบบ setup แผนผัง')}</b>ก็ได้: วาดกรอบบนผังรวม → เลือก
           "🏬 โซนคลังสินค้า" ระบบสร้างทะเบียนให้เลย แล้วค่อยมาผูก MAT/ความจุที่นี่
           (ผังคำนวณ เต็ม/ใกล้เต็ม/ต่ำกว่า Min จากสต็อกจริงให้เอง)
         </div>
         <div style={{ flex: 1 }} />
-        <button onClick={() => navigate('/factory-map')} style={btnSec}>ไปผังรวมโรงงาน</button>
-        {canManage && !missing && <button onClick={() => setEdit({})} style={btnPri}>➕ เพิ่มโซน</button>}
+        <button onClick={() => navigate('/factory-map')} style={btnSec}>{tr('ไปผังรวมโรงงาน')}</button>
+        {canManage && !missing && <button onClick={() => setEdit({})} style={btnPri}>{tr('➕ เพิ่มโซน')}</button>}
       </div>
 
-      {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
 
       {/* 🗺️ กรอบเดิมบนผังรวมที่ยังไม่มีทะเบียน — หยิบมาลงทะเบียนเป็นโซนคลังได้เลย (อ้างอิงแผนผังที่วาดไว้แล้ว) */}
       {!loading && !missing && canManage && unclaimedFrames.length > 0 && (
         <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13 }}>
-          กรอบบนผังรวมที่<b>ยังไม่มีทะเบียนโซน {unclaimedFrames.length} กรอบ</b> —
+          กรอบบนผังรวมที่<b>{tr('ยังไม่มีทะเบียนโซน')} {unclaimedFrames.length} {tr('กรอบ')}</b> —
           ถ้ากรอบไหนคือพื้นที่คลัง กด ➕ ลงทะเบียนได้เลย (ชื่อตรงกัน = จับคู่กรอบเดิมอัตโนมัติ ไม่ต้องวาดใหม่)
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {unclaimedFrames.map(n => (
@@ -174,30 +175,30 @@ export default function StorageZonePanel() {
             <div key={z.id} style={{ background: 'var(--card)', border: `1px solid ${z.is_active ? CAT_COLOR[cat] : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', opacity: z.is_active ? 1 : 0.55, display: 'grid', gap: 6, alignContent: 'start' }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
                 <b style={{ fontSize: 14 }}>{km.icon} {z.name}</b>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{km.label}</span>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(km.label)}</span>
                 <div style={{ flex: 1 }} />
-                <span style={{ fontSize: 12, color: CAT_COLOR[cat], fontWeight: 600 }}>{z.is_active ? zoneHealthText(f) : 'ปิดใช้งาน'}</span>
+                <span style={{ fontSize: 12, color: CAT_COLOR[cat], fontWeight: 600 }}>{z.is_active ? zoneHealthText(f) : tr('ปิดใช้งาน')}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                MAT {f.mats.length} รายการ · รวม {f.totQty.toLocaleString()} ชิ้น
+                MAT {f.mats.length} {tr('รายการ · รวม')} {f.totQty.toLocaleString()} ชิ้น
                 {z.capacity_pkg ? ` · ความจุ ${z.capacity_pkg} กล่อง` : ' · ⚠ ยังไม่กรอกความจุ (fill% = ไม่รู้)'}
               </div>
               {f.mats.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {f.mats.slice(0, 6).map(m => (
                     <span key={m.mat_no} title={partByMat[m.mat_no]?.part_name || ''} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 'var(--r-md)', border: `1px solid ${m.short ? '#e5484d' : 'var(--border)'}`, color: m.short ? '#e5484d' : 'var(--text2)' }}>
-                      {m.mat_no} · {m.qty.toLocaleString()}{m.short ? ' 🟥' : m.over ? ' ⚠' : ''}
+                      {m.mat_no} · {m.qty.toLocaleString()}{tr(m.short) ? ' 🟥' : m.over ? ' ⚠' : ''}
                     </span>
                   ))}
-                  {f.mats.length > 6 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+อีก {f.mats.length - 6}</span>}
+                  {f.mats.length > 6 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+อีก')} {f.mats.length - 6}</span>}
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {isFramed
-                  ? <span style={{ fontSize: 11, color: 'var(--accent)' }}>✅ ตีกรอบบนผังแล้ว</span>
+                  ? <span style={{ fontSize: 11, color: 'var(--accent)' }}>{tr('✅ ตีกรอบบนผังแล้ว')}</span>
                   : <span style={{ fontSize: 11, color: 'var(--accent2)' }}>⚠ ยังไม่ตีกรอบบนผังรวม — วาดที่ /factory-map (ชื่อ "{z.name}")</span>}
                 <div style={{ flex: 1 }} />
-                {canManage && <button onClick={() => setEdit(z)} style={btnMini}>✏️ แก้ไข</button>}
+                {canManage && <button onClick={() => setEdit(z)} style={btnMini}>{tr('✏️ แก้ไข')}</button>}
               </div>
             </div>
           );
@@ -207,7 +208,7 @@ export default function StorageZonePanel() {
       {/* worklist — ห้ามซ่อนของที่ยังไม่เข้าระบบ */}
       {!missing && unassigned.length > 0 && (
         <div style={{ background: 'rgba(255,180,0,.08)', border: '1px solid var(--accent2)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13 }}>
-          ⚠️ ของในคลังกลาง (FG WAREHOUSE/STORE) ที่<b>ยังไม่กำหนดโซนเก็บ {unassigned.length} รายการ</b>
+          ⚠️ ของในคลังกลาง (FG WAREHOUSE/STORE) ที่<b>{tr('ยังไม่กำหนดโซนเก็บ')} {unassigned.length} {tr('รายการ')}</b>
           {' '}— ผูกเข้าโซนให้ครบ ผังถึงตอบได้ว่า "ของอยู่ตรงไหน"
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
             {(showAllUnassigned ? unassigned : unassigned.slice(0, 12)).map(u => (
@@ -225,7 +226,7 @@ export default function StorageZonePanel() {
       )}
       {dupMats.length > 0 && (
         <div style={{ background: 'rgba(255,180,0,.08)', border: '1px solid var(--accent2)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13 }}>
-          ⚠️ MAT ถูกผูกไว้<b>หลายโซนพร้อมกัน {dupMats.length} รายการ</b> ({dupMats.slice(0, 8).join(', ')}{dupMats.length > 8 ? ' …' : ''})
+          ⚠️ MAT ถูกผูกไว้<b>{tr('หลายโซนพร้อมกัน')} {dupMats.length} {tr('รายการ')}</b> ({dupMats.slice(0, 8).join(', ')}{dupMats.length > 8 ? ' …' : ''})
           — เฟสนี้ระบบยังไม่รู้ยอดรายโซนจริง ยอดจะโชว์ซ้ำทั้งสองโซน · ถ้าเก็บหลายที่จริงปล่อยได้ แต่ให้รู้ว่าตัวเลขคือ "ยอดรวมของ MAT" ไม่ใช่ยอดเฉพาะโซน
         </div>
       )}
@@ -296,29 +297,29 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       {/* ⚠️ ห้ามเติม onClick={onClose} ที่ backdrop — ฟอร์มมีข้อมูลค้าง เผลอแตะแล้วหาย (UI-CONVENTIONS §5) */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(680px, 96vw)', maxHeight: '92vh', overflowY: 'auto', padding: 18, display: 'grid', gap: 10, alignContent: 'start' }}>
         <b style={{ fontSize: 15 }}>{zone ? `✏️ แก้โซน: ${zone.name}` : '➕ เพิ่มโซนจัดเก็บ'}</b>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <label style={lbl}>ชื่อโซน (= ชื่อกรอบบนผังรวม)
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น FG OUT LANE 1" />
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น FG OUT LANE 1')} />
           </label>
-          <label style={lbl}>ชนิดโซน
+          <label style={lbl}>{tr('ชนิดโซน')}
             <select value={kind} onChange={e => setKind(e.target.value)}>
-              {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+              {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
             </select>
           </label>
           <label style={lbl}>ความจุ (จำนวนภาชนะ/กล่อง) — เว้นว่าง = ไม่รู้
-            <input type="number" min="0" value={cap} onChange={e => setCap(e.target.value)} placeholder="เช่น 120" />
+            <input type="number" min="0" value={cap} onChange={e => setCap(e.target.value)} placeholder={tr('เช่น 120')} />
           </label>
-          <label style={lbl}>หมายเหตุ
-            <input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น แร็ค stillage ซ้อน 4 ชั้น" />
+          <label style={lbl}>{tr('หมายเหตุ')}
+            <input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('เช่น แร็ค stillage ซ้อน 4 ชั้น')} />
           </label>
         </div>
 
         <div style={{ display: 'grid', gap: 6 }}>
-          <b style={{ fontSize: 13 }}>MAT ที่เก็บโซนนี้ ({mats.length})</b>
+          <b style={{ fontSize: 13 }}>{tr('MAT ที่เก็บโซนนี้ (')}{mats.length})</b>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {mats.map(m => (
               <span key={m} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', color: 'var(--accent)' }}>
@@ -328,7 +329,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
             ))}
             {!mats.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ผูก MAT — โซนจะขึ้นสีเทา "ยังไม่ผูก MAT" บนผัง</span>}
           </div>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้น MAT / ชื่อพาร์ท จากทะเบียน Parts Master แล้วกดเพิ่ม…" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={tr('ค้น MAT / ชื่อพาร์ท จากทะเบียน Parts Master แล้วกดเพิ่ม…')} />
           {q.trim() !== '' && (
             <div style={{ display: 'grid', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6 }}>
               {options.map(p => (
@@ -338,7 +339,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
                   <span style={{ color: 'var(--muted)' }}>{stockByMat[p.mat_no] ? `คงเหลือ ${Number(stockByMat[p.mat_no]).toLocaleString()}` : '—'}</span>
                 </button>
               ))}
-              {!options.length && <span style={{ fontSize: 12, color: 'var(--muted)', padding: 4 }}>ไม่พบในทะเบียน Parts Master</span>}
+              {!options.length && <span style={{ fontSize: 12, color: 'var(--muted)', padding: 4 }}>{tr('ไม่พบในทะเบียน Parts Master')}</span>}
             </div>
           )}
         </div>
@@ -351,8 +352,8 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={btnSec} disabled={busy}>ยกเลิก</button>
-          <button onClick={save} style={btnPri} disabled={busy}>{busy ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+          <button onClick={onClose} style={btnSec} disabled={busy}>{tr('ยกเลิก')}</button>
+          <button onClick={save} style={btnPri} disabled={busy}>{busy ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button>
         </div>
       </div>
     </div>

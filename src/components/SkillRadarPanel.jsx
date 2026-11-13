@@ -29,6 +29,7 @@ import { loadPositions, positionLabel } from '../utils/positions';
 import { buildIndividualSkillHtml } from '../lib/individualSkillPrint';
 import tsLogoUrl from '../assets/TS logo.png';
 
+import { tr } from '../utils/i18n';
 /* แปลงรูป/ลายเซ็นเป็น dataURL ก่อนฝังในหน้าพิมพ์ (หน้าต่างใหม่โหลด URL เดิมไม่ทัน) */
 async function urlToDataUrl(url) {
   if (!url) return null;
@@ -54,7 +55,7 @@ function RadarTooltipContent({ active, payload }) {
     <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12 }}>
       <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
       <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
-      <div style={{ fontSize: 11, color: lv.color }}>{lv.label}</div>
+      <div style={{ fontSize: 11, color: lv.color }}>{tr(lv.label)}</div>
     </div>
   );
 }
@@ -132,7 +133,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 2100,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+      background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',
@@ -193,7 +194,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
               <span style={{ fontSize: 11, background: `${glowColor}22`, color: glowColor, borderRadius: 'var(--r-xs)', padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
-                {overall.label}
+                {tr(overall.label)}
               </span>
             </div>
           </div>
@@ -262,8 +263,8 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             return (
               <div key={g.key}>
                 <div style={{ marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
-                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7, marginLeft: 6 }}>{g.desc}</span>}
+                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {tr(g.label)}</span>
+                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7, marginLeft: 6 }}>{tr(g.desc)}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                   {gSkills.map(d => {

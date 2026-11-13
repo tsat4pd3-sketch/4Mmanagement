@@ -7,6 +7,7 @@ import SearchInput from './SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { machineKey, machineNoLikePattern } from '../utils/machineNo';
 
+import { tr as trI18n } from '../utils/i18n';
 /* ── 🔎 ค้นด้วย "อาการ" — สอบกลับจากปลายทางเข้าหาต้นเหตุ (2026-08-26 · คำถามหน้างาน) ────
    *"ลูกค้าแจ้ง ปัญหาตัดไม่ขาด — หา downtime/defect ที่เกี่ยวกับอาการนี้ได้มั้ย"*
 
@@ -226,12 +227,12 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           style={{ padding: '0 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
                    background: busy || noInput ? 'var(--bg3)' : 'var(--accent)', color: busy || noInput ? 'var(--muted)' : '#fff',
                    cursor: busy || noInput ? 'default' : 'pointer' }}>
-          {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
+          {busy ? trI18n('กำลังค้น…') : trI18n('🔎 ค้นหา')}
         </button>
       </TimeRangeBar>
       {machine && (
         <div style={{ ...box, borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 800 }}>เฉพาะเครื่อง <b style={{ fontSize: 15 }}>{machine}</b></span>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>{trI18n('เฉพาะเครื่อง')} <b style={{ fontSize: 15 }}>{machine}</b></span>
           <span style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 260px', lineHeight: 1.55 }}>
             กด 🔎 ค้นหาได้เลยโดยไม่ต้องพิมพ์อาการ (= ทุกเหตุการณ์ของเครื่องนี้ในช่วงวัน) · พิมพ์อาการเพื่อแคบลง
             · ของเสียเห็นเฉพาะใบที่ระบุเครื่องตอนเปิดใบ (ไลน์เครื่องขนาน) — ไลน์ไหลทีละชิ้นไม่ได้ผูกของเสียกับเครื่อง
@@ -239,32 +240,32 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           {onClearMachine && (
             <button onClick={() => { onClearMachine(); setRes(null); }}
               style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }}>
-              ✕ ทุกเครื่อง
+              {trI18n('✕ ทุกเครื่อง')}
             </button>
           )}
         </div>
       )}
       <div style={box}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>ค้นจากอาการที่ลูกค้าแจ้ง</div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>{trI18n('ค้นจากอาการที่ลูกค้าแจ้ง')}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55 }}>
-          ค้นจาก <b>ชื่อประเภท</b> + <b>ข้อความที่พนักงานพิมพ์</b> ของ <b>ของเสีย</b> และ <b>เครื่องหยุด</b> ในช่วงวันที่เลือก
-          · เป็นการค้นด้วย <b>คำ</b> ไม่ใช่ความหมาย — ลองคำใกล้เคียงหลายแบบด้วย
+          ค้นจาก <b>{trI18n('ชื่อประเภท')}</b> + <b>{trI18n('ข้อความที่พนักงานพิมพ์')}</b> {trI18n('ของ')} <b>{trI18n('ของเสีย')}</b> {trI18n('และ')} <b>{trI18n('เครื่องหยุด')}</b> ในช่วงวันที่เลือก
+          · เป็นการค้นด้วย <b>{trI18n('คำ')}</b> ไม่ใช่ความหมาย — ลองคำใกล้เคียงหลายแบบด้วย
         </div>
       </div>
 
       {err && (
         <div style={{ ...box, borderColor: '#ef4444', color: '#fca5a5', fontSize: 12.5 }}>
           ⚠️ ค้นไม่สำเร็จ — {err}
-          <div style={{ color: 'var(--muted)', marginTop: 4 }}>ยังไม่ใช่คำตอบว่า “ไม่เจอ” · ลองใหม่อีกครั้ง ถ้ายังไม่ได้แจ้งผู้ดูแลระบบ</div>
+          <div style={{ color: 'var(--muted)', marginTop: 4 }}>{trI18n('ยังไม่ใช่คำตอบว่า “ไม่เจอ” · ลองใหม่อีกครั้ง ถ้ายังไม่ได้แจ้งผู้ดูแลระบบ')}</div>
         </div>
       )}
 
       {res && res.rows.length === 0 && (
         <div style={{ ...box, fontSize: 12.5, lineHeight: 1.7 }}>
-          <b>ไม่พบรายการที่ตรงกับ “{res.term}”</b> ในช่วง {fmtDay(from)} – {fmtDay(to)}
+          <b>{trI18n('ไม่พบรายการที่ตรงกับ “')}{res.term}”</b> {trI18n('ในช่วง')} {fmtDay(from)} – {fmtDay(to)}
           <div style={{ color: 'var(--muted)', marginTop: 6 }}>
-            ⚠️ <b>ไม่เจอ ≠ ไม่เคยเกิด</b> — อาจเกิดจริงแต่ถูกบันทึกด้วยคำอื่น หรือลงเป็นประเภทกว้างๆ โดยไม่ได้กรอกรายละเอียด
-            <div style={{ marginTop: 4 }}>ลอง: ใช้คำสั้นลง (เช่น “ตัดไม่ขาด” → “ตัดไม่”) · ขยายช่วงวัน · ลองคำที่หน้างานใช้จริง</div>
+            ⚠️ <b>{trI18n('ไม่เจอ ≠ ไม่เคยเกิด')}</b> — อาจเกิดจริงแต่ถูกบันทึกด้วยคำอื่น หรือลงเป็นประเภทกว้างๆ โดยไม่ได้กรอกรายละเอียด
+            <div style={{ marginTop: 4 }}>{trI18n('ลอง: ใช้คำสั้นลง (เช่น “ตัดไม่ขาด” → “ตัดไม่”) · ขยายช่วงวัน · ลองคำที่หน้างานใช้จริง')}</div>
           </div>
         </div>
       )}
@@ -272,19 +273,19 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
       {res && sum && res.rows.length > 0 && (
         <>
           <div style={{ ...box, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>เจอทั้งหมด</div>
-              <div style={{ fontSize: 22, fontWeight: 900 }}>{res.rows.length} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ครั้ง</span></div></div>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>ของเสีย</div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.def.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ครั้ง · {sum.ngQty.toLocaleString()} ชิ้น</span></div></div>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>เครื่องหยุด</div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.dt.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ครั้ง · {sum.dtMin.toLocaleString()} นาที</span></div></div>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>กระจายตัว</div>
-              <div style={{ fontSize: 12.5, fontWeight: 700 }}>{sum.days} วัน · {sum.lines.length} ไลน์{sum.machines.length ? ` · ${sum.machines.length} เครื่อง` : ''}</div></div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{trI18n('เจอทั้งหมด')}</div>
+              <div style={{ fontSize: 22, fontWeight: 900 }}>{res.rows.length} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ครั้ง')}</span></div></div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{trI18n('ของเสีย')}</div>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.def.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('ครั้ง ·')} {sum.ngQty.toLocaleString()} {trI18n('ชิ้น')}</span></div></div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{trI18n('เครื่องหยุด')}</div>
+              <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.dt.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('ครั้ง ·')} {sum.dtMin.toLocaleString()} {trI18n('นาที')}</span></div></div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{trI18n('กระจายตัว')}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>{sum.days} {trI18n('วัน ·')} {sum.lines.length} {trI18n('ไลน์')}{sum.machines.length ? ` · ${sum.machines.length} เครื่อง` : ''}</div></div>
           </div>
 
           {sum.clusters.length > 1 && (
             <div style={{ ...box }}>
-              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>อาการนี้ถูกเขียนไว้กี่แบบ</div>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>{trI18n('อาการนี้ถูกเขียนไว้กี่แบบ')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {sum.clusters.map((c, i) => (
                   <span key={i} title={c.samples.length ? `เขียนแบบอื่น: ${c.samples.join(' · ')}` : undefined}
@@ -308,9 +309,9 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           <div style={{ ...box, padding: 0, overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
-                <th style={th}>วันที่</th><th style={th}>ไลน์ / กะ</th><th style={th}>ชนิด</th>
-                <th style={th}>ประเภท</th><th style={th}>เครื่อง / ชิ้นงาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}>ข้อความที่บันทึก</th><th style={th}></th>
+                <th style={th}>{trI18n('วันที่')}</th><th style={th}>{trI18n('ไลน์ / กะ')}</th><th style={th}>{trI18n('ชนิด')}</th>
+                <th style={th}>{trI18n('ประเภท')}</th><th style={th}>{trI18n('เครื่อง / ชิ้นงาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('จำนวน')}</th><th style={th}>{trI18n('ข้อความที่บันทึก')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
                 {res.rows.slice(0, 200).map((r) => {
@@ -320,21 +321,21 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
                   return (
                     <tr key={`${r._kind}:${r.id}`}>
                       <td style={td}>{fmtDay(s.work_date)}</td>
-                      <td style={td}>{s.line_name || '—'}<div style={{ color: 'var(--muted)', fontSize: 11 }}>{s.shift === 'night' ? 'กะดึก' : 'กะเช้า'}</div></td>
-                      <td style={td}><span style={{ fontSize: 11.5, fontWeight: 800, color: isDt ? '#f59e0b' : '#ef4444' }}>{isDt ? '🔧 เครื่องหยุด' : '🚫 ของเสีย'}</span></td>
+                      <td style={td}>{s.line_name || '—'}<div style={{ color: 'var(--muted)', fontSize: 11 }}>{s.shift === 'night' ? trI18n('กะดึก') : trI18n('กะเช้า')}</div></td>
+                      <td style={td}><span style={{ fontSize: 11.5, fontWeight: 800, color: isDt ? '#f59e0b' : '#ef4444' }}>{isDt ? trI18n('🔧 เครื่องหยุด') : trI18n('🚫 ของเสีย')}</span></td>
                       <td style={td}>{r._type || '—'}
-                        {r._viaType && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>ชื่อประเภทตรง</div>}</td>
-                      <td style={td}>{isDt ? (r.machine_no || <span style={{ color: 'var(--muted)' }}>ไม่ระบุเครื่อง</span>)
+                        {r._viaType && <div style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>{trI18n('ชื่อประเภทตรง')}</div>}</td>
+                      <td style={td}>{isDt ? (r.machine_no || <span style={{ color: 'var(--muted)' }}>{trI18n('ไม่ระบุเครื่อง')}</span>)
                         : (r.prod_orders?.part_name || r.prod_orders?.mat_no || '—')}</td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {isDt ? `${Number(r.duration_min) || 0} น.` : `${(Number(r.qty_ng) || 0) + (Number(r.qty_suspect) || 0)} ชิ้น`}</td>
-                      <td style={{ ...td, maxWidth: 320 }}>{r.description || <span style={{ color: 'var(--muted)' }}>— ไม่ได้กรอกรายละเอียด —</span>}</td>
+                      <td style={{ ...td, maxWidth: 320 }}>{r.description || <span style={{ color: 'var(--muted)' }}>{trI18n('— ไม่ได้กรอกรายละเอียด —')}</span>}</td>
                       <td style={td}>
                         {!isDt && prodNo && onOpenOrder && (
                           <button onClick={() => onOpenOrder(prodNo)}
                             style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                      background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
-                            → สอบกลับใบนี้
+                            {trI18n('→ สอบกลับใบนี้')}
                           </button>
                         )}
                       </td>
@@ -351,9 +352,9 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           </div>
 
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-            ⚠️ รายการข้างบนคือ <b>สิ่งที่น่าจะเกี่ยวกับอาการนี้</b> ไม่ใช่ข้อสรุปว่าเป็นสาเหตุ —
+            ⚠️ รายการข้างบนคือ <b>{trI18n('สิ่งที่น่าจะเกี่ยวกับอาการนี้')}</b> ไม่ใช่ข้อสรุปว่าเป็นสาเหตุ —
             เลือกใบที่สงสัยแล้วกด “สอบกลับใบนี้” เพื่อดูหลักฐานเต็ม (คน/เครื่อง/4M/PFMEA) แล้วตัดสินเอง
-            {sum.dt.length > 0 && <> · เครื่องหยุดไม่มีเลขใบผลิตผูกไว้ ให้ดูจากไลน์+วันที่แล้วเปิดกะนั้นใน Daily Report</>}
+            {sum.dt.length > 0 && <> {trI18n('· เครื่องหยุดไม่มีเลขใบผลิตผูกไว้ ให้ดูจากไลน์+วันที่แล้วเปิดกะนั้นใน Daily Report')}</>}
           </div>
         </>
       )}

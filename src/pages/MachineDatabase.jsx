@@ -28,6 +28,7 @@ import { DeleteButton } from '../components/IconButton';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { showsShutHeight } from '../utils/pressMachine';
 import { useNavigate } from 'react-router-dom';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── shared little UI bits ─────────────────────────────────── */
@@ -358,7 +359,7 @@ export default function MachineDatabase() {
     load();
   };
 
-  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{tr('กำลังโหลด...')}</div></Page>;
 
   return (
     <Page>
@@ -366,15 +367,15 @@ export default function MachineDatabase() {
         permKey="machines:edit, machines:create" />
       {/* 🧩 เป็นแท็บของ `/equipment` — PageHeader ใน <Hub> ไม่วาดชื่อหน้าซ้ำ เหลือคำอธิบาย + ปุ่ม (UI-STANDARD 2026-09-24)
           (เดิมวาด <h1> เองด้วย ⇒ แท็บเครื่องจักรมีหัวเรื่อง 2 ชั้นและไม่มี breadcrumb · ภาพ user 22/09) */}
-      <PageHeader title="ฐานข้อมูลเครื่องจักร" icon="🏭"
+      <PageHeader title={tr('ฐานข้อมูลเครื่องจักร')} icon="🏭"
         sub={`รายการเครื่องจักรทุกไลน์ · ${machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่`}
         actions={(canEdit || canCreate) ? (
           <>
             {/* ปุ่มตายตัว ≤2 (UI §6.35): [จัดการประเภท] [+ เพิ่มเครื่องจักร] · แยกยี่ห้อจากชื่อ → ⋯ (มี badge จำนวนที่ค้าง) */}
             <OverflowMenu items={[{ key: 'brand', icon: '🏷️', label: 'แยกยี่ห้อจากชื่อ', badge: brandTodo.length, onClick: () => setShowBrandReview(true),
               hidden: !(canEdit && hasBrandCol && brandTodo.length > 0) }]} />
-            {canEdit && <button type="button" className="pg-btn" onClick={() => setShowTypeManager(true)}>จัดการประเภทเครื่องจักร</button>}
-            {canCreate && <button type="button" className="pg-btn primary" onClick={() => openEdit()}>+ เพิ่มเครื่องจักร</button>}
+            {canEdit && <button type="button" className="pg-btn" onClick={() => setShowTypeManager(true)}>{tr('จัดการประเภทเครื่องจักร')}</button>}
+            {canCreate && <button type="button" className="pg-btn primary" onClick={() => openEdit()}>{tr('+ เพิ่มเครื่องจักร')}</button>}
           </>
         ) : null} />
 
@@ -382,20 +383,20 @@ export default function MachineDatabase() {
       <FilterBar>
         {/* ชนิดอุปกรณ์ — แยกเครื่องจักรออกจากแม่พิมพ์/จิ๊ก (แกนคนละแกนกับ "หมวด" ผลิต/facility) */}
         <select value={filterKind} onChange={e => { setFilterKind(e.target.value); setFilterLine(''); }}
-          title="ชนิดอุปกรณ์ — แม่พิมพ์กับจิ๊กไม่ใช่เครื่องจักร จึงแยกกันคนละลิสต์"
+          title={tr('ชนิดอุปกรณ์ — แม่พิมพ์กับจิ๊กไม่ใช่เครื่องจักร จึงแยกกันคนละลิสต์')}
           style={{ borderColor: filterKind === 'machine' ? undefined : 'var(--accent2)' }}>
-          <option value="">{ALL.kind}</option>
-          {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+          <option value="">{tr(ALL.kind)}</option>
+          {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
         </select>
         {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
         <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }}>
-          <option value="">{ALL.category}</option>
-          {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{c.t}</option>)}
+          <option value="">{tr(ALL.category)}</option>
+          {EQUIP_CATS.map(c => <option key={c.v} value={c.v}>{tr(c.t)}</option>)}
         </select>
         {catLineNames ? (
           <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
             <option value="">{allOf('ระบบ/พื้นที่')}</option>
-            {catLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+            {catLineNames.map(n => <option key={n} value={n}>{tr(n)}</option>)}
           </select>
         ) : (
           /* 2026-09-07: ไลน์ผลิตผ่าน <LineSelect> (ลำดับชั้น + scope มาตรฐาน leader/sections) แทน optgroup ที่ประกอบเอง
@@ -404,12 +405,12 @@ export default function MachineDatabase() {
             role={role} lineId={userLineId} sections={scopeSecs} />
         )}
         <select value={filterType} onChange={e => setFilterType(e.target.value)}>
-          <option value="">{ALL.type}</option>
-          {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
+          <option value="">{tr(ALL.type)}</option>
+          {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {tr(t.label)}</option>)}
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
-          แสดงที่ปิดใช้งาน
+          {tr('แสดงที่ปิดใช้งาน')}
         </label>
         <SearchInput value={search} onChange={setSearch} fields="หมายเลข/ชื่อเครื่อง" />
         <span className="spacer" />
@@ -445,7 +446,7 @@ export default function MachineDatabase() {
           — รายการย่อ/กางตามกลุ่มไลน์ได้อยู่แล้ว เลื่อนซ้อน 2 ชั้นทำให้ล้อเมาส์ติดกล่องใน */}
       <div style={{ overflowX: 'auto' }}>
       {grouped.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>ไม่พบเครื่องจักร</div>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่พบเครื่องจักร')}</div>
       )}
 
       {grouped.map(([lineName, items]) => {
@@ -456,7 +457,7 @@ export default function MachineDatabase() {
             style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'var(--bg2)', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--text)' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{lineName}</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} เครื่อง</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} {tr('เครื่อง')}</span>
           </button>
           {!isCollapsed && (
           <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -466,25 +467,25 @@ export default function MachineDatabase() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
-                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">{item.brand}</span>}
+                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title={tr('ยี่ห้อ')}>{item.brand}</span>}
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: `${tint(item.machine_types.color, 'dim')}`, color: item.machine_types.color, fontWeight: 700 }}>
-                        {item.machine_types.icon || ''} {item.machine_types.label}
+                        {item.machine_types.icon || ''} {tr(item.machine_types.label)}
                       </span>
                     )}
                     {item.automation_level && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
                     {item.operation_mode && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
                     {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>Facility / Utility</span>}
-                    {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>ยังไม่ระบุประเภท</span>}
-                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
-                    {!item.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>(ปิดใช้)</span>}
+                    {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('ยังไม่ระบุประเภท')}</span>}
+                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>{tr('จ่าย')} {supplyByMachine[item.id].length} {tr('ไลน์')}</span>}
+                    {!item.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>{tr('(ปิดใช้)')}</span>}
                   </div>
                 </div>
                 {(canEdit || mayDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button type="button" className="pg-btn sm" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้">ประวัติซ่อม</button>
-                    {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>แก้ไข</button>}
+                    <button type="button" className="pg-btn sm" onClick={() => setHistNo(item.machine_no)} title={tr('ใบแจ้งซ่อมทุกใบของเครื่องนี้')}>{tr('ประวัติซ่อม')}</button>
+                    {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>{tr('แก้ไข')}</button>}
                     {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
                 )}
@@ -506,24 +507,24 @@ export default function MachineDatabase() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* ชนิดอุปกรณ์ — แกนคนละแกนกับ "หมวด" (ผลิต/facility) · แม่พิมพ์ไม่ใช่เครื่องจักร */}
-              <Field label="ชนิดอุปกรณ์">
+              <Field label={tr('ชนิดอุปกรณ์')}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {EQUIPMENT_KINDS.map(k => {
                     const on = kindOf(editing.equipment_kind) === k.key;
-                    return <button key={k.key} type="button" title={k.desc}
+                    return <button key={k.key} type="button" title={tr(k.desc)}
                       onClick={() => setEditing(f => ({ ...f, equipment_kind: k.key }))}
                       style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
-                      {k.icon} {k.label}</button>;
+                      {k.icon} {tr(k.label)}</button>;
                   })}
                 </div>
                 {kindOf(editing.equipment_kind) === 'die' && (
                   <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5, lineHeight: 1.5 }}>
-                    แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
+                    แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>{tr('ทะเบียนแม่พิมพ์')}</b>
                   </div>
                 )}
               </Field>
-              <Field label="หมวดอุปกรณ์">
+              <Field label={tr('หมวดอุปกรณ์')}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {EQUIP_CATS.map(c => {
                     const on = (editing.equipment_category || 'production') === c.v;
@@ -534,85 +535,85 @@ export default function MachineDatabase() {
                 </div>
               </Field>
               {(editing.equipment_category || 'production') === 'production' ? (
-                <Field label="ไลน์การผลิต *">
+                <Field label={tr('ไลน์การผลิต *')}>
                   {/* 2026-09-07: <LineSelect> (ลำดับชั้น + scope) — ไลน์แม่ยังเลือกได้ (บางโรงงานวางเครื่องบนผังไลน์ใหญ่ เช่น HYDROFORM)
                       ไลน์ปลดระวางไม่โผล่ แต่ค่าที่ตั้งไว้แล้วยังเห็นพร้อมป้าย ⏸ */}
                   <LineSelect lines={lines} value={editing.line_name} onChange={v => setEditing(f => ({ ...f, line_name: v }))}
                     role={role} lineId={userLineId} sections={scopeSecs} style={inputStyle} />
                 </Field>
               ) : (
-                <Field label="ระบบ / พื้นที่ facility *">
+                <Field label={tr('ระบบ / พื้นที่ facility *')}>
                   {/* 2026-09-07: เลือกจากทะเบียนโซน pm_facility_areas (DR) — MtnMachineLayout/Energy จับคู่โซนด้วย "ชื่อ"
                       พิมพ์เองสะกดต่างตัวเดียว = โซนซ้ำ · โซนใหม่ต้อง insert เข้าทะเบียนก่อน (ปุ่ม + เพิ่มโซนใหม่) */}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <select value={editing.line_name} onChange={e => setEditing(f => ({ ...f, line_name: e.target.value }))} style={inputStyle}>
-                      <option value="">— เลือกโซน / ระบบ —</option>
+                      <option value="">{tr('— เลือกโซน / ระบบ —')}</option>
                       {/* ค่าเก่าที่ไม่มีในทะเบียน ต้องยังโชว์ (ห้ามหายเงียบ) พร้อมป้ายให้ไปจัดข้อมูล */}
                       {editing.line_name && !facilityAreas.includes(editing.line_name) && (
-                        <option value={editing.line_name}>{editing.line_name} ⚠ ไม่มีในทะเบียนโซน</option>
+                        <option value={editing.line_name}>{editing.line_name} {tr('⚠ ไม่มีในทะเบียนโซน')}</option>
                       )}
-                      {facilityAreas.map(n => <option key={n} value={n}>{n}</option>)}
+                      {facilityAreas.map(n => <option key={n} value={n}>{tr(n)}</option>)}
                     </select>
                     <button type="button" onClick={() => setNewArea(v => (v == null ? '' : null))}
                       style={{ ...cancelBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                      + เพิ่มโซนใหม่
+                      {tr('+ เพิ่มโซนใหม่')}
                     </button>
                   </div>
                   {newArea != null && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                       <input autoFocus value={newArea} onChange={e => setNewArea(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addFacilityArea(); } }}
-                        placeholder="ชื่อโซน/ระบบใหม่ เช่น ระบบน้ำ 1, High Pressure" style={inputStyle} />
+                        placeholder={tr('ชื่อโซน/ระบบใหม่ เช่น ระบบน้ำ 1, High Pressure')} style={inputStyle} />
                       <button type="button" onClick={addFacilityArea} disabled={areaSaving}
                         style={{ ...saveBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap', opacity: areaSaving ? 0.6 : 1 }}>
-                        {areaSaving ? '...' : 'บันทึกโซน'}
+                        {areaSaving ? '...' : tr('บันทึกโซน')}
                       </button>
                     </div>
                   )}
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ต้องผูกไลน์ผลิต · โซนชุดเดียวกับผัง facility ของ MTN และจอพลังงาน — ไม่มีในลิสต์ให้กด “+ เพิ่มโซนใหม่”</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('ไม่ต้องผูกไลน์ผลิต · โซนชุดเดียวกับผัง facility ของ MTN และจอพลังงาน — ไม่มีในลิสต์ให้กด “+ เพิ่มโซนใหม่”')}</div>
                 </Field>
               )}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="หมายเลขเครื่อง *">
-                  <input autoFocus value={editing.machine_no} onChange={e => setEditing(f => ({ ...f, machine_no: e.target.value.toUpperCase() }))} placeholder="เช่น HDF-01" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
+                <Field label={tr('หมายเลขเครื่อง *')}>
+                  <input autoFocus value={editing.machine_no} onChange={e => setEditing(f => ({ ...f, machine_no: e.target.value.toUpperCase() }))} placeholder={tr('เช่น HDF-01')} style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700 }} />
                 </Field>
-                <Field label="ชื่อเครื่อง / รุ่น">
-                  <input value={editing.machine_name} onChange={e => setEditing(f => ({ ...f, machine_name: e.target.value }))} placeholder="เช่น CO2 Welder" style={inputStyle} />
+                <Field label={tr('ชื่อเครื่อง / รุ่น')}>
+                  <input value={editing.machine_name} onChange={e => setEditing(f => ({ ...f, machine_name: e.target.value }))} placeholder={tr('เช่น CO2 Welder')} style={inputStyle} />
                 </Field>
               </div>
               {kindOf(editing.equipment_kind) !== 'die' && (() => {
                 const sug = !normalizeBrand(editing.brand) ? suggestBrand(editing.machine_name, knownBrands) : null;
                 return (
-                  <Field label="ยี่ห้อ (Brand)" hint={hasBrandCol ? 'ยี่ห้อเป็นของเครื่อง ไม่ต้องใส่ในชื่อชนิดอุปกรณ์ของใบ MO' : '⚠ รอรัน migration "machine_brand" ก่อน — ช่องนี้ยังบันทึกไม่ได้'}>
+                  <Field label={tr('ยี่ห้อ (Brand)')} hint={hasBrandCol ? tr('ยี่ห้อเป็นของเครื่อง ไม่ต้องใส่ในชื่อชนิดอุปกรณ์ของใบ MO') : tr('⚠ รอรัน migration "machine_brand" ก่อน — ช่องนี้ยังบันทึกไม่ได้')}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                       <input value={editing.brand || ''} disabled={!hasBrandCol} list="machine-brand-list"
-                        onChange={e => setEditing(f => ({ ...f, brand: e.target.value.toUpperCase() }))} placeholder="เช่น ABB / YASKAWA" style={{ ...inputStyle, flex: 1 }} />
-                      {hasBrandCol && sug && <button type="button" onClick={() => setEditing(f => ({ ...f, brand: sug }))} style={{ ...cancelBtnStyle, padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }} title="จากคำขึ้นต้นของชื่อเครื่อง">ใช้ {sug}</button>}
+                        onChange={e => setEditing(f => ({ ...f, brand: e.target.value.toUpperCase() }))} placeholder={tr('เช่น ABB / YASKAWA')} style={{ ...inputStyle, flex: 1 }} />
+                      {hasBrandCol && sug && <button type="button" onClick={() => setEditing(f => ({ ...f, brand: sug }))} style={{ ...cancelBtnStyle, padding: '6px 10px', fontSize: 12, whiteSpace: 'nowrap' }} title={tr('จากคำขึ้นต้นของชื่อเครื่อง')}>{tr('ใช้')} {sug}</button>}
                     </div>
                     <datalist id="machine-brand-list">{knownBrands.map(b => <option key={b} value={b} />)}</datalist>
                   </Field>
                 );
               })()}
-              <Field label="เลข I/O (Internal Order) — ใบแจ้งซ่อม MO เติมให้อัตโนมัติ">
-                <input value={editing.io_no} onChange={e => setEditing(f => ({ ...f, io_no: e.target.value.toUpperCase() }))} maxLength={20} placeholder="เช่น 11A1234567" style={{ ...inputStyle, fontFamily: 'monospace' }} />
+              <Field label={tr('เลข I/O (Internal Order) — ใบแจ้งซ่อม MO เติมให้อัตโนมัติ')}>
+                <input value={editing.io_no} onChange={e => setEditing(f => ({ ...f, io_no: e.target.value.toUpperCase() }))} maxLength={20} placeholder={tr('เช่น 11A1234567')} style={{ ...inputStyle, fontFamily: 'monospace' }} />
               </Field>
               {kindOf(editing.equipment_kind) === 'die' && (
-                <Field label="ความสูงแม่พิมพ์ — Die height (มม.)" hint="ว่าง = ยังไม่รู้ · ใช้คิดเวลาเปลี่ยนรุ่น + เช็คว่าขึ้นเครื่องปั๊มไหนได้">
+                <Field label={tr('ความสูงแม่พิมพ์ — Die height (มม.)')} hint={tr('ว่าง = ยังไม่รู้ · ใช้คิดเวลาเปลี่ยนรุ่น + เช็คว่าขึ้นเครื่องปั๊มไหนได้')}>
                   <input type="number" step="0.1" min={0} value={editing.die_height_mm ?? ''}
-                    onChange={e => setEditing(f => ({ ...f, die_height_mm: e.target.value }))} placeholder="เช่น 350" style={inputStyle} />
+                    onChange={e => setEditing(f => ({ ...f, die_height_mm: e.target.value }))} placeholder={tr('เช่น 350')} style={inputStyle} />
                 </Field>
               )}
               {/* แม่พิมพ์ไม่มีประเภทเครื่องจักร — ประเภท/ชุด/ลำดับ OP ของแม่พิมพ์อยู่ที่ทะเบียนแม่พิมพ์ (user 2026-09-14) */}
               {kindOf(editing.equipment_kind) !== 'die' && (
-              <Field label="ประเภทเครื่องจักร">
+              <Field label={tr('ประเภทเครื่องจักร')}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={editing.machine_type_id} onChange={e => setEditing(f => ({ ...f, machine_type_id: e.target.value }))} style={inputStyle}>
-                    <option value="">— ไม่ระบุ —</option>
-                    {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
+                    <option value="">{tr('— ไม่ระบุ —')}</option>
+                    {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {tr(t.label)}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowTypeManager(true)}
                     style={{ ...cancelBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                    + ประเภทใหม่
+                    {tr('+ ประเภทใหม่')}
                   </button>
                 </div>
               </Field>
@@ -626,13 +627,13 @@ export default function MachineDatabase() {
                     <Field label="Automation level">
                       <select value={editing.automation_level} onChange={e => setEditing(f => ({ ...f, automation_level: e.target.value }))} style={inputStyle}>
                         <option value="">— not set —</option>
-                        {activeAutomationLevels().map(a => <option key={a.key} value={a.key}>{a.icon || ''} {a.label}</option>)}
+                        {activeAutomationLevels().map(a => <option key={a.key} value={a.key}>{a.icon || ''} {tr(a.label)}</option>)}
                       </select>
                     </Field>
                     <Field label="Operation mode">
                       <select value={editing.operation_mode} onChange={e => setEditing(f => ({ ...f, operation_mode: e.target.value, gang_count: e.target.value === 'gang' ? f.gang_count : '' }))} style={inputStyle}>
                         <option value="">— not set —</option>
-                        {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {o.label}</option>)}
+                        {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {tr(o.label)}</option>)}
                       </select>
                     </Field>
                     {/* ⏱️ ช่วง shut height — ตัวแปรเวลาเปลี่ยนรุ่นงานปั๊ม (user 2026-09-24)
@@ -644,16 +645,16 @@ export default function MachineDatabase() {
                         Shut height ใช้เฉพาะเครื่องปั๊ม (ประเภท Metal Forming / Press) ·{' '}
                         <button type="button" onClick={() => setEditing(f => ({ ...f, _show_shut: true }))}
                           style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11.5, padding: 0, textDecoration: 'underline' }}>
-                          เครื่องนี้เป็นเครื่องปั๊ม — กรอก shut height</button>
+                          {tr('เครื่องนี้เป็นเครื่องปั๊ม — กรอก shut height')}</button>
                       </div>
                     ) : (<>
-                    <Field label="Shut height ต่ำสุด (มม.)" hint="ว่าง = ยังไม่รู้">
+                    <Field label={tr('Shut height ต่ำสุด (มม.)')} hint={tr('ว่าง = ยังไม่รู้')}>
                       <input type="number" step="0.1" min={0} value={editing.shut_height_min_mm ?? ''}
-                        onChange={e => setEditing(f => ({ ...f, shut_height_min_mm: e.target.value }))} placeholder="เช่น 200" style={inputStyle} />
+                        onChange={e => setEditing(f => ({ ...f, shut_height_min_mm: e.target.value }))} placeholder={tr('เช่น 200')} style={inputStyle} />
                     </Field>
-                    <Field label="Shut height สูงสุด (มม.)" hint="ใช้เช็คว่าแม่พิมพ์ขึ้นเครื่องนี้ได้ไหม">
+                    <Field label={tr('Shut height สูงสุด (มม.)')} hint={tr('ใช้เช็คว่าแม่พิมพ์ขึ้นเครื่องนี้ได้ไหม')}>
                       <input type="number" step="0.1" min={0} value={editing.shut_height_max_mm ?? ''}
-                        onChange={e => setEditing(f => ({ ...f, shut_height_max_mm: e.target.value }))} placeholder="เช่น 450" style={inputStyle} />
+                        onChange={e => setEditing(f => ({ ...f, shut_height_max_mm: e.target.value }))} placeholder={tr('เช่น 450')} style={inputStyle} />
                     </Field>
                     </>)}
                     {editing.operation_mode === 'gang' && (
@@ -679,11 +680,11 @@ export default function MachineDatabase() {
                       if (!(laneN > 1) && !kids.length) {
                         if (!isParallelLine(lineRow?.flow_mode)) return null;
                         return (
-                          <Field label="หยุดแล้วกระทบกี่เลน">
+                          <Field label={tr('หยุดแล้วกระทบกี่เลน')}>
                             <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
-                              ไลน์นี้เป็น <b>เครื่องขนาน</b> แต่ยังไม่ได้ตั้ง <b>จำนวนเลน</b> ที่ทะเบียนไลน์
+                              ไลน์นี้เป็น <b>{tr('เครื่องขนาน')}</b> {tr('แต่ยังไม่ได้ตั้ง')} <b>{tr('จำนวนเลน')}</b> ที่ทะเบียนไลน์
                               ⇒ สูตร OEE ยังไม่หารเลน · กรอกช่องนี้จะไม่มีผล
-                              <div style={{ marginTop: 2 }}>ไปตั้ง &quot;เครื่องขนานกี่เลน&quot; ที่ <b>ทะเบียนไลน์ผลิต</b> ก่อน แล้วกลับมากรอก</div>
+                              <div style={{ marginTop: 2 }}>ไปตั้ง &quot;เครื่องขนานกี่เลน&quot; ที่ <b>{tr('ทะเบียนไลน์ผลิต')}</b> {tr('ก่อน แล้วกลับมากรอก')}</div>
                             </div>
                           </Field>
                         );
@@ -693,7 +694,7 @@ export default function MachineDatabase() {
                           <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', marginBottom: laneN > 1 ? 6 : 0 }}>
                             <input type="checkbox" checked={editing.stops_whole_line === true}
                               onChange={e => setEditing(f => ({ ...f, stops_whole_line: e.target.checked }))} />
-                            ของกลางของสาย — หยุดแล้ว<b>หยุดทั้งไลน์</b>ที่ใช้มัน
+                            {tr('ของกลางของสาย — หยุดแล้ว')}<b>{tr('หยุดทั้งไลน์')}</b>{tr('ที่ใช้มัน')}
                           </label>
                           {laneN > 1 && !editing.stops_whole_line && (
                             <input type="number" min={1} max={laneN} value={editing.affects_lanes ?? ''}
@@ -702,14 +703,14 @@ export default function MachineDatabase() {
                           )}
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                             {kids.length > 0 ? (
-                              <>อุปกรณ์ที่อยู่ที่ <b>ไลน์แม่</b> และใช้ร่วมกันหลายไลน์ (คอนเวเยอร์ · ระบบลม · ตู้ไฟ)
+                              <>{tr('อุปกรณ์ที่อยู่ที่')} <b>{tr('ไลน์แม่')}</b> และใช้ร่วมกันหลายไลน์ (คอนเวเยอร์ · ระบบลม · ตู้ไฟ)
                                 — ติ๊กช่องนี้แล้วจะไม่ถูกหารเลนในทุกไลน์ที่ใช้มัน
-                                <div style={{ marginTop: 2 }}>ไลน์ขนานที่อยู่ใต้ไลน์นี้: <b>{kids.join(' · ')}</b></div></>
+                                <div style={{ marginTop: 2 }}>{tr('ไลน์ขนานที่อยู่ใต้ไลน์นี้:')} <b>{kids.join(' · ')}</b></div></>
                             ) : (
-                              <>กรอกเฉพาะ<b>ตัวยกเว้น</b> — คอนเวเยอร์/ระบบที่เลี้ยงทั้งไลน์ = ติ๊กช่องบน ·
-                                โรบอทที่ป้อน 2 เครื่อง = ใส่ <b>2</b> · เครื่องที่เดินเองไม่เกี่ยวกับตัวอื่น = <b>เว้นว่างทั้งคู่</b></>
+                              <>{tr('กรอกเฉพาะ')}<b>{tr('ตัวยกเว้น')}</b> — คอนเวเยอร์/ระบบที่เลี้ยงทั้งไลน์ = ติ๊กช่องบน ·
+                                โรบอทที่ป้อน 2 เครื่อง = ใส่ <b>2</b> · เครื่องที่เดินเองไม่เกี่ยวกับตัวอื่น = <b>{tr('เว้นว่างทั้งคู่')}</b></>
                             )}
-                            <div style={{ marginTop: 2 }}>ใช้แปลงนาที downtime เป็น <b>&quot;นาทีที่ไลน์หยุด&quot;</b> — ฐานเวลาของ %A และตัวหารของ %P</div>
+                            <div style={{ marginTop: 2 }}>{tr('ใช้แปลงนาที downtime เป็น')} <b>&quot;นาทีที่ไลน์หยุด&quot;</b> {tr('— ฐานเวลาของ %A และตัวหารของ %P')}</div>
                           </div>
                         </Field>
                       );
@@ -718,12 +719,12 @@ export default function MachineDatabase() {
                 );
               })()}
               {(editing.equipment_category || 'production') !== 'production' && (
-                <Field label="จ่ายให้ไลน์ (Supply Route)">
+                <Field label={tr('จ่ายให้ไลน์ (Supply Route)')}>
                   {!editing.id ? (
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย')}</div>
                   ) : (
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{tr('อุปกรณ์นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน')}</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 130, overflowY: 'auto', padding: 4, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                         {scopedLines.filter(l => !parentChildrenMap[l.name]).map(l => {
                           const on = supplyLines.includes(l.name);
@@ -732,19 +733,19 @@ export default function MachineDatabase() {
                               border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{on ? ' ' : ''}{l.name}</button>;
                         })}
                       </div>
-                      {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>กระทบ {supplyLines.length} ไลน์เมื่ออุปกรณ์นี้หยุด</div>}
+                      {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>{tr('กระทบ')} {supplyLines.length} {tr('ไลน์เมื่ออุปกรณ์นี้หยุด')}</div>}
                     </div>
                   )}
                 </Field>
               )}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={editing.is_active} onChange={e => setEditing(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -792,11 +793,11 @@ function BrandReviewModal({ proposals, onClose, onDone }) {
     <div className="overlay" style={{ zIndex: 2100 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(95vw,640px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>แยกยี่ห้อจากชื่อเครื่อง</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{tr('แยกยี่ห้อจากชื่อเครื่อง')}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-          ระบบอ่านจาก <b>คำแรกของชื่อเครื่อง</b> เท่านั้น (ไม่เดาจากชื่อรุ่น) · ตรวจแล้วติ๊กออก/แก้ยี่ห้อได้ก่อนบันทึก ·
+          ระบบอ่านจาก <b>{tr('คำแรกของชื่อเครื่อง')}</b> เท่านั้น (ไม่เดาจากชื่อรุ่น) · ตรวจแล้วติ๊กออก/แก้ยี่ห้อได้ก่อนบันทึก ·
           เครื่องที่ระบบอ่านไม่ออกไม่อยู่ในลิสต์นี้ — กรอกเองในฟอร์มเครื่อง
         </div>
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 10 }}>
@@ -810,7 +811,7 @@ function BrandReviewModal({ proposals, onClose, onDone }) {
           ))}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={cancelBtnStyle}>ยกเลิก</button>
+          <button onClick={onClose} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
           <button onClick={save} disabled={busy || !picked.length} style={{ ...saveBtnStyle, opacity: busy || !picked.length ? 0.6 : 1 }}>{busy ? 'กำลังบันทึก…' : `บันทึกยี่ห้อ ${picked.length} เครื่อง`}</button>
         </div>
       </div>
@@ -872,7 +873,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
     <div className="overlay" style={{ zIndex: 2100 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(95vw,460px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>ประเภทเครื่องจักร</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{tr('ประเภทเครื่องจักร')}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>
@@ -883,30 +884,30 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
           {types.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: t.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {t.label}
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {tr(t.label)}
                 {hasMoCol && <span style={{ fontSize: 11, color: t.mo_item_type ? 'var(--text2)' : 'var(--muted)', marginLeft: 6 }}>{t.mo_item_type ? `→ ใบ MO: ${t.mo_item_type}` : '· ยังไม่ผูกชนิดในใบ MO'}</span>}</span>
               {canEdit && (
                 <>
-                  <button type="button" className="pg-btn sm" onClick={() => startEdit(t)}>แก้ไข</button>
-                  <DeleteButton onClick={() => handleDelete(t)} title="ลบรายการนี้" />
+                  <button type="button" className="pg-btn sm" onClick={() => startEdit(t)}>{tr('แก้ไข')}</button>
+                  <DeleteButton onClick={() => handleDelete(t)} title={tr('ลบรายการนี้')} />
                 </>
               )}
             </div>
           ))}
-          {types.length === 0 && <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีประเภทเครื่องจักร</div>}
+          {types.length === 0 && <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีประเภทเครื่องจักร')}</div>}
         </div>
 
         {canEdit && (
           editingId ? (
             <div style={{ background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <input autoFocus placeholder="ชื่อประเภท เช่น Robot - Arc Welding" value={form.label}
+              <input autoFocus placeholder={tr('ชื่อประเภท เช่น Robot - Arc Welding')} value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={inputStyle} />
               {hasMoCol && (
-                <label style={{ fontSize: 11, color: 'var(--muted)' }}>ชนิดอุปกรณ์ในใบแจ้งซ่อม (เลือก MC No. แล้วระบบเติมให้)
+                <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชนิดอุปกรณ์ในใบแจ้งซ่อม (เลือก MC No. แล้วระบบเติมให้)')}
                   <select value={form.mo_item_type || ''} onChange={e => setForm(f => ({ ...f, mo_item_type: e.target.value }))} style={{ ...inputStyle, marginTop: 3 }}>
-                    <option value="">— ไม่ผูก (ให้ผู้แจ้งเลือกเอง) —</option>
-                    {form.mo_item_type && !itemNames.includes(form.mo_item_type) && <option value={form.mo_item_type}>{form.mo_item_type} (ปิดใช้แล้ว)</option>}
-                    {itemNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    <option value="">{tr('— ไม่ผูก (ให้ผู้แจ้งเลือกเอง) —')}</option>
+                    {form.mo_item_type && !itemNames.includes(form.mo_item_type) && <option value={form.mo_item_type}>{form.mo_item_type} {tr('(ปิดใช้แล้ว)')}</option>}
+                    {itemNames.map(n => <option key={n} value={n}>{tr(n)}</option>)}
                   </select>
                 </label>
               )}
@@ -923,12 +924,12 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
-                <button onClick={cancelEdit} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, flex: 1, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
+                <button onClick={cancelEdit} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
               </div>
             </div>
           ) : (
-            <button onClick={startAdd} style={{ ...saveBtnStyle, width: '100%' }}>+ เพิ่มประเภทใหม่</button>
+            <button onClick={startAdd} style={{ ...saveBtnStyle, width: '100%' }}>{tr('+ เพิ่มประเภทใหม่')}</button>
           )
         )}
       </div>

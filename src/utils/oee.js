@@ -37,7 +37,7 @@ import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
 /* 🏷️ คีย์เลขเครื่อง — `machine_no` เป็นข้อความอิสระ (SW10 vs SW-10 = เครื่องเดียวกัน)
    ทะเบียน "ครอบกี่เลน" ต้อง join ด้วยคีย์เดียวกับทั้งระบบ ห้ามเทียบสตริงดิบ (utils/machineNo.js) */
 import { machineKey } from './machineNo.js';
-import { applyBreakLineRules, breakLineRuleIndexSync, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
+import { applyBreakLineRules, breakLineRuleIndexSync, breakLineRuleIndexOf, breakRulesForLine, breakBandName, breakBandTitle } from './breakLineRules.js';   // ข้อยกเว้นเวลาพัก "รายไลน์" (เจ้าของกฎไล่สายแม่-ลูก)
 import { applyHolidayBreaks } from './workingDay.js';
 /* 🏭 ป้ายบนแถบเงาเวลาพัก — เจ้าของข้อความอยู่ `breakLineRules.js` ส่งต่อที่นี่เพื่อให้จอ
    **import จาก `utils/oee` ที่เดียว** คู่กับ `halfDayBreakBands` ที่ผลิต band ให้
@@ -320,6 +320,76 @@ export function breakBandsIn({ policies = [], startMs, endMs, workDate, shift, p
     .map(rangeOf).filter(Boolean)
     .sort((a, b) => a.s - b.s);
   return mergeBands(bands);
+}
+
+/* ═══ 📸 snapshot "ของที่ใช้คิด OEE ตอนปิดกะ" (2026-11-11 · คำสั่ง user) ══════════════════
+   ปัญหาที่แก้: %A/%P/%Q ที่ stamp ไว้ คิดจาก **ทะเบียนที่แก้ได้ภายหลัง** — CT (`kanban_standards`
+   /`dr_products`) · นโยบายพัก (`break_policies`) · ข้อยกเว้นพักรายไลน์ (`break_line_rules`) ·
+   ปฏิทินวันหยุด · `process_type` ของไลน์ ⇒ กดคำนวณใหม่คนละวัน **ได้เลขไม่เท่าเดิม**
+   (เคสจริง 10/11: restamp 5 กะ มิ.ย.–ก.ย. ไม่มีกะไหนได้ค่าเดิม เพราะนโยบายพักถูกแก้ 20/10 + 05/11
+    ⇒ ออดิทเทียบ "เลขที่เก็บ" กับ "เลขที่คำนวณได้" ไม่ตรง = ระบบเสียความน่าเชื่อถือ)
+
+   🔴 กฎ: เก็บ **input ไม่ใช่ผลลัพธ์** — เก็บช่วงพักสำเร็จรูปไว้จะแก้เวลาเริ่ม/เลิกกะแล้วคิดใหม่ไม่ได้
+   🔴 กฎ: **ไม่มี snapshot = ถอยไปอ่านทะเบียนสดเหมือนเดิมเป๊ะ** (กะที่ปิดก่อนวันนี้ทั้งหมด)
+          ห้ามบล็อก ห้ามเดา ห้ามเขียน snapshot ย้อนหลังให้กะเก่า (เดาทะเบียนของวันนั้นไม่ได้)
+   🔴 กฎ: กะที่ **มี** snapshot แล้ว คำนวณใหม่ต้องใช้ snapshot เดิมต่อ ห้ามทับด้วยทะเบียนวันนี้
+          (`computeSessionOee` คืน `breakSnapshot` = ตัวที่ใช้คิดรอบนี้ ให้จอ stamp กลับได้ตรงๆ)
+   ⚠️ นาทีพัก "ของวันหยุด" (`duration_min_holiday`) ถูก resolve ลง `duration_min` ตอนทำ snapshot แล้ว
+      (ปฏิทินบริษัทแก้ย้อนหลังได้) · แต่ **กฎรายไลน์เก็บแบบยังไม่ทับ** เพราะ `isOt` ต้องตัดสินจาก
+      ค่ากลางก่อนทับ (ดูหัวข้อ `breakBandsIn`) — ทับไปแล้วจะปลุกนโยบาย `no_ot` กลับมาเงียบๆ */
+export const BREAK_SNAPSHOT_V = 1;
+
+/** สร้าง snapshot นโยบายพักของกะนี้ → เก็บลง `production_sessions.break_snapshot`
+ *  @returns {{v:number,process_type:string|null,policies:Array,line_rules:object}|null}
+ *           `null` = ยังไม่รู้ (ทะเบียนพักยังไม่โหลด) ⇒ อย่าเขียนทับของเดิม */
+export function makeBreakSnapshot({ breakPolicies = [], session = null, processType = null, lineRules = null } = {}) {
+  const pol = (breakPolicies || []).filter(Boolean);
+  if (!pol.length) return null;
+  const shift = session?.shift || 'day';
+  const keep = applyHolidayBreaks(pol.filter(p => {
+    if (!(p.shift === 'both' || p.shift === shift)) return false;
+    const proc = p.process_type;
+    return !(proc && proc !== 'common' && proc !== processType);
+  }), session?.work_date);
+  const rules = breakRulesForLine(lineRules ?? breakLineRuleIndexSync(), session?.line_name ?? null);
+  const line_rules = {};
+  if (rules) for (const [pid, min] of rules) line_rules[String(pid)] = Number(min);
+  return {
+    v: BREAK_SNAPSHOT_V,
+    process_type: processType ?? null,
+    policies: keep.map(p => ({
+      id: p.id ?? null, name: p.name ?? null,
+      shift: p.shift ?? null, process_type: p.process_type ?? null, ot_scope: p.ot_scope ?? null,
+      anchor: p.anchor ?? null, start_time: p.start_time ?? null, offset_min: p.offset_min ?? null,
+      duration_min: Number(p.duration_min) || 0,
+      ...(p.holiday_min != null ? { holiday_min: p.holiday_min, holiday_central_min: p.holiday_central_min } : {}),
+    })),
+    line_rules,
+  };
+}
+
+/** อ่าน snapshot กลับมาเป็น input ของ `breakIntervalsIn` — เวอร์ชันที่ไม่รู้จัก = `null` (ถอยไปทะเบียนสด)
+ *  ⚠️ `policies: []` **ไม่ใช่ null** — แปลว่า "กะนั้นไม่มีพักที่เข้าเงื่อนไขจริงๆ" ต้องเคารพ */
+export function readBreakSnapshot(session) {
+  const s = session?.break_snapshot;
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  if (Number(s.v) !== BREAK_SNAPSHOT_V || !Array.isArray(s.policies)) return null;
+  return {
+    policies: s.policies.filter(Boolean),
+    processType: s.process_type ?? null,
+    lineRules: breakLineRuleIndexOf(session?.line_name ?? null, s.line_rules || {}),
+  };
+}
+
+/** CT ที่ถูกใช้คิด %P ตอนปิดกะ (`production_sessions.ct_snapshot` = `{ MAT: วินาที }`)
+ *  🔴 เก็บเฉพาะตัวที่ **รู้ค่า (> 0)** — MAT ที่ตอนนั้นไม่รู้ CT ไม่ตรึงไว้ ให้ถอยไปทะเบียนสด
+ *     (เติม CT ทีหลังแล้วคำนวณใหม่ได้เลขที่ "ดีกว่า" = ตั้งใจ · ตัวที่ขาดดูได้จาก snapshot เอง) */
+export function readCtSnapshot(session) {
+  const s = session?.ct_snapshot;
+  if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
+  const out = {};
+  for (const [mat, v] of Object.entries(s)) { const n = Number(v); if (mat && n > 0) out[mat] = n; }
+  return Object.keys(out).length ? out : null;
 }
 
 /** นาทีของช่วง [sMs, eMs] ที่ทับกับ intervals (ผลลัพธ์จาก breakIntervalsIn — merged แล้ว) */
@@ -1507,15 +1577,25 @@ export function computeSessionOee({
   const parallelN = parallelUnitsOf(lineFlow, machineCount);
   const dtW = laneWeightFn(parallelN, affectsLanes);   // §3.2 — สูตรเดียวกับที่ dtMinBySession ใช้ ห้ามเขียนซ้ำ
   const sessionShift = session?.shift || 'day';
-  const ctForMatNo = (matNo) => ctForMat(matNo, { kanbanStds, products });
+  /* 📸 snapshot ชนะทะเบียนสด — กะที่ปิดพร้อม snapshot ต้องคำนวณซ้ำได้ค่าเดิมเป๊ะ (§snapshot)
+     ไม่มี snapshot (กะเก่า) = ถอยไปทะเบียนสดเหมือนเดิมทุกบรรทัด */
+  const ctSnap = readCtSnapshot(session);
+  const brkSnap = readBreakSnapshot(session);
+  const brkPolicies = brkSnap ? brkSnap.policies  : breakPolicies;
+  const brkLineRules = brkSnap ? brkSnap.lineRules : lineRules;
+  const brkProcessType = brkSnap ? brkSnap.processType : processType;
+  const ctForMatNo = (matNo) => {
+    const snap = ctSnap?.[matNo];
+    return snap > 0 ? snap : ctForMat(matNo, { kanbanStds, products });
+  };
   const pairOf = (mat) => products.find(p => p.mat_no === mat)?.pair_mat_no || null;
 
   /* 🔚 กรอบที่ส่งเข้ามาคือ "ช่วงที่ MAT ตัวนี้วิ่ง" ไม่ใช่ทั้งกะ ⇒ ต้องบอก **ปลายกะจริง** ด้วย
      ไม่งั้นพักที่ผูกปลายกะ (5ส.) จะไปเกาะปลายช่วงของแต่ละ MAT = หักพักซ้ำทุกใบ */
   const brkIvIn = (a, b) => breakIntervalsIn({
-    policies: breakPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
-    workDate, shift: sessionShift, processType, shiftEndMs: shiftFrame?.endMs ?? null,
-    lineName: session?.line_name ?? null, lineRules,
+    policies: brkPolicies, startMs: a ? a.getTime() : 0, endMs: b ? b.getTime() : 0,
+    workDate, shift: sessionShift, processType: brkProcessType, shiftEndMs: shiftFrame?.endMs ?? null,
+    lineName: session?.line_name ?? null, lineRules: brkLineRules,
   });
   const ivMin = (iv) => iv.reduce((sum, [a, b]) => sum + (b - a) / 60000, 0);
   const dtOverlapMin = (startMs, endMs, pred, logs, weightFn, breakIv = []) => {
@@ -1690,8 +1770,13 @@ export function computeSessionOee({
   const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
   const ctUsed = {};
   matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
+  /* 📸 "คิดรอบนี้ด้วยอะไร" — ให้จอ stamp กลับลงกะได้ตรงๆ (§snapshot)
+     มี snapshot อยู่แล้ว = คืนตัวเดิม **ห้ามทับด้วยทะเบียนวันนี้** · ไม่มี = ตรึงทะเบียนที่ใช้รอบนี้ */
+  const breakSnapshot = brkSnap
+    ? session.break_snapshot
+    : makeBreakSnapshot({ breakPolicies, session, processType, lineRules });
   return {
-    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT,
+    A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, breakSnapshot,
     totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP, stdMin,
     loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin,
     pOver: pRawRatio != null && pRawRatio > 1.001,

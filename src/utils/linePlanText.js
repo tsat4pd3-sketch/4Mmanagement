@@ -31,7 +31,7 @@ export function planRowText(r, where = 'หน้าไลน์') {
  *   area = พื้นที่ SAP ที่คิดรวม (แม่-ลูกนับที่เดียว) · noBom = ใบผลิตที่ MAT ไม่มีลูกใน BOM (แตกไม่ได้ — ต้องบอก)
  * @returns {{ text: string, sendCount: number }}
  */
-export function planConfirmText(rows = [], { title = '', focus = [], max = 12, area = null, noBom = [], opUnset = [] } = {}) {
+export function planConfirmText(rows = [], { title = '', focus = [], max = 12, area = null, noBom = [], opUnset = [], fgSkipped = [] } = {}) {
   const fs = new Set((focus || []).map(m => String(m).trim()));
   const sorted = [...rows].sort((a, b) => (fs.has(b.mat_no) ? 1 : 0) - (fs.has(a.mat_no) ? 1 : 0));
   const send = rows.filter(r => r.action === 'insert' || r.action === 'raise').length;
@@ -48,5 +48,9 @@ export function planConfirmText(rows = [], { title = '', focus = [], max = 12, a
   const ou = (opUnset || []).length
     ? `\n\n⚠️ ใบขั้น OP ${opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) จึงไม่ได้ขอของให้: ${opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${f(x.qty)}`).join(' · ')} — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`
     : '';
-  return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${ou}${tail}`, sendCount: send };
+  // 🚫 ไม่มี FG เข้าไลน์ (13/11 · utils/storeOps.js) — ลูกใน BOM ที่เป็น 1xx ถูกข้าม ต้องบอก ห้ามหายเงียบ
+  const fg = (fgSkipped || []).length
+    ? `\n\n⚠️ ลูกใน BOM ${fgSkipped.length} ตัวเป็นเลข FG 1xx — ไม่เบิกเข้าไลน์: ${fgSkipped.slice(0, 5).join(' · ')} (แจ้ง PE ตรวจ BOM ที่ /products)`
+    : '';
+  return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${ou}${fg}${tail}`, sendCount: send };
 }

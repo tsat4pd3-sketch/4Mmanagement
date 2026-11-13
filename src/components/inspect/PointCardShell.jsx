@@ -5,6 +5,7 @@
    📄 docs/modules/inspection-point-setup.md — **การ์ดจุดตรวจใหม่ทุกระบบใช้เปลือกนี้ ห้ามวาดหัว/ปุ่มเอง** */
 import { acceptImageFile } from '../../utils/acceptImageFile'
 
+import { tr } from '../../utils/i18n';
 const smallBtn = {
   padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer',
   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
@@ -35,13 +36,13 @@ export default function PointCardShell({
               border: `1px solid ${isPinning || pinned ? 'var(--accent)' : 'var(--border2)'}`,
               background: isPinning ? 'var(--accent)' : pinned ? 'var(--accent-dim)' : 'var(--bg3)',
               color: isPinning ? 'var(--accent-ink)' : pinned ? 'var(--accent)' : 'var(--muted)',
-            }}>{isPinning ? '📍 แตะที่รูป…' : pinned ? '📍 วางแล้ว (ย้าย)' : '🔘 วางตำแหน่ง'}</button>
+            }}>{isPinning ? tr('📍 แตะที่รูป…') : pinned ? tr('📍 วางแล้ว (ย้าย)') : tr('🔘 วางตำแหน่ง')}</button>
           )}
           {/* ถอดหมุด — แตะหมุดบนรูป = ไปที่การ์ด (ไม่ใช่ลบ) */}
           {canPin && pinned && onUnpin && (
-            <button type="button" onClick={onUnpin} title="เอาหมุดของจุดนี้ออกจากรูป" style={smallBtn}>✕ ถอดหมุด</button>
+            <button type="button" onClick={onUnpin} title={tr('เอาหมุดของจุดนี้ออกจากรูป')} style={smallBtn}>{tr('✕ ถอดหมุด')}</button>
           )}
-          {onDelete && <button type="button" className="tbtn" onClick={onDelete} title="ลบจุดนี้" aria-label="ลบจุดนี้"
+          {onDelete && <button type="button" className="tbtn" onClick={onDelete} title={tr('ลบจุดนี้')} aria-label={tr('ลบจุดนี้')}
             style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, lineHeight: 1, padding: '0 2px', cursor: 'pointer' }}>×</button>}
         </div>
       </div>
@@ -55,17 +56,17 @@ export default function PointCardShell({
           {closeup.preview ? (
             <>
               <img src={closeup.preview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)' }} />
-              <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>🔍 รูปเจาะจุดนี้</span>
+              <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>{tr('🔍 รูปเจาะจุดนี้')}</span>
               <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}>
-                <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />เปลี่ยนรูป
+                <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />{tr('เปลี่ยนรูป')}
               </label>
               <button type="button" onClick={closeup.onClear}
-                style={{ fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer' }}>ลบรูป</button>
+                style={{ fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer' }}>{tr('ลบรูป')}</button>
             </>
           ) : (
             <label style={{ fontSize: 11, color: 'var(--muted)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />
-              📷 แนบรูปจุดนี้ (โคลสอัพ) — คนตรวจแตะหมุด 🔍 แล้วซูมดู
+              {tr('📷 แนบรูปจุดนี้ (โคลสอัพ) — คนตรวจแตะหมุด 🔍 แล้วซูมดู')}
             </label>
           )}
         </div>

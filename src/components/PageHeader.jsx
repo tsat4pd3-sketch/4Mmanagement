@@ -8,13 +8,14 @@ import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/ค�
 import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้นแทน emoji · แท็บตัด emoji นำหน้า (UI §6.36)
 import TabBar from './TabBar';
 
+import { tr } from '../utils/i18n';
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
    (ดู docs/NAVIGATION-REVIEW.md — เดิมมีหัวเรื่องแค่ 22 จาก 56 หน้า และแท็บมุมโค้ง 7/8/12 ปนกัน)
 
    ใช้:
      const [tab, setTab] = useTabParam(['list','kpi'], 'list');
-     <PageHeader title="แจ้งซ่อม MTN (MO)" icon="🛠️" sub="ค้างดำเนินการ 3 ใบ"
+     <PageHeader title={tr('แจ้งซ่อม MTN (MO)')} icon="🛠️" sub={tr('ค้างดำเนินการ 3 ใบ')}
        actions={<button…/>} tabs={[{key:'list',label: 'รายการ MO'},…]} tab={tab} onTab={setTab} />
 
    • breadcrumb (หมวด › ชื่อหน้า) generate เองจาก NAV_ITEMS ตาม pathname — ไม่ต้องใส่มือ
@@ -33,7 +34,10 @@ import TabBar from './TabBar';
    4. เฟรมแรกห้ามให้ตัวชี้วิ่งมาจากมุมซ้าย — วัดใน useLayoutEffect (ก่อน paint) แล้วค่อยเปิด transition
    5. เพดาน Chromium 94 (จอ TV): transform/transition/box-shadow/ResizeObserver ผ่านหมด
       **ห้ามใช้ `color-mix()`** — แสงเรืองใช้ตัวแปร `--accent-glow` ใน index.css (มีทั้ง 2 ธีม)      */
-/* ── 🚫 ห้ามพับแท็บเข้า dropdown (2026-10-01 · user: *"ถ้าเป็นดรอปดาว จะทำให้ user ไม่รู้ป่าว ไม่จำเป็นต้องดรอปดาวก็ได้"*) ──
+/* ── 🗂 แท็บเกิน 7 = จัดเป็น "กลุ่ม 2 ชั้น" ที่มองเห็นทั้ง 2 ชั้น (2026-11-13 · user: "ยุบแท็บเกิน 7") — `tabs=[{ key, label, children:[…] }]`
+   แถวบน = แท็บเดี่ยว + ชื่อกลุ่ม · แถวล่าง (`data-subtab`) = แท็บลูกของกลุ่มที่เลือก · `?tab=` ยังเป็นคีย์ลูกเดิม ⇒ ลิงก์/บุ๊กมาร์กไม่พัง
+   ไม่ใช่ dropdown: ชื่อกลุ่มบอกว่าข้างในมีอะไร (title = รายชื่อลูก) และกดกลุ่มแล้วเห็นลูกทั้งหมดทันที — ยังเป็น recognition ไม่ใช่ recall
+   ── 🚫 ห้ามพับแท็บเข้า dropdown (2026-10-01 · user: *"ถ้าเป็นดรอปดาว จะทำให้ user ไม่รู้ป่าว ไม่จำเป็นต้องดรอปดาวก็ได้"*) ──
    รอบ 24/09 เคยพับแท็บที่เกิน 7 เข้า "⋯ เพิ่มเติม" โดยอ้าง Miller 7±2 — **ตีความผิด**: 7±2 คือขีดของสิ่งที่ต้อง "จำ"
    แท็บที่วางอยู่บนจอคือสิ่งที่ "เห็นแล้วจำได้" (recognition) · ของที่ซ่อนอยู่ = คนไม่รู้ว่ามี (NN/g: hidden navigation
    ลดการค้นพบ) ⇒ ProductMaster 4 แท็บ (ลูกค้า/Supplier/ทบทวน CT/Export) กลายเป็นของที่ไม่มีใครเจอ
@@ -49,11 +53,33 @@ export default function PageHeader({
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const navItem = NAV_ITEMS.find(n => n.to === pathname);
-  const tabList = (tabs || []).filter(Boolean);
-  const tabLabel = stripIcon(tr(tabList.find(t => t.key === tab)?.label));
+  const rawTabs = (tabs || []).filter(Boolean);
+  /* 🗂 แท็บกลุ่ม: entry ที่มี `children` = กลุ่ม (คีย์กลุ่มไม่ใช่ค่าของ ?tab=) · แถวบนวาดกลุ่มเป็น 1 ปุ่ม ·
+     กลุ่มที่ถือแท็บปัจจุบัน = active แล้ววาดแถวลูกใต้แถวบน · กดกลุ่ม = ไปลูกตัวแรก · badge กลุ่ม = ผลรวม badge ลูก */
+  const groupOf = (k) => rawTabs.find(t => Array.isArray(t.children) && t.children.some(c => String(c.key) === String(k)));
+  const activeGroup = groupOf(tab);
+  const sumBadge = (kids) => { const n = kids.reduce((a, c) => a + (Number(c.badge) || 0), 0); return n || null; };
+  const topTabs = rawTabs.map(t => Array.isArray(t.children)
+    ? { key: `grp:${t.key}`, label: t.label, badge: t.badge ?? sumBadge(t.children), title: t.title || t.children.map(c => stripIcon(tr(c.label))).join(' · ') }
+    : t);
+  const topValue = activeGroup ? `grp:${activeGroup.key}` : tab;
+  const onTop = (k) => { const g = String(k).startsWith('grp:') && rawTabs.find(t => Array.isArray(t.children) && `grp:${t.key}` === k); onTab && onTab(g ? g.children[0].key : k); };
+  const tabList = topTabs;
+  const leafLabel = stripIcon(tr((activeGroup ? activeGroup.children : rawTabs).find(t => t.key === tab)?.label));
+  const tabLabel = activeGroup ? [stripIcon(tr(activeGroup.label)), leafLabel].filter(Boolean).join(' › ') : leafLabel;
 
-  /* แท็บ = ของกลาง <TabBar audit> (06/11) — หน้าตาเดียวกับแถบในหน้าอื่นที่ใช้ TabBar · `audit` = data-tabbar/data-tab-ind ให้ stdsweep */
-  const renderTabs = () => <TabBar className="ph-chrome" tabs={tabList} value={tab} onChange={onTab} audit />;
+  /* แท็บ = ของกลาง <TabBar audit> (06/11) — หน้าตาเดียวกับแถบในหน้าอื่นที่ใช้ TabBar · `audit` = data-tabbar/data-tab-ind ให้ stdsweep
+     แถวลูกติด `data-subtab` = ของที่อนุญาตให้คั่นระหว่างแท็บกับแถบกรอง (stdsweep §2.1) */
+  const renderTabs = () => (
+    <>
+      <TabBar className="ph-chrome" tabs={topTabs} value={topValue} onChange={onTop} audit />
+      {activeGroup && (
+        <div data-subtab="1" className="ph-chrome" style={{ marginTop: -4 }}>
+          <TabBar size="sm" tabs={activeGroup.children} value={tab} onChange={onTab} />
+        </div>
+      )}
+    </>
+  );
 
   /* 📱 มือถือ: แถบกรอง (`filters=`) ที่มีตัวกรอง ≥2 ตัว ⇒ พับเป็นแถบเดียว · ค้นหา/ของหลัง spacer/ปุ่ม hub โชว์เสมอ
      คืน null = ไม่พับ (จอคอม หรือมีตัวกรองตัวเดียว) ⇒ ผู้เรียก render แบบเดิมเป๊ะ (docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) */

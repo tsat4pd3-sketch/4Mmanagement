@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { naturalCompare } from '../utils/listOrder';
 import { pushCoverageFailText } from '../utils/pushPrompt';
+import { tr } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const DAYS = 7;
@@ -73,11 +74,11 @@ export default function PushCoveragePanel() {
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 800 }}>เครื่องที่รับแจ้งเตือนเข้ามือถือ</span>
+        <span style={{ fontSize: 14, fontWeight: 800 }}>{tr('เครื่องที่รับแจ้งเตือนเข้ามือถือ')}</span>
         <button onClick={load} disabled={busy}
           style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none',
                    border: 'none', cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
-          {busy ? 'กำลังโหลด…' : 'โหลดใหม่'}
+          {busy ? tr('กำลังโหลด…') : tr('โหลดใหม่')}
         </button>
       </div>
 
@@ -85,11 +86,11 @@ export default function PushCoveragePanel() {
       {fail && (
         <div style={{ fontSize: 12, color: 'var(--accent2)', lineHeight: 1.6 }}>
           ⚠️ {fail}<br />
-          <span style={{ color: 'var(--muted)' }}>ยังไม่ทราบว่ามีใครไม่ได้รับแจ้งเตือนบนมือถือ — ตัวเลขด้านล่างจึงไม่แสดง</span>
+          <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ทราบว่ามีใครไม่ได้รับแจ้งเตือนบนมือถือ — ตัวเลขด้านล่างจึงไม่แสดง')}</span>
         </div>
       )}
 
-      {busy && !fail && <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังอ่านข้อมูล…</div>}
+      {busy && !fail && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังอ่านข้อมูล…')}</div>}
 
       {!busy && !fail && stat && (
         <>
@@ -101,17 +102,17 @@ export default function PushCoveragePanel() {
             ) : (
               <>
                 <b style={{ color: stat.pct >= 80 ? 'var(--accent)' : 'var(--accent2)' }}>
-                  มีเครื่องรับแจ้งเตือน {stat.hasDev} จาก {stat.total} คน ({stat.pct}%)
+                  มีเครื่องรับแจ้งเตือน {stat.hasDev} {tr('จาก')} {stat.total} {tr('คน (')}{stat.pct}%)
                 </b>
                 {stat.noDev.length > 0 && (
                   <>
-                    {' · '}<b style={{ color: 'var(--accent2)' }}>{stat.noDev.length} คนมือถือไม่เคยเด้ง</b>
-                    {stat.noDevMtn > 0 && <> (ในนั้นได้แจ้งเตือนใบซ่อม {stat.noDevMtn} คน)</>}
+                    {' · '}<b style={{ color: 'var(--accent2)' }}>{stat.noDev.length} {tr('คนมือถือไม่เคยเด้ง')}</b>
+                    {stat.noDevMtn > 0 && <> {tr('(ในนั้นได้แจ้งเตือนใบซ่อม')} {stat.noDevMtn} คน)</>}
                   </>
                 )}
-                <InfoMore label="ตัวเลขนี้นับจากอะไร" id="push-cov-def" size={11.5} style={{ marginTop: 3 }}>
-                  นับจาก <b>คนที่ได้รับแจ้งเตือนในแอปจริงใน {DAYS} วันล่าสุด</b> ไม่ใช่พนักงานทั้งหมด ·
-                  คนที่ไม่มีเครื่องยัง<b>เห็นกระดิ่งในแอปครบ</b> แต่มือถือไม่เด้ง
+                <InfoMore label={tr('ตัวเลขนี้นับจากอะไร')} id="push-cov-def" size={11.5} style={{ marginTop: 3 }}>
+                  นับจาก <b>{tr('คนที่ได้รับแจ้งเตือนในแอปจริงใน')} {DAYS} {tr('วันล่าสุด')}</b> ไม่ใช่พนักงานทั้งหมด ·
+                  คนที่ไม่มีเครื่องยัง<b>{tr('เห็นกระดิ่งในแอปครบ')}</b> แต่มือถือไม่เด้ง
                 </InfoMore>
               </>
             )}
@@ -121,8 +122,8 @@ export default function PushCoveragePanel() {
             <>
               <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
                             border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-                วิธีให้เขาเปิดเอง: เปิดเว็บ ESM <b>บนมือถือเครื่องนั้น</b> → กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม <b>"เปิด"</b> ในแถบ
-                "📲 เด้งแจ้งเตือนเข้ามือถือ" → กด <b>"ทดสอบส่ง"</b> เพื่อพิสูจน์ว่าเด้งถึงจริง<br />
+                วิธีให้เขาเปิดเอง: เปิดเว็บ ESM <b>{tr('บนมือถือเครื่องนั้น')}</b> {tr('→ กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม')} <b>"เปิด"</b> ในแถบ
+                "📲 เด้งแจ้งเตือนเข้ามือถือ" → กด <b>"ทดสอบส่ง"</b> {tr('เพื่อพิสูจน์ว่าเด้งถึงจริง')}<br />
                 <b>iPhone</b> ต้องกด "แชร์ → เพิ่มไปยังหน้าจอโฮม" แล้วเปิดจากไอคอนนั้นก่อน (iOS บังคับ)
               </div>
 

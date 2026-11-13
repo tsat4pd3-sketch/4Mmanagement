@@ -25,6 +25,7 @@ import { energyPointOptions, energyZonesFrom } from '../utils/energy';
 import { INTEGRATION_KINDS, kindOf, kindLabel, sourceStatus, healthBars, SOURCE_STALE_MIN } from '../utils/integrationKinds';
 import { buildNodeRedFlow, envVarName } from '../utils/nodeRedFlow';
 
+import { tr } from '../utils/i18n';
 const COLS = 'id, code, name, note, kinds, key_hint, legacy_secret, is_paused, last_seen_at, last_ok_at, last_error, last_result, updated_at, updated_by';
 const INGEST_URL = `${DR_BASE_URL}/functions/v1/ingest-energy`;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
@@ -98,19 +99,19 @@ export default function Integrations() {
   const hourlyOf = useCallback((sid) => hourly.filter(r => r.source_id === sid), [hourly]);
 
   const header = (
-    <PageHeader icon="🔌" title="การเชื่อมต่อ Node-RED / เครื่องจักร"
-      sub="ที่เดียวสำหรับทุกระบบที่ส่งข้อมูลเข้า ESM · ต้นทางส่งข้อเท็จจริง สูตรและการตัดสินอยู่ที่ ESM"
+    <PageHeader icon="🔌" title={tr('การเชื่อมต่อ Node-RED / เครื่องจักร')}
+      sub={tr('ที่เดียวสำหรับทุกระบบที่ส่งข้อมูลเข้า ESM · ต้นทางส่งข้อเท็จจริง สูตรและการตัดสินอยู่ที่ ESM')}
       tabs={[{ key: 'sources', label: 'แหล่งต้นทาง' }, { key: 'kinds', label: 'ชนิดข้อมูล' }]}
       tab={tab} onTab={(k) => { openSrc(null); setTab(k); }}
       actions={canManage && !srcCode && tab === 'sources'
-        ? <button type="button" className="pg-btn primary" onClick={() => setCreating(true)}>+ เพิ่มการเชื่อมต่อ</button> : null} />
+        ? <button type="button" className="pg-btn primary" onClick={() => setCreating(true)}>{tr('+ เพิ่มการเชื่อมต่อ')}</button> : null} />
   );
 
   return (
     <Page>
       {header}
       {err && <NoticeBar tone="bad">{err}{sources ? ' — ตัวเลขบนจอเป็นของรอบก่อนหน้า' : ''}</NoticeBar>}
-      {!sources && !err && <div style={{ color: 'var(--muted)', padding: 20 }}>กำลังโหลด…</div>}
+      {!sources && !err && <div style={{ color: 'var(--muted)', padding: 20 }}>{tr('กำลังโหลด…')}</div>}
 
       {sources && tab === 'kinds' && <KindsTab sources={sources} />}
 
@@ -120,8 +121,8 @@ export default function Integrations() {
               onBack={() => openSrc(null)} onChanged={load} onKey={setShownKey} />
           : (
             <div style={{ display: 'grid', gap: 10 }}>
-              <NoticeBar tone="warn">ไม่พบต้นทางรหัส <b>{srcCode}</b> ในทะเบียน</NoticeBar>
-              <div><button type="button" className="pg-btn" onClick={() => openSrc(null)}>← การเชื่อมต่อทั้งหมด</button></div>
+              <NoticeBar tone="warn">{tr('ไม่พบต้นทางรหัส')} <b>{srcCode}</b> {tr('ในทะเบียน')}</NoticeBar>
+              <div><button type="button" className="pg-btn" onClick={() => openSrc(null)}>{tr('← การเชื่อมต่อทั้งหมด')}</button></div>
             </div>
           )
       ) : (
@@ -143,14 +144,14 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, alignContent: 'start' }}>
-        <Kpi label="แหล่งต้นทาง" value={sources.length} unit="ระบบ"
+        <Kpi label={tr('แหล่งต้นทาง')} value={sources.length} unit="ระบบ"
           sub={`ออนไลน์ ${st.filter(x => x === 'online').length} · ขาด ${st.filter(x => x === 'stale').length} · ยังไม่เคยได้รับ ${st.filter(x => x === 'never').length} · พัก ${st.filter(x => x === 'paused').length}`} />
-        <Kpi label="ชนิดข้อมูลที่ใช้อยู่" value={kindsUsed.size} unit={`/ ${INTEGRATION_KINDS.length} ชนิด`}
+        <Kpi label={tr('ชนิดข้อมูลที่ใช้อยู่')} value={kindsUsed.size} unit={`/ ${INTEGRATION_KINDS.length} ชนิด`}
           sub={`ESM รับได้แล้ว ${INTEGRATION_KINDS.filter(k => k.status === 'live').length} ชนิด`} />
-        <Kpi label="รับสำเร็จ 24 ชม." value={okToday.toLocaleString()} unit="ครั้ง" sub="นับทุกต้นทางรวมกัน" />
+        <Kpi label={tr('รับสำเร็จ 24 ชม.')} value={okToday.toLocaleString()} unit="ครั้ง" sub={tr('นับทุกต้นทางรวมกัน')} />
       </div>
       {!sources.length ? (
-        <div style={{ ...card, color: 'var(--muted)' }}>ยังไม่มีต้นทางในทะเบียน{canManage ? ' — กด "+ เพิ่มการเชื่อมต่อ"' : ''}</div>
+        <div style={{ ...card, color: 'var(--muted)' }}>{tr('ยังไม่มีต้นทางในทะเบียน')}{canManage ? ' — กด "+ เพิ่มการเชื่อมต่อ"' : ''}</div>
       ) : sources.map((s, i) => {
         const m = STATUS[st[i]];
         return (
@@ -159,7 +160,7 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
             <div style={{ flex: '999 1 320px', minWidth: 0, display: 'grid', gap: 6 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{s.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px' }}>● {m.label}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px' }}>● {tr(m.label)}</span>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s.code}{s.note ? ` · ${s.note}` : ''}</span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -167,11 +168,11 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
               </div>
             </div>
             <div style={{ flex: '1 1 180px', fontSize: 12.5, display: 'grid', gap: 2 }}>
-              <span style={{ color: 'var(--muted)' }}>รับสำเร็จล่าสุด</span>
+              <span style={{ color: 'var(--muted)' }}>{tr('รับสำเร็จล่าสุด')}</span>
               <b style={{ color: 'var(--text)' }}>{fmtTime(s.last_ok_at)}</b>
-              {s.last_error && <span style={{ color: 'var(--red)' }}>ล้มล่าสุด: {s.last_error}</span>}
+              {s.last_error && <span style={{ color: 'var(--red)' }}>{tr('ล้มล่าสุด:')} {s.last_error}</span>}
             </div>
-            <span style={{ fontWeight: 700, color: 'var(--text2)' }}>เปิดดู →</span>
+            <span style={{ fontWeight: 700, color: 'var(--text2)' }}>{tr('เปิดดู →')}</span>
           </div>
         );
       })}
@@ -236,18 +237,18 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <button type="button" className="pg-btn" onClick={onBack}>← การเชื่อมต่อทั้งหมด</button>
+        <button type="button" className="pg-btn" onClick={onBack}>{tr('← การเชื่อมต่อทั้งหมด')}</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{src.name}
-            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {m.label}</span>
+            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {tr(m.label)}</span>
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{src.code}{src.note ? ` · ${src.note}` : ''} · ไม่มีค่าใหม่เกิน {SOURCE_STALE_MIN} นาที = ขาดการติดต่อ</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{src.code}{src.note ? ` · ${src.note}` : ''} {tr('· ไม่มีค่าใหม่เกิน')} {SOURCE_STALE_MIN} นาที = ขาดการติดต่อ</div>
         </div>
       </div>
 
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <button type="button" className="pg-btn primary" onClick={download} disabled={!flow.nodes.length}>⬇ ดาวน์โหลด flow</button>
-        <button type="button" className="pg-btn" onClick={copyFlow} disabled={!flow.nodes.length}>📋 คัดลอก flow</button>
+        <button type="button" className="pg-btn primary" onClick={download} disabled={!flow.nodes.length}>{tr('⬇ ดาวน์โหลด flow')}</button>
+        <button type="button" className="pg-btn" onClick={copyFlow} disabled={!flow.nodes.length}>{tr('📋 คัดลอก flow')}</button>
         {canManage && <>
           <button type="button" className="pg-btn" disabled={!!busy}
             onClick={() => act('rotate', 'ออกรหัสใหม่', src.key_hint
@@ -257,26 +258,26 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
           {src.legacy_secret && src.key_hint && (
             <button type="button" className="pg-btn" disabled={!!busy}
               onClick={() => act('legacy_off', 'เลิกใช้รหัสกลาง', 'ยืนยันว่า Node-RED เปลี่ยนไปใช้ ESM_SOURCE_KEY แล้ว? หลังกด รหัสกลางเดิมจะส่งเข้าต้นทางนี้ไม่ได้')}>
-              เลิกใช้รหัสกลาง</button>
+              {tr('เลิกใช้รหัสกลาง')}</button>
           )}
           <button type="button" className="pg-btn" disabled={!!busy} style={{ color: src.is_paused ? 'var(--green)' : 'var(--red)' }}
             onClick={() => act(src.is_paused ? 'resume' : 'pause', src.is_paused ? 'เปิดรับต่อ' : 'พักการรับ',
               src.is_paused ? null : 'พักการรับ = ข้อมูลจากต้นทางนี้จะไม่ถูกบันทึกจนกว่าจะเปิดรับต่อ ยืนยัน?')}>
-            {src.is_paused ? '▶ เปิดรับต่อ' : '⏸ พักการรับ'}</button>
+            {src.is_paused ? tr('▶ เปิดรับต่อ') : tr('⏸ พักการรับ')}</button>
         </>}
         <span style={{ fontSize: 12, color: noAuth ? 'var(--red)' : 'var(--muted)' }}>
           {noAuth ? '⚠ ยังไม่ได้ออกรหัส — ต้นทางนี้ส่งข้อมูลเข้าไม่ได้จนกว่าจะออกรหัส'
-            : <>ยืนยันตัวตนด้วย: {usesLegacy ? 'รหัสกลาง (INGEST_SECRET)' : `รหัสของต้นทาง …${src.key_hint}`}{src.legacy_secret && src.key_hint ? ' · ยังรับรหัสกลางอยู่' : ''}</>}
+            : <>{tr('ยืนยันตัวตนด้วย:')} {usesLegacy ? 'รหัสกลาง (INGEST_SECRET)' : `รหัสของต้นทาง …${src.key_hint}`}{src.legacy_secret && src.key_hint ? ' · ยังรับรหัสกลางอยู่' : ''}</>}
         </span>
       </div>
 
       {flow.skipped.length > 0 && (
-        <NoticeBar tone="warn">ไฟล์ flow ไม่มีส่วนของ: {flow.skipped.map(s => `${kindLabel(s.key)} (${s.reason})`).join(' · ')}</NoticeBar>
+        <NoticeBar tone="warn">{tr('ไฟล์ flow ไม่มีส่วนของ:')} {flow.skipped.map(s => `${kindLabel(s.key)} (${s.reason})`).join(' · ')}</NoticeBar>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, alignContent: 'start' }}>
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>สุขภาพการส่ง · 24 ชม.</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('สุขภาพการส่ง · 24 ชม.')}</div>
           <div style={{ display: 'flex', gap: 2, height: 40, alignItems: 'flex-end', marginTop: 10 }} role="img"
             aria-label={`24 ชั่วโมงล่าสุด รับสำเร็จ ${okSum} ครั้ง ล้ม ${failSum} ครั้ง`}>
             {bars.map(b => (
@@ -289,9 +290,9 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
             1 แท่ง = 1 ชั่วโมง · เต็ม = ได้ครบทุกนาที · ส้ม = ขาดบางนาที · แดง = มีครั้งที่ล้ม · เทา = ไม่ได้รับเลย
           </div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 8 }}>
-            สำเร็จ <b>{okSum.toLocaleString()}</b> · ล้ม <b style={{ color: failSum ? 'var(--red)' : 'inherit' }}>{failSum}</b> ครั้ง · รับสำเร็จล่าสุด {fmtTime(src.last_ok_at)}
+            สำเร็จ <b>{okSum.toLocaleString()}</b> {tr('· ล้ม')} <b style={{ color: failSum ? 'var(--red)' : 'inherit' }}>{failSum}</b> {tr('ครั้ง · รับสำเร็จล่าสุด')} {fmtTime(src.last_ok_at)}
           </div>
-          {src.last_error && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 4 }}>ล้มล่าสุด: {src.last_error}</div>}
+          {src.last_error && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 4 }}>{tr('ล้มล่าสุด:')} {src.last_error}</div>}
           {src.last_result && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere' }}>
               คำตอบล่าสุด: {JSON.stringify(src.last_result)}
@@ -300,18 +301,18 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
         </div>
 
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ชนิดข้อมูลของต้นทางนี้</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('ชนิดข้อมูลของต้นทางนี้')}</div>
           <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
-            {!(src.kinds || []).length && <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>ยังไม่ได้กำหนดชนิดข้อมูล — ไฟล์ flow จะว่าง</div>}
+            {!(src.kinds || []).length && <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>{tr('ยังไม่ได้กำหนดชนิดข้อมูล — ไฟล์ flow จะว่าง')}</div>}
             {(src.kinds || []).map(k => {
               const d = kindOf(k);
               return (
                 <div key={k} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 10px', fontSize: 12.5 }}>
                   <b style={{ color: 'var(--text)' }}>{kindLabel(k)}</b>
                   {d && <span style={{ color: 'var(--muted)' }}> → {d.dest}</span>}
-                  {d?.status !== 'live' && <span style={{ color: 'var(--amber)' }}> · ESM ยังไม่มีปลายทางรับ</span>}
+                  {d?.status !== 'live' && <span style={{ color: 'var(--amber)' }}> {tr('· ESM ยังไม่มีปลายทางรับ')}</span>}
                   {d?.help && <div style={{ color: 'var(--muted)' }}>{d.help}</div>}
-                  {d?.home && <Link to={d.home} style={{ fontSize: 12 }}>ดูบนจอ →</Link>}
+                  {d?.home && <Link to={d.home} style={{ fontSize: 12 }}>{tr('ดูบนจอ →')}</Link>}
                 </div>
               );
             })}
@@ -327,11 +328,11 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
 
       {hasEnergy && (
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>จับคู่ topic ค่าไฟ ↔ จุดในระบบ</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{tr('จับคู่ topic ค่าไฟ ↔ จุดในระบบ')}</div>
           {points === 'error'
-            ? <NoticeBar tone="bad">อ่านทะเบียนไลน์/โซนไม่สำเร็จ — ยังผูก topic ไม่ได้ ลองโหลดหน้าใหม่</NoticeBar>
+            ? <NoticeBar tone="bad">{tr('อ่านทะเบียนไลน์/โซนไม่สำเร็จ — ยังผูก topic ไม่ได้ ลองโหลดหน้าใหม่')}</NoticeBar>
             : points == null
-              ? <div style={{ color: 'var(--muted)' }}>กำลังโหลดจุด…</div>
+              ? <div style={{ color: 'var(--muted)' }}>{tr('กำลังโหลดจุด…')}</div>
               : <EnergyMqttTopics points={points} canEdit={canMap} />}
         </div>
       )}
@@ -347,13 +348,13 @@ function KindsTab({ sources }) {
         const users = sources.filter(s => (s.kinds || []).includes(k.key));
         return (
           <div key={k.key} style={{ ...card, display: 'grid', gap: 4, alignContent: 'start' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{k.icon} {k.label}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{k.icon} {tr(k.label)}</div>
             <div style={{ fontSize: 12, fontWeight: 700, color: k.status === 'live' ? 'var(--green)' : 'var(--amber)' }}>
               {k.status === 'live' ? '● ESM รับได้แล้ว' : '○ ออกแบบไว้ — ยังไม่มีปลายทางรับ'}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>{k.help}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>ปลายทาง: {k.dest}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>ต้นทางที่ส่ง: {users.length ? users.map(s => s.name).join(', ') : '—'}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ปลายทาง:')} {k.dest}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ต้นทางที่ส่ง:')} {users.length ? users.map(s => s.name).join(', ') : '—'}</div>
           </div>
         );
       })}
@@ -392,32 +393,32 @@ function CreateModal({ onClose, onCreated }) {
     <div className="overlay">{/* ไม่ปิดจาก backdrop — ฟอร์ม (UI §5) */}
       <div className="modal" style={{ width: 'min(560px, 96vw)', display: 'grid', gap: 10 }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <b style={{ fontSize: 17 }}>เพิ่มการเชื่อมต่อ</b>
-          <button type="button" className="tbtn" aria-label="ปิด" onClick={onClose}>✕</button>
+          <b style={{ fontSize: 17 }}>{tr('เพิ่มการเชื่อมต่อ')}</b>
+          <button type="button" className="tbtn" aria-label={tr('ปิด')} onClick={onClose}>✕</button>
         </div>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>รหัสต้นทาง (a-z 0-9 - _ · ใช้เป็นคำนำหน้า topic)
-          <input value={code} onChange={e => setCode(e.target.value.toLowerCase().trim())} placeholder="เช่น pd2-oee" />
-          {code && !codeOk && <span style={{ color: 'var(--red)', fontSize: 12 }}>ใช้ได้แค่ a-z 0-9 - _ ยาว 2-40 ตัว</span>}
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('รหัสต้นทาง (a-z 0-9 - _ · ใช้เป็นคำนำหน้า topic)')}
+          <input value={code} onChange={e => setCode(e.target.value.toLowerCase().trim())} placeholder={tr('เช่น pd2-oee')} />
+          {code && !codeOk && <span style={{ color: 'var(--red)', fontSize: 12 }}>{tr('ใช้ได้แค่ a-z 0-9 - _ ยาว 2-40 ตัว')}</span>}
         </label>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>ชื่อที่แสดง
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น Node-RED PD2 · OEE" />
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('ชื่อที่แสดง')}
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น Node-RED PD2 · OEE')} />
         </label>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>หมายเหตุ (ที่อยู่เครื่อง / ฐานข้อมูลต้นทาง / ผู้ดูแล)
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('หมายเหตุ (ที่อยู่เครื่อง / ฐานข้อมูลต้นทาง / ผู้ดูแล)')}
           <input value={note} onChange={e => setNote(e.target.value)} />
         </label>
-        <div style={{ fontSize: 13 }}>ชนิดข้อมูลที่ต้นทางนี้ส่ง</div>
+        <div style={{ fontSize: 13 }}>{tr('ชนิดข้อมูลที่ต้นทางนี้ส่ง')}</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
           {INTEGRATION_KINDS.map(k => (
             <label key={k.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, opacity: k.status === 'live' ? 1 : 0.6 }}>
               <input type="checkbox" checked={kinds.includes(k.key)} disabled={k.status !== 'live'} onChange={() => toggle(k.key)} />
-              <span>{k.icon} {k.label}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> (ยังไม่มีปลายทางรับ)</span>}</span>
+              <span>{k.icon} {tr(k.label)}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> {tr('(ยังไม่มีปลายทางรับ)')}</span>}</span>
             </label>
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="pg-btn" onClick={onClose}>ยกเลิก</button>
+          <button type="button" className="pg-btn" onClick={onClose}>{tr('ยกเลิก')}</button>
           <button type="button" className="pg-btn primary" disabled={busy || !codeOk || !name.trim() || !kinds.length} onClick={submit}>
-            {busy ? 'กำลังสร้าง…' : 'สร้าง + ออกรหัสลับ'}</button>
+            {busy ? tr('กำลังสร้าง…') : tr('สร้าง + ออกรหัสลับ')}</button>
         </div>
       </div>
     </div>
@@ -433,19 +434,19 @@ function KeyModal({ info, onClose }) {
   return (
     <div className="overlay">{/* ไม่ปิดจาก backdrop — รหัสแสดงครั้งเดียว */}
       <div className="modal" style={{ width: 'min(560px, 96vw)', display: 'grid', gap: 10 }} onClick={e => e.stopPropagation()}>
-        <b style={{ fontSize: 17 }}>🔑 รหัสลับของต้นทาง {info.code}</b>
-        <NoticeBar tone="warn">แสดง<b>ครั้งเดียว</b> — ESM เก็บไว้แค่ค่าที่ย้อนกลับไม่ได้ ปิดหน้าต่างนี้แล้วดูอีกไม่ได้ (ลืม = ออกรหัสใหม่)</NoticeBar>
+        <b style={{ fontSize: 17 }}>{tr('🔑 รหัสลับของต้นทาง')} {info.code}</b>
+        <NoticeBar tone="warn">{tr('แสดง')}<b>{tr('ครั้งเดียว')}</b> — ESM เก็บไว้แค่ค่าที่ย้อนกลับไม่ได้ ปิดหน้าต่างนี้แล้วดูอีกไม่ได้ (ลืม = ออกรหัสใหม่)</NoticeBar>
         <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, overflowWrap: 'anywhere', userSelect: 'all' }}>
           {info.key}
         </div>
         <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: 'grid', gap: 4, color: 'var(--text2)' }}>
-          <li>Node-RED › เมนู ☰ › Settings › Environment (หรือไฟล์ settings.js) เพิ่มตัวแปร <code>ESM_SOURCE_KEY</code> = รหัสนี้</li>
-          <li>ดาวน์โหลด flow จากหน้าต้นทาง แล้ว Import · เลือก DB ในโหนด mysql</li>
-          <li>Deploy แล้วดูแถบสุขภาพการส่ง — ภายใน 1 นาทีควรเป็นสีเขียว</li>
+          <li>{tr('Node-RED › เมนู ☰ › Settings › Environment (หรือไฟล์ settings.js) เพิ่มตัวแปร')} <code>ESM_SOURCE_KEY</code> = รหัสนี้</li>
+          <li>{tr('ดาวน์โหลด flow จากหน้าต้นทาง แล้ว Import · เลือก DB ในโหนด mysql')}</li>
+          <li>{tr('Deploy แล้วดูแถบสุขภาพการส่ง — ภายใน 1 นาทีควรเป็นสีเขียว')}</li>
         </ol>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="pg-btn" onClick={copy}>📋 คัดลอกรหัส</button>
-          <button type="button" className="pg-btn primary" onClick={onClose}>จดไว้แล้ว ปิด</button>
+          <button type="button" className="pg-btn" onClick={copy}>{tr('📋 คัดลอกรหัส')}</button>
+          <button type="button" className="pg-btn primary" onClick={onClose}>{tr('จดไว้แล้ว ปิด')}</button>
         </div>
       </div>
     </div>

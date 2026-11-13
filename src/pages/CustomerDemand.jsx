@@ -27,6 +27,7 @@ import { buildEsmartManaged, isEsmartPlanRow } from '../utils/shipPlan'; // แ�
 import { fetchAllPages } from '../utils/fetchByIds';
 import PartCard, { partCardGrid } from '../components/PartCard';   // 🃏 การ์ดมาตรฐานเดียวกับสโตร์ (UI §6.23)
 import usePartImages from '../utils/usePartImages';
+import { tr } from '../utils/i18n';
 import { storeBtn } from '../utils/storeUi'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -626,38 +627,38 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
         <button onClick={() => shiftDay(-1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>◀</button>
         <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)} />
         <button onClick={() => shiftDay(1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>▶</button>
-        {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>วันนี้</button>}
+        {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>{tr('วันนี้')}</button>}
         <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
           วันงาน 08:00 → 08:00
         </span>
         <span style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
-          {orders.length} รอบส่ง · ✅ {shippedCount} ส่งแล้ว
-          {overdueCount > 0 && <span style={{ color: 'var(--red)' }}> · 🔴 {overdueCount} เลยเวลา</span>}
-          {planCount > 0 && <span style={{ color: 'var(--muted)' }} title="ใบจาก 862 ของพาร์ทที่ลูกค้ายืนยันรอบด้วย e-SMART — ยังไม่มีไฟล์ e-SMART ยืนยัน = เป็นแผน ไม่ใช่ order ที่ต้องส่ง"> · {planCount} แผน 862 รอ e-SMART</span>}
+          {orders.length} {tr('รอบส่ง · ✅')} {shippedCount} ส่งแล้ว
+          {overdueCount > 0 && <span style={{ color: 'var(--red)' }}> · 🔴 {overdueCount} {tr('เลยเวลา')}</span>}
+          {planCount > 0 && <span style={{ color: 'var(--muted)' }} title={tr('ใบจาก 862 ของพาร์ทที่ลูกค้ายืนยันรอบด้วย e-SMART — ยังไม่มีไฟล์ e-SMART ยืนยัน = เป็นแผน ไม่ใช่ order ที่ต้องส่ง')}> · {planCount} {tr('แผน 862 รอ e-SMART')}</span>}
           {managedErr && <span style={{ color: 'var(--amber)' }} title={managedErr}> · ⚠ {managedErr}</span>}
-          {shortCount > 0 && <span style={{ color: 'var(--amber)' }}> · {shortCount} รอบ stock ไม่พอ</span>}
-          {unknownCount > 0 && <span style={{ color: 'var(--muted)' }} title="เลขพาร์ทลูกค้ายังไม่จับคู่ MAT SAP — เช็คสต็อกและตัดสต็อกอัตโนมัติไม่ได้ ตั้ง p_no ที่ Product Master"> · ❔ {unknownCount} รอบ ยังเช็ค stock ไม่ได้</span>}
+          {shortCount > 0 && <span style={{ color: 'var(--amber)' }}> · {shortCount} {tr('รอบ stock ไม่พอ')}</span>}
+          {unknownCount > 0 && <span style={{ color: 'var(--muted)' }} title={tr('เลขพาร์ทลูกค้ายังไม่จับคู่ MAT SAP — เช็คสต็อกและตัดสต็อกอัตโนมัติไม่ได้ ตั้ง p_no ที่ Product Master')}> · ❔ {unknownCount} {tr('รอบ ยังเช็ค stock ไม่ได้')}</span>}
         </span>
         {pastDueReal.length > 0 && (
           <button onClick={() => setDay(pastDueReal.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDueReal[0].due_date))}
-            title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
+            title={tr('คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง')}
             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
-            ค้างส่งจากวันก่อน {pastDueReal.length} ใบ — กดดู
+            {tr('ค้างส่งจากวันก่อน')} {pastDueReal.length} {tr('ใบ — กดดู')}
           </button>
         )}
         {canAdd && (
           /* 📥 e-SMART = ยอดยืนยันสุดท้ายก่อนส่งจากลูกค้า (ดู PullSignalUpload.jsx) — วางคู่ "เพิ่ม order ด่วน"
              เพราะเป็นทางเข้าของ order เหมือนกัน ต่างกันแค่ "คนคีย์" กับ "ลูกค้ายืนยันมาเป็นไฟล์" */
           <button onClick={() => setShowPull(true)}
-            title="ลูกค้าส่งไฟล์ยอดเรียกงานจริง (e-SMART) มาเป็นช่วงเวลา — อัพเข้าระบบเพื่อยืนยัน/แก้ยอดของรอบนั้น · พาร์ทที่ไม่อยู่ในไฟล์ถือว่าตรงกับ 862"
+            title={tr('ลูกค้าส่งไฟล์ยอดเรียกงานจริง (e-SMART) มาเป็นช่วงเวลา — อัพเข้าระบบเพื่อยืนยัน/แก้ยอดของรอบนั้น · พาร์ทที่ไม่อยู่ในไฟล์ถือว่าตรงกับ 862')}
             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
-            อัพโหลด e-SMART
+            {tr('อัพโหลด e-SMART')}
           </button>
         )}
         {canAdd && (
           <button onClick={() => { setAddForm({ ...emptyAdd, due_date: day >= workDateStr() ? day : workDateStr() }); setShowAdd(true); }}
-            title="ลูกค้าสั่งเพิ่มนอกไฟล์ EDI (สั่งด่วน/โทรสั่ง) — คีย์เข้าระบบได้ทันที ไม่ต้องรออัพโหลด 862"
+            title={tr('ลูกค้าสั่งเพิ่มนอกไฟล์ EDI (สั่งด่วน/โทรสั่ง) — คีย์เข้าระบบได้ทันที ไม่ต้องรออัพโหลด 862')}
             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
             เพิ่ม order ด่วน
           </button>
@@ -680,50 +681,50 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
 
       {/* Modal คีย์ order ด่วน — ปิดได้จากปุ่มเท่านั้น (มีฟอร์ม ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) */}
       {showAdd && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(94vw, 460px)', maxHeight: '92vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>➕ เพิ่ม order ด่วน (คีย์มือ)</span>
+              <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('➕ เพิ่ม order ด่วน (คีย์มือ)')}</span>
               <button onClick={() => setShowAdd(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
                 สำหรับ order ที่ลูกค้าสั่งเพิ่มนอกไฟล์ EDI — ใบนี้จะเข้าชาร์ต/walkback/หัก stock เหมือน order ปกติ
-                และ<strong>ไม่ถูกแทนที่</strong>ตอนอัพโหลด 862 รอบถัดไป (แทนที่เฉพาะใบจาก EDI)
+                และ<strong>{tr('ไม่ถูกแทนที่')}</strong>ตอนอัพโหลด 862 รอบถัดไป (แทนที่เฉพาะใบจาก EDI)
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ลูกค้า (Ship-to)
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ลูกค้า (Ship-to)')}
                   {/* เลือกจากทะเบียน ship_to_plants (active) — code นี้เป็น join key ของ custLabel/ชาร์ต/workflow ต่อลูกค้า พิมพ์เองไม่ได้ (2026-09-07)
                       ค่าที่ติดมาแต่ไม่อยู่ในทะเบียน active คงไว้เป็นตัวเลือก ⚠ ไม่ล้างเงียบ (save จะถามยืนยัน) */}
                   <select value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value }))} style={inputSt}>
-                    <option value="">— ไม่ระบุลูกค้า —</option>
-                    {addForm.customer && !(shipToCodes || []).includes(addForm.customer) && <option value={addForm.customer}>⚠ {addForm.customer} (นอกทะเบียน)</option>}
+                    <option value="">{tr('— ไม่ระบุลูกค้า —')}</option>
+                    {addForm.customer && !(shipToCodes || []).includes(addForm.customer) && <option value={addForm.customer}>⚠ {addForm.customer} {tr('(นอกทะเบียน)')}</option>}
                     {(shipToCodes || []).map(c => <option key={c} value={c}>{custLabel(c)}</option>)}
                   </select>
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>MAT No. *
                   {/* picker กลาง Product Master + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (นอกทะเบียน → save ถามยืนยัน) · เลือกแล้วเติมชื่อพาร์ทให้ (2026-09-07) */}
-                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder="ค้น MAT / ชื่อพาร์ท / P/N…" history={shipMatHist}
+                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder={tr('ค้น MAT / ชื่อพาร์ท / P/N…')} history={shipMatHist}
                     onChange={({ mat_no, name }) => setAddForm(f => ({ ...f, mat_no, part_name: name || prodNames[mat_no] || f.part_name }))} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>จำนวน (ชิ้น) *
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('จำนวน (ชิ้น) *')}
                   <input type="number" min="1" value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} style={inputSt} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อพาร์ท{prodNames[addForm.mat_no.trim()] ? ' (จาก Product Master)' : ''}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชื่อพาร์ท')}{prodNames[addForm.mat_no.trim()] ? ' (จาก Product Master)' : ''}
                   {/* snapshot ชื่อจาก dr_products — MAT ที่เลือกจากทะเบียนแล้วห้ามแก้ชื่อเอง (ชื่อคนละแบบ = สอบกลับไม่เจอ) (2026-09-07) */}
                   <input value={addForm.part_name} readOnly={!!prodNames[addForm.mat_no.trim()]} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))}
                     style={{ ...inputSt, opacity: prodNames[addForm.mat_no.trim()] ? 0.75 : 1 }} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันงาน (08:00 → 07:59) *
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('วันงาน (08:00 → 07:59) *')}
                   <input type="date" value={addForm.due_date} onChange={e => setAddForm(f => ({ ...f, due_date: e.target.value }))} style={inputSt} />
                   {addForm.ship_time && addForm.ship_time < '08:00' && addForm.due_date && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>รอบกะดึก → ส่งจริง {shipDueDate(addForm.due_date, addForm.ship_time)} {addForm.ship_time}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{tr('รอบกะดึก → ส่งจริง')} {shipDueDate(addForm.due_date, addForm.ship_time)} {addForm.ship_time}</span>
                   )}
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>รอบเวลาส่ง (เว้นว่าง = ⏳ ไม่ระบุ)
                   <input type="time" value={addForm.ship_time} onChange={e => setAddForm(f => ({ ...f, ship_time: e.target.value }))} style={inputSt} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>เลขที่ PO
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('เลขที่ PO')}
                   <input value={addForm.order_no} onChange={e => setAddForm(f => ({ ...f, order_no: e.target.value }))} style={inputSt} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>Dock
@@ -733,9 +734,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={saveAddOrder} disabled={addSaving}
                   style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: addSaving ? 0.6 : 1 }}>
-                  {addSaving ? 'กำลังบันทึก...' : 'เพิ่ม order'}
+                  {addSaving ? tr('กำลังบันทึก...') : tr('เพิ่ม order')}
                 </button>
-                <button onClick={() => setShowAdd(false)} style={btn(false)}>ยกเลิก</button>
+                <button onClick={() => setShowAdd(false)} style={btn(false)}>{tr('ยกเลิก')}</button>
               </div>
             </div>
           </div>
@@ -751,13 +752,13 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           {/* Shipping time chart — เต็ม 24 ชม.ในจอเดียว · รอบเวลาชนกันแยกชั้นอัตโนมัติ · คลิกบล็อกดูรายละเอียด */}
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>Shipping Time Chart — วันงาน {day}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ</span>
+              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('Shipping Time Chart — วันงาน')} {day}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('คลิกที่บล็อกเพื่อดูรายละเอียด / ไปที่การ์ดรายการ')}</span>
             </div>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
             <div style={isMobile ? { minWidth: 780 } : undefined}>
             <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-              <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย</div>
+              <div style={{ width: chartLeftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>{tr('ลูกค้า · คลิกชื่อเพื่อย่อ/ขยาย')}</div>
               <div style={{ flex: 1, position: 'relative', height: 22 }}>
                 {hourMarks.map((m, i) => (i % 2 === 0 &&
                   <span key={m} style={{ position: 'absolute', left: `${((m - tStart) / span) * 100}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: (isMobile ? (m - tStart) / span > 0.97 : m === tStart + span) ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
@@ -780,12 +781,12 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               return (
                 <div key={cust} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
                   <div onClick={() => setCollapsedCust(m => ({ ...m, [cust]: !m[cust] }))}
-                    title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
+                    title={isCol ? tr('คลิกเพื่อขยาย') : tr('คลิกเพื่อย่อ')}
                     style={{ width: chartLeftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{cust}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{list.length} รอบ · ✅ {doneN}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{list.length} {tr('รอบ · ✅')} {doneN}</span>
                   </div>
                   <div style={{ flex: 1, position: 'relative', height: rowH }}>
                     {hourMarks.map(m => (
@@ -862,7 +863,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                             cursor: 'pointer', zIndex: 2, boxSizing: 'border-box',
                           }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneAll ? 'var(--green)' : 'var(--amber)', whiteSpace: 'nowrap', lineHeight: 1 }}>
-                            ⏳ {noTime.length} ไม่ระบุเวลา{doneAll ? ' ✅' : ''}
+                            ⏳ {noTime.length} {tr('ไม่ระบุเวลา')}{doneAll ? ' ✅' : ''}
                           </span>
                         </div>
                       );
@@ -894,10 +895,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                   <div style={{ height: 4, background: od ? 'var(--red)' : st.color }} />
                   <div style={{ padding: '10px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>{(o.ship_time ? o.ship_time.slice(0, 5) : '⏳ ไม่ระบุเวลา')}</span>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.15)', color: plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color }}>{plan ? '📋 แผน 862 · รอ e-SMART' : od ? '🔴 เลยเวลา' : pl ? '🟠 หลุดเฟส' : statusLabel(o)}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)' }}>{(o.ship_time ? o.ship_time.slice(0, 5) : tr('⏳ ไม่ระบุเวลา'))}</span>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.15)', color: plan ? '#94a3b8' : od ? '#ef4444' : pl ? '#f97316' : st.color }}>{plan ? tr('📋 แผน 862 · รอ e-SMART') : od ? tr('🔴 เลยเวลา') : pl ? tr('🟠 หลุดเฟส') : statusLabel(o)}</span>
                     </div>
-                    {plan && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ลูกค้ายืนยันรอบจริงด้วย e-SMART — อัพไฟล์แล้วใบนี้จะถูกแทนด้วยยอดจริง</div>}
+                    {plan && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('ลูกค้ายืนยันรอบจริงด้วย e-SMART — อัพไฟล์แล้วใบนี้จะถูกแทนด้วยยอดจริง')}</div>}
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', marginTop: 2 }}>{custLabel ? custLabel(o.customer) : o.customer}{o.due_date !== day ? ` · ส่งเช้า ${o.due_date}` : ''}</div>
                     {/* ลำดับ Part No. ลูกค้า → ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
                     <div style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--blue)', fontWeight: 700, marginTop: 6 }}>
@@ -907,20 +908,20 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                       {o.customer_part_no && o.customer_part_no !== o.mat_no && o.part_name ? `${o.part_name} · ` : ''}MAT {o.mat_no}
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
-                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span></span>
+                      <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(o.qty)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชิ้น')}</span></span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{o.order_no ? `PO ${o.order_no}` : ''}{o.dock_code ? ` · Dock ${o.dock_code}` : ''}</span>
                     </div>
                     {isOpenOrder(o) && cov && (
                       cov.unknown
-                        ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</div>
+                        ? <div title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginTop: 4 }}>{tr('❔ ยังเช็ค stock ไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP')}</div>
                         : cov.short <= 0
-                          ? <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>stock พร้อมส่งครบ</div>
+                          ? <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>{tr('stock พร้อมส่งครบ')}</div>
                           : cov.offFg >= cov.short
                             /* ของมีพอแต่อยู่นอกคลัง FG (STORE/มินิสโตร์) — ปัญหาอยู่ขั้นแพ็ค/รับเข้าคลัง ไม่ใช่ "ต้องผลิต" */
-                            ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>🟠 คลัง FG มี {fmt(cov.covered)} — อีก {fmt(cov.short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</div>
+                            ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(tr(cov.short))} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</div>
                             : cov.covered > 0 || cov.offFg > 0
-                              ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>⚠️ stock มี {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(cov.short)} ชิ้น</div>
-                              : <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 800, marginTop: 4 }}>ไม่มี stock พร้อมส่ง — ขาด {fmt(cov.short)} ชิ้น ต้องผลิต!</div>
+                              ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('⚠️ stock มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(tr(cov.short))} {tr('ชิ้น')}</div>
+                              : <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 800, marginTop: 4 }}>{tr('ไม่มี stock พร้อมส่ง — ขาด')} {fmt(tr(cov.short))} {tr('ชิ้น ต้องผลิต!')}</div>
                     )}
                     {isOpenOrder(o) && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
@@ -946,26 +947,26 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                         if (!nx) return null;
                         return (
                           <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
-                            title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                            title={nx.terminal ? tr('เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)') : undefined}
                             style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${tint(nx.color, 'dim')}`, color: nx.color, border: `1px solid ${tint(nx.color, 'line')}`, fontFamily: 'var(--font-body)' }}>
-                            {busy === o.id ? '...' : nx.label}
+                            {busy === o.id ? '...' : tr(nx.label)}
                           </button>
                         );
                       })()}
                       <button onClick={() => goToCard(o)}
                         style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
-                        ไปที่การ์ด
+                        {tr('ไปที่การ์ด')}
                       </button>
                       {canAdd && isOpenOrder(o) && (
                         <button className="tbtn" onClick={() => cancelOrder(o)} disabled={busy === o.id}
-                          title="ยกเลิกใบนี้ (ลูกค้ายกเลิก / ใบผี) — ต้องระบุเหตุผล · ใบที่หักสต็อกไปแล้วยกเลิกไม่ได้"
+                          title={tr('ยกเลิกใบนี้ (ลูกค้ายกเลิก / ใบผี) — ต้องระบุเหตุผล · ใบที่หักสต็อกไปแล้วยกเลิกไม่ได้')}
                           style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(148,163,184,0.12)', color: 'var(--muted)', border: '1px solid rgba(148,163,184,0.35)', fontFamily: 'var(--font-body)' }}>
                           🚫
                         </button>
                       )}
                       {canAdd && o.source === 'manual' && o.status === 'pending' && (
                         <button className="tbtn" onClick={() => deleteManualOrder(o)}
-                          title="ลบได้เฉพาะใบคีย์มือที่ยังไม่เริ่ม workflow"
+                          title={tr('ลบได้เฉพาะใบคีย์มือที่ยังไม่เริ่ม workflow')}
                           style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
                           🗑
                         </button>
@@ -980,20 +981,20 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           {/* รายการรอบส่ง + ปุ่มอัปเดตสถานะ — กรองให้เห็นเฉพาะที่ต้องทำก่อน */}
           {/* UI-STANDARD 2026-09-24 — ตัวเลือกเท่ากัน ≤5 = Segmented · "ทุกสถานะ" ซ้ายสุด ไม่มีวงเล็บจำนวน */}
           <FilterBar bare style={{ marginBottom: 0 }}>
-            <Segmented value={cardFilter} onChange={setCardFilter} label="สถานะรอบส่ง" options={[
+            <Segmented value={cardFilter} onChange={setCardFilter} label={tr('สถานะรอบส่ง')} options={[
               { value: 'all',     label: ALL.status },
               { value: 'todo',    label: `🕐 ต้องทำ (${orders.filter(o => isOpenOrder(o) && !isPlan(o)).length})` },
               { value: 'overdue', label: `🔴 เลยเวลา (${overdueCount})` },
               { value: 'shipped', label: `✅ ส่งแล้ว (${shippedCount})` },
             ]} />
             <span className="sep" />
-            <span className="filter-label">เรียง:</span>
-            <Segmented value={sortMode} onChange={setSortMode} label="เรียงลำดับ" options={[
+            <span className="filter-label">{tr('เรียง:')}</span>
+            <Segmented value={sortMode} onChange={setSortMode} label={tr('เรียงลำดับ')} options={[
               { value: 'urgent', label: 'ใกล้ดิวก่อน', title: 'ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน' },
               { value: 'time',   label: 'ตามเวลาส่ง' },
             ]} />
             <span className="spacer" />
-            <span className="filter-count">{orders.length} รอบส่ง</span>
+            <span className="filter-count">{orders.length} {tr('รอบส่ง')}</span>
           </FilterBar>
           {/* 🃏 การ์ดรอบส่ง = `<PartCard>` มาตรฐานเดียวกับสโตร์ (28/10 · user: "การ์ดของหน้าจัดส่งยังไม่เห็นมีรูปแบบการ์ดของสโตร์")
               รูปชิ้นงาน + Part No. → ชื่องาน → MAT (UI §6.21-6.23) · สีสถานะอยู่ที่แถบซ้าย + ป้ายเท่านั้น */}
@@ -1015,14 +1016,14 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               const cov = isOpenOrder(o) ? coverage[o.id] : null;
               const covEl = !cov ? null
                 : cov.unknown
-                  ? <span title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ color: 'var(--muted)', fontWeight: 700 }}>❔ ยังเช็คไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP</span>
+                  ? <span title={matIssueText(o.mat_no, matMap[o.mat_no]) || ''} style={{ color: 'var(--muted)', fontWeight: 700 }}>{tr('❔ ยังเช็คไม่ได้ — เลขนี้ยังไม่จับคู่ MAT SAP')}</span>
                   : cov.short <= 0
-                    ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>พร้อมส่งครบ</span>
+                    ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>{tr('พร้อมส่งครบ')}</span>
                     : cov.offFg >= cov.short
-                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>🟠 คลัง FG มี {fmt(cov.covered)} — อีก {fmt(cov.short)} อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)</span>
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(tr(cov.short))} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</span>
                       : cov.covered > 0 || cov.offFg > 0
-                        ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠️ มี {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} — ขาด {fmt(cov.short)} (รอผลิต)</span>
-                        : <span style={{ color: 'var(--red)', fontWeight: 800 }}>ไม่มีของพร้อมส่ง — ขาด {fmt(cov.short)} ต้องผลิต!</span>;
+                        ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('⚠️ มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(tr(cov.short))} {tr('(รอผลิต)')}</span>
+                        : <span style={{ color: 'var(--red)', fontWeight: 800 }}>{tr('ไม่มีของพร้อมส่ง — ขาด')} {fmt(tr(cov.short))} {tr('ต้องผลิต!')}</span>;
               const nx = nextStep(o);
               return (
                 <div key={o.id} id={`ship-card-${o.id}`} style={{ borderRadius: 'var(--radius-lg)',
@@ -1058,9 +1059,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                         )}
                         {nx && (
                           <button onClick={() => advance(o)} disabled={busy === o.id}
-                            title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
+                            title={nx.terminal ? tr('เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)') : undefined}
                             style={storeBtn('primary', { width: '100%' })}>
-                            {busy === o.id ? '...' : nx.label}
+                            {busy === o.id ? '...' : tr(nx.label)}
                           </button>
                         )}
                       </div>
@@ -1155,7 +1156,7 @@ function WorkflowSection({ canEdit }) {
   const add = async () => {
     const maxNo = steps.reduce((m, x) => Math.max(m, x.step_no || 0), 0);
     const { error } = await supabaseDR.from('shipping_workflow_steps')
-      .insert({ customer: scope || null, step_no: maxNo + 1, name: 'เฟสใหม่', offset_min: 30, requires_status: 'prepared' });
+      .insert({ customer: scope || null, step_no: maxNo + 1, name: tr('เฟสใหม่'), offset_min: 30, requires_status: 'prepared' });
     if (error) toast.error(error.message);
     else await load();
   };
@@ -1171,25 +1172,25 @@ function WorkflowSection({ canEdit }) {
 
   return (
     <div style={{ ...card, marginTop: 16 }}>
-      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>Standard Workflow การส่งงาน (walkback)</div>
+      <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>{tr('Standard Workflow การส่งงาน (walkback)')}</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-        นับถอยหลังจาก<strong>เวลาส่งถึงลูกค้า</strong> — แต่ละเฟสต้องถึงสถานะที่กำหนดก่อน deadline (เวลาส่ง − นาที walkback)
+        นับถอยหลังจาก<strong>{tr('เวลาส่งถึงลูกค้า')}</strong> — แต่ละเฟสต้องถึงสถานะที่กำหนดก่อน deadline (เวลาส่ง − นาที walkback)
         ระบบสแกนทุก 10 นาที เฟสไหนหลุดจะแจ้งเข้า Smart Logistic ทันที ไม่ต้องรอตก due ลูกค้า
         · เพิ่ม/ลดจำนวนเฟสได้ตามความเหมาะสมของแต่ละลูกค้า
       </div>
       {/* ⭐ 2 กติกาที่คนตั้งค่าต้องเห็น ไม่งั้นตั้งแล้วไม่รู้ว่าจะเกิดอะไรขึ้นหน้างาน */}
       <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.65 }}>
         🏁 <strong>เฟสท้ายสุด = จบงาน</strong> — พอกดถึงเฟสล่างสุดของตาราง ระบบปิดรอบส่งให้เลย ไม่มีปุ่มให้กดต่อ
-        {lastStep && <> (ตอนนี้คือ <strong style={{ color: 'var(--blue)' }}>{lastStep.name}</strong>)</>}
-        {lastStep && lastStep.requires_status !== 'shipped' && <> · เหมาะกับลูกค้าที่<strong>เอารถ milk run มารับเอง</strong> — ของขึ้นรถแล้วงานของเราจบตรงนั้น</>}
+        {lastStep && <> {tr('(ตอนนี้คือ')} <strong style={{ color: 'var(--blue)' }}>{lastStep.name}</strong>)</>}
+        {lastStep && lastStep.requires_status !== 'shipped' && <> {tr('· เหมาะกับลูกค้าที่')}<strong>{tr('เอารถ milk run มารับเอง')}</strong> {tr('— ของขึ้นรถแล้วงานของเราจบตรงนั้น')}</>}
         <br />
-        📦 <strong>หักสต็อก</strong> — ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (ให้ตรงกับ SAP ที่ตัดตั้งแต่ย้ายของไปพื้นที่ shipping area ก่อนขึ้นรถ)
-        {' '}ตอนนี้หักตอน <strong style={{ color: 'var(--blue)' }}>{cutStep ? cutStep.name : 'จบงาน (ค่าเริ่มต้น — ยังไม่ติ๊กเฟสไหน)'}</strong> · หักครั้งเดียวต่อรอบส่งเสมอ ติ๊กหลายเฟสจะยึดเฟสแรกสุด
+        📦 <strong>{tr('หักสต็อก')}</strong> — ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (ให้ตรงกับ SAP ที่ตัดตั้งแต่ย้ายของไปพื้นที่ shipping area ก่อนขึ้นรถ)
+        {' '}{tr('ตอนนี้หักตอน')} <strong style={{ color: 'var(--blue)' }}>{cutStep ? cutStep.name : tr('จบงาน (ค่าเริ่มต้น — ยังไม่ติ๊กเฟสไหน)')}</strong> · หักครั้งเดียวต่อรอบส่งเสมอ ติ๊กหลายเฟสจะยึดเฟสแรกสุด
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชุดเฟสของ:')}</span>
         <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...inputSt, width: 220 }}>
-          <option value="">ค่ามาตรฐาน (ทุกลูกค้า)</option>
+          <option value="">{tr('ค่ามาตรฐาน (ทุกลูกค้า)')}</option>
           {codes.map(c => (
             <option key={c.code} value={c.code}>
               {c.customer_name && c.customer_name !== c.code ? `${c.customer_name} (${c.code})` : c.code}
@@ -1197,17 +1198,17 @@ function WorkflowSection({ canEdit }) {
           ))}
         </select>
         {scope && steps.length === 0 && canEdit && (
-          <button onClick={copyFromDefault} style={btn(false)}>คัดลอกจากค่ามาตรฐาน</button>
+          <button onClick={copyFromDefault} style={btn(false)}>{tr('คัดลอกจากค่ามาตรฐาน')}</button>
         )}
         {scope && steps.length === 0 && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ลูกค้านี้ยังไม่มีชุดเฟสของตัวเอง — ตอนนี้ใช้ค่ามาตรฐานอยู่</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ลูกค้านี้ยังไม่มีชุดเฟสของตัวเอง — ตอนนี้ใช้ค่ามาตรฐานอยู่')}</span>
         )}
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', '📦 หักสต็อก', ''].map(h => (
-              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -1218,31 +1219,31 @@ function WorkflowSection({ canEdit }) {
                 <td style={cell}>{canEdit ? <input type="number" min="0" value={val(r, 'offset_min')} onChange={e => setVal(r, 'offset_min', e.target.value)} style={{ ...edSt, width: 110 }} /> : <span style={{ fontSize: 13 }}>{r.offset_min}</span>}</td>
                 <td style={cell}>{canEdit ? (
                   <select value={val(r, 'requires_status')} onChange={e => setVal(r, 'requires_status', e.target.value)} style={{ ...edSt, width: 170 }}>
-                    {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+                    {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{tr(x.label)}</option>)}
                   </select>
                 ) : <span style={{ fontSize: 12 }}>{REQ_STATUS_OPTIONS.find(x => x.value === r.requires_status)?.label || r.requires_status}</span>}</td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit ? (
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, cursor: 'pointer', color: 'var(--text2)' }}
-                      title="ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (SAP ตัดตั้งแต่ย้ายเข้าพื้นที่ shipping area)">
+                      title={tr('ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (SAP ตัดตั้งแต่ย้ายเข้าพื้นที่ shipping area)')}>
                       <input type="checkbox" checked={!!val(r, 'deducts_stock')}
                         onChange={e => setVal(r, 'deducts_stock', e.target.checked)} style={{ width: 'auto', margin: 0 }} />
-                      หักที่เฟสนี้
+                      {tr('หักที่เฟสนี้')}
                     </label>
-                  ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? '📦 หักที่เฟสนี้' : '—'}</span>}
-                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--blue)' }}>← จุดหักจริง</span>}
+                  ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? tr('📦 หักที่เฟสนี้') : '—'}</span>}
+                  {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--blue)' }}>{tr('← จุดหักจริง')}</span>}
                 </td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.id] && (
                     <button className="tbtn" onClick={() => save(r)} disabled={busy === r.id}
                       style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
-                      {busy === r.id ? '...' : 'บันทึก'}
+                      {busy === r.id ? '...' : tr('บันทึก')}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => remove(r)} disabled={busy === r.id}
                       style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
-                      ลบ
+                      {tr('ลบ')}
                     </button>
                   )}
                 </td>
@@ -1252,11 +1253,11 @@ function WorkflowSection({ canEdit }) {
         </table>
       </div>
       {canEdit && (
-        <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>เพิ่มเฟส</button>
+        <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>{tr('เพิ่มเฟส')}</button>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
         ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00<br />
-        รถลูกค้ามารับเอง (milk run): ตั้งแค่ 3 เฟสจบที่ <em>โหลดขึ้นรถ</em> แล้วติ๊กหักสต็อกที่ <em>เตรียมงานเสร็จ</em> → กดโหลดขึ้นรถ = ปิดรอบส่งเลย
+        รถลูกค้ามารับเอง (milk run): ตั้งแค่ 3 เฟสจบที่ <em>{tr('โหลดขึ้นรถ')}</em> {tr('แล้วติ๊กหักสต็อกที่')} <em>{tr('เตรียมงานเสร็จ')}</em> → กดโหลดขึ้นรถ = ปิดรอบส่งเลย
       </div>
     </div>
   );
@@ -1328,18 +1329,18 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
       <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>Ship-to Plant Config</div>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         ตั้งชื่อลูกค้าให้ code ปลายทางจากไฟล์ EDI (เช่น GRBNA → AAT) — ชื่อนี้จะแสดงแทน code ในทุกหน้าจอ · code ใหม่จากไฟล์ EDI จะถูกเพิ่มเข้าลิสต์นี้อัตโนมัติ
-        · 🔒 <b>ลำดับในชาร์ต</b> = แถวลูกค้าบน Shipping Time Chart (เลขน้อยอยู่บน · ล็อกตายตัวทุกวัน · ว่าง = ต่อท้าย)
+        · 🔒 <b>{tr('ลำดับในชาร์ต')}</b> = แถวลูกค้าบน Shipping Time Chart (เลขน้อยอยู่บน · ล็อกตายตัวทุกวัน · ว่าง = ต่อท้าย)
         <div style={{ marginTop: 5, color: 'var(--amber)' }}>
-          ⚠️ ชื่อนี้ถูกใช้เป็น<b>กุญแจแยกออเดอร์</b> ตอนนำเข้า EDI — เลขพาร์ทลูกค้าตัวเดียวมีได้หลายเลข SAP ต่างกันที่ลูกค้าปลายทาง
+          ⚠️ ชื่อนี้ถูกใช้เป็น<b>{tr('กุญแจแยกออเดอร์')}</b> ตอนนำเข้า EDI — เลขพาร์ทลูกค้าตัวเดียวมีได้หลายเลข SAP ต่างกันที่ลูกค้าปลายทาง
           <b> ต้องสะกดตรงกับช่อง "ลูกค้า" ใน Product Master</b> ไม่งั้นแยกไม่ออก แล้วออเดอร์ทุกเจ้าจะไปกองที่เลขเดียว
-          <div style={{ color: 'var(--muted)', marginTop: 2 }}>→ เลือกจากลิสต์ (ดึงจาก Product Master) แทนการพิมพ์เอง · พิมพ์เองได้ถ้าเป็นลูกค้าใหม่ที่ยังไม่มีสินค้า</div>
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>{tr('→ เลือกจากลิสต์ (ดึงจาก Product Master) แทนการพิมพ์เอง · พิมพ์เองได้ถ้าเป็นลูกค้าใหม่ที่ยังไม่มีสินค้า')}</div>
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['ลำดับในชาร์ต', 'Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
-              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -1360,13 +1361,13 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
                   {canEdit && draft[r.code] && (
                     <button className="tbtn" onClick={() => save(r.code)} disabled={busy === r.code}
                       style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
-                      {busy === r.code ? '...' : 'บันทึก'}
+                      {busy === r.code ? '...' : tr('บันทึก')}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => removeCode(r)} disabled={busy === r.code}
                       style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
-                      ลบ
+                      {tr('ลบ')}
                     </button>
                   )}
                 </td>
@@ -1377,8 +1378,8 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
       </div>
       {canEdit && (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="เพิ่ม code ใหม่" style={{ ...inputSt, width: 160 }} />
-          <button onClick={addCode} style={btn(false)}>เพิ่ม</button>
+          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder={tr('เพิ่ม code ใหม่')} style={{ ...inputSt, width: 160 }} />
+          <button onClick={addCode} style={btn(false)}>{tr('เพิ่ม')}</button>
         </div>
       )}
     </div>
@@ -1418,8 +1419,8 @@ export default function CustomerDemand() {
   return (
     <Page>
       <PageHeader
-        title="Delivery — ติดตามการส่งงานลูกค้า" icon="🚚"
-        sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
+        title={tr('Delivery — ติดตามการส่งงานลูกค้า')} icon="🚚"
+        sub={tr('Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales')}
         tabs={[
           { key: 'shipping', label: 'Shipping Chart' },
           { key: 'log', label: 'ประวัติ order เข้าระบบ' },
@@ -1431,7 +1432,7 @@ export default function CustomerDemand() {
       {/* ship-to ที่เลือกได้ในฟอร์มคีย์ order = เฉพาะ active (ปิดใช้แล้วยังแสดงชื่อผ่าน custLabel ได้ตามเดิม) */}
       {tab === 'shipping' && <ShippingTab fullName={fullName} refreshKey={refreshKey} custLabel={custLabel} canAdd={canConfig} shipToCodes={Object.keys(shipToMap).filter(c => shipToMap[c]?.is_active !== false).sort()} shipToMap={shipToMap} />}
       {tab === 'log' && (
-        <Suspense fallback={<div style={{ fontSize: 12, color: 'var(--text2)', padding: 16 }}>⏳ กำลังโหลด…</div>}>
+        <Suspense fallback={<div style={{ fontSize: 12, color: 'var(--text2)', padding: 16 }}>{tr('⏳ กำลังโหลด…')}</div>}>
           <OrderIntakeLog shipToMap={shipToMap} custLabel={custLabel} />
         </Suspense>
       )}
@@ -1458,9 +1459,9 @@ function CustomerPicker({ value, code, opts, onChange, edSt }) {
         freeHint="ลูกค้าใหม่ — ถ้าไม่มีสินค้าไหนใช้ชื่อนี้ จะแยกออเดอร์ตามลูกค้าไม่ได้" />
       {/* บอกผลการจับคู่ทันที — "SOUTH ARFIGA" ต้องเห็นว่าไม่ตรงกับใครตั้งแต่ยังไม่กดบันทึก */}
       {unset ? (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('ยังไม่ตั้ง — แยกออเดอร์ตามลูกค้าไม่ได้')}</div>
       ) : hit ? (
-        <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>✓ ตรงกับ {hit.n} สินค้าใน Product Master</div>
+        <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>{tr('✓ ตรงกับ')} {hit.n} {tr('สินค้าใน Product Master')}</div>
       ) : (
         <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2 }}>⚠ ไม่มีสินค้าไหนใช้ชื่อลูกค้านี้ — แยกออเดอร์ไม่ได้ (ตรวจตัวสะกด หรือไปตั้งช่อง "ลูกค้า" ที่ Product Master)</div>
       )}

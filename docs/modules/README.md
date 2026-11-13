@@ -10,6 +10,7 @@
 
 | โมดูล | ไฟล์ |
 |---|---|
+| 🪜 แถบขั้นตอน StepFlow (ใบไหนใส่แล้ว/ไม่ใส่ + กฎ) | `step-flow.md` |
 | Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13) | `docs/modules/adoption-outlook.md` |
 | 🔗 Audit AM↔PM ทั้งโปรเจค — 2 ระบบ AM ไม่ sync · null due = "ปกติ" · ลำดับแก้ 3 รอบ (2026-10-08 · ยังไม่แก้) | `docs/modules/am-pm-linkage-audit.md` |
 | 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21) | `docs/modules/bbs-safety.md` |
@@ -109,3 +110,4 @@
 - `doc-forms.md` — ขั้นตอน register เอกสาร export เข้าทะเบียน `/doc-forms`
 - `employee-identity.md` — สร้างตัวตนพนักงานเข้าฐาน (`/register` + โมดัลใน `/add-user`) · กฎ `newEmployeeRow()` · กับดัก `staff_kind` default เงียบ
 - `qa-inspector-scopes.md` — QC ประจำไลน์ (`qa_inspector_scopes`) · แยก 3 แกน สังกัด/เห็น/ตรวจให้หน่วยไหน · กฎ `src/utils/qaScope.js`
+- `ux-laws-audit.md` — ผล audit กฎ UX 6 ข้อ (Closure · Figure-ground · Banner blindness · Parkinson · Connectedness · Choice overload) + ผลวัด modal ของจริง 225 ตัว (13/11/2026)

@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 
+import { tr } from '../utils/i18n';
 export default function OverflowMenu({ items = [], label = 'เพิ่มเติม', size = 34, align = 'right', drop = 'down', style }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -46,7 +47,7 @@ export default function OverflowMenu({ items = [], label = 'เพิ่มเ�
               disabled={it.disabled} title={it.title}
               onClick={() => { if (it.disabled) return; setOpen(false); it.onClick?.(); }}>
               {it.icon && <span className="pg-menu-ico" aria-hidden="true"><Icon glyph={it.icon} size={15} /></span>}
-              <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>{it.label}</span>
+              <span style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>{tr(it.label)}</span>
               {it.badge != null && it.badge !== '' && <span className="pg-menu-badge">{it.badge}</span>}
             </button>
           ))}

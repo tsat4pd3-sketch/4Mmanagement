@@ -29,6 +29,7 @@ import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import { storeBtn } from '../utils/storeUi';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
@@ -241,7 +242,7 @@ export default function RackCenter() {
         <img src="${dataUrl}" />
         <div class="ln">${c.line}</div>
         <div class="ct">${c.ct.code ? c.ct.code + ' · ' : ''}${c.ct.name}</div>
-        <div class="hint">สแกนเพื่อเรียกภาชนะ</div>
+        <div class="hint">{tr('สแกนเพื่อเรียกภาชนะ')}</div>
       </div>`);
     }
     const html = `<style>
@@ -331,14 +332,14 @@ export default function RackCenter() {
       <ReadOnlyNote show={!canOperate} role={role} what="เรียกภาชนะ/รับงาน"
         permKey="rack_center:operate" />
       {/* UI-STANDARD 2026-09-24: หัวเพจ + แท็บ ผ่าน PageHeader (เดิมวาด h1/แถบปุ่มเอง) · แท็บผูก ?tab= */}
-      <PageHeader title="ภาชนะ & Packaging — เรียกภาชนะ" icon="🗃️"
-        sub="ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ"
+      <PageHeader title={tr('ภาชนะ & Packaging — เรียกภาชนะ')} icon="🗃️"
+        sub={tr('ไลน์ผลิตเรียกภาชนะ/แร็คเปล่าคืน · Rack Center เตรียม-จัดส่ง · ไลน์ยืนยันรับ')}
         actions={canOperate ? (
           <>
             {/* ปุ่มตายตัว ≤2 (UI §6.35): [สแกน] [เรียกภาชนะ] · ป้าย QR → ⋯ */}
             <OverflowMenu items={[{ key: 'qr', icon: '🏷️', label: 'ป้าย QR', onClick: () => setQrOpen(true), title: 'พิมพ์แผ่นป้าย QR ไปแปะหน้างาน' }]} />
-            <button type="button" className="pg-btn" onClick={() => setScanOpen(true)} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">สแกน</button>
-            <button type="button" className="pg-btn primary" onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }}>เรียกภาชนะ</button>
+            <button type="button" className="pg-btn" onClick={() => setScanOpen(true)} title={tr('สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน')}>{tr('สแกน')}</button>
+            <button type="button" className="pg-btn primary" onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }}>{tr('เรียกภาชนะ')}</button>
           </>
         ) : null}
         tabs={VIEW_TABS} tab={view} onTab={setView} />
@@ -347,7 +348,7 @@ export default function RackCenter() {
           placeholder={ALL.line} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
-          แสดงที่รับแล้ว
+          {tr('แสดงที่รับแล้ว')}
         </label>
       </FilterBar>
       {(scopedNames || viewScope.unsure) && (reqScoped.hidden + pkgScoped.hidden > 0 || viewScope.unsure) && (
@@ -393,7 +394,7 @@ export default function RackCenter() {
                     ? (
                       <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
                         style={storeBtn('primary', { width: '100%', opacity: pkgBusy === p.id ? 0.55 : 1 })}>
-                        {pkgBusy === p.id ? 'กำลังบันทึก…' : 'จ่าย Packaging'}
+                        {pkgBusy === p.id ? tr('กำลังบันทึก…') : tr('จ่าย Packaging')}
                       </button>
                     ) : null} />
               ))}
@@ -450,7 +451,7 @@ export default function RackCenter() {
       {/* ⚙️ SLA config — ปรับได้เหมือน ship-to config */}
       {view === 'sla' && (
         <div style={{ ...card, maxWidth: 560 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>SLA การส่งภาชนะภายในโรงงาน</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>{tr('SLA การส่งภาชนะภายในโรงงาน')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
             นับจากเวลาที่ไลน์กดเรียก — เกินกำหนดแล้วยังไม่ถึงสถานะ บล็อกบนบอร์ดเวลาจะเปลี่ยนเป็น 🟠/🔴 ให้เห็นทันที
           </div>
@@ -459,7 +460,7 @@ export default function RackCenter() {
             { k: 'deliver_within_min', label: 'ต้องส่งถึงไลน์ภายใน (นาที)' },
           ].map(f => (
             <div key={f.k} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{f.label}</span>
+              <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{tr(f.label)}</span>
               <input type="number" min="1" value={(slaDraft ?? sla)[f.k]} disabled={!canOperate}
                 onChange={e => setSlaDraft(d => ({ ...(d ?? sla), [f.k]: e.target.value }))}
                 style={{ ...inputSt, width: 110, textAlign: 'center', fontWeight: 800 }} />
@@ -475,7 +476,7 @@ export default function RackCenter() {
                 .upsert({ ...payload, kind: 'rack' }, { onConflict: 'kind' });
               if (error) toast.error(error.message);
               else { setSla(x => ({ ...x, ...payload })); setSlaDraft(null); toast.success('บันทึก SLA แล้ว'); }
-            }} style={btn('var(--accent)', 'var(--accent-ink)')}>บันทึก SLA</button>
+            }} style={btn('var(--accent)', 'var(--accent-ink)')}>{tr('บันทึก SLA')}</button>
           )}
         </div>
       )}
@@ -486,7 +487,7 @@ export default function RackCenter() {
         {STATUS_COLS.map(col => (
           <div key={col.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${tint(col.color, 'line')}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: col.color, fontFamily: 'var(--font-display)' }}>{col.label}</div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: col.color, fontFamily: 'var(--font-display)' }}>{tr(col.label)}</div>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{(byStatus[col.key] || []).length}</span>
             </div>
             <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 80, maxHeight: 560, overflowY: 'auto' }}>
@@ -542,7 +543,7 @@ export default function RackCenter() {
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.line_name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: col.color }}>{col.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: col.color }}>{tr(col.label)}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
                 {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
@@ -570,38 +571,38 @@ export default function RackCenter() {
 
       {/* Request modal */}
       {showForm && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               เรียกภาชนะ
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์การผลิต *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์การผลิต *')}</label>
                 <LineSelect lines={lines} value={form.line_name} {...scope} style={inputSt}
-                  placeholder="เลือกไลน์..." onChange={v => setForm(f => ({ ...f, line_name: v }))} />
+                  placeholder={tr('เลือกไลน์...')} onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดภาชนะ *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชนิดภาชนะ *')}</label>
                 <select value={form.container_type_id} onChange={e => setForm(f => ({ ...f, container_type_id: e.target.value }))} style={inputSt}>
-                  <option value="">เลือกภาชนะ...</option>
+                  <option value="">{tr('เลือกภาชนะ...')}</option>
                   {containerTypes.map(c => <option key={c.id} value={c.id}>{c.name}{c.capacity ? ` (จุ ${c.capacity})` : ''}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวน (ใบ/ใบ) *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('จำนวน (ใบ/ใบ) *')}</label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, fontSize: 20, fontWeight: 900, textAlign: 'center' }}
                   value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
-                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="เช่น ด่วน, จุดส่ง..." />
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
+                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder={tr('เช่น ด่วน, จุดส่ง...')} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleRequest} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
-                {saving ? '...' : 'เรียกภาชนะ'}
+                {saving ? '...' : tr('เรียกภาชนะ')}
               </button>
             </div>
           </div>
@@ -644,19 +645,19 @@ function QrScanModal({ onClose, onResult }) {
   }, [onResult]);
   return (
     /* จอสแกน QR = กล้องอย่างเดียว ไม่มีช่องกรอก → ปิดจาก backdrop ได้ตามกฎ (UI-CONVENTIONS §5) */
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>สแกน QR เรียกภาชนะ</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('สแกน QR เรียกภาชนะ')}</span>
           <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {camErr
           ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
           : <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 10, background: '#000', marginBottom: 10 }} />}
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr('ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter')}</div>
         <input autoFocus value={manual} onChange={e => setManual(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && manual.trim()) onResult(manual); }}
-          placeholder="ยิงสแกนลงช่องนี้ได้เลย…" style={inputSt} />
+          placeholder={tr('ยิงสแกนลงช่องนี้ได้เลย…')} style={inputSt} />
       </div>
     </div>
   );
@@ -673,25 +674,25 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
     background: on ? 'var(--accent-dim, var(--green-dim))' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)',
     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}` });
   return (
-    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>พิมพ์ป้าย QR เรียกภาชนะ</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('พิมพ์ป้าย QR เรียกภาชนะ')}</span>
           <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           เลือกไลน์ × ชนิดภาชนะ → ได้แผ่น A4 ป้ายละ 1 คู่ (QR = ลิงก์เปิดฟอร์มกรอกให้ครบ) เอาไปแปะจุดวางภาชนะหน้างาน
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>ไลน์ ({selLines.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>{tr('ไลน์ (')}{selLines.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
           {lines.map(l => <button key={l.name} onClick={() => tgLine(l.name)} style={chip(selLines.has(l.name))}>{l.name}</button>)}
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>ชนิดภาชนะ ({selTypes.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>{tr('ชนิดภาชนะ (')}{selTypes.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
           {containerTypes.map(c => <button key={c.id} onClick={() => tgType(c.id)} style={chip(selTypes.has(c.id))}>{c.code ? `${c.code} · ` : ''}{c.name}</button>)}
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>รวม {selLines.size * selTypes.size} ป้าย</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('รวม')} {selLines.size * selTypes.size} {tr('ป้าย')}</span>
           <button disabled={printing || !selLines.size || !selTypes.size}
             onClick={async () => { setPrinting(true); try { await onPrint([...selLines], [...selTypes]); } finally { setPrinting(false); } }}
             style={{ ...btn(selLines.size && selTypes.size ? 'var(--accent)' : 'var(--bg2)', selLines.size && selTypes.size ? 'var(--accent-ink)' : 'var(--muted)'), cursor: selLines.size && selTypes.size ? 'pointer' : 'not-allowed' }}>

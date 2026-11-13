@@ -21,6 +21,7 @@ import { buildCcIndex } from '../utils/ccScope';
 import { ORG_PARENT_KIND, orgSaveBlockReason, filterParentOptions } from '../utils/orgNodeEdit';
 import { orgNodeCompare } from '../utils/listOrder';
 import SearchInput from './SearchInput';
+import { tr } from '../utils/i18n';
 import { printOrgChart } from '../lib/orgChartPrint';   // 🖨️ ใบผังองค์กร FM-HRM-I-001
 
 /** ชั้นในผัง ↔ "เลเวล" ที่โรงงานใช้ (= หลักที่ 5 ของรหัส CC · ดู utils/roleMeta.js ORG_LEVELS)
@@ -187,41 +188,41 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
               {cc.cc}{inherited ? ' · ตกทอด' : ''}
             </span>
           ) : (
-            <span title="ไม่มีรหัส Cost Center ทั้งสาย — ตั้งที่หน่วยนี้หรือหน่วยแม่"
-              style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ ไม่มีรหัส CC</span>
+            <span title={tr('ไม่มีรหัส Cost Center ทั้งสาย — ตั้งที่หน่วยนี้หรือหน่วยแม่')}
+              style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{tr('⚠ ไม่มีรหัส CC')}</span>
           )}
           {deepCount === null
             ? <span style={{ fontSize: 11, color: 'var(--muted)' }}>👤 …</span>
-            : cnt > 0 && <span title="จำนวนพนักงานทั้งสาย (รวมหน่วยลูก)" style={{ fontSize: 11, color: 'var(--text2)' }}>{cnt}</span>}
-          {n.is_active === false && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>⛔ ปิดใช้งาน</span>}
+            : cnt > 0 && <span title={tr('จำนวนพนักงานทั้งสาย (รวมหน่วยลูก)')} style={{ fontSize: 11, color: 'var(--text2)' }}>{cnt}</span>}
+          {n.is_active === false && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>{tr('⛔ ปิดใช้งาน')}</span>}
           {n.inherit_scope === false && (
-            <span title="อยู่ใต้หน่วยแม่ในผัง แต่ขอบเขตสิทธิ์ของหน่วยแม่ไม่ครอบหน่วยนี้ (เช่น หน่วยที่มาฝากไว้)"
-              style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>ไม่ตกทอดสิทธิ์</span>
+            <span title={tr('อยู่ใต้หน่วยแม่ในผัง แต่ขอบเขตสิทธิ์ของหน่วยแม่ไม่ครอบหน่วยนี้ (เช่น หน่วยที่มาฝากไว้)')}
+              style={{ fontSize: 11, fontWeight: 700, color: '#a855f7' }}>{tr('ไม่ตกทอดสิทธิ์')}</span>
           )}
           {unitParentId(n, nodes) == null && n.kind !== 'section' && (
-            <span title="ไม่มีหน่วยแม่ในผัง — ลำดับชั้น/รหัสจะตกทอดไม่ได้"
-              style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>ไม่มีหน่วยแม่</span>
+            <span title={tr('ไม่มีหน่วยแม่ในผัง — ลำดับชั้น/รหัสจะตกทอดไม่ได้')}
+              style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>{tr('ไม่มีหน่วยแม่')}</span>
           )}
           {canEdit && parentKind && (
             moving === n.id ? (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <select disabled={busy} defaultValue={n.parent_id || ''}
                   onChange={e => doMove(n, e.target.value)} style={{ width: 'auto', fontSize: 12 }}>
-                  <option value="">— เลือกหน่วยแม่ —</option>
-                  {parentOpts.rows.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  <option value="">{tr('— เลือกหน่วยแม่ —')}</option>
+                  {parentOpts.rows.map(o => <option key={o.id} value={o.id}>{tr(o.name)}</option>)}
                 </select>
                 {parentOpts.hidden > 0 && (
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>ซ่อน {parentOpts.hidden} หน่วยนอกขอบเขตคุณ</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ซ่อน')} {parentOpts.hidden} {tr('หน่วยนอกขอบเขตคุณ')}</span>
                 )}
                 <button type="button" className="tbtn" onClick={() => setMoving(null)}
-                  style={{ fontSize: 11, padding: '2px 8px' }}>ยกเลิก</button>
+                  style={{ fontSize: 11, padding: '2px 8px' }}>{tr('ยกเลิก')}</button>
               </span>
             ) : (
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
                 {(n.kind === 'section' || n.kind === 'department') && (
                   <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'dept', rootId: n.id })}
-                    disabled={printing} title="ออกใบผังองค์กรเฉพาะหน่วยนี้ (กางถึงกลุ่ม + รายชื่อ)"
-                    style={{ fontSize: 11, padding: '2px 8px' }}>ผังย่อย</button>
+                    disabled={printing} title={tr('ออกใบผังองค์กรเฉพาะหน่วยนี้ (กางถึงกลุ่ม + รายชื่อ)')}
+                    style={{ fontSize: 11, padding: '2px 8px' }}>{tr('ผังย่อย')}</button>
                 )}
                 {n.parent_id && (
                   <button type="button" className="tbtn" onClick={() => toggleInherit(n)} disabled={busy}
@@ -229,11 +230,11 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
                       ? 'ให้ขอบเขตของหน่วยแม่ครอบหน่วยนี้ตามปกติ'
                       : 'หน่วยนี้มาฝากไว้ใต้หน่วยแม่ — ไม่ให้หน่วยแม่มีสิทธิ์แก้ข้อมูล'}
                     style={{ fontSize: 11, padding: '2px 8px' }}>
-                    {n.inherit_scope === false ? '🔓 ให้ตกทอด' : '🔒 ไม่ตกทอด'}
+                    {n.inherit_scope === false ? tr('🔓 ให้ตกทอด') : tr('🔒 ไม่ตกทอด')}
                   </button>
                 )}
                 <button type="button" className="tbtn" onClick={() => setMoving(n.id)} disabled={busy}
-                  style={{ fontSize: 11, padding: '2px 8px' }}>↕ ย้าย</button>
+                  style={{ fontSize: 11, padding: '2px 8px' }}>{tr('↕ ย้าย')}</button>
               </span>
             )
           )}
@@ -249,11 +250,11 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
         <SearchInput value={q} onChange={setQ} fields="ชื่อหน่วย / รหัส / CC" />
         <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'overall' })} disabled={printing}
-          title="ออกใบแผนผังองค์กรทั้งโรงงาน (ฝ่าย → ส่วน → แผนก) ตามฟอร์ม FM-HRM-I-001"
-          style={{ fontSize: 12, padding: '3px 10px' }}>ผังใหญ่ (ทั้งโรงงาน)</button>
+          title={tr('ออกใบแผนผังองค์กรทั้งโรงงาน (ฝ่าย → ส่วน → แผนก) ตามฟอร์ม FM-HRM-I-001')}
+          style={{ fontSize: 12, padding: '3px 10px' }}>{tr('ผังใหญ่ (ทั้งโรงงาน)')}</button>
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
           <input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} style={{ margin: 0 }} />
-          โชว์ที่ปิดใช้งาน ({offCount})
+          {tr('โชว์ที่ปิดใช้งาน (')}{offCount})
         </label>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto', lineHeight: 1.5 }}>
           ลำดับชั้นมาจากผัง (หน่วยแม่) ไม่ใช่ตัวเลขรหัส · เทา = ตกทอดจากหน่วยแม่
@@ -262,7 +263,7 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
       {/* 🔴 ห้ามซ่อนเงียบ — บอกตรงๆ ว่าตัดอะไรออกและของนั้นไปอยู่ไหน */}
       {teamCount > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
-          ไม่นับทีม {teamCount} รายการ — <b>ทีม A/B/C ใช้จัดกะการทำงาน ไม่ใช่ชั้นในผังองค์กร</b>
+          ไม่นับทีม {teamCount} {tr('รายการ —')} <b>{tr('ทีม A/B/C ใช้จัดกะการทำงาน ไม่ใช่ชั้นในผังองค์กร')}</b>
           {' '}(จัดการที่แท็บ “จัดการหน่วยงาน”)
         </div>
       )}
@@ -277,7 +278,7 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
           <>
             <div style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', marginTop: 10 }}>
               หน่วยที่ยังไม่มีหน่วยแม่ ({roots.floats.length})
-              <span style={{ fontWeight: 400, color: 'var(--muted)' }}> — ตกทอดรหัส/ขอบเขตจากใครไม่ได้ ควรย้ายเข้าสาย</span>
+              <span style={{ fontWeight: 400, color: 'var(--muted)' }}> {tr('— ตกทอดรหัส/ขอบเขตจากใครไม่ได้ ควรย้ายเข้าสาย')}</span>
             </div>
             {roots.floats.map(n => <Row key={n.id} n={n} depth={0} />)}
           </>

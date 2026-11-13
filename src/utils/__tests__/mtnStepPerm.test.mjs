@@ -730,3 +730,65 @@ test('🔧 ป้ายปุ่ม/เหตุผลตอนกดไม่�
   assert.match(hint, /หัวหน้าแผนกช่าง/);
   assert.match(hint, /ฝั่งซ่อมบำรุง/, 'ต้องบอกว่าเป็นช่องของฝั่งช่าง ไม่ใช่ของฝ่ายที่แจ้ง');
 });
+
+test('moFlow — แถบขั้นตอนใบ MO: ข้าม QA = skipped ไม่ใช่ done · ใบ MTN 8 ขั้นแยกด้วยเวลาเซ็น · ตีกลับหยุดที่ขั้นถัดไป · สถานะแปลก = known:false', async () => {
+  const { moFlow } = await import('../mtnStepPerm.js');
+  const st = (f) => f.steps.map(s => s.state + (s.tone ? '/' + s.tone : ''));
+  const p = moFlow({ status: 'pending', current_step: 1 });
+  assert.deepEqual(st(p), ['done', 'current', 'todo', 'todo', 'todo', 'todo', 'todo']);
+  assert.match(p.waiting, /หัวหน้าช่าง/);
+  // ข้าม QA (ไม่เกี่ยวกับคุณภาพ) → ขั้น 5 ⏭ · ขั้น 6 current
+  assert.deepEqual(st(moFlow({ status: 'checked', current_step: 4, qa_skipped_at: 'x', mtn_dept: 'die' })), ['done', 'done', 'done', 'done', 'skipped', 'current', 'todo']);
+  // รอ QA จริง
+  assert.equal(moFlow({ status: 'checked', current_step: 4, mtn_dept: 'die' }).steps[4].state, 'current');
+  // ใบ MTN (8 ขั้น · ไม่มี QA) ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็น
+  const h = moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: null, approve_at: null });
+  assert.equal(h.steps.length, 8); assert.equal(h.steps[5].state, 'current');
+  assert.equal(moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: 'x', approve_at: null }).steps[6].state, 'current');
+  // ปิดแล้ว = ครบ · ตีกลับ = ขั้นถัดไปเป็นสีแดง ไม่เขียวยาว
+  assert.ok(moFlow({ status: 'closed', current_step: 7, mtn_dept: 'die', qa_at: 'x' }).steps.every(s => s.state === 'done'));
+  const r = moFlow({ status: 'rejected', current_step: 1 });
+  assert.equal(r.steps[1].tone, 'bad'); assert.equal(r.closed, true); assert.equal(r.waiting, null);
+  // ส่งซ่อมภายนอก = ใบยังเปิด รอ supplier
+  assert.match(moFlow({ status: 'waiting_vendor', current_step: 3 }).waiting, /supplier/);
+  assert.equal(moFlow({ status: 'weird' }).known, false);
+});
+
+test('🏁 ขั้น 7 ใบ JIG/DIE = ผจก.ฝ่ายผู้แจ้ง (60) · ใบ PD คงหัวหน้าแผนก (50)', () => {
+  assert.equal(stepMeta(7, { toolTeam: true }).minRank, 60);
+  assert.equal(stepMeta(7, { toolTeam: true }).side, 'reporter');
+  assert.equal(stepMeta(7, { toolTeam: true }).stage, 'close');
+  assert.equal(stepMeta(7, {}).minRank, 50);
+  assert.equal(stepMeta(8, { mtnForm: true }).minRank, 60);
+  const jig = { mtn_dept: 'jig_maintenance', status: 'handover' };
+  const base = { can: () => true, actorSide: 'reporter', inReporterScope: true };
+  assert.equal(canDoStep(7, { ...base, order: jig, posRank: 50 }).code, 'rank_too_low');
+  assert.equal(canDoStep(7, { ...base, order: jig, posRank: 60 }).ok, true);
+  const pd = { mtn_dept: 'production', status: 'handover' };
+  assert.equal(canDoStep(7, { ...base, order: pd, posRank: 50 }).ok, true);
+});
+
+test('✍️ ช่องเซ็น 4 ฟอร์ม MTN: ผจก.ส่วนซ่อมบำรุง ต้องกดรับทราบเอง', () => {
+  const o = { mtn_dept: 'maintenance', mo_approved_by: 'นาย ก  ข' };
+  const base = { order: o, actorSide: 'mtn', hasTeams: true, inOrderTeam: true, can: () => false };
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: 60 }).code, 'named');
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ค', posRank: 60 }).code, 'denied');
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ค', posRank: 60, can: () => true }).ok, true);
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: 50 }).code, 'rank_too_low');
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: 60, actorSide: 'reporter' }).code, 'wrong_side');
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: 60, inOrderTeam: false }).code, 'other_team');
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, order: { ...o, mo_ack_at: '2026-11-13' }, fullName: 'นาย ก ข', posRank: 60 }).code, 'already_signed');
+  // ไม่รู้ตำแหน่ง/ฝั่ง = ไม่บล็อก
+  assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: null, actorSide: 'unknown' }).ok, true);
+});
+
+test('🖥️ บัญชีกลางเซ็นช่องที่ล็อกตำแหน่งไม่ได้ · ขั้นกรอกงานยังทำได้', () => {
+  const mtn = { mtn_dept: 'maintenance', status: 'handover' };
+  const base = { order: mtn, can: () => true, actorSide: 'mtn', hasTeams: true, inOrderTeam: true, mtnForm: true, isShared: true };
+  assert.equal(canDoStep(7, base).code, 'shared_account');          // ผจก.ช่าง อนุมัติ
+  assert.equal(canDoStep(6, base).code, 'shared_account');          // หัวหน้าแผนกช่าง
+  assert.equal(canDoStep(3, { ...base, order: { ...mtn, status: 'assigned' } }).ok, true);   // ลงผลซ่อม
+  assert.equal(canDoStep(7, { ...base, isShared: false }).ok, true);
+  assert.equal(canSignMtnApproval('dept', { order: {}, can: () => true, isShared: true }).code, 'shared_account');
+  assert.equal(canSignMtnApproval('mtn_mgr', { order: { mo_approved_by: 'x' }, fullName: 'x', isShared: true }).code, 'shared_account');
+});

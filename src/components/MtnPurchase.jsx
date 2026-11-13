@@ -27,14 +27,16 @@ import { fmtDateTime } from '../utils/dateFormat';
 import {
   PR_STATUS_META, PR_SOURCE_LABEL, prStatusMeta, isPrOpen, REPAIR_PATHS, repairPathMeta,
   GL_CATEGORIES, glCategoryLabel, glCategoryForPr, defaultGlFor, isBelowMin, suggestReorderQty, openPrQtyByPart,
-  normalizePrNo, isAwaitingPrNo, mosNeedingPr, NEEDS_PR_PATHS,
+  normalizePrNo, isAwaitingPrNo, mosNeedingPr, NEEDS_PR_PATHS, prFlow,
 } from '../utils/mtnPurchase';
+import StepFlow from './StepFlow';
 import { isMoOpen, MO_DONE_STATUSES } from '../utils/mtnStepPerm';
 import { isMttrHeld, mttrHoldMin } from '../utils/mtnVendor';
 import { notifyEvent } from '../utils/notifyEvent';
 import { teamKeyOf, teamRowOwner, teamRowLockNote } from '../utils/mtnTeams';
 import { can } from '../utils/permissions';
 
+import { tr } from '../utils/i18n';
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12.5, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' };
@@ -124,9 +126,9 @@ function GlPicker({ category, value, glCodes, onChange }) {
   const others = (glCodes || []).filter(g => category && g.category !== category);
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)} style={inp}>
-      <option value="">— ยังไม่ระบุ GL —</option>
+      <option value="">{tr('— ยังไม่ระบุ GL —')}</option>
       {rows.map(g => <option key={g.id} value={g.gl_code}>{g.gl_code}{g.name ? ` · ${g.name}` : ''}{g.is_default ? ' (ตั้งต้น)' : ''}</option>)}
-      {others.length > 0 && <optgroup label="หมวดอื่น">{others.map(g => <option key={g.id} value={g.gl_code}>{g.gl_code}{g.name ? ` · ${g.name}` : ''} · {glCategoryLabel(g.category)}</option>)}</optgroup>}
+      {others.length > 0 && <optgroup label={tr('หมวดอื่น')}>{others.map(g => <option key={g.id} value={g.gl_code}>{g.gl_code}{g.name ? ` · ${g.name}` : ''} · {glCategoryLabel(g.category)}</option>)}</optgroup>}
     </select>
   );
 }
@@ -179,14 +181,14 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5 }}>
         {pr.pr_no
           ? <b style={{ fontFamily: 'monospace', fontSize: 13 }}>PR {pr.pr_no}</b>
-          : <b style={{ fontSize: 12, color: waitNo ? '#f59e0b' : 'var(--muted)' }}>{waitNo ? '⏳ รอเลข PR จาก SAP' : '(ไม่มีเลข PR)'}</b>}
-        {mo && <a href={`/mtn-repair?mo=${encodeURIComponent(mo.id)}`} style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }} title="เปิดใบ MO">{mo.mo_no || 'ใบ MO (ยังไม่มีเลข)'}{mo.machine_no ? ` · ${mo.machine_no}` : ''}</a>}
-        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+          : <b style={{ fontSize: 12, color: waitNo ? '#f59e0b' : 'var(--muted)' }}>{waitNo ? tr('⏳ รอเลข PR จาก SAP') : tr('(ไม่มีเลข PR)')}</b>}
+        {mo && <a href={`/mtn-repair?mo=${encodeURIComponent(mo.id)}`} style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }} title={tr('เปิดใบ MO')}>{mo.mo_no || 'ใบ MO (ยังไม่มีเลข)'}{mo.machine_no ? ` · ${mo.machine_no}` : ''}</a>}
+        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{tr(st.label)}</span>
         {showSource && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{PR_SOURCE_LABEL[pr.source] || pr.source}</span>}
         <span style={{ flex: 1, minWidth: 140 }}>{pr.item_name} × <b>{pr.qty}</b> {pr.unit || ''}</span>
         {pr.gl_code
           ? <span style={{ fontSize: 11, color: 'var(--text2)' }}>GL {pr.gl_code}</span>
-          : <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ยังไม่ระบุ GL</span>}
+          : <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('⚠ ยังไม่ระบุ GL')}</span>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
         ขอ {fmtDateTime(pr.requested_at)}{pr.requested_by ? ` · ${pr.requested_by}` : ''}
@@ -197,6 +199,8 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
         {!pr.part_id && pr.status !== 'cancelled' ? ' · ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก)' : ''}
         {pr.note ? ` · ${pr.note}` : ''}
       </div>
+      {/* 🪜 ถึงขั้นไหน — กฎ prFlow() (utils/mtnPurchase.js) · UI §6.30 */}
+      {(() => { const f = prFlow(pr); return <StepFlow compact steps={f.steps} waiting={f.waiting} unknown={!f.known} style={{ marginTop: 4 }} />; })()}
       {/* 🔒 ไม่ใช่ของทีมเรา = เขียนบอกเหตุผล **ห้ามซ่อนปุ่มเงียบ** (กฎความซื่อสัตย์ของจอ) */}
       {canEdit && isPrOpen(pr) && !own.ok && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>{teamRowLockNote(pr, own.code)}</div>
@@ -204,22 +208,22 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
       {canEdit && own.ok && isPrOpen(pr) && !mode && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
           <button disabled={busy} onClick={() => { setVal(pr.pr_no || ''); setMode('prno'); }}
-            style={waitNo ? { ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b', fontWeight: 800 } : btnGhost}>{waitNo ? '✏️ กรอกเลข PR (SAP)' : '✏️ แก้เลข PR'}</button>
-          {pr.status === 'requested' && <button disabled={busy} onClick={() => { setVal(''); setMode('order'); }} style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>สั่งแล้ว</button>}
-          <button disabled={busy} onClick={() => { setVal(String(pr.qty ?? '')); setMode('receive'); }} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>รับของเข้า</button>
-          <button disabled={busy} onClick={() => { setVal(''); setMode('cancel'); }} style={{ ...btnGhost, color: 'var(--muted)' }}>✖ ยกเลิก</button>
+            style={waitNo ? { ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b', fontWeight: 800 } : btnGhost}>{waitNo ? tr('✏️ กรอกเลข PR (SAP)') : tr('✏️ แก้เลข PR')}</button>
+          {pr.status === 'requested' && <button disabled={busy} onClick={() => { setVal(''); setMode('order'); }} style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>{tr('สั่งแล้ว')}</button>}
+          <button disabled={busy} onClick={() => { setVal(String(pr.qty ?? '')); setMode('receive'); }} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>{tr('รับของเข้า')}</button>
+          <button disabled={busy} onClick={() => { setVal(''); setMode('cancel'); }} style={{ ...btnGhost, color: 'var(--muted)' }}>{tr('✖ ยกเลิก')}</button>
         </div>
       )}
       {mode && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <input autoFocus value={val} onChange={e => setVal(e.target.value)} type={mode === 'receive' ? 'number' : 'text'} min={mode === 'receive' ? 0 : undefined}
-            placeholder={mode === 'prno' ? 'เลข PR จาก SAP' : mode === 'order' ? 'เลข PO (ถ้ามี)' : mode === 'receive' ? 'จำนวนที่รับจริง' : 'เหตุผลที่ยกเลิก (บังคับ)'}
+            placeholder={mode === 'prno' ? tr('เลข PR จาก SAP') : mode === 'order' ? tr('เลข PO (ถ้ามี)') : mode === 'receive' ? tr('จำนวนที่รับจริง') : tr('เหตุผลที่ยกเลิก (บังคับ)')}
             onKeyDown={e => { if (e.key === 'Enter' && mode === 'prno') doPrNo(); }}
             style={{ ...inp, flex: 1, minWidth: 150, ...(mode === 'prno' ? { fontFamily: 'monospace', fontWeight: 700 } : {}) }} />
           <button disabled={busy} onClick={mode === 'prno' ? doPrNo : mode === 'order' ? doOrder : mode === 'receive' ? doReceive : doCancel} style={btnPri}>
-            {busy ? 'กำลังบันทึก…' : mode === 'prno' ? 'บันทึกเลข PR' : mode === 'order' ? 'ยืนยันสั่งแล้ว' : mode === 'receive' ? (pr.part_id ? 'รับ + เข้าสต็อก' : 'ยืนยันรับ') : 'ยืนยันยกเลิก'}
+            {busy ? tr('กำลังบันทึก…') : mode === 'prno' ? tr('บันทึกเลข PR') : mode === 'order' ? tr('ยืนยันสั่งแล้ว') : mode === 'receive' ? (pr.part_id ? tr('รับ + เข้าสต็อก') : tr('ยืนยันรับ')) : tr('ยืนยันยกเลิก')}
           </button>
-          <button onClick={() => setMode(null)} style={btnGhost}>ปิด</button>
+          <button onClick={() => setMode(null)} style={btnGhost}>{tr('ปิด')}</button>
         </div>
       )}
     </div>
@@ -274,41 +278,41 @@ function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, onDone, 
 
   return (
     <div style={{ ...box, background: 'var(--card)' }}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>ขอซื้อ (PR) ใหม่</div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เลข PR มาจาก SAP — รู้แล้วกรอกเลย ไม่รู้เว้นว่าง ใบจะเข้าคิว “⏳ รอเลข PR” ให้แอดมินช่างกรอกทีหลัง</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>{tr('ขอซื้อ (PR) ใหม่')}</div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('เลข PR มาจาก SAP — รู้แล้วกรอกเลย ไม่รู้เว้นว่าง ใบจะเข้าคิว “⏳ รอเลข PR” ให้แอดมินช่างกรอกทีหลัง')}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>อะไหล่ในทะเบียน (เลือก = รับของแล้วเข้าสต็อกให้เอง · พิมพ์เอง = ของนอกทะเบียน/งานบริการ)</div>
       <SearchSelect value={f.part_id} text={f.item_name} options={partOpts} allowFree freeHint="ไม่เข้าสต็อก"
-        placeholder="ค้นอะไหล่ — ชื่อ / รหัส / ชั้นวาง หรือพิมพ์รายการเอง"
+        placeholder={tr('ค้นอะไหล่ — ชื่อ / รหัส / ชั้นวาง หรือพิมพ์รายการเอง')}
         onChange={({ id, text }) => {
           const p = (parts || []).find(x => x.id === id);
           setF(o => ({ ...o, part_id: id || '', item_name: text || '', unit: p?.unit ?? o.unit, unit_price: p?.unit_price ?? o.unit_price,
             supplier: o.supplier || p?.supplier || '', gl_category: glCategoryForPr({ partId: id, repairPath: defaults.repairPath }), gl_code: '' }));
         }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 6, marginTop: 6 }}>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>จำนวน<input type="number" min="0" value={f.qty} onChange={e => set('qty', e.target.value)} style={inp} /></label>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>หน่วย<input value={f.unit} onChange={e => set('unit', e.target.value)} style={inp} /></label>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>ราคา/หน่วย (บาท)<input type="number" min="0" value={f.unit_price} onChange={e => set('unit_price', e.target.value)} style={inp} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จำนวน')}<input type="number" min="0" value={f.qty} onChange={e => set('qty', e.target.value)} style={inp} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('หน่วย')}<input value={f.unit} onChange={e => set('unit', e.target.value)} style={inp} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ราคา/หน่วย (บาท)')}<input type="number" min="0" value={f.unit_price} onChange={e => set('unit_price', e.target.value)} style={inp} /></label>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 6, marginTop: 6 }}>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>หมวด GL
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('หมวด GL')}
           <select value={f.gl_category} onChange={e => setF(p => ({ ...p, gl_category: e.target.value, gl_code: '' }))} style={inp}>
-            {GL_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            {GL_CATEGORIES.map(c => <option key={c.key} value={c.key}>{tr(c.label)}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>รหัส GL<GlPicker category={f.gl_category} value={f.gl_code} glCodes={glCodes} onChange={v => set('gl_code', v)} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('รหัส GL')}<GlPicker category={f.gl_category} value={f.gl_code} glCodes={glCodes} onChange={v => set('gl_code', v)} /></label>
       </div>
-      {!glCodes.length && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠ ทะเบียนรหัส GL ยังว่าง — เพิ่มที่ /mtn-repair → ⚙️ ข้อมูลหลัก → 💳 รหัส GL (PR ยังเปิดได้ เติม GL ทีหลัง)</div>}
+      {!glCodes.length && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>{tr('⚠ ทะเบียนรหัส GL ยังว่าง — เพิ่มที่ /mtn-repair → ⚙️ ข้อมูลหลัก → 💳 รหัส GL (PR ยังเปิดได้ เติม GL ทีหลัง)')}</div>}
       <div style={{ marginTop: 6 }}>
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ผู้ขาย / ผู้รับจ้าง (ถ้ารู้)</div>
-        <SupplierSelect value={f.supplier} onChange={res => set('supplier', res.supplier || '')} placeholder="ค้นชื่อผู้ขาย — พิมพ์เองได้" inputStyle={{ background: 'var(--bg)' }} />
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{tr('ผู้ขาย / ผู้รับจ้าง (ถ้ารู้)')}</div>
+        <SupplierSelect value={f.supplier} onChange={res => set('supplier', res.supplier || '')} placeholder={tr('ค้นชื่อผู้ขาย — พิมพ์เองได้')} inputStyle={{ background: 'var(--bg)' }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 6, marginTop: 6 }}>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>เลข PR จาก SAP (ว่างได้)<input value={f.pr_no} onChange={e => set('pr_no', e.target.value)} placeholder="เช่น 10002345" style={{ ...inp, fontFamily: 'monospace', fontWeight: 700 }} /></label>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>หมายเหตุ<input value={f.note} onChange={e => set('note', e.target.value)} placeholder="สเปก / ด่วน / เหตุผล" style={inp} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('เลข PR จาก SAP (ว่างได้)')}<input value={f.pr_no} onChange={e => set('pr_no', e.target.value)} placeholder={tr('เช่น 10002345')} style={{ ...inp, fontFamily: 'monospace', fontWeight: 700 }} /></label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('หมายเหตุ')}<input value={f.note} onChange={e => set('note', e.target.value)} placeholder={tr('สเปก / ด่วน / เหตุผล')} style={inp} /></label>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button onClick={onCancel} style={btnGhost}>ยกเลิก</button>
-        <button disabled={busy} onClick={save} style={btnPri}>{busy ? 'กำลังบันทึก…' : '🛒 บันทึกใบขอซื้อ'}</button>
+        <button onClick={onCancel} style={btnGhost}>{tr('ยกเลิก')}</button>
+        <button disabled={busy} onClick={save} style={btnPri}>{busy ? tr('กำลังบันทึก…') : tr('🛒 บันทึกใบขอซื้อ')}</button>
       </div>
     </div>
   );
@@ -384,38 +388,38 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, canAd
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {REPAIR_PATHS.map(p => (
           <button key={p.key} disabled={!canEdit} onClick={() => savePath(path === p.key ? '' : p.key)}
-            style={{ ...(path === p.key ? btnPri : btnGhost), padding: '6px 10px', fontSize: 12, opacity: canEdit || path === p.key ? 1 : 0.6 }}>{p.label}</button>
+            style={{ ...(path === p.key ? btnPri : btnGhost), padding: '6px 10px', fontSize: 12, opacity: canEdit || path === p.key ? 1 : 0.6 }}>{tr(p.label)}</button>
         ))}
       </div>
-      {!path && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ยังไม่ระบุเส้นทาง — ช่างเลือกได้ตั้งแต่รับงาน (ใบเก่าไม่ได้เดาให้)</div>}
+      {!path && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('ยังไม่ระบุเส้นทาง — ช่างเลือกได้ตั้งแต่รับงาน (ใบเก่าไม่ได้เดาให้)')}</div>}
       {order?.mttr_hold_from && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, padding: '6px 9px', borderRadius: 'var(--r-md)', marginBottom: 6,
           background: held ? 'rgba(245,158,11,0.10)' : 'var(--bg)', border: `1px solid ${held ? 'rgba(245,158,11,0.45)' : 'var(--border)'}` }}>
           <span style={{ flex: 1, minWidth: 200, lineHeight: 1.6 }}>
-            {held ? '⏸️ หยุดนับ MTTR ช่างอยู่' : '⏸️ เคยหยุดนับ MTTR'} — ตั้งแต่ MTN ตัดสิน {fmtDateTime(order.mttr_hold_from)}
-            {order.mttr_hold_to ? ` ถึง ${fmtDateTime(order.mttr_hold_to)}` : ''} · รวม {mttrHoldMin(order, Date.now(), new Date(order.mttr_hold_from).getTime(), order.mttr_hold_to ? new Date(order.mttr_hold_to).getTime() : Date.now())} นาที
-            <span style={{ color: 'var(--muted)' }}> · downtime ของเครื่องยังนับเต็ม</span>
+            {held ? '⏸️ หยุดนับ MTTR ช่างอยู่' : '⏸️ เคยหยุดนับ MTTR'} {tr('— ตั้งแต่ MTN ตัดสิน')} {fmtDateTime(order.mttr_hold_from)}
+            {order.mttr_hold_to ? ` ถึง ${fmtDateTime(order.mttr_hold_to)}` : ''} {tr('· รวม')} {mttrHoldMin(order, Date.now(), new Date(order.mttr_hold_from).getTime(), order.mttr_hold_to ? new Date(order.mttr_hold_to).getTime() : Date.now())} นาที
+            <span style={{ color: 'var(--muted)' }}> {tr('· downtime ของเครื่องยังนับเต็ม')}</span>
           </span>
-          {held && canEdit && <button onClick={resumeRepair} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>▶ กลับมาซ่อมต่อ</button>}
+          {held && canEdit && <button onClick={resumeRepair} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>{tr('▶ กลับมาซ่อมต่อ')}</button>}
         </div>
       )}
       {held && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>อะไหล่ PR ของใบนี้รับครบ = ระบบเริ่มนับต่อให้เอง</div>}
       {meta?.outsource && (
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-          ส่งซ่อมภายนอก: กดปุ่ม <b>“📤 ส่งซ่อมภายนอก”</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
-          <b> MTTR ของช่างหยุดนับช่วงนั้น</b> แต่ <b>downtime / machine breakdown ของเครื่องนับเต็ม</b> · เปิด PR ค่าจ้าง (GL งานบริการ) ที่นี่
+          ส่งซ่อมภายนอก: กดปุ่ม <b>{tr('“📤 ส่งซ่อมภายนอก”')}</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
+          <b> {tr('MTTR ของช่างหยุดนับช่วงนั้น')}</b> {tr('แต่')} <b>{tr('downtime / machine breakdown ของเครื่องนับเต็ม')}</b> · เปิด PR ค่าจ้าง (GL งานบริการ) ที่นี่
         </div>
       )}
       {meta?.needsPr && !prs.some(p => p.status !== 'cancelled') && (
-        <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>⚠ เส้นทางนี้ต้องเปิด PR — ยังไม่มีใบ</div>
+        <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>{tr('⚠ เส้นทางนี้ต้องเปิด PR — ยังไม่มีใบ')}</div>
       )}
-      {loadErr && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {loadErr}</div>}
+      {loadErr && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>{tr('⚠ โหลดใบขอซื้อไม่สำเร็จ:')} {loadErr}</div>}
       {/* ใบ MO ปิดแล้วแต่ยังทำ PR ต่อได้ — ต้องเขียนบนจอ ไม่งั้นคนไม่กล้ากด (หรือนึกว่าระบบพัง) */}
       {canEdit && !mayAdd && prs.some(isPrOpen) && (
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)',
                       borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-          ใบ MO นี้ปิดแล้ว — <b>ใบขอซื้อที่ค้างอยู่ยังทำต่อได้ตามปกติ</b> (ลงเลข PR · สั่งซื้อ · รับของเข้าสต็อก · ยกเลิก)
-          เพราะของมักมาถึงหลังปิดใบ · แต่<b>เปิด PR ใบใหม่กับใบที่ปิดแล้วไม่ได้</b>
+          ใบ MO นี้ปิดแล้ว — <b>{tr('ใบขอซื้อที่ค้างอยู่ยังทำต่อได้ตามปกติ')}</b> (ลงเลข PR · สั่งซื้อ · รับของเข้าสต็อก · ยกเลิก)
+          เพราะของมักมาถึงหลังปิดใบ · แต่<b>{tr('เปิด PR ใบใหม่กับใบที่ปิดแล้วไม่ได้')}</b>
         </div>
       )}
       {/* 🛒 ใบยังไม่ปิด + PR ค้าง = ใบ MO ปิดไม่ได้จนลูปนี้จบ (10/11 · คำสั่ง user "บล็อกเลย")
@@ -424,17 +428,17 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, canAd
       {mayAdd && prs.some(isPrOpen) && (
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)',
                       borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-          🛒 <b>ใบ MO นี้ปิดไม่ได้จนกว่าลูปใบขอซื้อจะจบ</b> — รับของเข้าสต็อก หรือ ยกเลิกใบที่ไม่ใช้
-          <div style={{ color: 'var(--muted)' }}>ผจก.ฝ่ายที่แจ้งเซ็นปิดใบไม่ได้ระหว่างนี้ — ใบจะค้างอยู่ที่ขั้นปิดใบ</div>
+          🛒 <b>{tr('ใบ MO นี้ปิดไม่ได้จนกว่าลูปใบขอซื้อจะจบ')}</b> — รับของเข้าสต็อก หรือ ยกเลิกใบที่ไม่ใช้
+          <div style={{ color: 'var(--muted)' }}>{tr('ผจก.ฝ่ายที่แจ้งเซ็นปิดใบไม่ได้ระหว่างนี้ — ใบจะค้างอยู่ที่ขั้นปิดใบ')}</div>
         </div>
       )}
       {prs.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={load} />)}
-      {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
+      {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด')}</div>}
       {mayAdd && (adding
         ? <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
             defaults={{ source: 'mo', order_id: orderId, order, team: teamKey, repairPath: path, supplier: path === 'outsource' ? order?.supplier : '' }}
             onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load(); }} />
-        : <button onClick={() => setAdding(true)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ เปิด PR</button>)}
+        : <button onClick={() => setAdding(true)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>{tr('+ เปิด PR')}</button>)}
     </div>
   );
 }
@@ -510,12 +514,12 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
         id="pr-board" storePrefix="mtnpr" defaultOpen={false} style={{ ...box, marginBottom: 14 }}
         title={(
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <b style={{ fontSize: 13.5 }}>ใบขอซื้ออะไหล่ (PR)</b>
-            <span style={chipS(needOrder.length)}>ติด Min ยังไม่เปิด PR {needOrder.length}</span>
-            <span style={chipS(noPrMos.length)}>· ใบ MO รอเปิด PR {noPrMos.length}</span>
-            <span style={chipS(waitNoList.length, 'var(--amber)')}>· รอเลข PR {waitNoList.length}</span>
-            <span style={chipS(false)}>· PR ค้าง {hasNoList.length} ใบ</span>
-            {err && <span style={chipS(true)}>· ⚠ โหลดไม่ครบ</span>}
+            <b style={{ fontSize: 13.5 }}>{tr('ใบขอซื้ออะไหล่ (PR)')}</b>
+            <span style={chipS(needOrder.length)}>{tr('ติด Min ยังไม่เปิด PR')} {needOrder.length}</span>
+            <span style={chipS(noPrMos.length)}>{tr('· ใบ MO รอเปิด PR')} {noPrMos.length}</span>
+            <span style={chipS(waitNoList.length, 'var(--amber)')}>{tr('· รอเลข PR')} {waitNoList.length}</span>
+            <span style={chipS(false)}>{tr('· PR ค้าง')} {hasNoList.length} {tr('ใบ')}</span>
+            {err && <span style={chipS(true)}>{tr('· ⚠ โหลดไม่ครบ')}</span>}
           </span>
         )}
       >
@@ -523,24 +527,24 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
           ลูปเดียวกับสโตร์ purchase part: <b>ติด Min / ใบ MO ขอซื้อ → แอดมินช่างกรอกเลข PR จาก SAP → สั่งแล้ว (PO) → ของเข้า กดรับ = เข้าสต็อกอัตโนมัติ</b>
           · จำนวนเสนอ = เติมถึง Max (ไม่ตั้ง Max = 2×Min) หักยอดที่เปิด PR ค้างไว้แล้ว · Min ว่าง/0 = ไม่ตรวจ
         </div>
-        {err && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
-        {canEdit && <button onClick={() => setFreeForm(v => !v)} style={{ ...btnGhost, marginBottom: 8 }}>{freeForm ? 'ปิดฟอร์ม' : '+ เปิด PR เอง'}</button>}
+        {err && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>{tr('⚠ โหลดใบขอซื้อไม่สำเร็จ:')} {err} {tr('— ตัวนับข้างบนอาจไม่ครบ')}</div>}
+        {canEdit && <button onClick={() => setFreeForm(v => !v)} style={{ ...btnGhost, marginBottom: 8 }}>{freeForm ? tr('ปิดฟอร์ม') : tr('+ เปิด PR เอง')}</button>}
         {freeForm && canEdit && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
           defaults={{ source: 'manual' }} onCancel={() => setFreeForm(false)} onDone={() => { setFreeForm(false); reload(); }} />}
 
         {below.length > 0 && (
           <div style={{ marginBottom: 8 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🔴 อะไหล่ที่ติด Min ({below.length})</div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{tr('🔴 อะไหล่ที่ติด Min (')}{below.length})</div>
             <RowFold rows={below} unit="รายการ">{({ p, open, need }) => (
               <div key={p.id}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
                   <span style={{ flex: 1, minWidth: 160 }}><b>{p.name}</b>{p.code ? <span style={{ color: 'var(--muted)', fontFamily: 'monospace' }}> · {p.code}</span> : null}</span>
-                  <span style={{ color: '#ef4444' }}>คงเหลือ {p.stock_qty ?? 0}</span>
+                  <span style={{ color: '#ef4444' }}>{tr('คงเหลือ')} {p.stock_qty ?? 0}</span>
                   <span style={{ color: 'var(--muted)' }}>Min {p.min_qty}{p.max_qty ? ` · Max ${p.max_qty}` : ''}</span>
-                  {open > 0 && <span style={{ color: '#0ea5e9' }}>PR ค้าง {open}</span>}
+                  {open > 0 && <span style={{ color: '#0ea5e9' }}>{tr('PR ค้าง')} {open}</span>}
                   {need > 0
-                    ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>เปิด PR {need} {p.unit || ''}</button>)
-                    : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ PR ค้างครอบแล้ว</span>}
+                    ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>{tr('เปิด PR')} {need} {p.unit || ''}</button>)
+                    : <span style={{ fontSize: 11, color: '#22c55e' }}>{tr('✓ PR ค้างครอบแล้ว')}</span>}
                 </div>
                 {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
                   defaults={{ source: 'spare_min', part_id: p.id, item_name: p.name, qty: need, unit: p.unit, unit_price: p.unit_price, supplier: p.supplier, team: p.team, section: p.section, gl_category: 'spare_part' }}
@@ -549,35 +553,35 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
             )}</RowFold>
           </div>
         )}
-        {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)</div>}
+        {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>{tr('✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)')}</div>}
 
-        <div style={{ ...h3, color: noPrMos.length ? '#ef4444' : undefined }}>ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
+        <div style={{ ...h3, color: noPrMos.length ? '#ef4444' : undefined }}>{tr('ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ (')}{noPrMos.length})</div>
         {noPrMos.length ? <RowFold rows={noPrMos} unit="ใบ">{o => (
           <div key={o.id}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
-              <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">{o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
+              <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title={tr('เปิดใบ MO')}>{o.mo_no || tr('ใบ MO (ยังไม่มีเลข)')}</a>
               <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
               <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
-              <span style={{ color: 'var(--muted)' }}>แจ้ง {fmtDateTime(o.report_at)}</span>
-              {canEdit && <button onClick={() => setPrFor(prFor === o.id ? null : o.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ กรอกรายการขอซื้อ / เลข PR</button>}
+              <span style={{ color: 'var(--muted)' }}>{tr('แจ้ง')} {fmtDateTime(o.report_at)}</span>
+              {canEdit && <button onClick={() => setPrFor(prFor === o.id ? null : o.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>{tr('+ กรอกรายการขอซื้อ / เลข PR')}</button>}
             </div>
             {prFor === o.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
               defaults={{ source: 'mo', order_id: o.id, order: o, team: o.mtn_dept, section: o.dept_section || null, repairPath: o.repair_path }}
               onCancel={() => setPrFor(null)} onDone={() => { setPrFor(null); reload(); }} />}
           </div>
-        )}</RowFold> : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบ MO ที่รอเปิด PR</div>}
+        )}</RowFold> : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>{tr('ไม่มีใบ MO ที่รอเปิด PR')}</div>}
 
-        <div style={{ ...h3, color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
+        <div style={{ ...h3, color: waitNoList.length ? '#f59e0b' : undefined }}>{tr('⏳ รอเลข PR จาก SAP (')}{waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
         {waitNoList.length
           ? <RowFold rows={waitNoList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />}</RowFold>
-          : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
+          : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>{tr('ไม่มีใบที่รอเลข PR')}</div>}
 
-        <div style={h3}>PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
+        <div style={h3}>{tr('PR ค้าง — รอสั่ง / รอของ (')}{hasNoList.length})</div>
         {hasNoList.length
           ? <RowFold rows={hasNoList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />}</RowFold>
-          : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไม่มี PR ค้าง</div>}
+          : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ไม่มี PR ค้าง')}</div>}
 
-        <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} PR ที่จบแล้ว (50 ล่าสุด)</button>
+        <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} {tr('PR ที่จบแล้ว (50 ล่าสุด)')}</button>
         {showDone && <div style={{ marginTop: 6 }}>
           <RowFold rows={doneList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={false} fullName={fullName} showSource />}</RowFold>
         </div>}
@@ -613,40 +617,40 @@ export function MtnGlMaster({ canEdit = false, fullName }) {
   return (
     <div>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.7 }}>
-        รหัส GL ของงานช่าง — ใบขอซื้อ (PR) เติมรหัส <b>ตั้งต้นของหมวด</b> ให้เอง (แก้ทับในใบได้):
-        <b> งานบริการ</b> = จ้างภายนอก/ส่งซ่อม · <b>อะไหล่โรงงาน</b> = ซื้ออะไหล่เข้าคลัง
+        รหัส GL ของงานช่าง — ใบขอซื้อ (PR) เติมรหัส <b>{tr('ตั้งต้นของหมวด')}</b> ให้เอง (แก้ทับในใบได้):
+        <b> {tr('งานบริการ')}</b> = จ้างภายนอก/ส่งซ่อม · <b>{tr('อะไหล่โรงงาน')}</b> = ซื้ออะไหล่เข้าคลัง
         · รอไฟล์ GL จากฝ่ายบัญชี/MTN มาเติม · ลบ = ปิดใช้งาน (PR เก่ายังอ่านรหัสเดิมได้)
       </div>
-      {err && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 8 }}>⚠ โหลดทะเบียน GL ไม่สำเร็จ: {err}</div>}
+      {err && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 8 }}>{tr('⚠ โหลดทะเบียน GL ไม่สำเร็จ:')} {err}</div>}
       {canEdit && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
           <select value={n.category} onChange={e => setN(p => ({ ...p, category: e.target.value }))} style={{ ...inp, width: 210 }}>
-            {GL_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+            {GL_CATEGORIES.map(c => <option key={c.key} value={c.key}>{tr(c.label)}</option>)}
           </select>
-          <input value={n.gl_code} onChange={e => setN(p => ({ ...p, gl_code: e.target.value }))} placeholder="รหัส GL" style={{ ...inp, width: 140, fontFamily: 'monospace' }} />
-          <input value={n.name} onChange={e => setN(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อบัญชี" style={{ ...inp, width: 240 }} />
-          <button onClick={add} style={btnPri}>+ เพิ่ม</button>
+          <input value={n.gl_code} onChange={e => setN(p => ({ ...p, gl_code: e.target.value }))} placeholder={tr('รหัส GL')} style={{ ...inp, width: 140, fontFamily: 'monospace' }} />
+          <input value={n.name} onChange={e => setN(p => ({ ...p, name: e.target.value }))} placeholder={tr('ชื่อบัญชี')} style={{ ...inp, width: 240 }} />
+          <button onClick={add} style={btnPri}>{tr('+ เพิ่ม')}</button>
         </div>
       )}
       {GL_CATEGORIES.map(c => {
         const list = rows.filter(r => r.category === c.key);
         return (
           <div key={c.key} style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>{c.label} ({list.length})</div>
-            {!list.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่มีรหัสในหมวดนี้</div>}
+            <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>{tr(c.label)} ({list.length})</div>
+            {!list.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>{tr('⚠ ยังไม่มีรหัสในหมวดนี้')}</div>}
             {list.map(g => (
               <div key={g.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 8px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 4 }}>
                 <input defaultValue={g.gl_code} disabled={!canEdit} onBlur={e => e.target.value.trim() && e.target.value.trim() !== g.gl_code && upd(g.id, { gl_code: e.target.value.trim() })} style={{ ...inp, width: 140, fontFamily: 'monospace', fontWeight: 700 }} />
                 <input defaultValue={g.name || ''} disabled={!canEdit} onBlur={e => e.target.value !== (g.name || '') && upd(g.id, { name: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
-                <button disabled={!canEdit} onClick={() => setDefault(g)} style={{ ...(g.is_default ? btnPri : btnGhost), padding: '5px 10px' }}>{g.is_default ? '★ ตั้งต้น' : '☆ ตั้งเป็นตั้งต้น'}</button>
-                {canEdit && <button onClick={() => confirm(`ปิดใช้งาน GL ${g.gl_code}?`) && upd(g.id, { is_active: false })} style={{ ...btnGhost, color: 'var(--muted)' }}>ปิดใช้งาน</button>}
+                <button disabled={!canEdit} onClick={() => setDefault(g)} style={{ ...(g.is_default ? btnPri : btnGhost), padding: '5px 10px' }}>{g.is_default ? tr('★ ตั้งต้น') : tr('☆ ตั้งเป็นตั้งต้น')}</button>
+                {canEdit && <button onClick={() => confirm(`ปิดใช้งาน GL ${g.gl_code}?`) && upd(g.id, { is_active: false })} style={{ ...btnGhost, color: 'var(--muted)' }}>{tr('ปิดใช้งาน')}</button>}
               </div>
             ))}
           </div>
         );
       })}
       {rows.filter(r => !GL_CATEGORIES.some(c => c.key === r.category)).length > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>หมวดอื่น: {rows.filter(r => !GL_CATEGORIES.some(c => c.key === r.category)).map(r => `${r.gl_code} (${r.category})`).join(' · ')}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('หมวดอื่น:')} {rows.filter(r => !GL_CATEGORIES.some(c => c.key === r.category)).map(r => `${r.gl_code} (${r.category})`).join(' · ')}</div>
       )}
     </div>
   );

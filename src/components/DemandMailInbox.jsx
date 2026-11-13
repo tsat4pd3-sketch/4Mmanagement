@@ -4,6 +4,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { mailsMissingFiles } from '../utils/mailInbox';
 
+import { tr } from '../utils/i18n';
 /* ─── 📬 ไฟล์จากเมลรอนำเข้า (2026-09-30) ─────────────────────────────────────
    แถวในคิว `demand_mail_inbox` (DR) เกิดจากสคริปต์ Outlook บนเครื่อง user
    (tools/outlook-mail-ingest) → Edge Function `ingest-demand-mail`
@@ -112,14 +113,14 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 12, background: 'var(--bg2)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rows.length ? 8 : 0 }}>
-        <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>ไฟล์จากเมลรอนำเข้า</span>
+        <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>{tr('ไฟล์จากเมลรอนำเข้า')}</span>
         <span style={{ fontSize: 12, color: rows.length ? 'var(--accent2)' : 'var(--muted)', fontWeight: 700 }}>
           {err ? '' : rows.length ? `${rows.length} ไฟล์` : 'ไม่มีไฟล์ค้าง'}
         </span>
         <button type="button" onClick={load} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)',
           background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer' }}>↻</button>
       </div>
-      {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
+      {err && <div style={{ fontSize: 12, color: '#ef4444' }}>{tr('⚠ โหลดคิวไฟล์จากเมลไม่ได้:')} {err}</div>}
       {doneErr && <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>
         ⚠ ตรวจไม่ได้ว่าไฟล์ไหนมีฉบับใหม่กว่านำเข้าไปแล้ว ({doneErr}) — ทุกใบจะถามยืนยันก่อนเปิด
       </div>}
@@ -127,7 +128,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
         <div key={m.message_id || m.subject} style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginTop: 4,
           padding: '6px 8px', borderRadius: 'var(--r-md)', border: '1px solid rgba(239,68,68,0.5)', background: 'var(--card)' }}>
           เมล "{m.subject}" ({fmtTime(m.received_at)}) หัวเรื่องบอกว่ามีไฟล์ {m.missing.join(' + ')} แต่ระบบได้รับแค่
-          {m.got.length ? ` ${m.got.join(' + ')}` : 'ไม่มีไฟล์'} — ข้อมูล {m.missing.join('/')} ของวันนั้นยังไม่เข้าระบบ ·
+          {m.got.length ? ` ${m.got.join(' + ')}` : 'ไม่มีไฟล์'} {tr('— ข้อมูล')} {m.missing.join('/')} ของวันนั้นยังไม่เข้าระบบ ·
           เช็คเมลต้นทางว่าแนบมาครบไหม (ชื่อไฟล์ต้องขึ้นต้น {m.missing.map(k => `${k}_`).join(' / ')}) หรือลากไฟล์มาอัพเองด้านล่าง
         </div>
       ))}
@@ -146,8 +147,8 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
               </div>
             </div>
             {newer && <span style={{ fontSize: 12, color: 'var(--accent2)', fontWeight: 700 }}
-              title="ไฟล์ 862/830 ฉบับใหม่แทนที่ฉบับเก่าทั้งช่วง — นำเข้าฉบับเก่าทีหลังจะดึงยอดถอยหลัง">⚠ {newer} — ควรกดข้าม</span>}
-            {stale && <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ค้าง {Math.floor(ageH)} ชม.</span>}
+              title={tr('ไฟล์ 862/830 ฉบับใหม่แทนที่ฉบับเก่าทั้งช่วง — นำเข้าฉบับเก่าทีหลังจะดึงยอดถอยหลัง')}>⚠ {newer} {tr('— ควรกดข้าม')}</span>}
+            {stale && <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>{tr('ค้าง')} {Math.floor(ageH)} {tr('ชม.')}</span>}
             <button type="button" disabled={busy === r.id} onClick={() => {
               if (newer && !window.confirm(`${r.file_name}: ${newer}\nนำเข้าฉบับเก่าจะแทนที่ข้อมูลที่ใหม่กว่า — ยืนยันเปิด?`)) return;
               open(r);
@@ -158,7 +159,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
             </button>
             <button type="button" onClick={() => skip(r)}
               style={{ fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ข้าม</button>
+                background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>{tr('ข้าม')}</button>
           </div>
         );
       })}

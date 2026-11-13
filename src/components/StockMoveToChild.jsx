@@ -23,6 +23,7 @@ import { parentAreaCovers } from '../utils/storageLoc';
 import MatLabel from './MatLabel';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 const th = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '6px 10px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' };
 const inp = { padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
@@ -140,27 +141,27 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 14 }}>
       <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
-          {open ? '▼' : '▶'} 🔀 มีสต๊อกค้างอยู่ที่ “ไลน์แม่” {rows.length} พาร์ท — ระบบหักตอนผลิตไม่ได้
+          {open ? '▼' : '▶'} {tr('🔀 มีสต๊อกค้างอยู่ที่ “ไลน์แม่”')} {rows.length} พาร์ท — ระบบหักตอนผลิตไม่ได้
         </span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
-          ชี้ปลายทางชัดเจน {sureCount} · ต้องเลือกเอง {rows.length - sureCount}
-          {coveredCount > 0 && <> · ไม่นับ {coveredCount} รายการที่อยู่พื้นที่ SAP เดียวกับไลน์ลูก (ระบบหักได้แล้ว)</>}
-          {wrongDept > 0 && <b style={{ color: '#ef4444' }}> · 🔴 อยู่ผิดแผนก {wrongDept}</b>}
+          ชี้ปลายทางชัดเจน {sureCount} {tr('· ต้องเลือกเอง')} {rows.length - sureCount}
+          {coveredCount > 0 && <> {tr('· ไม่นับ')} {coveredCount} {tr('รายการที่อยู่พื้นที่ SAP เดียวกับไลน์ลูก (ระบบหักได้แล้ว)')}</>}
+          {wrongDept > 0 && <b style={{ color: '#ef4444' }}> {tr('· 🔴 อยู่ผิดแผนก')} {wrongDept}</b>}
         </span>
       </div>
 
       {open && (
         <>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7, margin: '8px 0 10px' }}>
-            ระบบหักพาร์ทตอนคอนเฟิร์มจาก<b>ทุกไลน์ในพื้นที่ SAP เดียวกัน</b> — ไลน์แม่ที่อยู่พื้นที่เดียวกับลูก (เช่น LINE APRON ASSY = P411) ไม่ขึ้นที่นี่
-            <br />ที่เหลือในลิสต์นี้ = <b>ไลน์แม่ที่ไม่ได้ผูกพื้นที่ หรือลูกแยกอยู่หลายพื้นที่</b> ระบบหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดไม่ลด
+            ระบบหักพาร์ทตอนคอนเฟิร์มจาก<b>{tr('ทุกไลน์ในพื้นที่ SAP เดียวกัน')}</b> — ไลน์แม่ที่อยู่พื้นที่เดียวกับลูก (เช่น LINE APRON ASSY = P411) ไม่ขึ้นที่นี่
+            <br />ที่เหลือในลิสต์นี้ = <b>{tr('ไลน์แม่ที่ไม่ได้ผูกพื้นที่ หรือลูกแยกอยู่หลายพื้นที่')}</b> ระบบหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดไม่ลด
             (แก้ได้ 2 ทาง: ย้ายของไปไลน์ลูกที่ใช้จริง หรือผูกไลน์แม่เข้าพื้นที่ที่แท็บ 🏬 พื้นที่ SAP)
-            <br />ปลายทางเป็นการ <b>เสนอลำดับ ไม่ใช่ข้อสรุป</b> — dropdown แสดง<b>ทุกไลน์ที่เป็นไปได้</b> พร้อมเหตุผลของแต่ละกลุ่ม
+            <br />{tr('ปลายทางเป็นการ')} <b>{tr('เสนอลำดับ ไม่ใช่ข้อสรุป')}</b> {tr('— dropdown แสดง')}<b>{tr('ทุกไลน์ที่เป็นไปได้')}</b> พร้อมเหตุผลของแต่ละกลุ่ม
             (BOM ชี้ / ไลน์ขึ้นรูป / ไลน์ที่ผลิตพาร์ทนี้) พาร์ทที่ใช้หลายไลน์ต้องเลือก/แบ่งเอง
-            <br />⚠️ <b>วัตถุดิบ (5xx) และงาน blank ต้องเข้าไลน์ขึ้นรูปก่อนเสมอ</b> — BOM ในระบบ&ldquo;แบน&rdquo; (5xx ผูกใต้ FG โดยตรง)
-            และชั้น OP ไม่อยู่ใน BOM ⇒ BOM จะชี้ไป<b>ขั้นถัดไป</b> (เลเซอร์/ประกอบ) ไม่ใช่ที่รับวัตถุดิบ
+            <br />⚠️ <b>{tr('วัตถุดิบ (5xx) และงาน blank ต้องเข้าไลน์ขึ้นรูปก่อนเสมอ')}</b> — BOM ในระบบ&ldquo;แบน&rdquo; (5xx ผูกใต้ FG โดยตรง)
+            และชั้น OP ไม่อยู่ใน BOM ⇒ BOM จะชี้ไป<b>{tr('ขั้นถัดไป')}</b> (เลเซอร์/ประกอบ) ไม่ใช่ที่รับวัตถุดิบ
             {wrongDept > 0 && (
-              <><br /><b style={{ color: '#ef4444' }}>🔴 {wrongDept} รายการอยู่ผิดแผนก</b> — แผนกที่ของค้างอยู่ไม่มีไลน์ขึ้นรูปเลย
+              <><br /><b style={{ color: '#ef4444' }}>🔴 {wrongDept} {tr('รายการอยู่ผิดแผนก')}</b> — แผนกที่ของค้างอยู่ไม่มีไลน์ขึ้นรูปเลย
               ระบบจึงเสนอไลน์ขึ้นรูปของแผนกอื่นให้ (ย้ายข้ามแผนกต้องยืนยันอีกชั้น)</>
             )}
           </div>
@@ -168,9 +169,9 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr style={{ background: 'var(--bg2)', position: 'sticky', top: 0 }}>
                 {/* ยุบ "ชื่อพาร์ท + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
-                <th style={th}>ชิ้นงาน</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
-                <th style={th}>อยู่ที่ (ไลน์แม่)</th><th style={th}>ย้ายไป (ไลน์ลูก)</th>
-                <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}></th>
+                <th style={th}>{tr('ชิ้นงาน')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th>
+                <th style={th}>{tr('อยู่ที่ (ไลน์แม่)')}</th><th style={th}>{tr('ย้ายไป (ไลน์ลูก)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
                 {rows.map(r => {
@@ -185,10 +186,10 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         {/* จัดกลุ่มพร้อมเหตุผล — ทุกไลน์ที่เป็นไปได้ต้องอยู่ในลิสต์เสมอ ห้ามตัดทิ้ง */}
                         <select value={sel} disabled={!canIssue} style={{ ...inp, width: 190 }}
                           onChange={e => setPick(p => ({ ...p, [r.key]: { ...p[r.key], to: e.target.value } }))}>
-                          <option value="">— เลือก —</option>
+                          <option value="">{tr('— เลือก —')}</option>
                           {r.groups.map(g => (
                             <optgroup key={g.key} label={g.note ? `${g.label} · ${g.note}` : g.label}>
-                              {g.lines.map(n => <option key={n} value={n}>{n}</option>)}
+                              {g.lines.map(n => <option key={n} value={n}>{tr(n)}</option>)}
                             </optgroup>
                           ))}
                         </select>
@@ -199,10 +200,10 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                           </div>
                         )}
                         {!r.sure && !r.warn && (
-                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>⚠ มีหลายปลายทาง — เลือกเอง</div>
+                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>{tr('⚠ มีหลายปลายทาง — เลือกเอง')}</div>
                         )}
                         {sel && hint?.note && (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr(hint.label)} — {hint.note}</div>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>
@@ -214,7 +215,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         <button disabled={!canIssue || busy === r.key} onClick={() => move(r)}
                           style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 12, fontWeight: 700,
                             background: canIssue ? '#f59e0b' : 'var(--muted)', color: '#fff', cursor: canIssue ? 'pointer' : 'not-allowed' }}>
-                          {busy === r.key ? '...' : '🔀 ย้าย'}
+                          {busy === r.key ? '...' : tr('🔀 ย้าย')}
                         </button>
                       </td>
                     </tr>
@@ -223,7 +224,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
               </tbody>
             </table>
           </div>
-          {!canIssue && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ต้องมีสิทธิ์ <b>จ่ายพาร์ทเข้าไลน์</b> (line_stock:issue) ถึงจะย้ายได้</div>}
+          {!canIssue && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>{tr('ต้องมีสิทธิ์')} <b>{tr('จ่ายพาร์ทเข้าไลน์')}</b> {tr('(line_stock:issue) ถึงจะย้ายได้')}</div>}
         </>
       )}
     </div>

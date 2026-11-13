@@ -11,6 +11,7 @@ import { DeleteButton } from './IconButton';
 import { writeBlockText } from '../utils/writeScope';
 import { useOrgTeams } from '../utils/useOrgSections';
 
+import { tr } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    ⚙️ ตั้งค่า Manpower Control Board ของส่วนงาน (2026-10-06 · คำสั่ง user "ทำส่วนที่ยังไม่ได้ทำต่อ")
    2 เรื่อง — ตาราง Main (migration 20261006b) · สิทธิ์ `manpower_board:edit` (RLS has_perm คีย์เดียวกัน)
@@ -225,14 +226,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   const th = { textAlign: 'center', fontSize: 12, padding: '6px 8px', color: 'var(--muted)' };
   return (
     /* ไม่ปิดจาก backdrop (UI §5) — ปิดได้จากปุ่ม ✕ / ปิด เท่านั้น */
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="card" onClick={e => e.stopPropagation()}
         style={{ width: 'min(960px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <strong style={{ fontSize: 16 }}>ตั้งค่าบอร์ด · {section.name}</strong>
+          <strong style={{ fontSize: 16 }}>{tr('ตั้งค่าบอร์ด ·')} {section.name}</strong>
           <span style={{ marginLeft: 'auto' }} />
-          <button type="button" className="tbtn" onClick={onClose} title="ปิด"
-            style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
+          <button type="button" className="tbtn" onClick={onClose} title={tr('ปิด')}
+            style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>{tr('✕ ปิด')}</button>
         </div>
         {/* 🔒 นอกขอบเขตที่แก้ได้ = เขียนบอกตั้งแต่เปิดแผง **ห้ามซ่อนเงียบ** (กฎความซื่อสัตย์ของจอ)
             ยังเปิดดูได้ตามเดิม — แค่บันทึกไม่ได้ (ทุกฟังก์ชันเขียนมีด่าน `blocked()` ซ้ำอีกชั้น) */}
@@ -244,14 +245,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         )}
 
         <section style={{ marginBottom: 18 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>1. จำนวนช่องตำแหน่งต่อทีม</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('1. จำนวนช่องตำแหน่งต่อทีม')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             ช่องว่าง = จำนวนที่ตั้ง − พนักงานในทะเบียนของทีมนั้น · <b>เว้นว่าง = ใช้คนมาตรฐานของไลน์ (std)</b> ตามกะของทีมวันนี้ · กด Enter หรือ 💾 เพื่อบันทึก
           </div>
-          {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร</div> : (
+          {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร')}</div> : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr><th style={{ ...th, textAlign: 'left' }}>แผนก</th>{TEAMS.map(t => <th key={t} style={th}>{teamText(t)}</th>)}</tr></thead>
+                <thead><tr><th style={{ ...th, textAlign: 'left' }}>{tr('แผนก')}</th>{TEAMS.map(t => <th key={t} style={th}>{teamText(t)}</th>)}</tr></thead>
                 <tbody>
                   {depts.map(d => (
                     <tr key={d.id} style={{ borderTop: '1px solid var(--border)' }}>
@@ -269,7 +270,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                                 onChange={e => setDraft(x => ({ ...x, [key]: e.target.value }))}
                                 onKeyDown={e => { if (e.key === 'Enter') saveSlot(d.id, t); }}
                                 style={{ width: 72, textAlign: 'center' }} />
-                              {dirty && <button type="button" className="icon-btn tbtn" disabled={busy} onClick={() => saveSlot(d.id, t)} title="บันทึก">💾</button>}
+                              {dirty && <button type="button" className="icon-btn tbtn" disabled={busy} onClick={() => saveSlot(d.id, t)} title={tr('บันทึก')}>💾</button>}
                             </div>
                           </td>
                         );
@@ -283,12 +284,12 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         </section>
 
         <section style={{ marginBottom: 18 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>2. คนต่อกะของแต่ละจุดงาน</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('2. คนต่อกะของแต่ละจุดงาน')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            ตั้งแล้ว ช่องว่างบนบอร์ดจะบอกได้ว่า <b>ขาดที่จุดไหน กะไหน</b> (นับจากจุดประจำของคน — ตั้งที่ /management) ·
+            ตั้งแล้ว ช่องว่างบนบอร์ดจะบอกได้ว่า <b>{tr('ขาดที่จุดไหน กะไหน')}</b> (นับจากจุดประจำของคน — ตั้งที่ /management) ·
             <b> เว้นว่าง = ไม่นับจุดนั้น</b> · ลำดับที่บอร์ดใช้: ช่องต่อทีม (ข้อ 1) ชนะ → จุดงาน → std ของไลน์ · พิมพ์แล้วกด Enter/คลิกที่อื่นเพื่อบันทึก
           </div>
-          {!secLines.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่ได้ผูกไลน์ผลิตในผังองค์กร</div> : (
+          {!secLines.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ส่วนงานนี้ยังไม่ได้ผูกไลน์ผลิตในผังองค์กร')}</div> : (
             <div style={{ display: 'grid', gap: 8 }}>
               {secLines.map(l => {
                 const sts = stationsOf(l);
@@ -298,10 +299,10 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                   <div key={l.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
                       <strong>{l.name}</strong>
-                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sts.length} จุด · ต้องการรวม {sum} คน/กะ</span>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sts.length} {tr('จุด · ต้องการรวม')} {sum} {tr('คน/กะ')}</span>
                       <button type="button" className="tbtn" disabled={busy} onClick={() => fillLine(l)}
                         style={{ marginLeft: 'auto', height: 30, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
-                        ตั้งจุดที่ยังว่าง = 1 คน/กะ</button>
+                        {tr('ตั้งจุดที่ยังว่าง = 1 คน/กะ')}</button>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: 6 }}>
                       {sts.map(st => {
@@ -329,18 +330,18 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         </section>
 
         <section>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>3. ช่างประจำไลน์</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('3. ช่างประจำไลน์')}</div>
 
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            ช่างแผนกไหนก็ได้ (MTN · DIE · JIG …) — ขึ้นแถว "ช่างเทคนิคประจำไลน์" ของแผนกที่ดูแลไลน์นั้น · <b>ไม่เปลี่ยนสังกัดของช่าง</b>
+            ช่างแผนกไหนก็ได้ (MTN · DIE · JIG …) — ขึ้นแถว "ช่างเทคนิคประจำไลน์" ของแผนกที่ดูแลไลน์นั้น · <b>{tr('ไม่เปลี่ยนสังกัดของช่าง')}</b>
           </div>
-          {!secLines.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่ได้ผูกไลน์ผลิตในผังองค์กร (ตั้งที่ /org-setup)</div> : (
+          {!secLines.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ส่วนงานนี้ยังไม่ได้ผูกไลน์ผลิตในผังองค์กร (ตั้งที่ /org-setup)')}</div> : (
             <div style={{ display: 'grid', gap: 8 }}>
               {secLines.map(l => {
                 const rows = lineTechs.filter(t => t.line_id === l.id);
                 return (
                   <div key={l.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 1fr', gap: 8, alignItems: 'start', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-                    <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{l.name}{l.parent_line_name ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>ใต้ {l.parent_line_name}</div> : null}</div>
+                    <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>{l.name}{l.parent_line_name ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{tr('ใต้')} {l.parent_line_name}</div> : null}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                       {rows.map(r => {
                         const e = empById.get(r.employee_id);
@@ -354,7 +355,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       })}
                       <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
                         <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
-                          placeholder="+ เพิ่มช่าง: ค้นชื่อ / รหัส…" onChange={(p) => addTech(l.id, p)} />
+                          placeholder={tr('+ เพิ่มช่าง: ค้นชื่อ / รหัส…')} onChange={(p) => addTech(l.id, p)} />
                       </div>
                     </div>
                   </div>
@@ -365,13 +366,13 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         </section>
 
         <section style={{ marginTop: 18 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>4. 🏃 คนวิ่งข้ามแผนก (ไปช่วยประจำ)</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('4. 🏃 คนวิ่งข้ามแผนก (ไปช่วยประจำ)')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             คนที่สังกัดแผนกหนึ่งแต่ไปช่วยอีกแผนกเป็นประจำ — ผูกไว้แล้วการ์ดจะขึ้นบนบอร์ดของแผนกที่ไปช่วยด้วย ·
-            <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน/ช่องว่างของแผนกที่ไปช่วย</b>
+            <b> {tr('ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน/ช่องว่างของแผนกที่ไปช่วย')}</b>
             (หน่วยต้นสังกัดนับเขาอยู่แล้ว — นับ 2 ที่ = กำลังคนเกินจริง) · อยากยืมเฉพาะวันนี้ให้ใช้ "ยืมตัว" ที่หน้าเช็คชื่อแทน
           </div>
-          {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร (ตั้งที่ /org-setup)</div> : (
+          {!depts.length ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ส่วนงานนี้ยังไม่มีแผนกในผังองค์กร (ตั้งที่ /org-setup)')}</div> : (
             <div style={{ display: 'grid', gap: 8 }}>
               {depts.map(d => {
                 const rows = flexUnits.filter(f => f.org_node_id === d.id && flexKind(f) === 'flex');
@@ -385,14 +386,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         return (
                           <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', fontSize: 13 }}>
                             {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
-                            {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
+                            {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ต้นสังกัด')} {e.department}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeFlex(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
                           </span>
                         );
                       })}
                       <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
                         <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
-                          placeholder="+ เพิ่มคนที่มาช่วยประจำ: ค้นชื่อ / รหัส…" onChange={(pp) => addFlex(d.id, pp)} />
+                          placeholder={tr('+ เพิ่มคนที่มาช่วยประจำ: ค้นชื่อ / รหัส…')} onChange={(pp) => addFlex(d.id, pp)} />
                       </div>
                     </div>
                   </div>
@@ -403,11 +404,11 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         </section>
 
         <section style={{ marginTop: 18 }}>
-          <div style={{ fontWeight: 800, marginBottom: 4 }}>5. 🎖️ รักษาการ (ดูแลหน่วยที่ไม่ใช่สังกัดจริง)</div>
+          <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('5. 🎖️ รักษาการ (ดูแลหน่วยที่ไม่ใช่สังกัดจริง)')}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            คนที่ตำแหน่งในผังจริงอยู่หน่วยหนึ่ง แต่<b>รักษาการเป็นหัวหน้าของอีกหน่วย</b> —
-            ผูกไว้แล้วจะขึ้น <b>หัวผังของหน่วยนั้น</b> พร้อมป้าย 🎖️ รักษาการ + ชื่อหน่วยและ cost center ของหน่วยต้นสังกัด ·
-            <b> ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน</b>
+            คนที่ตำแหน่งในผังจริงอยู่หน่วยหนึ่ง แต่<b>{tr('รักษาการเป็นหัวหน้าของอีกหน่วย')}</b> —
+            ผูกไว้แล้วจะขึ้น <b>{tr('หัวผังของหน่วยนั้น')}</b> พร้อมป้าย 🎖️ รักษาการ + ชื่อหน่วยและ cost center ของหน่วยต้นสังกัด ·
+            <b> {tr('ไม่ย้ายสังกัด · cost center ไม่เปลี่ยน · ไม่นับเป็นกำลังคน')}</b>
             {' '}· ถ้าย้ายมาสังกัดจริงแล้ว ให้แก้สังกัดที่ทะเบียนพนักงานแล้วลบแถวนี้ทิ้ง
           </div>
           <div style={{ display: 'grid', gap: 8 }}>
@@ -417,7 +418,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
               return (
                 <div key={u.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(140px, 220px) 1fr', gap: 8, alignItems: 'start', borderTop: '1px solid var(--border)', paddingTop: 8 }}>
                   <div style={{ fontWeight: 700, overflowWrap: 'anywhere' }}>
-                    {u.name}{u.id === section.id ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> (หัวผังของบอร์ด)</span> : null}
+                    {u.name}{u.id === section.id ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> {tr('(หัวผังของบอร์ด)')}</span> : null}
                     {u.cost_center ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>cost center {u.cost_center}</div> : null}
                     {/* หัวหน้าตัวจริงที่มีอยู่แล้ว — บอกไว้กันตั้งรักษาการทับคนที่มีอยู่ */}
                     {real.length > 0 && (
@@ -432,14 +433,14 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       return (
                         <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', fontSize: 13 }}>
                           {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
-                          {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
+                          {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ต้นสังกัด')} {e.department}</span>}
                           <DeleteButton disabled={busy} onClick={() => removeActing(r)} title={`ยกเลิกรักษาการของ ${e?.name || ''}`} style={{ width: 26, height: 26 }} />
                         </span>
                       );
                     })}
                     <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
                       <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
-                        placeholder="+ ตั้งรักษาการ: ค้นชื่อ / รหัส…" onChange={(pp) => addActing(u.id, pp)} />
+                        placeholder={tr('+ ตั้งรักษาการ: ค้นชื่อ / รหัส…')} onChange={(pp) => addActing(u.id, pp)} />
                     </div>
                   </div>
                 </div>

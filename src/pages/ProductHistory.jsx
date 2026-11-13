@@ -17,6 +17,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
 
@@ -273,8 +274,8 @@ export default function ProductHistory() {
   return (
     <Page>
       <PageHeader
-        title="ประวัติผลิต (by Product)" icon="📜"
-        sub="เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)"
+        title={trI18n('ประวัติผลิต (by Product)')} icon="📜"
+        sub={trI18n('เลือกสินค้าเพื่อดูว่าเคยผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ + ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้เมื่อไหร่)')}
       />
 
       {/* ⚠️ โหลดไม่ครบ = ทุกตัวเลขในหน้านี้ต่ำกว่าจริง (รวมทั้งแผงเทียบความต้องการลูกค้าที่บอก "ขาด/พอ")
@@ -304,7 +305,7 @@ export default function ProductHistory() {
           <div onClick={() => setPickerOpen(o => !o)}
             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none', marginBottom: 6 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-              พบ <b>{filteredProducts.length.toLocaleString()}</b> รายการ{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''}
+              พบ <b>{filteredProducts.length.toLocaleString()}</b> {trI18n('รายการ')}{filteredProducts.length > 300 ? ' · แสดง 300 แรก — พิมพ์ค้นหา/เลือกไลน์เพื่อกรองเพิ่ม' : ''}
               {pickerOpen ? ' · คลิกสินค้าเพื่อดูประวัติ' : selMat ? ` · เลือกอยู่: ${selMat.mat_no} — กดเพื่อเปลี่ยนสินค้า` : ' · กดเพื่อแสดงรายการ'}
             </div>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{pickerOpen ? '▲' : '▼'}</span>
@@ -315,7 +316,7 @@ export default function ProductHistory() {
               <div key={line}>
                 <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg3)', padding: '5px 12px',
                   fontSize: 11, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border2)' }}>
-                  {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} รายการ</span>
+                  {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} {trI18n('รายการ')}</span>
                 </div>
                 {items.map(p => {
                   const sel = selMat?.id === p.id;
@@ -333,13 +334,13 @@ export default function ProductHistory() {
                 })}
               </div>
             ))}
-            {!filteredProducts.length && <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ไม่พบสินค้า</div>}
+            {!filteredProducts.length && <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>{trI18n('ไม่พบสินค้า')}</div>}
           </div>
           )}
         </div>
       </div>
 
-      {!selMat && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', padding: 40 }}>เลือกสินค้าด้านบนเพื่อดูประวัติ</div>}
+      {!selMat && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', padding: 40 }}>{trI18n('เลือกสินค้าด้านบนเพื่อดูประวัติ')}</div>}
 
       {selMat && (
         <>
@@ -348,12 +349,12 @@ export default function ProductHistory() {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>
                   {groupMode && canGroup
-                    ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>(รวม {groupMats.length} MAT SAP)</span></>
+                    ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>{trI18n('(รวม')} {groupMats.length} MAT SAP)</span></>
                     : <>{selMat.p_no ? `${selMat.p_no} · ` : ''}{selMat.name}</>}
                 </div>
                 {/* ลำดับ Part No. → ชื่องาน (บรรทัดบน) → MAT (บรรทัดล่าง) — UI §6.21 · 2026-09-30 */}
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>MAT {selMat.mat_no}</span> · ไลน์ปัจจุบัน <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>MAT {selMat.mat_no}</span> {trI18n('· ไลน์ปัจจุบัน')} <b>{selMat.line_name || '—'}</b> · CT {selMat.cycle_time_sec || '—'}s {!selMat.is_active && '· ⛔ ปิดใช้งาน'}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -369,7 +370,7 @@ export default function ProductHistory() {
                 <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
                   style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  ปิด — เลือกสินค้าอื่น
+                  {trI18n('ปิด — เลือกสินค้าอื่น')}
                 </button>
               </div>
             </div>
@@ -377,7 +378,7 @@ export default function ProductHistory() {
 
           {/* โหมดกลุ่ม: เห็นว่าแต่ละเลข SAP ผลิตไปเท่าไหร่ (ไลน์เดียวกัน แต่คนละปลายทางลูกค้า) */}
           {groupMode && canGroup && byMat.length > 1 && (
-            <CollapseCard id="bymat" title="ผลิตแยกตาม MAT SAP" count={`${byMat.length} เลข`}>
+            <CollapseCard id="bymat" title={trI18n('ผลิตแยกตาม MAT SAP')} count={`${byMat.length} เลข`}>
               <div style={{ display: 'grid', gap: 7 }}>
                 {byMat.map(r => {
                   const meta = groupMats.find(g => g.mat_no === r.mat);
@@ -391,7 +392,7 @@ export default function ProductHistory() {
                         <div style={{ width: `${Math.round(r.produced / Math.max(1, summary.produced) * 100)}%`, background: 'var(--accent)', height: '100%' }} />
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, width: 150, textAlign: 'right' }}>
-                        {r.produced.toLocaleString()} ชิ้น · {r.orders} ใบ{r.ng > 0 && ` · NG ${r.ng}`}
+                        {r.produced.toLocaleString()} {trI18n('ชิ้น ·')} {r.orders} {trI18n('ใบ')}{r.ng > 0 && ` · NG ${r.ng}`}
                       </div>
                     </div>
                   );
@@ -405,11 +406,11 @@ export default function ProductHistory() {
           {canGroup && !groupMode && (
             <div style={{ ...card, marginBottom: 16, borderColor: 'var(--blue)66', background: 'var(--blue)14', padding: '10px 14px' }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
-                สินค้านี้มีอีก {groupMats.length - 1} MAT SAP ที่เป็น product เดียวกัน (P/N {selMat.p_no})
+                สินค้านี้มีอีก {groupMats.length - 1} {trI18n('MAT SAP ที่เป็น product เดียวกัน (P/N')} {selMat.p_no})
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
-                แยกเลขกันที่ <b>ปลายทางที่ส่งลูกค้า</b> — {groupMats.filter(g => g.mat_no !== selMat.mat_no).map(g => g.mat_no).join(' · ')}
-                <br />ออเดอร์ลูกค้ามักถูกบันทึกใต้เลขเดียวของกลุ่ม → <b>ดูทีละตัวจะเห็นยอด "ขาด/เกิน" ที่ไม่ใช่ภาพจริง</b> กดปุ่ม 🔗 ด้านบนเพื่อดูรวม
+                แยกเลขกันที่ <b>{trI18n('ปลายทางที่ส่งลูกค้า')}</b> — {groupMats.filter(g => g.mat_no !== selMat.mat_no).map(g => g.mat_no).join(' · ')}
+                <br />{trI18n('ออเดอร์ลูกค้ามักถูกบันทึกใต้เลขเดียวของกลุ่ม →')} <b>ดูทีละตัวจะเห็นยอด "ขาด/เกิน" ที่ไม่ใช่ภาพจริง</b> กดปุ่ม 🔗 ด้านบนเพื่อดูรวม
               </div>
             </div>
           )}
@@ -424,7 +425,7 @@ export default function ProductHistory() {
               { label: 'ผลิตกี่ไลน์', value: summary.linesUsed.length, color: 'var(--blue)' },
             ].map(s => (
               <div key={s.label} style={card}>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n(s.label)}</div>
                 <div style={{ fontSize: 22, fontWeight: 900, color: s.color, lineHeight: 1.1 }}>{s.value}</div>
               </div>
             ))}
@@ -432,7 +433,7 @@ export default function ProductHistory() {
 
           {/* แยกตามไลน์ */}
           {summary.byLine.length > 0 && (
-            <CollapseCard id="byline" title="ผลิตแยกตามไลน์" count={summary.byLine.length}>
+            <CollapseCard id="byline" title={trI18n('ผลิตแยกตามไลน์')} count={summary.byLine.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.byLine.map(l => (
                   <div key={l.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -440,7 +441,7 @@ export default function ProductHistory() {
                     <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 'var(--r-md)', height: 18, overflow: 'hidden' }}>
                       <div style={{ width: `${Math.round(l.produced / Math.max(1, summary.produced) * 100)}%`, background: 'var(--accent)', height: '100%' }} />
                     </div>
-                    <div style={{ fontSize: 12, fontWeight: 700, width: 130, textAlign: 'right' }}>{l.produced.toLocaleString()} ชิ้น · {l.orders} ใบ{l.ng > 0 && ` · NG ${l.ng}`}</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, width: 130, textAlign: 'right' }}>{l.produced.toLocaleString()} {trI18n('ชิ้น ·')} {l.orders} {trI18n('ใบ')}{l.ng > 0 && ` · NG ${l.ng}`}</div>
                   </div>
                 ))}
               </div>
@@ -450,13 +451,13 @@ export default function ProductHistory() {
           {/* ── ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user) ──
               ตอบ "ผลิตพอกับที่ลูกค้าสั่งไหม · ต้องเร่งหรือชะลอ" ซึ่งเดิมดูไม่ได้เลย
               ⚠️ ไม่ผูกกับ daily.length — ไม่มีการผลิตเลย ยิ่งต้องเห็นว่าลูกค้าสั่งอยู่เท่าไหร่ */}
-          <CollapseCard id="demand" title="ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
+          <CollapseCard id="demand" title={trI18n('ผลิตเทียบกับความต้องการลูกค้า')} count="ออเดอร์ + forecast">
             <DemandVsProduction products={activeMats} prodByDay={prodByDay} today={todayStr()} />
           </CollapseCard>
 
           {/* trend รายวัน */}
           {daily.length > 0 && (
-            <CollapseCard id="daily" title="ผลิตรายวัน" count={`${daily.length} วัน`}>
+            <CollapseCard id="daily" title={trI18n('ผลิตรายวัน')} count={`${daily.length} วัน`}>
               {/* component กลาง — มีแกน Y + เส้น grid + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) */}
               <DailyBars height={150} unit=" ชิ้น"
                 data={daily.map(d => ({
@@ -465,24 +466,24 @@ export default function ProductHistory() {
                     { v: d.ng, color: 'var(--red)', name: 'NG' }],
                 }))} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{trI18n('■ ผลิตดี')}</span> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
               </div>
             </CollapseCard>
           )}
 
           {/* ตารางใบผลิต — drill-down วัน → ไลน์·กะ → รายใบ (รายวันคือระดับหลัก รายใบดูเมื่อต้องเจาะ) */}
-          <CollapseCard id="orders" title="รายการใบผลิต" count={`${dayGroups.length} วัน · ${rows.length.toLocaleString()} ใบ`}>
-            {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการผลิตในช่วงนี้</div> : (
+          <CollapseCard id="orders" title={trI18n('รายการใบผลิต')} count={`${dayGroups.length} วัน · ${rows.length.toLocaleString()} ใบ`}>
+            {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('กำลังโหลด...')}</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มีการผลิตในช่วงนี้')}</div> : (
             <div style={{ overflowX: 'auto' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>คลิกวันเพื่อแตกราย "ไลน์·กะ" · คลิกกะเพื่อแตกรายใบ</div>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
                 <thead><tr>
-                  <th style={th}>วัน → ไลน์·กะ → ใบ</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ใบ</th>
-                  <th style={{ ...th, textAlign: 'right' }}>เป้า</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ผลิตได้</th>
+                  <th style={th}>{trI18n('วัน → ไลน์·กะ → ใบ')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('ใบ')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('เป้า')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('ผลิตได้')}</th>
                   <th style={{ ...th, textAlign: 'right' }}>NG</th>
-                  <th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
+                  <th style={th}>{trI18n('สถานะ')}</th><th style={th}>{trI18n('เปิด–ปิด')}</th>
                 </tr></thead>
                 <tbody>
                   {(showAllDays ? dayGroups : dayGroups.slice(0, 45)).map(g => {
@@ -534,7 +535,7 @@ export default function ProductHistory() {
                 <button onClick={() => setShowAllDays(true)}
                   style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
+                  {trI18n('แสดงอีก')} {(dayGroups.length - 45).toLocaleString()} {trI18n('วัน (ทั้งหมด')} {dayGroups.length.toLocaleString()} {trI18n('วัน)')}
                 </button>
               )}
             </div>
@@ -542,7 +543,7 @@ export default function ProductHistory() {
           </CollapseCard>
 
           {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) — ว่าง = default พับ */}
-          <CollapseCard id="audit" title="ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)" count={audit.length} defaultOpen={audit.length > 0}>
+          <CollapseCard id="audit" title={trI18n('ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)')} count={audit.length} defaultOpen={audit.length > 0}>
             {audit.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ยังไม่มีประวัติ — ระบบ audit เริ่มเก็บหลัง apply migration <code>20260724_audit_log_dr.sql</code> (การแก้ไขก่อนหน้านั้นไม่ถูกบันทึก)
@@ -552,7 +553,7 @@ export default function ProductHistory() {
                 {audit.map((a, i) => (
                   <div key={i} style={{ borderLeft: '3px solid var(--accent2)', paddingLeft: 10 }}>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {fmtDT(a.changed_at)} · {a.action} · โดย <b>{a.actor || '(ไม่ทราบผู้แก้)'}</b>
+                      {fmtDT(a.changed_at)} · {a.action} {trI18n('· โดย')} <b>{a.actor || trI18n('(ไม่ทราบผู้แก้)')}</b>
                     </div>
                     {a.action === 'UPDATE' && (a.changed_fields || []).map(f => (
                       <div key={f} style={{ fontSize: 12 }}>

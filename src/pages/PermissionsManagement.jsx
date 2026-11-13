@@ -17,6 +17,7 @@ import { POSITION_LEVELS } from '../utils/positions';
 import { SCOPE_DEPTH_META, SCOPE_DEPTHS } from '../utils/scopeDepth';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
@@ -87,7 +88,7 @@ const PAGE_GROUPS = [
   {
     group: 'พนักงาน & ทักษะ',
     pages: [
-      { key: 'page:/register',      label: 'เพิ่มพนักงาน' },
+      { key: 'page:/register',      label: 'เพิ่มพนักงาน (แท็บ ➕ ใน ฐานข้อมูลพนักงาน — ต้องมี employees:register ด้วยจึงเห็นแท็บ)' },
       { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
       { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
       { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },
@@ -318,7 +319,7 @@ export default function PermissionsManagement() {
     return (
       <td style={{ textAlign: 'center', padding: '8px 4px' }}>
         {/* label.tbtn = ขยาย hit area ≥40px บนจอทัช (matrix ช่องแน่น 11 คอลัมน์) — desktop ไม่เปลี่ยน */}
-        <label className="tbtn" title={!canManage ? 'ดูอย่างเดียว — ต้องมีสิทธิ์ permissions:manage' : undefined}
+        <label className="tbtn" title={!canManage ? tr('ดูอย่างเดียว — ต้องมีสิทธิ์ permissions:manage') : undefined}
           style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: (role === 'admin' || !canManage) ? 'not-allowed' : 'pointer', opacity: canManage ? 1 : 0.55 }}>
           <input
             type="checkbox"
@@ -349,10 +350,10 @@ export default function PermissionsManagement() {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
-            <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
+            <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{tr(firstColLabel)}</th>
             {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {tr(r.label)}</span>
                 <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
               </th>
             ))}
@@ -368,7 +369,7 @@ export default function PermissionsManagement() {
               </tr>
               {g.items.map(p => (
                 <tr key={p.key} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 380 }}>{p.label}</td>
+                  <td style={{ padding: '7px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 380 }}>{tr(p.label)}</td>
                   {cols.map(r => <Cell key={r.value} permissionKey={p.key} role={r.value} />)}
                 </tr>
               ))}
@@ -427,12 +428,12 @@ export default function PermissionsManagement() {
     return { rowsN, unseeded };
   }, [matrixGroups, matrixCols, map]);
 
-  if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
+  if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div></Page>;
   if (loadErr) return (
     <Page>
       <div style={{ padding: 24, margin: 24, borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 14 }}>
         ⚠️ โหลดตารางสิทธิ์ไม่ครบ ({loadErr}) — ไม่แสดงตารางเพื่อกันการติ๊กทับค่าจริง ·{' '}
-        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
+        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>{tr('ลองใหม่')}</button>
       </div>
     </Page>
   );
@@ -444,8 +445,8 @@ export default function PermissionsManagement() {
   return (
     <Page>
       <PageHeader
-        title="จัดการสิทธิ์" icon="🔐"
-        sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
+        title={tr('จัดการสิทธิ์')} icon="🔐"
+        sub={tr('กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)')}
         tabs={[
           { key: 'matrix', label: 'ภาพรวม (ใครทำอะไรได้)' },
           { key: 'pages', label: 'การเข้าถึงหน้า' },
@@ -456,14 +457,14 @@ export default function PermissionsManagement() {
 
       {/* 🔒 ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล — ไม่งั้นช่องติ๊กที่กดไม่ได้จะดูเหมือนจอพัง */}
       <ReadOnlyNote show={!canManage} role={myRole} what="แก้ตารางสิทธิ์" permKey="permissions:manage"
-        hint="ดูได้ทั้งตาราง แต่ติ๊กไม่ได้ — ฐานข้อมูลใช้คีย์เดียวกันนี้เป็นด่าน (เดิมติ๊กได้บนจอแต่ไม่บันทึกจริง)" />
+        hint={tr('ดูได้ทั้งตาราง แต่ติ๊กไม่ได้ — ฐานข้อมูลใช้คีย์เดียวกันนี้เป็นด่าน (เดิมติ๊กได้บนจอแต่ไม่บันทึกจริง)')} />
 
       <div data-page-note="1" style={{ ...s.section, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-        ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
+        ⚠️ <strong>{tr('Admin เข้าถึงได้ทุกอย่างเสมอ')}</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
         การเปลี่ยนแปลงมีผลกับทุกเครื่องที่เปิดระบบอยู่ทันที (sync อัตโนมัติ)
         <div style={{ marginTop: 6 }}>
-          🛡️ <strong style={{ color: 'var(--amber)' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
-          <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
+          🛡️ <strong style={{ color: 'var(--amber)' }}>{tr('แอดมินหน่วยงาน')}</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
+          <strong> "เป็นแอดมินหน่วยงาน"</strong> {tr('ในหน้าจัดการผู้ใช้ · คนนั้นได้')} <strong>{tr('role เดิม + action ที่ติ๊กในคอลัมน์นี้')}</strong>
           เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
         </div>
       </div>
@@ -471,15 +472,15 @@ export default function PermissionsManagement() {
       {tab === 'matrix' && (<>
         {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
         <div data-page-note="1" style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
-          <InfoMore label="3 แกนที่ตัดสินว่าคนคนหนึ่งทำอะไรได้ (role · ขอบเขต · ตำแหน่ง)" id="perm-3axis" size={11.5} style={{ padding: '9px 14px' }}>
+          <InfoMore label={tr('3 แกนที่ตัดสินว่าคนคนหนึ่งทำอะไรได้ (role · ขอบเขต · ตำแหน่ง)')} id="perm-3axis" size={11.5} style={{ padding: '9px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
             {[
               { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',
-                d: <>ตัวเดียวที่<b>ให้/ไม่ให้</b>ปุ่มกับหน้า — คือตารางข้างล่างนี้ · ตั้งที่แท็บ 📄 / 🛠️</> },
+                d: <>{tr('ตัวเดียวที่')}<b>{tr('ให้/ไม่ให้')}</b>{tr('ปุ่มกับหน้า — คือตารางข้างล่างนี้ · ตั้งที่แท็บ 📄 / 🛠️')}</> },
               { ic: '🌳', t: 'ขอบเขต (ระดับการมองเห็น)', c: 'var(--blue)',
-                d: <>หุบว่า<b>เห็นข้อมูลของใคร</b> — ไม่เพิ่ม/ลดปุ่ม · {SCOPE_DEPTHS.map(d => SCOPE_DEPTH_META[d].short).join(' → ')} · ตั้งรายคนที่ 🔑 จัดการผู้ใช้</> },
+                d: <>{tr('หุบว่า')}<b>{tr('เห็นข้อมูลของใคร')}</b> {tr('— ไม่เพิ่ม/ลดปุ่ม ·')} {SCOPE_DEPTHS.map(d => SCOPE_DEPTH_META[d].short).join(' → ')} {tr('· ตั้งรายคนที่ 🔑 จัดการผู้ใช้')}</> },
               { ic: '🪪', t: 'ตำแหน่ง / ระดับ', c: 'var(--amber)',
-                d: <><b>ไม่ให้สิทธิ์</b> ใช้เป็นคำแนะนำ+ค่าตั้งต้นเท่านั้น — <b>ยกเว้นช่องเซ็นในใบ MO</b> (ขั้นผู้ตรวจสอบ/รับรอง/ผจก.) ที่ล็อกด้วยระดับจริง</> },
+                d: <><b>{tr('ไม่ให้สิทธิ์')}</b> {tr('ใช้เป็นคำแนะนำ+ค่าตั้งต้นเท่านั้น —')} <b>{tr('ยกเว้นช่องเซ็นในใบ MO')}</b> {tr('(ขั้นผู้ตรวจสอบ/รับรอง/ผจก.) ที่ล็อกด้วยระดับจริง')}</> },
             ].map(x => (
               <div key={x.t} style={{ background: 'var(--card)', padding: '12px 14px' }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: x.c, marginBottom: 4 }}>{x.ic} {x.t}</div>
@@ -488,15 +489,15 @@ export default function PermissionsManagement() {
             ))}
           </div>
           </InfoMore>
-          <InfoMore label="ระดับที่ล็อกช่องเซ็น MO" size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
-            🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
+          <InfoMore label={tr('ระดับที่ล็อกช่องเซ็น MO')} size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
+            🪪 <b>{tr('ระดับที่ล็อกช่องเซ็น MO:')}</b>{' '}
             {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
             {' '}— ช่องส่งมอบต้อง ≥40 · ผู้ตรวจสอบ/หัวหน้าช่าง ≥50 · อนุมัติ/ปิดค่าใช้จ่าย ≥60
           </InfoMore>
         </div>
 
         <FilterBar>
-          <Segmented value={kind} onChange={setKind} label="ชนิดสิทธิ์" size="sm" options={[
+          <Segmented value={kind} onChange={setKind} label={tr('ชนิดสิทธิ์')} size="sm" options={[
             { value: 'all', label: 'ทั้งหมด' },
             { value: 'page', label: 'เข้าหน้า' },
             { value: 'action', label: 'การทำงาน' },
@@ -504,29 +505,29 @@ export default function PermissionsManagement() {
           <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            เฉพาะที่ชุดสิทธิ์ต่างกัน
+            {tr('เฉพาะที่ชุดสิทธิ์ต่างกัน')}
           </label>
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={hideUnused} onChange={e => setHideUnused(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            ซ่อนชุดสิทธิ์ที่ยังไม่มีใครถือ
+            {tr('ซ่อนชุดสิทธิ์ที่ยังไม่มีใครถือ')}
           </label>
           <span className="spacer" />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-            {matrixStat.rowsN.toLocaleString()} ฟังก์ชัน · {matrixCols.length} ชุดสิทธิ์
+            {matrixStat.rowsN.toLocaleString()} {tr('ฟังก์ชัน ·')} {matrixCols.length} ชุดสิทธิ์
           </span>
         </FilterBar>
 
         <div style={{ ...s.section, padding: '10px 14px', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
-          <b>วิธีอ่านช่อง:</b> <b style={{ color: 'var(--accent)' }}>✓</b> = ทำได้ ·
+          <b>{tr('วิธีอ่านช่อง:')}</b> <b style={{ color: 'var(--accent)' }}>✓</b> = ทำได้ ·
           <span style={{ color: 'var(--muted)' }}> · </span> = ปิดไว้ ·
-          <b style={{ color: 'var(--amber)' }}> – </b> = <b>ยังไม่เคยตั้งค่าในทะเบียน</b> (ไม่ใช่ "ปิดไว้ตั้งใจ" — ระบบถือว่าไม่ได้สิทธิ์ แต่ถ้าเป็นฟังก์ชันที่ควรได้ ต้องไปติ๊กให้ชัด)
+          <b style={{ color: 'var(--amber)' }}> – </b> = <b>{tr('ยังไม่เคยตั้งค่าในทะเบียน')}</b> (ไม่ใช่ "ปิดไว้ตั้งใจ" — ระบบถือว่าไม่ได้สิทธิ์ แต่ถ้าเป็นฟังก์ชันที่ควรได้ ต้องไปติ๊กให้ชัด)
           {matrixStat.unseeded > 0 && (
             <div style={{ marginTop: 4, color: 'var(--amber)' }}>
               ⚠️ ช่องที่ยังไม่เคยตั้งค่า <b>{matrixStat.unseeded.toLocaleString()}</b> ช่อง จากที่แสดงอยู่
             </div>
           )}
           <div style={{ marginTop: 4 }}>
-            🛡️ <b>ผู้ดูแลระบบ (admin) ติ๊กเต็มเสมอ</b> — ล็อกไว้ในโค้ด ไม่ได้มาจากทะเบียน (กันตั้งค่าผิดจนไม่มีใครเข้าได้)
+            🛡️ <b>{tr('ผู้ดูแลระบบ (admin) ติ๊กเต็มเสมอ')}</b> — ล็อกไว้ในโค้ด ไม่ได้มาจากทะเบียน (กันตั้งค่าผิดจนไม่มีใครเข้าได้)
           </div>
         </div>
 
@@ -539,12 +540,12 @@ export default function PermissionsManagement() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)', minWidth: 240 }}>ฟังก์ชัน</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)', minWidth: 240 }}>{tr('ฟังก์ชัน')}</th>
                   {matrixCols.map(r => {
                     const n = accounts ? (accounts[r.value] || 0) : null;
                     return (
                       <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 82 }} title={`${r.value}${r.desc ? ' — ' + r.desc : ''}`}>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {tr(r.label)}</div>
                         <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
                           {r.bucket ? 'ธงเสริม' : n == null ? '—' : n > 0 ? `${n} คน` : 'ยังไม่มีใครถือ'}
                         </div>
@@ -565,7 +566,7 @@ export default function PermissionsManagement() {
                       <tr key={it.key} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '6px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 420 }}>
                           <span style={{ opacity: 0.65, marginRight: 5 }}>{it.type === 'page' ? '📄' : '🛠️'}</span>
-                          {it.label}
+                          {tr(it.label)}
                         </td>
                         {matrixCols.map(r => {
                           const raw = r.value === 'admin' ? true : map[it.key]?.[r.value];
@@ -597,7 +598,7 @@ export default function PermissionsManagement() {
           <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)' }}>
             🛡️ <strong style={{ color: 'var(--amber)' }}>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — คอลัมน์นั้นจึงไม่มีในแท็บนี้ (ระบบบล็อกไว้ในโค้ด ติ๊กไปก็ไม่มีผล)
             <div style={{ marginTop: 4 }}>
-              ต้องการให้ใครเข้าหน้าไหนได้ ให้ติ๊กที่ <strong>role เดิมของเขา</strong> ในตารางนี้ ·
+              ต้องการให้ใครเข้าหน้าไหนได้ ให้ติ๊กที่ <strong>{tr('role เดิมของเขา')}</strong> ในตารางนี้ ·
               แล้วค่อยไปเพิ่มอำนาจ แก้/อนุมัติ ให้เขาที่แท็บ <strong>"สิทธิ์การทำงาน"</strong> คอลัมน์แอดมินหน่วยงาน
             </div>
           </div>
@@ -608,8 +609,8 @@ export default function PermissionsManagement() {
       {tab === 'actions' && (
         <>
           <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'rgba(245,154,63,0.4)', background: 'rgba(245,154,63,0.06)' }}>
-            <strong style={{ color: 'var(--accent2)' }}>หมายเหตุ:</strong>{' '}
-            สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
+            <strong style={{ color: 'var(--accent2)' }}>{tr('หมายเหตุ:')}</strong>{' '}
+            สิทธิ์รายการย่อยเหล่านี้จะมีผลจริงกับแต่ละหน้า <strong>{tr('เมื่อหน้านั้นถูกอัปเดตให้อ่านค่าจากระบบนี้')}</strong> (กำลังทยอยเปิดใช้ทีละหน้า) —
             ระหว่างนี้หน้าที่ยังไม่อัปเดตจะยึดตามพฤติกรรมเดิม ค่าที่ตั้งไว้ตรงนี้จะถูกใช้ทันทีที่หน้านั้นเปิดใช้ระบบใหม่
           </div>
           {renderPermTable(actionGroups, 'การทำงาน')}

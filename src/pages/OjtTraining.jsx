@@ -27,7 +27,11 @@ import FilePick from '../components/FilePick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import StepFlow from '../components/StepFlow';
+import { ojtFlow } from '../utils/stepFlow';
 
+import { tr } from '../utils/i18n';
+import { pickSignerPatch, isSelfName } from '../utils/selfSign';
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
    Paperless ของฟอร์มกระดาษ FM-HRM-004: บันทึกการอบรมในระบบ + พนักงานเซ็นชื่อบนจอ
@@ -121,14 +125,14 @@ function SignPadModal({ title, onCancel, onDone }) {
     onDone(b);
   };
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <SignCanvas ref={pad} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
-          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
-          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>ใช้ลายเซ็นนี้</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>
+          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>{tr('ใช้ลายเซ็นนี้')}</button>
         </div>
       </div>
     </div>
@@ -160,19 +164,19 @@ function SignQueueModal({ queue, onCancel, onDone }) {
   };
 
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', zIndex: 3300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 660px)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 2 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>✍️ ส่งแท็บเล็ตให้เซ็นทีละคน</div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>คนที่ {pos + 1} / {total} · เซ็นแล้ว {done.size}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('✍️ ส่งแท็บเล็ตให้เซ็นทีละคน')}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>{tr('คนที่')} {pos + 1} / {total} {tr('· เซ็นแล้ว')} {done.size}</div>
         </div>
         {/* ชื่อใหญ่ — คนที่รับแท็บเล็ตต่อต้องรู้ทันทีว่าช่องนี้ของตัวเองหรือเปล่า */}
         <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', lineHeight: 1.25, marginBottom: 2 }}>{cur.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>รหัส {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{tr('รหัส')} {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
         <SignCanvas ref={pad} height={190} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
-          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>ข้ามคนนี้</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>{tr('ข้ามคนนี้')}</button>
           <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
             {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
           </button>
@@ -679,14 +683,14 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
 @media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body style="padding:6mm">
-<div style="font-size:9px;text-align:right">หน้า 1 ของ ${1 + printImgs.length} หน้า</div>
+<div style="font-size:9px;text-align:right">หน้า 1 ของ ${1 + printImgs.length} {tr('หน้า')}</div>
 <table style="width:100%;border:1px solid #000">
   <tr>
     <td style="border:1px solid #000;width:110px;text-align:center;vertical-align:middle;padding:4px">
       ${logo ? `<img src="${logo}" style="width:80px"/>` : '<b>TS AUTOMOTIVE</b>'}
     </td>
     <td style="border:1px solid #000;text-align:center;vertical-align:middle;padding:4px">
-      <div style="font-size:15px;font-weight:bold">ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน</div>
+      <div style="font-size:15px;font-weight:bold">{tr('ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน')}</div>
       <div style="font-size:13px;font-weight:bold">( ON THE JOB TRAINING )</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
@@ -709,24 +713,24 @@ table{border-collapse:collapse}
       <div>แผนก&nbsp;<b>${t.department || ''}</b></div>
     </td>
     <td style="border:1px solid #000;padding:3px 6px" colspan="2">
-      <div>${cb(t.for_new)} สำหรับพนักงานใหม่ / เปลี่ยนงาน</div>
-      <div>${cb(t.for_review)} สำหรับการทบทวน / อบรมซ้ำ</div>
-      <div>${cb(t.for_method_change)} สำหรับการเปลี่ยนแปลงวิธีทำงาน</div>
+      <div>${cb(t.for_new)} {tr('สำหรับพนักงานใหม่ / เปลี่ยนงาน')}</div>
+      <div>${cb(t.for_review)} {tr('สำหรับการทบทวน / อบรมซ้ำ')}</div>
+      <div>${cb(t.for_method_change)} {tr('สำหรับการเปลี่ยนแปลงวิธีทำงาน')}</div>
     </td>
     <td style="border:1px solid #000;padding:3px 6px">
-      <div>วันที่ <b>${thDate(t.train_date)}</b></div>
-      <div>เวลา <b>${t.time_from || '.....'} - ${t.time_to || '.....'}</b> น.</div>
-      <div>สถานที่ <b>${t.location || ''}</b></div>
+      <div>{tr('วันที่')} <b>${thDate(t.train_date)}</b></div>
+      <div>{tr('เวลา')} <b>${t.time_from || '.....'} - ${t.time_to || '.....'}</b> {tr('น.')}</div>
+      <div>{tr('สถานที่')} <b>${t.location || ''}</b></div>
     </td>
   </tr>
 </table>
 
 <table style="width:100%;border:1px solid #000;border-top:none">
   <tr style="background:#f0f0f0">
-    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">หัวข้อและรหัสเอกสารที่สอน</th>
-    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">ผู้สอนงาน</th>
-    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">ระยะเวลา</th>
-    <th style="border:1px solid #000;padding:2px;font-size:10px">ขอบเขตเนื้อหา</th>
+    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">{tr('หัวข้อและรหัสเอกสารที่สอน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">{tr('ผู้สอนงาน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">{tr('ระยะเวลา')}</th>
+    <th style="border:1px solid #000;padding:2px;font-size:10px">{tr('ขอบเขตเนื้อหา')}</th>
   </tr>
   <tr>
     <td style="border:1px solid #000;padding:3px 6px;vertical-align:top">${topicHtml}</td>
@@ -738,17 +742,17 @@ table{border-collapse:collapse}
 
 <table style="width:100%;border:1px solid #000;border-top:none;margin-top:0">
   <tr style="background:#f0f0f0;font-size:10px">
-    <th rowspan="3" style="border:1px solid #000;padding:2px">รายชื่อพนักงาน</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">เลขประจำตัว</th>
-    <th colspan="10" style="border:1px solid #000;padding:2px">ความเข้าใจ</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">พนักงานลงชื่อ</th>
-    <th colspan="2" style="border:1px solid #000;padding:2px">ผลการประเมิน<br/>(ความเข้าใจ)</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px">{tr('รายชื่อพนักงาน')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">{tr('เลขประจำตัว')}</th>
+    <th colspan="10" style="border:1px solid #000;padding:2px">{tr('ความเข้าใจ')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">{tr('พนักงานลงชื่อ')}</th>
+    <th colspan="2" style="border:1px solid #000;padding:2px">{tr('ผลการประเมิน')}<br/>{tr('(ความเข้าใจ)')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:10px">
-    <th colspan="5" style="border:1px solid #000;padding:1px">ก่อนOJT</th>
-    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">หลังOJT</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">เห็นด้วย</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">ไม่เห็นด้วย</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px">{tr('ก่อนOJT')}</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">{tr('หลังOJT')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">{tr('เห็นด้วย')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">{tr('ไม่เห็นด้วย')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:9px">
     ${SCORE_LABELS.map(sl => `<th style="border:1px solid #000;width:16px">${sl}</th>`).join('')}
@@ -761,7 +765,7 @@ table{border-collapse:collapse}
 </div>
 
 <div style="margin-top:4px;font-size:9px;line-height:1.55">
-  <b><u>คำชี้แจง</u></b> 1. กำหนดให้ผู้บังคับบัญชาหรือผู้ที่ได้รับมอบหมายเป็นผู้ทำการอบรมสอนงาน On The Job Training กรณีเริ่มงานใหม่
+  <b><u>{tr('คำชี้แจง')}</u></b> 1. กำหนดให้ผู้บังคับบัญชาหรือผู้ที่ได้รับมอบหมายเป็นผู้ทำการอบรมสอนงาน On The Job Training กรณีเริ่มงานใหม่
   เปลี่ยนหน้าที่ เปลี่ยนวิธีทำงาน ตามเอกสารระบบคุณภาพ คือ Quality Manual (QM), System Procedure (SP), Q.C. Flow Chart, Work Instruction (WI), Flow Process Chart (FPC),
   Operation Procedure Standard (OPS), Inspection Standard (IS) และแบบฟอร์มบันทึกต่างๆ เป็นต้น<br/>
   2. พนักงานประเมินเปรียบเทียบความรู้ความเข้าใจของตนเองก่อนและหลังการอบรมโดยมีเกณฑ์คะแนนดังนี้
@@ -774,7 +778,7 @@ table{border-collapse:collapse}
   4. กำหนดให้มีการทวนสอบภาคทฤษฎีและปฏิบัติหลังการอบรมสอนงานไม่น้อยกว่า 1 เดือนหลังจากการอบรม 1 ฉบับ
 </div>
 ${attachAll.length ? `<div style="margin-top:4px;border:1px solid #000;padding:3px 6px;font-size:9px">
-  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} รายการ</b>${attachImgs.length > printImgs.length ? ` (พิมพ์รูปต่อท้าย ${printImgs.length} รูป · อีก ${attachImgs.length - printImgs.length} รูปดูในระบบ)` : ''}
+  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} {tr('รายการ')}</b>${attachImgs.length > printImgs.length ? ` (พิมพ์รูปต่อท้าย ${printImgs.length} รูป · อีก ${attachImgs.length - printImgs.length} รูปดูในระบบ)` : ''}
   ${attachDocs.length ? `<div>ไฟล์เอกสาร (ดูในระบบ): ${attachDocs.map((f, i) => `${i + 1}. ${f.file_name || attachFileName(f.file_url)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
 </div>` : ''}
 <div style="margin-top:2px;font-size:9px;display:flex;justify-content:space-between"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Effective Date : " + df.effective_date : ""}</span></div>
@@ -881,7 +885,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     const deny = signDenyFor(kind);
     return (
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{S.label}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr(S.label)}</div>
         {signed ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>
@@ -896,21 +900,21 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
             )}
             {mayDelete && (
               <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
-                ปลดลายเซ็น
+                {tr('ปลดลายเซ็น')}
               </button>
             )}
           </div>
         ) : editing.isNew ? (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกใบก่อน แล้วเจ้าตัวจึงกด{S.verb}ได้</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('บันทึกใบก่อน แล้วเจ้าตัวจึงกด')}{S.verb}{tr('ได้')}</div>
         ) : deny ? (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>รอ{S.label} — {deny}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{tr('รอ')}{tr(S.label)} — {deny}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
-              {S.verb} (ในนาม {fullName || 'คุณ'})
+              {S.verb} {tr('(ในนาม')} {fullName || 'คุณ'})
             </button>
             {S.gated && posRank == null && (
-              <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ<b>ไม่ได้ตรวจ</b>ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)</div>
+              <div style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ')}<b>{tr('ไม่ได้ตรวจ')}</b>{tr('ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)')}</div>
             )}
           </div>
         )}
@@ -918,12 +922,20 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     );
   };
 
+  /* ✍️ ช่อง "ผู้จัดทำ" — เลือกชื่อใครก็ได้ แต่ลายเซ็นติดเฉพาะเจ้าตัว (13/11 · คำสั่ง user · utils/selfSign.js)
+     เลือกคนอื่น = ช่องลายเซ็นว่าง จนกว่าเจ้าตัว login มากด "เซ็นเป็นผู้จัดทำ" แล้วบันทึกใบ */
+  const mySigOjt = (profiles.find(p => isSelfName(p.full_name, fullName)) || {}).signature_url || null;
   const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
       <PersonSelect source="profiles" allowFree={false} value={editing[nameKey] || ''}
-        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: p.signature_url || null }))} />
+        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: pickSignerPatch(p.name, { fullName, mySig: mySigOjt }).sig }))} />
       {editing[sigKey] && <img src={editing[sigKey]} alt="" style={{ height: 30, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
+      {!editing[sigKey] && editing[nameKey] && (isSelfName(editing[nameKey], fullName)
+        ? (mySigOjt
+            ? <button onClick={() => setEditing(prev => ({ ...prev, [sigKey]: mySigOjt }))} style={{ marginTop: 4, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>✍️ เซ็นเป็น{label}</button>
+            : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>โปรไฟล์ของคุณยังไม่มีลายเซ็น — อัปโหลดที่เมนูโปรไฟล์ก่อน</div>)
+        : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>รอ {editing[nameKey]} login มาเซ็นเอง</div>)}
     </div>
   );
 
@@ -931,7 +943,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     <select value={val === null || val === undefined ? '' : val} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
       style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
       <option value="">—</option>
-      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{s}</option>)}
+      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{tr(s)}</option>)}
     </select>
   );
 
@@ -944,14 +956,14 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
   return (
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
-        permKey="ojt:record" hint="ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ" />
+        permKey="ojt:record" hint={tr('ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ')} />
       {/* PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง — ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
-      <PageHeader title="อบรมสอนงาน OJT" icon="📖"
-        sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
+      <PageHeader title={tr('อบรมสอนงาน OJT')} icon="📖"
+        sub={<>{tr('ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม')} {ojtFormNo}</>}
         actions={canRecord ? (
           <button type="button" className="pg-btn" onClick={() => setEditing(emptyDraft())}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-            สร้างใบอบรม
+            {tr('สร้างใบอบรม')}
           </button>
         ) : null} />
 
@@ -959,19 +971,19 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
           ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
           <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
-          <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>รายละเอียด: {filesOff}</div>
+          <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>{tr('รายละเอียด:')} {filesOff}</div>
         </div>
       )}
-      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
+      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 760 }}>
             <thead>
               <tr>
-                <th style={{ minWidth: 90 }}>วันที่</th>
-                <th style={{ minWidth: 220, textAlign: 'left' }}>หัวข้อที่สอน</th>
-                <th>ส่วน/แผนก</th>
-                <th>ผู้สอน</th>
-                <th style={{ textAlign: 'center' }}>ผู้เข้าอบรม</th>
+                <th style={{ minWidth: 90 }}>{tr('วันที่')}</th>
+                <th style={{ minWidth: 220, textAlign: 'left' }}>{tr('หัวข้อที่สอน')}</th>
+                <th>{tr('ส่วน/แผนก')}</th>
+                <th>{tr('ผู้สอน')}</th>
+                <th style={{ textAlign: 'center' }}>{tr('ผู้เข้าอบรม')}</th>
                 <th style={{ textAlign: 'center', minWidth: 150 }}></th>
               </tr>
             </thead>
@@ -1002,7 +1014,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     )}
                     {canRemoveSheet(t) && (
                       <DeleteButton onClick={() => handleDelete(t)}
-                        title={mayDelete ? 'ลบ' : 'ลบใบที่คุณสร้างเอง (ยังไม่มีใครเซ็น)'} />
+                        title={mayDelete ? tr('ลบ') : tr('ลบใบที่คุณสร้างเอง (ยังไม่มีใครเซ็น)')} />
                     )}
                   </td>
                 </tr>
@@ -1017,59 +1029,61 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
       {/* ── modal ฟอร์ม (มี input — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) ── */}
       {editing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}{tr('ใบอบรมสอนงาน OJT')}</div>
               <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
+            {/* 🪜 ถึงขั้นไหน — กฎ ojtFlow() (utils/stepFlow.js · ตัดสินจากช่องเซ็นจริง) · UI §6.30 */}
+            {!editing.isNew && (() => { const f = ojtFlow(editing); return <div style={{ padding: '10px 18px 0' }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
               {/* แถวข้อมูลหลัก */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
-                <div><div style={lb}>วันที่อบรม</div><input type="date" value={editing.train_date} onChange={e => setF('train_date', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>เวลาเริ่ม</div><input type="time" value={editing.time_from || ''} onChange={e => setF('time_from', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>เวลาจบ</div><input type="time" value={editing.time_to || ''} onChange={e => setF('time_to', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>ระยะเวลา (นาที)</div><input type="number" min="1" value={editing.duration_min || ''} onChange={e => setF('duration_min', e.target.value)} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>สถานที่</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('วันที่อบรม')}</div><input type="date" value={editing.train_date} onChange={e => setF('train_date', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('เวลาเริ่ม')}</div><input type="time" value={editing.time_from || ''} onChange={e => setF('time_from', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('เวลาจบ')}</div><input type="time" value={editing.time_to || ''} onChange={e => setF('time_to', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ระยะเวลา (นาที)')}</div><input type="number" min="1" value={editing.duration_min || ''} onChange={e => setF('duration_min', e.target.value)} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('สถานที่')}</div><input type="text" value={editing.location || ''} onChange={e => setF('location', e.target.value)} style={{ width: '100%' }} /></div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
                 <div>
-                  <div style={lb}>ฝ่าย</div>
+                  <div style={lb}>{tr('ฝ่าย')}</div>
                   {/* เลือกจาก org_divisions (fallback = รายชื่อ section เมื่อผังยังไม่ตั้งฝ่าย) · ค่าเดิมนอกผังยังโชว์ · ✏️ ระบุเองได้ (2026-09-07) */}
                   <SelectOrFree value={editing.dept || ''} options={divisions.length ? divisions : orgSections} onChange={v => setF('dept', v)} style={{ width: '100%' }} />
                 </div>
                 <div>
-                  <div style={lb}>ส่วน</div>
+                  <div style={lb}>{tr('ส่วน')}</div>
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
-                    <option value="">— เลือก —</option>
-                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="">{tr('— เลือก —')}</option>
+                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{tr(s)}</option>)}
                     {/* แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN) — เดิม cascade เขียนเองทำให้ออกใบ OJT
                         ให้ช่างระบุแผนกไม่ได้เลย (QC audit 2026-08-18 · sentinel เห็นเฉพาะ user ไม่จำกัด scope) */}
                     {!effSections.length && orphanDepts(orgDeptNodes).length > 0 && (
-                      <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      <option value={ORPHAN_SECTION}>{tr(ORPHAN_SECTION_LABEL)}</option>
                     )}
                   </select>
                 </div>
                 <div>
-                  <div style={lb}>แผนก</div>
+                  <div style={lb}>{tr('แผนก')}</div>
                   {(() => {
                     // cascade ผ่าน helper กลาง (§5.3 ข้อ 7 — ห้ามเขียน parent_id cascade เองในหน้า
                     // เดิมเขียนเอง → แผนกขึ้นตรงฝ่ายไม่มีวันโผล่ · แก้ 2026-08-18)
                     const depOpts = deptOptionsFor(editing.section, orgSectionNodes, orgDeptNodes);
                     return (
                       <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
-                        <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>
-                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        <option value="">{editing.section ? tr('— เลือก —') : tr('เลือกส่วนก่อน')}</option>
+                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
                         {editing.department && !depOpts.some(d => (d.code || d.name) === editing.department) && (
-                          <option value={editing.department}>{editing.department} (นอกผัง — ค่าเดิม)</option>
+                          <option value={editing.department}>{editing.department} {tr('(นอกผัง — ค่าเดิม)')}</option>
                         )}
                       </select>
                     );
                   })()}
                 </div>
                 <div>
-                  <div style={lb}>ผู้สอนงาน</div>
+                  <div style={lb}>{tr('ผู้สอนงาน')}</div>
                   {/* ผู้สอน = user ระบบหรือพนักงาน (หัวหน้าไลน์) → PersonSelect profiles ∪ employees · พิมพ์ลง FM-HRM-004 (2026-09-07) */}
                   <PersonSelect source="both" value={editing.trainer_name || ''} history={trainerHist} onChange={r => setF('trainer_name', r.name)} />
                 </div>
@@ -1087,13 +1101,13 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <div style={lb}>หัวข้อและรหัสเอกสารที่สอน (บรรทัดละหัวข้อ)</div>
+                  <div style={lb}>{tr('หัวข้อและรหัสเอกสารที่สอน (บรรทัดละหัวข้อ)')}</div>
                   <textarea rows={4} value={editing.topic || ''} onChange={e => setF('topic', e.target.value)}
                     placeholder={'1. ความรู้พื้นฐานของเอกสารในไลน์ผลิต\n2. ขั้นตอนการลงบันทึกข้อมูลของเอกสารในไลน์ผลิต'}
                     style={{ width: '100%', fontSize: 13 }} />
                 </div>
                 <div>
-                  <div style={lb}>ขอบเขตเนื้อหา (บรรทัดละข้อ)</div>
+                  <div style={lb}>{tr('ขอบเขตเนื้อหา (บรรทัดละข้อ)')}</div>
                   <textarea rows={4} value={editing.scope || ''} onChange={e => setF('scope', e.target.value)} style={{ width: '100%', fontSize: 13 }} />
                 </div>
               </div>
@@ -1103,16 +1117,16 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   รูปจะถูกต่อท้ายใบพิมพ์เป็นหน้าๆ (ดู handlePrint) — เอกสารแนบลิสต์ชื่อไว้บนใบ */}
               <div>
                 <div style={{ ...lb, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span>ไฟล์แนบ ({(editing.files || []).length})</span>
-                  {canRecord && !filesOff && <FilePick onFile={addFile} label="แนบรูป / เอกสาร" />}
+                  <span>{tr('ไฟล์แนบ (')}{(editing.files || []).length})</span>
+                  {canRecord && !filesOff && <FilePick onFile={addFile} label={tr('แนบรูป / เอกสาร')} />}
                   <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
                     รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
                   </span>
                 </div>
                 {filesOff ? (
-                  <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 2px', fontWeight: 700 }}>ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ</div>
+                  <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 2px', fontWeight: 700 }}>{tr('ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ')}</div>
                 ) : (editing.files || []).length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>ยังไม่มีไฟล์แนบ</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>{tr('ยังไม่มีไฟล์แนบ')}</div>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                     {editing.files.map((f, idx) => (
@@ -1128,7 +1142,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? ' · ยังไม่บันทึก' : ''}</span>
                           {canRecord && (
-                            <button onClick={() => removeFile(idx)} title="เอาไฟล์นี้ออก"
+                            <button onClick={() => removeFile(idx)} title={tr('เอาไฟล์นี้ออก')}
                               style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
                           )}
                         </div>
@@ -1140,9 +1154,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
               {/* ผู้เข้าอบรม */}
               <div>
-                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>{tr('พนักงานผู้เข้าอบรม (')}{editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                  <input type="text" placeholder={tr('ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม...')} value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                   {searchResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
@@ -1151,7 +1165,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
                           {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
-                            ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                            ยืมจาก {e._helperFrom} {tr('มาช่วย')} {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
                           </span>}
                         </div>
                       ))}
@@ -1185,12 +1199,12 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <table style={{ width: '100%', minWidth: 780 }}>
                     <thead>
                       <tr style={{ fontSize: 12 }}>
-                        <th style={{ textAlign: 'left' }}>พนักงาน</th>
-                        <th style={{ textAlign: 'center' }}>ก่อน OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>หลัง OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>ลายเซ็น</th>
-                        <th style={{ textAlign: 'center' }}>ผลประเมิน</th>
-                        <th style={{ textAlign: 'left' }}>ผู้ประเมิน</th>
+                        <th style={{ textAlign: 'left' }}>{tr('พนักงาน')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ก่อน OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('หลัง OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ลายเซ็น')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ผลประเมิน')}</th>
+                        <th style={{ textAlign: 'left' }}>{tr('ผู้ประเมิน')}</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -1203,17 +1217,17 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           <td style={{ textAlign: 'center' }}>
                             {a.sign_url
                               ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} เซ็นใหม่` })}
-                                  style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title="คลิกเพื่อเซ็นใหม่" />
+                                  style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title={tr('คลิกเพื่อเซ็นใหม่')} />
                               : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ลงชื่อ` })}
-                                  style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>เซ็น</button>}
+                                  style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>{tr('เซ็น')}</button>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <select value={a.eval_agree === null || a.eval_agree === undefined ? '' : (a.eval_agree ? '1' : '0')}
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
                               style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
                               <option value="">—</option>
-                              <option value="1">เห็นด้วย</option>
-                              <option value="0">ไม่เห็นด้วย</option>
+                              <option value="1">{tr('เห็นด้วย')}</option>
+                              <option value="0">{tr('ไม่เห็นด้วย')}</option>
                             </select>
                           </td>
                           <td>
@@ -1225,7 +1239,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                         </tr>
                       ))}
                       {editing.attendees.length === 0 && (
-                        <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 16, fontSize: 12 }}>ยังไม่มีพนักงาน — ค้นหาด้านบนเพื่อเพิ่ม</td></tr>
+                        <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 16, fontSize: 12 }}>{tr('ยังไม่มีพนักงาน — ค้นหาด้านบนเพื่อเพิ่ม')}</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1240,10 +1254,10 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
                   style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'กำลังบันทึก...' : 'บันทึกใบอบรม'}
+                  {saving ? tr('กำลังบันทึก...') : tr('บันทึกใบอบรม')}
                 </button>
               </div>
             </div>

@@ -25,6 +25,7 @@ import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -107,7 +108,7 @@ const KPI = ({ label, value, unit, sub, warn }) => (
       {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
     </div>
     {/* ค่า null = "ยังวัดไม่ได้" ต้องเขียนบอก ไม่ใช่โชว์ 0 ให้คนอ่านว่าดีเยี่ยม */}
-    <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{value == null ? 'ยังไม่มีข้อมูลพอ' : sub}</div>
+    <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{value == null ? trI18n('ยังไม่มีข้อมูลพอ') : sub}</div>
   </div>
 );
 
@@ -419,7 +420,7 @@ export default function MtnAnalysis() {
   return (
     <Page style={{ paddingBottom: 40 }}>
       <PageHeader
-        title="วิเคราะห์ปัญหา (ซ่อมบำรุง)" icon="🔍"
+        title={trI18n('วิเคราะห์ปัญหา (ซ่อมบำรุง)')} icon="🔍"
         sub={tab === 'kpi'
           ? 'KPI ทีมช่าง — MTTA / MTTR / MDT · ความพึงพอใจ · ความน่าเชื่อถือรายอุปกรณ์'
           : `QC 7 Tools แยกตามชนิดสินทรัพย์ · ${srcMeta.note}`}
@@ -429,7 +430,7 @@ export default function MtnAnalysis() {
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? null : (
             <button type="button" className="pg-btn" onClick={load} disabled={loading} style={{ cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? 'กำลังโหลด…' : 'รีเฟรช'}
+              {loading ? trI18n('กำลังโหลด…') : trI18n('รีเฟรช')}
             </button>
           )
         }
@@ -447,7 +448,7 @@ export default function MtnAnalysis() {
           {/* dropdown = **แผนกช่าง** (เดิมเป็นเลือกแหล่งข้อมูล MO/Downtime — user เปลี่ยน 23/09)
               แท็บด้านล่าง = ชนิดอุปกรณ์ · 2 แกนนี้ตัดกันได้ ไม่ซ้อนกัน
               · UI-STANDARD 2026-09-24: ย้ายจากหัวเพจเข้าแถบเวลา ให้เป็นแถบกรองแถบเดียว */}
-          <select value={team} onChange={e => setTeam(e.target.value)} title="แผนกช่างที่รับงาน">
+          <select value={team} onChange={e => setTeam(e.target.value)} title={trI18n('แผนกช่างที่รับงาน')}>
             <option value="all">{allOf('แผนกช่าง')}</option>
             {teamOpts.map(([t, n]) => (
               <option key={t} value={t}>{deptNameOf(t) || t} ({n})</option>
@@ -463,7 +464,7 @@ export default function MtnAnalysis() {
       )}
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดข้อมูล {days} วันย้อนหลัง…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{trI18n('⏳ กำลังโหลดข้อมูล')} {days} {trI18n('วันย้อนหลัง…')}</div>
       ) : tab === 'kpi' ? (
         /* 📊 KPI ช่าง — ย้ายมาจาก `/mtn-repair?tab=kpi` (ลิงก์เก่า redirect มาที่นี่)
            ใช้ `orders` ชุดเดียวกับแท็บ QC7 ⇒ ไม่ยิงคิวรีเพิ่ม */
@@ -493,22 +494,22 @@ export default function MtnAnalysis() {
           {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>
             <KPI label={`เหตุการณ์ (${days} วัน)`} value={sum.n ? fmt(sum.n) : null} unit={unit} sub={`${sum.assets} อุปกรณ์`} />
-            <KPI label="เวลาสูญเสียรวม" value={sum.totalMin == null ? null : fmt(sum.totalMin)} unit="นาที"
+            <KPI label={trI18n('เวลาสูญเสียรวม')} value={sum.totalMin == null ? null : fmt(sum.totalMin)} unit="นาที"
               sub={sum.noMin ? `⚠️ ${sum.noMin} รายการยังไม่มีเวลา — ไม่ถูกนับ` : 'ครบทุกรายการ'} warn={!!sum.noMin} />
-            <KPI label={src === 'mo' ? 'เวลาซ่อมเฉลี่ย' : 'หยุดเฉลี่ยต่อครั้ง'} value={sum.avgMin == null ? null : fmt(sum.avgMin, 1)} unit="นาที"
+            <KPI label={src === 'mo' ? trI18n('เวลาซ่อมเฉลี่ย') : trI18n('หยุดเฉลี่ยต่อครั้ง')} value={sum.avgMin == null ? null : fmt(sum.avgMin, 1)} unit="นาที"
               sub={sum.medMin == null ? '' : `มัธยฐาน ${fmt(sum.medMin, 1)} นาที`} />
-            <KPI label="ค่าใช้จ่ายรวม" value={sum.cost == null ? null : fmt(sum.cost)} unit="บาท"
+            <KPI label={trI18n('ค่าใช้จ่ายรวม')} value={sum.cost == null ? null : fmt(sum.cost)} unit="บาท"
               sub={sum.noCost ? `⚠️ ${sum.noCost} รายการยังไม่ลงค่าใช้จ่าย` : 'ครบทุกรายการ'} warn={!!sum.noCost} />
-            <KPI label="แยกชนิดจากทะเบียน" value={sum.n ? fmt(sum.n - sum.guessed) : null} unit={`/ ${sum.n}`}
+            <KPI label={trI18n('แยกชนิดจากทะเบียน')} value={sum.n ? fmt(sum.n - sum.guessed) : null} unit={`/ ${sum.n}`}
               sub={sum.guessed ? `⚠️ ${sum.guessed} รายการระบบเดาชนิดให้` : 'ยืนยันจากทะเบียนเครื่องทุกรายการ'} warn={!!sum.guessed} />
           </div>
 
           {rows.length === 0 ? (
             <Panel title={`ยังไม่มีเหตุการณ์ในกลุ่ม “${ASSET_CLASSES.find(a => a.key === asset)?.label}”`}
-              sub="แท็บนี้ยังอยู่เสมอ ไม่ได้ถูกซ่อน — ว่างแปลว่า “ช่วงนี้ไม่มีงานที่ผูกกับสินทรัพย์กลุ่มนี้” ไม่ใช่จอพัง">
+              sub={trI18n('แท็บนี้ยังอยู่เสมอ ไม่ได้ถูกซ่อน — ว่างแปลว่า “ช่วงนี้ไม่มีงานที่ผูกกับสินทรัพย์กลุ่มนี้” ไม่ใช่จอพัง')}>
               <NotEnough
                 reason={`ไม่พบ${srcMeta.label}ของกลุ่มนี้ในช่วง ${days} วันย้อนหลัง`}
-                hint="ลองขยายช่วงเวลา หรือสลับแหล่งข้อมูล · ถ้าแน่ใจว่ามีงานจริง มักเป็นเพราะเลขเครื่องในใบไม่ตรงกับทะเบียน (ไปแก้ที่ทะเบียนเครื่องจักร)" />
+                hint={trI18n('ลองขยายช่วงเวลา หรือสลับแหล่งข้อมูล · ถ้าแน่ใจว่ามีงานจริง มักเป็นเพราะเลขเครื่องในใบไม่ตรงกับทะเบียน (ไปแก้ที่ทะเบียนเครื่องจักร)')} />
             </Panel>
           ) : (
             <>
@@ -518,12 +519,12 @@ export default function MtnAnalysis() {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
                   {paretoSplit.planned.length > 0 && (
                     <span style={{ color: 'var(--muted)' }}>
-                      กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                      กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} {trI18n('ใบ')}</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
                     </span>
                   )}
                   {typed.filled > 0 && (
-                    <span style={{ color: 'var(--muted)' }} title="พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎">
-                      เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
+                    <span style={{ color: 'var(--muted)' }} title={trI18n('พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎')}>
+                      เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} {trI18n('ใบ')}</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
                     </span>
                   )}
                   {paretoNote && (
@@ -536,13 +537,13 @@ export default function MtnAnalysis() {
               <ParetoAbcChart
                 title={`② พาเรโต — ปัญหาไหนกินสัดส่วนมากที่สุด (${unit})`}
                 records={paretoRecords} dims={PARETO_DIMS} unit={unit}
-                emptyText="ไม่มีข้อมูลในช่วงนี้"
+                emptyText={trI18n('ไม่มีข้อมูลในช่วงนี้')}
                 sectionStyle={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}
                 titleStyle={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }} />
 
               {/* ③ ก้างปลา */}
-              <Panel title="③ ผังก้างปลา — สาเหตุกองอยู่แกนไหน (4M)"
-                sub="จัดรายการเข้าแกน คน/เครื่อง/วัสดุ/วิธี/การวัด/สภาพแวดล้อม — ใช้หมวดที่ช่างเลือกไว้ก่อน ไม่มีจึงเดาจากข้อความสาเหตุ">
+              <Panel title={trI18n('③ ผังก้างปลา — สาเหตุกองอยู่แกนไหน (4M)')}
+                sub={trI18n('จัดรายการเข้าแกน คน/เครื่อง/วัสดุ/วิธี/การวัด/สภาพแวดล้อม — ใช้หมวดที่ช่างเลือกไว้ก่อน ไม่มีจึงเดาจากข้อความสาเหตุ')}>
                 <Fishbone records={rows} categoryOf={r => r.cause_category} textOf={r => r.causeText} labelOf={r => r.label}
                   effect={`${ASSET_CLASSES.find(a => a.key === asset)?.label} หยุด/เสียหาย`} />
               </Panel>
@@ -550,13 +551,13 @@ export default function MtnAnalysis() {
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, alignContent: 'start' }}>
                 {/* ④ ฮิสโตแกรม */}
                 <Panel title={`④ ฮิสโตแกรม — ${src === 'mo' ? 'เวลาซ่อม' : 'เวลาหยุด'}กระจายยังไง`}
-                  sub="ดูว่างานส่วนใหญ่ใช้เวลาช่วงไหน และมีหางยาวแค่ไหน (หางยาว = งานที่ต้องรออะไหล่/รอ supplier)">
+                  sub={trI18n('ดูว่างานส่วนใหญ่ใช้เวลาช่วงไหน และมีหางยาวแค่ไหน (หางยาว = งานที่ต้องรออะไหล่/รอ supplier)')}>
                   <Histogram values={rows} valOf={r => r.minutes} unit="นาที" />
                 </Panel>
 
                 {/* ⑥ กราฟควบคุม */}
                 <Panel title={`⑥ กราฟควบคุม (XmR) — ${bucketWord}นี้ผิดปกติหรือเปล่า`}
-                  sub="เส้นกลาง = ระดับปกติของงานนี้ · จุดแดง = มีสาเหตุเฉพาะให้ไปตามหา ไม่ใช่ความผันแปรธรรมดา">
+                  sub={trI18n('เส้นกลาง = ระดับปกติของงานนี้ · จุดแดง = มีสาเหตุเฉพาะให้ไปตามหา ไม่ใช่ความผันแปรธรรมดา')}>
                   <ControlChart
                     points={(() => {
                       const agg = {};
@@ -567,31 +568,31 @@ export default function MtnAnalysis() {
                 </Panel>
 
                 {/* ⑤ ผังกระจาย */}
-                <Panel title="⑤ ผังกระจาย — ซ่อมบ่อย ↔ เสียเวลามาก ไปด้วยกันไหม"
-                  sub="1 จุด = 1 อุปกรณ์ · มุมขวาบน = ทั้งบ่อยทั้งนาน คือเป้าหมายแรกของการปรับปรุง">
+                <Panel title={trI18n('⑤ ผังกระจาย — ซ่อมบ่อย ↔ เสียเวลามาก ไปด้วยกันไหม')}
+                  sub={trI18n('1 จุด = 1 อุปกรณ์ · มุมขวาบน = ทั้งบ่อยทั้งนาน คือเป้าหมายแรกของการปรับปรุง')}>
                   <ScatterPlot records={perAsset} xOf={a => a.times} yOf={a => a.minutes} labelOf={a => a.asset}
                     xLabel={`จำนวนครั้ง (${unit})`} yLabel="เวลารวม (นาที)" />
                 </Panel>
 
                 {/* ⑦ แนวโน้ม */}
-                <Panel title={`⑦ แนวโน้มราย${bucketWord}`} sub="ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)">
+                <Panel title={`⑦ แนวโน้มราย${bucketWord}`} sub={trI18n('ดูว่าดีขึ้นหรือแย่ลง — ใช้คู่กับกราฟควบคุม (แนวโน้มบอกทิศ · กราฟควบคุมบอกว่าผิดปกติไหม)')}>
                   <RunChart records={rows} keyOf={r => evKey(r.at, tr.scale)} keys={wKeys} unit={unit} />
                 </Panel>
               </div>
 
               {/* ⑦ แบ่งชั้น */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: 12, alignContent: 'start' }}>
-                <Panel title="⑦ แบ่งชั้น — อุปกรณ์ที่มีปัญหามากที่สุด" sub="เรียงตามจำนวนครั้ง">
+                <Panel title={trI18n('⑦ แบ่งชั้น — อุปกรณ์ที่มีปัญหามากที่สุด')} sub={trI18n('เรียงตามจำนวนครั้ง')}>
                   <Stratify records={rows} keyOf={r => r.asset} unit={unit} top={10} />
                 </Panel>
-                <Panel title="⑦ แบ่งชั้น — เวลาสูญเสียรวมรายอุปกรณ์" sub="เรียงตามนาที (รายการที่ยังไม่มีเวลาไม่ถูกนับ ไม่ได้ตีเป็น 0)">
+                <Panel title={trI18n('⑦ แบ่งชั้น — เวลาสูญเสียรวมรายอุปกรณ์')} sub={trI18n('เรียงตามนาที (รายการที่ยังไม่มีเวลาไม่ถูกนับ ไม่ได้ตีเป็น 0)')}>
                   <Stratify records={rows.filter(r => r.minutes != null)} keyOf={r => r.asset} valOf={r => r.minutes} unit="นาที" top={10} />
                 </Panel>
               </div>
 
               {/* ① ใบตรวจสอบ */}
-              <Panel title="① ใบตรวจสอบ — นับไขว้ อุปกรณ์ × กลุ่มปัญหา"
-                sub="ตารางนับแบบใบเช็กชีตกระดาษ · ช่องเข้มแดง = จุดที่ซ้ำบ่อยที่สุด ให้เริ่มแก้ตรงนั้น">
+              <Panel title={trI18n('① ใบตรวจสอบ — นับไขว้ อุปกรณ์ × กลุ่มปัญหา')}
+                sub={trI18n('ตารางนับแบบใบเช็กชีตกระดาษ · ช่องเข้มแดง = จุดที่ซ้ำบ่อยที่สุด ให้เริ่มแก้ตรงนั้น')}>
                 <CheckSheet records={rows} rowOf={r => r.asset} colOf={r => r.group} rowLabel="อุปกรณ์" colLabel="กลุ่มปัญหา" />
               </Panel>
             </>

@@ -8,6 +8,7 @@ import { DAY_TYPE_META } from '../utils/companyCalendar';
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
@@ -122,9 +123,9 @@ export default function CompanyCalendar() {
 
   return (
     <Page>
-      <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅"
+      <PageHeader title={tr('ปฏิทินบริษัท — วันทำงาน/วันหยุด')} icon="📅"
         filters={<>
-          <span className="filter-label">ปี</span>
+          <span className="filter-label">{tr('ปี')}</span>
           <button className="ctl-btn" onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
           <button className="ctl-btn" onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
@@ -135,11 +136,11 @@ export default function CompanyCalendar() {
         {DAY_TYPES.map(t => (
           <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
             <div style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: DAY_TYPE_META[t].color, flexShrink: 0 }} />
-            {DAY_TYPE_META[t].label} <strong style={{ color: 'var(--text)' }}>{counts[t]} วัน</strong>
+            {tr(DAY_TYPE_META[t].label)} <strong style={{ color: 'var(--text)' }}>{counts[t]} {tr('วัน')}</strong>
           </div>
         ))}
         {!canEdit && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ดูได้อย่างเดียว — แก้ไขได้เฉพาะชุดสิทธิ์ ผู้ดูแลระบบ / งานเอกสาร</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ดูได้อย่างเดียว — แก้ไขได้เฉพาะชุดสิทธิ์ ผู้ดูแลระบบ / งานเอกสาร')}</span>
         )}
       </div>
 
@@ -152,13 +153,13 @@ export default function CompanyCalendar() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
               <select value={bulkWeekday} onChange={e => setBulkWeekday(e.target.value)} style={{ width: 'auto' }}>
-                {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{w}</option>)}
+                {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{tr(w)}</option>)}
               </select>
-              <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>เป็น</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('เป็น')}</span>
               <select value={bulkType} onChange={e => setBulkType(e.target.value)} style={{ width: 'auto' }}>
-                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
+                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{tr(DAY_TYPE_META[t].label)}</option>)}
               </select>
-              <button onClick={handleBulkWeekday} disabled={loading} style={primaryBtnSt}>ตั้งค่าทั้งปี</button>
+              <button onClick={handleBulkWeekday} disabled={loading} style={primaryBtnSt}>{tr('ตั้งค่าทั้งปี')}</button>
             </div>
           </div>
           <div>
@@ -169,10 +170,10 @@ export default function CompanyCalendar() {
               {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
               <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} style={{ width: 150 }} />
               <select value={singleType} onChange={e => setSingleType(e.target.value)} style={{ width: 'auto' }}>
-                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
+                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{tr(DAY_TYPE_META[t].label)}</option>)}
               </select>
-              <input placeholder="หมายเหตุ เช่น วันสงกรานต์" value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
-              <button onClick={handleAddSingle} disabled={loading} style={primaryBtnSt}>เพิ่ม</button>
+              <input placeholder={tr('หมายเหตุ เช่น วันสงกรานต์')} value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
+              <button onClick={handleAddSingle} disabled={loading} style={primaryBtnSt}>{tr('เพิ่ม')}</button>
             </div>
           </div>
         </div>
@@ -180,9 +181,9 @@ export default function CompanyCalendar() {
 
       {canEdit && (
         <InfoMore size={11} style={{ marginBottom: 14 }} id="cal_help"
-          lead={<>💡 คลิกตัวเลขวันที่เพื่อสลับสถานะ — <b>ยังไม่บันทึกจนกว่าจะกด "บันทึก"</b></>}>
+          lead={<>{tr('💡 คลิกตัวเลขวันที่เพื่อสลับสถานะ —')} <b>ยังไม่บันทึกจนกว่าจะกด "บันทึก"</b></>}>
           ลำดับที่สลับ: วันทำงาน → OT×1.5 → OT×2 → หยุดจ่าย 75% → วันทำงาน
-          <br /><b>หยุดจ่าย 75% (ม.75)</b> = หยุดชั่วคราวเหตุลูกค้าลด order — หยุดได้ค่าจ้าง 75% ·
+          <br /><b>{tr('หยุดจ่าย 75% (ม.75)')}</b> = หยุดชั่วคราวเหตุลูกค้าลด order — หยุดได้ค่าจ้าง 75% ·
           มาทำงาน = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด)
         </InfoMore>
       )}
@@ -249,7 +250,7 @@ export default function CompanyCalendar() {
             ● มีการเปลี่ยนแปลงที่ยังไม่บันทึก {pendingCount} วัน
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handleDiscardDraft} disabled={saving} style={cancelBtnSt}>ยกเลิก</button>
+            <button onClick={handleDiscardDraft} disabled={saving} style={cancelBtnSt}>{tr('ยกเลิก')}</button>
             <button onClick={handleSaveDraft} disabled={saving} style={saveBtnSt}>{saving ? 'กำลังบันทึก...' : `บันทึก (${pendingCount})`}</button>
           </div>
         </div>

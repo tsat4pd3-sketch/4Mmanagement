@@ -168,3 +168,9 @@
 
 · migration `20261102_ojt_approved_at_main.sql` (**apply แล้ว 02/11** · nullable ไม่มี default ⇒ revert = drop ได้)
 · ด่าน `ojt-approver-self-sign-only` · `manager-sign-rank-single-source` · เทส `managerSignRank.test.mjs`
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+ใบ OJT — แถบ ✓→○ ในโมดัล ตัดสินจากช่องเซ็นจริง (`ojtFlow()` `utils/stepFlow.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+## ✍️ ลายเซ็นต้องเป็นของเจ้าตัว (2026-11-13 · คำสั่ง user · `utils/selfSign.js` · UI §6.37)
+- ช่อง "ผู้จัดทำ": เลือกชื่อใครก็ได้ แต่ลายเซ็นติดเฉพาะเจ้าตัว (ปุ่ม "✍️ เซ็นเป็นผู้จัดทำ") — ครบทั้ง 3 ช่องแล้วที่ไม่แปะลายเซ็นแทนกัน

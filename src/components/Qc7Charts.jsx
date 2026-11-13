@@ -3,6 +3,7 @@ import {
   histogram, controlChartXmR, scatter, fishbone, checkSheet, stratify, runChart, BONES,
 } from '../utils/qc7';
 
+import { tr } from '../utils/i18n';
 /* ══ QC 7 Tools — ชิ้นส่วนกราฟที่ใช้ซ้ำได้ (2026-09-22) ═══════════════════════════════════
    สูตรทั้งหมดอยู่ `src/utils/qc7.js` (pure + มีเทส) — ที่นี่วาดอย่างเดียว ห้ามคิดเลขเอง
    (บทเรียนเดียวกับ ParetoAbcChart ที่สูตรเคยฝังใน .jsx แล้วไม่เคยถูกเทสเลย)
@@ -27,7 +28,7 @@ export function NotEnough({ reason, hint }) {
       fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px dashed var(--border2)',
       borderRadius: 'var(--r-md)', padding: '14px 12px', textAlign: 'center', lineHeight: 1.7,
     }}>
-      📭 <b style={{ color: 'var(--text2)' }}>ยังวิเคราะห์ไม่ได้</b>
+      📭 <b style={{ color: 'var(--text2)' }}>{tr('ยังวิเคราะห์ไม่ได้')}</b>
       <div>{reason}</div>
       {hint && <div style={{ fontSize: 11, marginTop: 3 }}>{hint}</div>}
     </div>
@@ -52,7 +53,7 @@ export function Panel({ title, sub, right, children }) {
 /* ═══ ④ ฮิสโตแกรม ═══════════════════════════════════════════════════════════ */
 export function Histogram({ values, unit = 'นาที', valOf, minN = 5 }) {
   const h = histogram(values, valOf ? { valOf, minN } : { minN });
-  if (!h.ok) return <NotEnough reason={h.reason} hint="ฮิสโตแกรมตอบว่า “ปัญหากองอยู่ช่วงไหน” — ต้องมีเหตุการณ์พอสมควรจึงจะเห็นรูปทรง" />;
+  if (!h.ok) return <NotEnough reason={h.reason} hint={tr('ฮิสโตแกรมตอบว่า “ปัญหากองอยู่ช่วงไหน” — ต้องมีเหตุการณ์พอสมควรจึงจะเห็นรูปทรง')} />;
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 150, marginTop: 4 }}>
@@ -76,12 +77,12 @@ export function Histogram({ values, unit = 'นาที', valOf, minN = 5 }) {
         ))}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.7 }}>
-        n = <b>{h.n}</b> · เฉลี่ย <b>{fmt(h.mean, 1)}</b> · มัธยฐาน <b>{fmt(h.median, 1)}</b> · P95 <b>{fmt(h.p95, 1)}</b> {unit}
+        n = <b>{h.n}</b> {tr('· เฉลี่ย')} <b>{fmt(h.mean, 1)}</b> {tr('· มัธยฐาน')} <b>{fmt(h.median, 1)}</b> · P95 <b>{fmt(h.p95, 1)}</b> {unit}
         {h.sd != null && <> · SD {fmt(h.sd, 1)}</>}
         {/* ค่าสุดโต่งคือสิ่งที่ต้องไปตามต่อ — ห้ามกลบด้วยการรวมเข้าถังปกติ */}
         {h.outliers > 0 && (
           <div style={{ color: '#a855f7', fontWeight: 700 }}>
-            ⚠️ มีค่าสุดโต่ง {h.outliers} ครั้ง (สูงสุด {fmt(h.max)} {unit}) แยกไว้ในแท่งม่วงขวาสุด — ไม่ได้ถูกกลบรวมกับถังปกติ
+            ⚠️ มีค่าสุดโต่ง {h.outliers} {tr('ครั้ง (สูงสุด')} {fmt(h.max)} {unit}) แยกไว้ในแท่งม่วงขวาสุด — ไม่ได้ถูกกลบรวมกับถังปกติ
           </div>
         )}
       </div>
@@ -92,7 +93,7 @@ export function Histogram({ values, unit = 'นาที', valOf, minN = 5 }) {
 /* ═══ ⑥ กราฟควบคุม XmR ══════════════════════════════════════════════════════ */
 export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
   const c = controlChartXmR(points, { minN });
-  if (!c.ok) return <NotEnough reason={c.reason} hint="กราฟควบคุมตอบว่า “ที่เห็นวันนี้ผิดปกติ หรือเป็นความผันแปรปกติของงาน”" />;
+  if (!c.ok) return <NotEnough reason={c.reason} hint={tr('กราฟควบคุมตอบว่า “ที่เห็นวันนี้ผิดปกติ หรือเป็นความผันแปรปกติของงาน”')} />;
   const hi = Math.max(c.ucl, ...c.rows.map(r => r.value)) * 1.08 || 1;
   const y = (v) => 100 - (v / hi) * 100;
   const sigAt = new Set(c.signals.map(s => s.i));
@@ -116,11 +117,11 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
         <div style={{ position: 'absolute', right: 2, top: `${y(c.cl)}%`, transform: 'translateY(-100%)', fontSize: 11, color: '#22c55e', fontWeight: 700 }}>CL {fmt(c.cl, 1)}</div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-        <span>{c.rows[0]?.label}</span><span>{c.rows[c.rows.length - 1]?.label}</span>
+        <span>{tr(c.rows[0]?.label)}</span><span>{tr(c.rows[c.rows.length - 1]?.label)}</span>
       </div>
       <div style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.8 }}>
         {c.inControl
-          ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✅ อยู่ในการควบคุม — ความผันแปรที่เห็นเป็นระดับปกติของงานนี้ (อย่าไล่แก้ทีละจุด ให้แก้ทั้งระบบถ้าอยากให้ดีขึ้น)</span>
+          ? <span style={{ color: '#22c55e', fontWeight: 700 }}>{tr('✅ อยู่ในการควบคุม — ความผันแปรที่เห็นเป็นระดับปกติของงานนี้ (อย่าไล่แก้ทีละจุด ให้แก้ทั้งระบบถ้าอยากให้ดีขึ้น)')}</span>
           : <div style={{ color: '#ef4444', fontWeight: 700 }}>
               พบสัญญาณผิดปกติ {c.signals.length} จุด — จุดพวกนี้มี “สาเหตุเฉพาะ” ให้ไปตามหา
               <ul style={{ margin: '4px 0 0 18px', padding: 0, fontWeight: 600, color: 'var(--text2)' }}>
@@ -128,7 +129,7 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
               </ul>
             </div>}
         {/* LCL ที่ถูกตัดเป็น 0 ต้องบอก ไม่งั้นคนอ่านว่า "ยังลดได้อีกติดลบ" ซึ่งไม่มีความหมาย */}
-        {c.lclClamped && <div style={{ color: 'var(--muted)' }}>ขีดควบคุมล่างคำนวณได้ติดลบ → ตัดที่ 0 (ค่าที่วัดติดลบไม่ได้) จึงไม่มีเส้นล่างบนกราฟ</div>}
+        {c.lclClamped && <div style={{ color: 'var(--muted)' }}>{tr('ขีดควบคุมล่างคำนวณได้ติดลบ → ตัดที่ 0 (ค่าที่วัดติดลบไม่ได้) จึงไม่มีเส้นล่างบนกราฟ')}</div>}
       </div>
     </>
   );
@@ -137,7 +138,7 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
 /* ═══ ⑤ ผังกระจาย ═══════════════════════════════════════════════════════════ */
 export function ScatterPlot({ records, xOf, yOf, labelOf, xLabel, yLabel, minN = 5 }) {
   const s = scatter(records, { xOf, yOf, labelOf, minN });
-  if (!s.ok) return <NotEnough reason={s.reason} hint="ผังกระจายตอบว่า “2 อย่างนี้ไปด้วยกันไหม” เช่น ซ่อมบ่อย ↔ เสียเวลามาก" />;
+  if (!s.ok) return <NotEnough reason={s.reason} hint={tr('ผังกระจายตอบว่า “2 อย่างนี้ไปด้วยกันไหม” เช่น ซ่อมบ่อย ↔ เสียเวลามาก')} />;
   const px = (v) => (s.xMax === s.xMin ? 50 : ((v - s.xMin) / (s.xMax - s.xMin)) * 92 + 4);
   const py = (v) => (s.yMax === s.yMin ? 50 : 96 - ((v - s.yMin) / (s.yMax - s.yMin)) * 92);
   return (
@@ -157,7 +158,7 @@ export function ScatterPlot({ records, xOf, yOf, labelOf, xLabel, yLabel, minN =
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6, lineHeight: 1.7 }}>
         n = <b>{s.n}</b> จุด · r = <b>{s.r == null ? '—' : s.r.toFixed(2)}</b> ({s.rText})
         {/* r ไม่ใช่เหตุผล — ต้องเขียนกำกับเสมอ ไม่งั้นคนเอาไปสรุปเป็นสาเหตุ */}
-        <div style={{ color: 'var(--muted)' }}>⚠️ ค่านี้บอกแค่ว่า “ไปด้วยกัน” ไม่ได้บอกว่า “อันหนึ่งทำให้เกิดอีกอัน” — ต้องไปพิสูจน์หน้างาน</div>
+        <div style={{ color: 'var(--muted)' }}>{tr('⚠️ ค่านี้บอกแค่ว่า “ไปด้วยกัน” ไม่ได้บอกว่า “อันหนึ่งทำให้เกิดอีกอัน” — ต้องไปพิสูจน์หน้างาน')}</div>
       </div>
     </>
   );
@@ -175,8 +176,8 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
       {/* ⚠️ ผังนี้ส่วนใหญ่ "เดา" แกนมาจากข้อความ — ต้องบอกสัดส่วนไว้บนจอเสมอ ห้ามทำเป็นว่ารู้แน่ */}
       {fb.guessRate != null && fb.guessRate > 0 && (
         <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
-          ⚠️ <b>{Math.round(fb.guessRate * 100)}% ของรายการ ระบบเดาแกนให้จากข้อความ</b> (ไม่ได้มีคนเลือกหมวดสาเหตุไว้)
-          <div style={{ color: 'var(--text2)' }}>ให้ช่างเลือก “สาเหตุเกิดจาก” ตอนบันทึกขั้นลงมือซ่อม แล้วผังนี้จะแม่นขึ้นเอง</div>
+          ⚠️ <b>{Math.round(fb.guessRate * 100)}{tr('% ของรายการ ระบบเดาแกนให้จากข้อความ')}</b> (ไม่ได้มีคนเลือกหมวดสาเหตุไว้)
+          <div style={{ color: 'var(--text2)' }}>{tr('ให้ช่างเลือก “สาเหตุเกิดจาก” ตอนบันทึกขั้นลงมือซ่อม แล้วผังนี้จะแม่นขึ้นเอง')}</div>
         </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8, alignContent: 'start' }}>
@@ -190,31 +191,31 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
                 background: on ? 'var(--bg3)' : 'var(--bg2)', color: 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
               }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {b.label}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {tr(b.label)}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <div style={{ flex: 1, height: 8, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                   <div style={{ width: `${(b.count / max) * 100}%`, height: '100%', background: b.key === 'unknown' ? '#6b7280' : 'var(--accent)' }} />
                 </div>
                 <b style={{ fontSize: 12.5 }}>{b.count}</b>
               </div>
-              {b.guessed > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ในนี้เดามา {b.guessed}</div>}
+              {b.guessed > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('ในนี้เดามา')} {b.guessed}</div>}
             </button>
           );
         })}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-        ปลายก้าง = <b style={{ color: 'var(--text2)' }}>{effect}</b> · รวม {fb.n} รายการ · กดที่แกนเพื่อดูรายการในแกนนั้น
+        ปลายก้าง = <b style={{ color: 'var(--text2)' }}>{effect}</b> {tr('· รวม')} {fb.n} รายการ · กดที่แกนเพื่อดูรายการในแกนนั้น
       </div>
       {cur && cur.items.length > 0 && (
         <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 220, overflow: 'auto' }}>
           {cur.items.slice(0, 60).map((it, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 9px', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 11.5 }}>
-              <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{it.label || '—'}</span>
-              <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{it.text || '(ไม่ได้ระบุสาเหตุ)'}</span>
-              {it.guessed && <span style={{ fontSize: 11, color: '#f59e0b', flexShrink: 0 }}>เดา</span>}
+              <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{tr(it.label) || '—'}</span>
+              <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{it.text || tr('(ไม่ได้ระบุสาเหตุ)')}</span>
+              {it.guessed && <span style={{ fontSize: 11, color: '#f59e0b', flexShrink: 0 }}>{tr('เดา')}</span>}
             </div>
           ))}
-          {cur.items.length > 60 && <div style={{ padding: '5px 9px', fontSize: 11, color: 'var(--muted)' }}>… อีก {cur.items.length - 60} รายการ</div>}
+          {cur.items.length > 60 && <div style={{ padding: '5px 9px', fontSize: 11, color: 'var(--muted)' }}>{tr('… อีก')} {cur.items.length - 60} {tr('รายการ')}</div>}
         </div>
       )}
     </>
@@ -233,8 +234,8 @@ export function CheckSheet({ records, rowOf, colOf, rowLabel = 'อุปกร�
           <thead>
             <tr>
               <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--muted)', fontWeight: 700, position: 'sticky', left: 0, background: 'var(--card)' }}>{rowLabel} \ {colLabel}</th>
-              {cs.cols.map(c => <th key={c} style={{ padding: '4px 6px', color: 'var(--text2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{c}</th>)}
-              <th style={{ padding: '4px 6px', color: 'var(--text)', fontWeight: 800 }}>รวม</th>
+              {cs.cols.map(c => <th key={c} style={{ padding: '4px 6px', color: 'var(--text2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr(c)}</th>)}
+              <th style={{ padding: '4px 6px', color: 'var(--text)', fontWeight: 800 }}>{tr('รวม')}</th>
             </tr>
           </thead>
           <tbody>
@@ -253,7 +254,7 @@ export function CheckSheet({ records, rowOf, colOf, rowLabel = 'อุปกร�
               </tr>
             ))}
             <tr>
-              <td style={{ padding: '4px 6px', fontWeight: 800, color: 'var(--text)', position: 'sticky', left: 0, background: 'var(--card)' }}>รวม</td>
+              <td style={{ padding: '4px 6px', fontWeight: 800, color: 'var(--text)', position: 'sticky', left: 0, background: 'var(--card)' }}>{tr('รวม')}</td>
               {cs.cols.map(c => <td key={c} style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 800, color: 'var(--text)' }}>{cs.colTot[c]}</td>)}
               <td style={{ padding: '4px 6px', textAlign: 'center', fontWeight: 800, color: 'var(--accent)' }}>{cs.total}</td>
             </tr>
@@ -290,7 +291,7 @@ export function Stratify({ records, keyOf, valOf, unit = 'ครั้ง', top 
           <span style={{ fontSize: 11, color: 'var(--muted)', minWidth: 38, textAlign: 'right' }}>{g.pct == null ? '' : `${g.pct.toFixed(0)}%`}</span>
         </div>
       ))}
-      {s.hidden > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>… อีก {s.hidden} รายการ (รวมทั้งหมด {fmt(s.total, 1)} {unit} จาก {s.groups} รายการ)</div>}
+      {s.hidden > 0 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{tr('… อีก')} {s.hidden} {tr('รายการ (รวมทั้งหมด')} {fmt(s.total, 1)} {unit} {tr('จาก')} {s.groups} รายการ)</div>}
     </>
   );
 }
@@ -311,10 +312,10 @@ export function RunChart({ records, keyOf, valOf, keys, unit = 'ครั้ง'
         ))}
       </div>
       <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{p.label.slice(-5)}</div>)}
+        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{tr(p.label).slice(-5)}</div>)}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6 }}>
-        รวม <b>{fmt(rc.total, 1)}</b> {unit} · เฉลี่ยช่วงละ <b>{fmt(rc.mean, 1)}</b>
+        รวม <b>{fmt(rc.total, 1)}</b> {unit} {tr('· เฉลี่ยช่วงละ')} <b>{fmt(rc.mean, 1)}</b>
         {/* ช่วงที่ไม่มีเหตุการณ์ = 0 จริง ไม่ใช่ "ไม่มีข้อมูล" — แท่งว่างต้องอยู่บนกราฟ */}
         <span style={{ color: 'var(--muted)' }}> · ช่วงที่ไม่มีแท่ง = ไม่มีเหตุการณ์จริง (ไม่ใช่ข้อมูลหาย)</span>
       </div>

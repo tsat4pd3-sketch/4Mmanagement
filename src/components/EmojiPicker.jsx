@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
+import { tr } from '../utils/i18n';
 /* ── EmojiPicker — ช่องเลือกไอคอน emoji จากชุดธีมโรงงาน (ใช้ซ้ำทุกที่ที่มีช่อง icon) ─────
    props: value, onChange(emoji), style (ของ input), placeholder
    - ยังพิมพ์เองได้ + ปุ่มเปิด grid เลือกจากชุด curated (เครื่องจักร/กระบวนการ/สถานะ/สี)
@@ -25,9 +26,9 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <div style={{ display: 'flex', gap: 6 }}>
-        <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'เช่น ⚙️'} maxLength={6}
+        <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || tr('เช่น ⚙️')} maxLength={6}
           style={{ ...style, flex: 1, minWidth: 0 }} />
-        <button type="button" onClick={() => setOpen(o => !o)} title="เลือกไอคอน"
+        <button type="button" onClick={() => setOpen(o => !o)} title={tr('เลือกไอคอน')}
           style={{ flexShrink: 0, width: 42, borderRadius: 'var(--r-md)', border: `1px solid ${open ? 'var(--accent)' : 'var(--border2)'}`, background: open ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>
           {value || '😀'}
         </button>
@@ -37,7 +38,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
           background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 10 }}>
           {EMOJI_GROUPS.map(g => (
             <div key={g.label} style={{ marginBottom: 6 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{g.label}</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{tr(g.label)}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 {g.items.map(em => {
                   const on = value === em;
@@ -53,7 +54,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
           ))}
           {value && (
             <button type="button" onClick={() => { onChange(''); setOpen(false); }}
-              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✕ ล้างไอคอน</button>
+              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('✕ ล้างไอคอน')}</button>
           )}
         </div>
       )}

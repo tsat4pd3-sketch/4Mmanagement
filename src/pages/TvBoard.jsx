@@ -41,8 +41,9 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
-import { getWorkDate } from '../utils/workDate';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอแขวนเปิดค้างข้ามวัน — ต้องอัปเดตวันงานเอง (12/11)
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
@@ -81,7 +82,9 @@ export default function TvBoard({ onOpenMenu = null }) {
   const [linesTry, setLinesTry] = useState(0);
   const [fs, setFs] = useState(false);
   const [barOpen, setBarOpen] = useState(false);   // แถบตั้งค่า — พับไว้ จอ TV ต้องเป็นเนื้อหาล้วน
-  const workDate = getWorkDate();
+  /* 🔴 ห้ามใช้ `getWorkDate()` ตรงๆ ที่นี่ — จอแขวนเปิดค้างไม่มีอะไรสั่ง re-render
+     ⇒ พอข้าม 08:00 จะยังถามวันงานเมื่อวาน = "ไม่มีไลน์เปิด" เทาทั้งจอ (บั๊กหน้างาน 12/11) */
+  const workDate = useWorkDate();
 
   useEffect(() => {
     /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)
@@ -189,10 +192,10 @@ export default function TvBoard({ onOpenMenu = null }) {
           ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อ/มุมมอง/วันงานแทน · index.css) */}
       <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          {cur.icon} Andon Board · {cur.label}
+          {cur.icon} Andon Board · {tr(cur.label)}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          {cur.sub} · วันงาน {workDate}
+          {cur.sub} {tr('· วันงาน')} {workDate}
           {secFilter ? ` · เฉพาะ ${secFilter}` : ''}
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
           {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่ไลน์ · ตัดขอบเขตไม่ได้ต้องบอกว่ากำลังโชว์ทั้งโรงงาน */}
@@ -200,9 +203,9 @@ export default function TvBoard({ onOpenMenu = null }) {
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
-          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">เมนู</button>}
-          <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
-          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>ตั้งค่าจอ</button>
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title={tr('เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)')}>{tr('เมนู')}</button>}
+          <button onClick={toggleFs} style={btn(fs)} title={tr('เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง')}>⛶</button>
+          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>{tr('ตั้งค่าจอ')}</button>
         </div>
       </div>
 
@@ -212,21 +215,21 @@ export default function TvBoard({ onOpenMenu = null }) {
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
           <SectionScopeSelect lines={lines} value={secFilter} onChange={s => setParam('sec', s)} only={secOpts} width={220}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น" />
+            title={tr('ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น')} />
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
-              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {x.label}</button>
+              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {tr(x.label)}</button>
             ))}
           </>}
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* 🔊 ขอบเขตเสียง — ตัว <DowntimeSiren> ในบอร์ดอ่าน `?sound=` ตัวเดียวกัน */}
           {/* จอสโตร์เงียบเป็นค่าเริ่มต้น (เสียงเรียกช่างไม่ใช่งานสโตร์ · 12/10) — เปิดได้ด้วย `?sound=all` */}
           <button onClick={() => setParam('sound', sp.get('sound') === 'all' ? '' : 'all')} style={btn(sp.get('sound') === 'all')}>
-            {sp.get('sound') === 'all' ? 'ดังทุกเครื่องหยุด' : dept === 'store' ? 'ไม่มีเสียง' : 'ดังเฉพาะเรียกช่าง'}
+            {sp.get('sound') === 'all' ? tr('ดังทุกเครื่องหยุด') : dept === 'store' ? tr('ไม่มีเสียง') : tr('ดังเฉพาะเรียกช่าง')}
           </button>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            ตั้งเสร็จแล้ว <b>บุ๊กมาร์กหน้านี้ไว้ที่ทีวี</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
+            ตั้งเสร็จแล้ว <b>{tr('บุ๊กมาร์กหน้านี้ไว้ที่ทีวี')}</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
           </span>
         </div>
       )}
@@ -251,11 +254,11 @@ export default function TvBoard({ onOpenMenu = null }) {
             ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
             : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
           <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
-            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>{tr('ลองใหม่')}</button>
         </div>
       )}
       {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (
-        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
+        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>{tr('กำลังโหลด...')}</div>
       )}
       {dept === 'mo'
         ? (linesState === 'ok' && <MoTvBoard inScope={inScope} isMobile={isMobile} />)

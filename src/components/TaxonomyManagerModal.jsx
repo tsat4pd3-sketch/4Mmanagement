@@ -6,6 +6,7 @@ import { pickUnusedColor } from '../utils/colorPick'
 import { teamKeyOf } from '../utils/mtnTeams'
 import { EQUIPMENT_KINDS } from '../utils/equipmentKinds'
 
+import { tr } from '../utils/i18n';
 // Generic CRUD modal for a small taxonomy table (code + label + color|icon).
 // Used for pm_checkpoint_categories and pm_checking_methods, but table-agnostic.
 //
@@ -106,7 +107,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       {/* modal มีฟอร์มกรอกข้อมูล — ห้ามปิดจากคลิก backdrop (ข้อมูลที่พิมพ์อยู่จะหาย) ปิดจากปุ่ม × เท่านั้น */}
-      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)' }} />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
         style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 480, maxHeight: '88vh', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -116,7 +117,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>กำลังโหลด...</div>
+            <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rows.map(r => (
@@ -124,31 +125,31 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   {extraField === 'color' && <span style={{ width: 14, height: 14, borderRadius: '50%', background: r.color, flexShrink: 0 }} />}
                   {extraField === 'icon' && <span style={{ fontSize: 18, flexShrink: 0 }}>{r.icon}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{tr(r.label)}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
-                    {withEquipTypes && <span style={{ fontSize: 11, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
+                    {withEquipTypes && <span style={{ fontSize: 11, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : tr('ทุกชนิด')}</span>}
                     {withTeam && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
-                    {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
+                    {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{tr('(ปิดใช้งาน)')}</span>}
                   </div>
                   {canEditRow(r) ? <>
-                    <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
-                    <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
-                  </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ดูอย่างเดียว</span>}
+                    <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>{tr('แก้ไข')}</button>
+                    <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>{tr('ลบ')}</button>
+                  </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('ดูอย่างเดียว')}</span>}
                 </div>
               ))}
-              {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>ยังไม่มีรายการ</p>}
+              {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>{tr('ยังไม่มีรายการ')}</p>}
             </div>
           )}
 
           {editing && (
             <div style={{ marginTop: 14, padding: 14, borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{editing === 'new' ? 'เพิ่มรายการใหม่' : 'แก้ไขรายการ'}</p>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{editing === 'new' ? tr('เพิ่มรายการใหม่') : tr('แก้ไขรายการ')}</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
                 <div><label style={lbl}>Code *</label><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="LP" style={inp} /></div>
                 <div><label style={lbl}>Label *</label><input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Locator Pin" style={inp} /></div>
               </div>
               {extraField === 'color' && (
-                <div><label style={lbl}>สี</label>
+                <div><label style={lbl}>{tr('สี')}</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ width: 44, height: 32, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'none', cursor: 'pointer' }} />
                     <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ ...inp, flex: 1 }} />
@@ -156,7 +157,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                 </div>
               )}
               {extraField === 'icon' && (
-                <div><label style={lbl}>ไอคอน</label>
+                <div><label style={lbl}>{tr('ไอคอน')}</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} style={{ ...inp, width: 60, textAlign: 'center', fontSize: 18 }} />
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -168,17 +169,17 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                 </div>
               )}
               {withTeam && (
-                <div><label style={lbl}>ทีมช่างที่ใช้ (ว่าง = ใช้ร่วมทุกทีม)</label>
+                <div><label style={lbl}>{tr('ทีมช่างที่ใช้ (ว่าง = ใช้ร่วมทุกทีม)')}</label>
                   {/* สร้าง/ย้ายเป็นของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวตั้งได้แต่ของทีมตัวเอง */}
                   <select value={form.team || ''} onChange={e => setForm(f => ({ ...f, team: e.target.value }))} style={inp}>
-                    {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
+                    {(isBoss || unscoped) && <option value="">{tr('🌐 ใช้ร่วมทุกทีม')}</option>}
                     {teams.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
-                      .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                      .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
                   </select>
                 </div>
               )}
               {withEquipTypes && (
-                <div><label style={lbl}>ใช้กับชนิดอุปกรณ์ (ว่าง = ทุกชนิด)</label>
+                <div><label style={lbl}>{tr('ใช้กับชนิดอุปกรณ์ (ว่าง = ทุกชนิด)')}</label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {EQUIP_TYPE_OPTS.map(o => {
                       const on = (form.equip_types || []).includes(o.k)
@@ -189,14 +190,14 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                 </div>
               )}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'end' }}>
-                <div><label style={lbl}>ลำดับ</label><input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inp} /></div>
+                <div><label style={lbl}>{tr('ลำดับ')}</label><input type="number" value={form.sort_order} onChange={e => setForm(f => ({ ...f, sort_order: e.target.value }))} style={inp} /></div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text2)', cursor: 'pointer', paddingBottom: 8 }}>
-                  <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} /> ใช้งาน
+                  <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} /> {tr('ใช้งาน')}
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setEditing(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'บันทึก...' : 'บันทึก'}</button>
+                <button onClick={() => setEditing(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
+                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? tr('บันทึก...') : tr('บันทึก')}</button>
               </div>
             </div>
           )}
@@ -204,7 +205,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
         {!editing && (
           <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มรายการ</button>
+            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('+ เพิ่มรายการ')}</button>
           </div>
         )}
       </motion.div>

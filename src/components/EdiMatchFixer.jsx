@@ -6,6 +6,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { normKey } from '../utils/ediMerge';
 import { isFgMat } from '../utils/matPrefix';
 
+import { tr } from '../utils/i18n';
 /* ─── 🔗 แก้คำเตือนจับคู่พาร์ท EDI บนจอ preview (2026-10-01 · คำสั่ง user) ──────────────
    user: *"แจ้ง error มาก็ไม่รู้จะไปแก้ยังไง · แจ้งให้เช็คว่าจับคู่ถูกมั้ย แล้วตัดสินใจอะไรได้"*
 
@@ -92,7 +93,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     </button>
   );
   const readOnly = !canEdit && (
-    <div style={{ fontSize: 12, color: 'var(--muted)' }}>ดูอย่างเดียว — คนที่มีสิทธิ์อัพโหลดเป็นคนตัดสินคู่พาร์ท</div>
+    <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ดูอย่างเดียว — คนที่มีสิทธิ์อัพโหลดเป็นคนตัดสินคู่พาร์ท')}</div>
   );
 
   /* ① แยกลูกค้าไม่ออก — ตัดสินราย ship-to (เลขเดียวกันไปคนละ MAT ตามปลายทาง) */
@@ -108,22 +109,22 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     <>
       {(edi.retiredMaps || []).length > 0 && (
         <div style={box('239,68,68')}>
-          <div style={head('#ef4444')}>⛔ {edi.retiredMaps.length} คู่ที่เคยจับไว้ ชี้ไปสินค้าที่ปิดใช้งานแล้ว — ไม่ใช้คู่นี้แล้ว ต้องเลือกใหม่ในกล่องด้านล่าง</div>
-          <div style={hint}>สินค้าที่ปิดใช้งานมักเพราะ ECN ออกเลขใหม่ · ถ้าเลขใหม่ยังไม่มีให้เลือก ให้ไปตั้งที่ Product Master ก่อน</div>
+          <div style={head('#ef4444')}>⛔ {edi.retiredMaps.length} {tr('คู่ที่เคยจับไว้ ชี้ไปสินค้าที่ปิดใช้งานแล้ว — ไม่ใช้คู่นี้แล้ว ต้องเลือกใหม่ในกล่องด้านล่าง')}</div>
+          <div style={hint}>{tr('สินค้าที่ปิดใช้งานมักเพราะ ECN ออกเลขใหม่ · ถ้าเลขใหม่ยังไม่มีให้เลือก ให้ไปตั้งที่ Product Master ก่อน')}</div>
           {edi.retiredMaps.map(m => (
             <div key={`${m.part}|${m.shipTo}`} style={row}>
               <span style={mono}>{m.part}</span>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {lbl(m.shipTo)} · เดิม {m.mat} (ปิดใช้งาน)</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {lbl(m.shipTo)} {tr('· เดิม')} {m.mat} {tr('(ปิดใช้งาน)')}</span>
             </div>
           ))}
         </div>
       )}
       {ambRows.length > 0 && (
         <div style={box('239,68,68')}>
-          <div style={head('#ef4444')}>🔴 {ambRows.length} คู่ (พาร์ท × ship-to) มีหลาย MAT — เลือกว่าปลายทางนี้ใช้ MAT ไหน</div>
+          <div style={head('#ef4444')}>🔴 {ambRows.length} {tr('คู่ (พาร์ท × ship-to) มีหลาย MAT — เลือกว่าปลายทางนี้ใช้ MAT ไหน')}</div>
           <div style={hint}>
-            ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง ⇒ <b>MAT ที่เหลือดูเหมือนไม่มีใครสั่ง</b> ·
-            กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว 🏷️ = <b>ตัวขาย (1xx)</b> ที่ระบบหาจาก BOM ·
+            ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง ⇒ <b>{tr('MAT ที่เหลือดูเหมือนไม่มีใครสั่ง')}</b> ·
+            กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว 🏷️ = <b>{tr('ตัวขาย (1xx)')}</b> ที่ระบบหาจาก BOM ·
             โชว์เฉพาะ 1xx — ความต้องการ 2xx มาจาก BOM ของ 1xx ไม่ต้องผูกที่นี่
           </div>
           {list('amb', ambRows).map(a => (
@@ -146,7 +147,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                     <ProductSelect value={pick[`${a.part}|${a.st}`] || ''} onChange={o => setPick(p => ({ ...p, [`${a.part}|${a.st}`]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[`${a.part}|${a.st}`]} style={btn(false)}
-                    onClick={() => save(a.st, a.part, pick[`${a.part}|${a.st}`], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
+                    onClick={() => save(a.st, a.part, pick[`${a.part}|${a.st}`], 'เลือกตัวขายเอง')}>{tr('ใช้ตัวนี้')}</button>
                 </>
               ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.mats.filter(isFgMat).join(' | ') || '—'}</span>}
             </div>
@@ -158,7 +159,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
       {unm.length > 0 && (
         <div style={box('245,158,11')}>
-          <div style={head('#f59e0b')}>⚠️ {unm.length} พาร์ท ยังไม่รู้ว่าเป็น MAT ไหน — เลือก MAT แล้วกดจำ</div>
+          <div style={head('#f59e0b')}>⚠️ {unm.length} {tr('พาร์ท ยังไม่รู้ว่าเป็น MAT ไหน — เลือก MAT แล้วกดจำ')}</div>
           <div style={hint}>
             ถ้าไม่เลือก จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน (ไม่ผูกกับสินค้าในระบบ = ไม่ขึ้นในแผนผลิต) ·
             ถ้าหา MAT ไม่เจอในรายการ แปลว่ายังไม่มีสินค้านี้ใน Product Master ให้เพิ่มที่นั่นก่อน
@@ -178,8 +179,8 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                     </div>
                     <select value={scope[part] ?? ''} onChange={e => setScope(s => ({ ...s, [part]: e.target.value }))}
                       style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                      <option value="">ใช้กับทุก ship-to</option>
-                      {sts.map(st => <option key={st} value={st}>เฉพาะ {lbl(st)}</option>)}
+                      <option value="">{tr('ใช้กับทุก ship-to')}</option>
+                      {sts.map(st => <option key={st} value={st}>{tr('เฉพาะ')} {lbl(st)}</option>)}
                     </select>
                     <button type="button" disabled={!!busy || !pick[part]} style={btn(true)}
                       onClick={() => save(scope[part] ?? '', part, pick[part], 'เลือกเองบนจอนำเข้า EDI')}>
@@ -197,9 +198,9 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
       {base.length > 0 && (
         <div style={box('245,158,11')}>
-          <div style={head('#f59e0b')}>{base.length} พาร์ท ระบบเดาจากเลขฐาน (rev ต่างกัน) — ยืนยันหรือเปลี่ยน</div>
+          <div style={head('#f59e0b')}>{base.length} {tr('พาร์ท ระบบเดาจากเลขฐาน (rev ต่างกัน) — ยืนยันหรือเปลี่ยน')}</div>
           <div style={hint}>
-            rev สะกดต่างแต่เป็นพาร์ทเดิม = กด <b>✓ ถูก</b> · ถ้าเป็นพาร์ทใหม่จาก EC (ออกเลขใหม่) ให้เลือก MAT ใหม่แทน
+            rev สะกดต่างแต่เป็นพาร์ทเดิม = กด <b>{tr('✓ ถูก')}</b> · ถ้าเป็นพาร์ทใหม่จาก EC (ออกเลขใหม่) ให้เลือก MAT ใหม่แทน
             ไม่งั้นความต้องการจะเข้า MAT rev เก่า
           </div>
           {list('base', base).map(b => (
@@ -212,13 +213,13 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                   {soldButtons(b.part, '')}
                   {isFgMat(b.mat) && (
                     <button type="button" disabled={!!busy} style={btn(true)}
-                      onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>✓ ถูก</button>
+                      onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>{tr('✓ ถูก')}</button>
                   )}
                   <div style={{ minWidth: 220 }}>
                     <ProductSelect value={pick[b.part] || ''} onChange={o => setPick(p => ({ ...p, [b.part]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[b.part]} style={btn(false)}
-                    onClick={() => save('', b.part, pick[b.part], 'เปลี่ยนจากคู่ที่เดาจาก base part')}>เปลี่ยนเป็นตัวนี้</button>
+                    onClick={() => save('', b.part, pick[b.part], 'เปลี่ยนจากคู่ที่เดาจาก base part')}>{tr('เปลี่ยนเป็นตัวนี้')}</button>
                 </>
               )}
             </div>
@@ -230,27 +231,27 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
       {nonFg.length > 0 && (
         <div style={box('59,130,246')}>
-          <div style={head('#60a5fa')}>{nonFg.length} พาร์ท ยังไม่ได้ผูกตัวขาย (1xx) — เลือกว่าส่งเบอร์ไหน</div>
+          <div style={head('#60a5fa')}>{nonFg.length} {tr('พาร์ท ยังไม่ได้ผูกตัวขาย (1xx) — เลือกว่าส่งเบอร์ไหน')}</div>
           <div style={hint}>
-            ความต้องการลูกค้าควรลงที่ <b>ตัวขาย (1xx)</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
+            ความต้องการลูกค้าควรลงที่ <b>{tr('ตัวขาย (1xx)')}</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
             กดปุ่มเขียวเพื่อผูกกับตัวขาย หรือเลือก 1xx เอง · ไม่ต้องห่วงงาน 2xx — ความต้องการของมันมาจาก BOM ของ 1xx (งานแพ็คเรียกใช้)
           </div>
           {list('nonfg', nonFg).map(n => (
             <div key={n.part} style={row}>
               <span style={mono}>{n.part}</span>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {n.shipTos.map(lbl).join(', ')} · ยังไม่ได้ผูกตัวขาย</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>→ {n.shipTos.map(lbl).join(', ')} {tr('· ยังไม่ได้ผูกตัวขาย')}</span>
               <span style={{ flex: 1 }} />
               {canEdit && (
                 <>
                   {soldButtons(n.part, '')}
                   {!(edi.sold?.[n.part] || []).length && (
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบตัวขายใน BOM — เลือกเอง →</span>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่พบตัวขายใน BOM — เลือกเอง →')}</span>
                   )}
                   <div style={{ minWidth: 220 }}>
                     <ProductSelect value={pick[n.part] || ''} onChange={o => setPick(p => ({ ...p, [n.part]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[n.part]} style={btn(false)}
-                    onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
+                    onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>{tr('ใช้ตัวนี้')}</button>
                 </>
               )}
             </div>

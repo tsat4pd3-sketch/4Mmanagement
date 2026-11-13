@@ -4,6 +4,7 @@ import { UserContext, navItemsForGroups, NAV_GROUP_ORDER } from '../App';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ RemoteControl (🎮 รีโมทจอ) — มือถือคุมจอ TV/โปรเจคเตอร์ที่เปิด "รับรีโมท" ═══
@@ -106,20 +107,20 @@ export default function RemoteControl() {
 
   return (
     <Page width="narrow" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <PageHeader title="รีโมทจอ (Remote)" icon="🎮" />
+      <PageHeader title={tr('รีโมทจอ (Remote)')} icon="🎮" />
 
       {!joined ? (
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7 }}>
-            1. บนจอ TV/คอม เปิดเมนู sidebar → กด <b>รับรีโมทจอ</b> (ล่างสุด)<br />
-            2. จอจะโชว์<b>รหัส 6 หลัก</b>ที่ป้ายมุมล่างซ้าย — เอามาใส่ที่นี่
+            1. บนจอ TV/คอม เปิดเมนู sidebar → กด <b>{tr('รับรีโมทจอ')}</b> {tr('(ล่างสุด)')}<br />
+            2. จอจะโชว์<b>{tr('รหัส 6 หลัก')}</b>ที่ป้ายมุมล่างซ้าย — เอามาใส่ที่นี่
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="รหัส 6 หลัก" inputMode="numeric"
+              placeholder={tr('รหัส 6 หลัก')} inputMode="numeric"
               style={{ width: 150, fontSize: 22, fontWeight: 900, letterSpacing: 5, textAlign: 'center', padding: '10px 12px', borderRadius: 'var(--ctl-r)' }} />
             <button onClick={join} style={btn({ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)', flex: 1 })}>
-              เชื่อมต่อ
+              {tr('เชื่อมต่อ')}
             </button>
           </div>
         </div>
@@ -127,7 +128,7 @@ export default function RemoteControl() {
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)' }}>
             <span style={chipSt(linkOk ? 'var(--green)' : 'var(--amber)')}>{linkOk ? `🟢 เชื่อมกับจอ ${code}` : `🟡 ส่งหาห้อง ${code} (ยังไม่เห็นจอตอบ)`}</span>
-            <button onClick={leave} style={{ marginLeft: 'auto', ...btn({ fontSize: 12, padding: '6px 12px' }) }}>ตัดการเชื่อมต่อ</button>
+            <button onClick={leave} style={{ marginLeft: 'auto', ...btn({ fontSize: 12, padding: '6px 12px' }) }}>{tr('ตัดการเชื่อมต่อ')}</button>
           </div>
 
           {/* ── Touchpad — มือถือเป็นเมาส์ของจอ ── */}
@@ -144,23 +145,23 @@ export default function RemoteControl() {
 
           {/* ── ปุ่มวาระ (โหมดประชุมแถวเช้า — ยิงปุ่มลูกศร) ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            <button onClick={() => send({ type: 'key', key: 'ArrowLeft' })} style={btn({ fontSize: 18 })}>ก่อนหน้า</button>
-            <button onClick={() => send({ type: 'key', key: 'ArrowRight' })} style={btn({ fontSize: 18 })}>ถัดไป ▶</button>
-            <button onClick={() => send({ type: 'key', key: 'Escape' })} style={btn({ color: 'var(--amber)' })}>Esc ออกโหมด</button>
+            <button onClick={() => send({ type: 'key', key: 'ArrowLeft' })} style={btn({ fontSize: 18 })}>{tr('ก่อนหน้า')}</button>
+            <button onClick={() => send({ type: 'key', key: 'ArrowRight' })} style={btn({ fontSize: 18 })}>{tr('ถัดไป ▶')}</button>
+            <button onClick={() => send({ type: 'key', key: 'Escape' })} style={btn({ color: 'var(--amber)' })}>{tr('Esc ออกโหมด')}</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button onClick={() => send({ type: 'scroll', dy: -Math.round(window.innerHeight * 0.5) })} style={btn()}>เลื่อนขึ้น</button>
-            <button onClick={() => send({ type: 'scroll', dy: Math.round(window.innerHeight * 0.5) })} style={btn()}>เลื่อนลง</button>
+            <button onClick={() => send({ type: 'scroll', dy: -Math.round(window.innerHeight * 0.5) })} style={btn()}>{tr('เลื่อนขึ้น')}</button>
+            <button onClick={() => send({ type: 'scroll', dy: Math.round(window.innerHeight * 0.5) })} style={btn()}>{tr('เลื่อนลง')}</button>
           </div>
 
           {/* ── สั่งจอเปลี่ยนหน้า — เมนูชุดเดียวกับ sidebar (สิทธิ์เข้าหน้าคุมที่ฝั่งจอเอง) ── */}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>สั่งจอไปหน้า…</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>{tr('สั่งจอไปหน้า…')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {pages.map(p => (
                 <button key={p.to} onClick={() => send({ type: 'nav', to: p.to })}
                   style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
-                  {p.icon} {p.label}
+                  {p.icon} {tr(p.label)}
                 </button>
               ))}
             </div>

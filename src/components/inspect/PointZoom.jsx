@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import useIsMobile from '../../utils/useIsMobile'
 
+import { tr } from '../../utils/i18n';
 /* 🔍 รูปโคลสอัพของจุดตรวจ — เปิดในแอป (ไม่เด้งออกแท็บใหม่ เพราะหน้างานใช้มือถือ)
    ภาพรวม = แผนที่ว่าจุดอยู่ตรงไหน · ตัวนี้ = ซูมเข้าไปดูว่าต้องดูอะไรตรงนั้น
    ของกลางของ "จอตรวจ" ทุกระบบ (PM `PMCheckData` · QA `QaCheckSheet`/`QaPieceStepper` · 15/10)
@@ -14,7 +15,7 @@ export default function PointZoom({ url, label, color = 'var(--accent)', name, d
   if (!url) return null
   return (
     <div onClick={onClose} className="modal-scroll"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', maxWidth: '100%' }}>
         {label != null && label !== '' && (
           <span style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 'var(--r-pill)', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{label}</span>
@@ -26,7 +27,7 @@ export default function PointZoom({ url, label, color = 'var(--accent)', name, d
       {description && (
         <div onClick={e => e.stopPropagation()} style={{ color: '#e5e7eb', fontSize: 12.5, maxWidth: 'min(560px, 94vw)', textAlign: 'center', lineHeight: 1.6 }}>{description}</div>
       )}
-      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>ปิด</button>
+      <button onClick={onClose} style={{ padding: '9px 26px', borderRadius: 999, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>{tr('ปิด')}</button>
     </div>
   )
 }
@@ -45,7 +46,7 @@ export function PointThumb({ url, height = 52, mobileMax = 44, ...zoomProps }) {
   const h = isMobile ? Math.min(height, mobileMax) : height
   return (
     <>
-      <button type="button" title="แตะเพื่อดูรูปซูมของจุดนี้" aria-label="ดูรูปซูมของจุดนี้" onClick={() => setOpen(true)}
+      <button type="button" title={tr('แตะเพื่อดูรูปซูมของจุดนี้')} aria-label={tr('ดูรูปซูมของจุดนี้')} onClick={() => setOpen(true)}
         style={{ width: Math.round(h * THUMB_RATIO), height: h, flex: '0 0 auto', alignSelf: 'center', padding: 0, borderRadius: 6,
           border: '1px solid var(--border)', background: 'var(--bg2)', overflow: 'hidden', cursor: 'zoom-in',
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

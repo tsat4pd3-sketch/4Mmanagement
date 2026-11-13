@@ -28,6 +28,7 @@ import SupplierSelect from './SupplierSelect';
 import { fmtDateTime } from '../utils/dateFormat';
 import { isOutsourcePending as isPending, outsourceState } from '../utils/mtnOutsource';
 
+import { tr } from '../utils/i18n';
 const inp = { width: '100%', padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 12, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 7, padding: '6px 13px', fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 11px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' };
@@ -117,25 +118,25 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
   return (
     <div style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-        <b style={{ fontSize: 12.5 }}>🔧 ของที่ถอดออกมา ส่งซ่อมนอก</b>
+        <b style={{ fontSize: 12.5 }}>{tr('🔧 ของที่ถอดออกมา ส่งซ่อมนอก')}</b>
         <span style={{ fontSize: 11.5, fontWeight: 600, color: pending.length ? 'var(--amber)' : 'var(--muted)' }}>
           ยังอยู่ข้างนอก {pending.length}
         </span>
-        {!!done.length && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· จบแล้ว {done.length}</span>}
-        {canEdit && <button onClick={() => setAdding(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{adding ? 'ปิดฟอร์ม' : '+ ส่งของไปซ่อม'}</button>}
+        {!!done.length && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('· จบแล้ว')} {done.length}</span>}
+        {canEdit && <button onClick={() => setAdding(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{adding ? tr('ปิดฟอร์ม') : tr('+ ส่งของไปซ่อม')}</button>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 6 }}>
-        ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้ = <b>ปิดใบ MO ได้เลย ไม่ต้องรอของ</b> ·
+        ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้ = <b>{tr('ปิดใบ MO ได้เลย ไม่ต้องรอของ')}</b> ·
         ตัวที่ถอดออกมาส่งซ่อมแล้วบันทึกไว้ตรงนี้ · <b>กดรับของเข้า = เข้าสต็อกอะไหล่ให้อัตโนมัติ</b>
       </div>
-      {err && <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>⚠ โหลดรายการส่งซ่อมนอกไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
+      {err && <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{tr('⚠ โหลดรายการส่งซ่อมนอกไม่สำเร็จ:')} {err} {tr('— ตัวนับข้างบนอาจไม่ครบ')}</div>}
 
       {adding && canEdit && (
         <AddForm parts={parts} fullName={fullName} orderId={orderId}
           onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load(); }} />
       )}
 
-      {!rows.length && !err && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการส่งซ่อมนอกในใบนี้</div>}
+      {!rows.length && !err && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ยังไม่มีรายการส่งซ่อมนอกในใบนี้')}</div>}
 
       {rows.map(r => {
         const state = outsourceState(r);
@@ -147,13 +148,13 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
               <span style={{ color: state.color, fontWeight: 700 }}>{state.text}</span>
               {canEdit && isPending(r) && (
                 <>
-                  <button onClick={() => setBackFor(backFor === r.id ? null : r.id)} style={{ ...btnGhost, color: 'var(--green)', borderColor: 'var(--green)' }}>📥 รับของเข้า</button>
-                  <button onClick={() => cancel(r)} style={{ ...btnGhost, color: 'var(--muted)' }}>✕ ยกเลิก</button>
+                  <button onClick={() => setBackFor(backFor === r.id ? null : r.id)} style={{ ...btnGhost, color: 'var(--green)', borderColor: 'var(--green)' }}>{tr('📥 รับของเข้า')}</button>
+                  <button onClick={() => cancel(r)} style={{ ...btnGhost, color: 'var(--muted)' }}>{tr('✕ ยกเลิก')}</button>
                 </>
               )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              {!r.part_id && <span style={{ color: 'var(--amber)' }}>ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก) · </span>}
+              {!r.part_id && <span style={{ color: 'var(--amber)' }}>{tr('ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก) ·')} </span>}
               ส่ง {fmtDateTime(r.sent_at)}{r.sent_by ? ` · ${r.sent_by}` : ''}
               {r.supplier ? ` · ร้าน ${r.supplier}` : ''}
               {r.pr_no ? ` · PR ${r.pr_no}` : ''}
@@ -178,15 +179,15 @@ function BackForm({ row, busy, onCancel, onConfirm }) {
   const short = num(q) != null && num(q) < Number(row.qty || 0);
   return (
     <div style={{ marginTop: 6, padding: '7px 9px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>รับกลับเข้าสต็อก — {row.part_name}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>{tr('รับกลับเข้าสต็อก —')} {row.part_name}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
-        <label style={lbl}>จำนวนที่รับกลับ<input type="number" min="0" value={q} onChange={e => setQ(e.target.value)} style={inp} /></label>
-        <label style={lbl}>หมายเหตุ<input value={note} onChange={e => setNote(e.target.value)} placeholder="เช่น ซ่อมแล้วใช้ได้" style={inp} /></label>
+        <label style={lbl}>{tr('จำนวนที่รับกลับ')}<input type="number" min="0" value={q} onChange={e => setQ(e.target.value)} style={inp} /></label>
+        <label style={lbl}>{tr('หมายเหตุ')}<input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('เช่น ซ่อมแล้วใช้ได้')} style={inp} /></label>
       </div>
-      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>⚠ น้อยกว่าที่ส่งไป ({row.qty}) — ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน</div>}
+      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{tr('⚠ น้อยกว่าที่ส่งไป (')}{row.qty}) — ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-        <button disabled={busy} onClick={() => onConfirm(row, q, note)} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? 'กำลังบันทึก…' : 'ยืนยันรับเข้าสต็อก'}</button>
-        <button disabled={busy} onClick={onCancel} style={btnGhost}>ยกเลิก</button>
+        <button disabled={busy} onClick={() => onConfirm(row, q, note)} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? tr('กำลังบันทึก…') : tr('ยืนยันรับเข้าสต็อก')}</button>
+        <button disabled={busy} onClick={onCancel} style={btnGhost}>{tr('ยกเลิก')}</button>
       </div>
     </div>
   );
@@ -232,25 +233,25 @@ function AddForm({ parts, fullName, orderId, onCancel, onDone }) {
         อะไหล่ในทะเบียน (เลือก = รับกลับแล้วเข้าสต็อกให้เอง · พิมพ์เอง = ของนอกทะเบียน ไม่เข้าสต็อก)
       </div>
       <SearchSelect value={f.part_id} text={f.part_name} options={partOpts} allowFree freeHint="ไม่เข้าสต็อก"
-        placeholder="ค้นอะไหล่ — ชื่อ / รหัส / ชั้นวาง หรือพิมพ์เอง"
+        placeholder={tr('ค้นอะไหล่ — ชื่อ / รหัส / ชั้นวาง หรือพิมพ์เอง')}
         onChange={({ id, text }) => setF(o => ({ ...o, part_id: id || '', part_name: text || '' }))} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 6, marginTop: 6 }}>
-        <label style={lbl}>จำนวน<input type="number" min="0" value={f.qty} onChange={e => set('qty', e.target.value)} style={inp} /></label>
-        <label style={lbl}>เลข PR/PO งานซ่อม<input value={f.pr_no} onChange={e => set('pr_no', e.target.value)} placeholder="ไม่รู้เว้นว่าง" style={inp} /></label>
-        <label style={lbl}>ค่าซ่อม/ชิ้น (บาท)<input type="number" min="0" value={f.repair_cost} onChange={e => set('repair_cost', e.target.value)} placeholder="ยังไม่รู้ = ว่าง" style={inp} /></label>
-        <label style={lbl}>นัดรับกลับ<input type="date" value={f.expected_at} onChange={e => set('expected_at', e.target.value)} style={inp} /></label>
+        <label style={lbl}>{tr('จำนวน')}<input type="number" min="0" value={f.qty} onChange={e => set('qty', e.target.value)} style={inp} /></label>
+        <label style={lbl}>{tr('เลข PR/PO งานซ่อม')}<input value={f.pr_no} onChange={e => set('pr_no', e.target.value)} placeholder={tr('ไม่รู้เว้นว่าง')} style={inp} /></label>
+        <label style={lbl}>{tr('ค่าซ่อม/ชิ้น (บาท)')}<input type="number" min="0" value={f.repair_cost} onChange={e => set('repair_cost', e.target.value)} placeholder={tr('ยังไม่รู้ = ว่าง')} style={inp} /></label>
+        <label style={lbl}>{tr('นัดรับกลับ')}<input type="date" value={f.expected_at} onChange={e => set('expected_at', e.target.value)} style={inp} /></label>
       </div>
       <div style={{ marginTop: 6 }}>
-        <div style={lbl}>ส่งไปร้านไหน</div>
+        <div style={lbl}>{tr('ส่งไปร้านไหน')}</div>
         <SupplierSelect value={f.supplier} onChange={res => set('supplier', res.supplier || '')}
-          placeholder="ค้นชื่อร้าน/ผู้รับจ้าง — พิมพ์เองได้" inputStyle={{ background: 'var(--bg)' }} />
+          placeholder={tr('ค้นชื่อร้าน/ผู้รับจ้าง — พิมพ์เองได้')} inputStyle={{ background: 'var(--bg)' }} />
       </div>
-      <label style={{ ...lbl, display: 'block', marginTop: 6 }}>หมายเหตุ
-        <input value={f.note} onChange={e => set('note', e.target.value)} placeholder="เช่น อาการที่เสีย" style={inp} />
+      <label style={{ ...lbl, display: 'block', marginTop: 6 }}>{tr('หมายเหตุ')}
+        <input value={f.note} onChange={e => set('note', e.target.value)} placeholder={tr('เช่น อาการที่เสีย')} style={inp} />
       </label>
       <div style={{ display: 'flex', gap: 6, marginTop: 7 }}>
-        <button disabled={busy} onClick={save} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? 'กำลังบันทึก…' : 'บันทึกส่งซ่อม'}</button>
-        <button disabled={busy} onClick={onCancel} style={btnGhost}>ยกเลิก</button>
+        <button disabled={busy} onClick={save} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? tr('กำลังบันทึก…') : tr('บันทึกส่งซ่อม')}</button>
+        <button disabled={busy} onClick={onCancel} style={btnGhost}>{tr('ยกเลิก')}</button>
       </div>
     </div>
   );

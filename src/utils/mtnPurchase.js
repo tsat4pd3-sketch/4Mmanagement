@@ -21,6 +21,7 @@
        แต่ downtime/machine breakdown **นับเต็ม** (กฎเหล็กเดิม ห้ามสลับ)
      · ไฟล์นี้ pure (ไม่ import supabase) ⇒ เทสเรียกตรงได้
    ═══════════════════════════════════════════════════════════════════════════════════════ */
+import { linearFlow } from './stepFlow.js';
 
 /** สถานะใบขอซื้อ — สีตาม Andon (เหลือง = รอ · ฟ้า = กำลังมา · เขียว = จบ · เทา = ยกเลิก) */
 export const PR_STATUS_META = {
@@ -200,3 +201,15 @@ export function assignedTechsOf(order) {
 }
 /** ข้อความรวมสำหรับ `assigned_to` (ผู้อ่านเดิม: ใบพิมพ์/Excel/edge แจ้งเตือน) */
 export const joinTechs = (names = []) => (names || []).map(s => String(s || '').trim()).filter(Boolean).join(', ');
+
+/* แถบ "ถึงขั้นไหน" ใบขอซื้อ (<StepFlow compact> ในใบ MO · UI §6.30 · 12/11) */
+export const prFlow = (pr) => linearFlow({
+  status: pr?.status, row: pr,
+  steps: [
+    { label: 'ขอซื้อ', who: 'ช่าง / จัดซื้อ', action: isAwaitingPrNo(pr) ? 'กรอกเลข PR (SAP) แล้วสั่งซื้อ' : 'สั่งซื้อ' },
+    { label: 'สั่งแล้ว', who: 'ผู้ขาย', action: 'ส่งของ — ช่างรับของเข้า' },
+    { label: 'รับของแล้ว' },
+  ],
+  at: { requested: 0, ordered: 1, received: 3 },
+  exits: { cancelled: { tone: 'none', label: 'ยกเลิก', at: (row) => (row?.ordered_at ? 1 : 0) } },
+});
