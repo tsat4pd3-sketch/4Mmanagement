@@ -42,3 +42,27 @@ test('matchCharToItem: พาร์ท (ไม่สนช่องว่าง/
   assert.equal(matchCharToItem({ part_no: 'MB3B 8B222 BF', control_method: '', characteristic: 'Thickness' }, items), null)
   assert.equal(matchCharToItem({ part_no: 'X', control_method: '#T13' }, items), null)
 })
+
+import { groupRowsByItem, pointPasses, sortPoints } from '../qaSpcSource.js'
+
+test('groupRowsByItem: แยกตามจุด + เรียงเวลาในแต่ละจุด', () => {
+  const m = groupRowsByItem([
+    { id: '1', item_id: 'A', values_json: [2], qa_inspection_sheets: sh('2026-11-02', 'day', 1) },
+    { id: '2', item_id: 'A', values_json: [1], qa_inspection_sheets: sh('2026-11-01', 'day', 1) },
+    { id: '3', item_id: 'B', values_json: [9], qa_inspection_sheets: sh('2026-11-01', 'day', 1) },
+    { id: '4', values_json: [5] },
+  ])
+  assert.deepEqual(m.get('A').map(r => r.readings[0]), [1, 2])
+  assert.equal(m.get('B').length, 1); assert.equal(m.size, 2)
+})
+
+test('pointPasses / sortPoints: Cpk ไม่รู้ ≠ ต่ำ · แย่สุดขึ้นก่อน', () => {
+  assert.equal(pointPasses({ n: 5, cpk: null, oos: 0 }, 'low'), false)
+  assert.equal(pointPasses({ n: 5, cpk: 0.9, oos: 0 }, 'low'), true)
+  assert.equal(pointPasses({ n: 0 }, 'nodata'), true)
+  const s = sortPoints([
+    { balloon: '3', n: 0 }, { balloon: '1', n: 9, cpk: 2 }, { balloon: '2', n: 9, cpk: 0.5 },
+    { balloon: '4', n: 9, cpk: 1.5, oos: 1 }, { balloon: '5', n: 1, cpk: null },
+  ])
+  assert.deepEqual(s.map(x => x.balloon), ['4', '2', '1', '5', '3'])
+})

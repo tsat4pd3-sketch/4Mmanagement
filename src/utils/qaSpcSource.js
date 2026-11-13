@@ -80,3 +80,42 @@ export function matchCharToItem(char, items) {
   const byName = same.filter(it => String(it.characteristic || '').trim() === String(char.characteristic || '').trim());
   return byName.length === 1 ? byName[0] : null;
 }
+
+/** ผลตรวจของ "ทั้งชิ้นงาน" → Map(item_id → แถวค่าเดี่ยวเรียงเก่า→ใหม่) — ใช้ทำตารางสรุปทุกจุดในครั้งเดียว */
+export function groupRowsByItem(results) {
+  const by = new Map();
+  for (const r of results || []) {
+    if (!r?.item_id) continue;
+    if (!by.has(r.item_id)) by.set(r.item_id, []);
+    by.get(r.item_id).push(r);
+  }
+  const out = new Map();
+  for (const [id, list] of by) out.set(id, sheetResultsToRows(list));
+  return out;
+}
+
+/* ตัวกรองตารางจุด (ไทยเก็บที่นี่ · จอแปลตอนวาด) — 'low' = Cpk < 1.33 · 'oos' = มีค่าหลุด spec · 'nodata' = ยังไม่มีค่า */
+export const POINT_FILTERS = [
+  { value: 'all', label: 'ทุกจุด' },
+  { value: 'low', label: 'Cpk < 1.33' },
+  { value: 'oos', label: 'มีค่าหลุด spec' },
+  { value: 'nodata', label: 'ยังไม่มีค่า' },
+];
+export const CPK_OK = 1.33;
+
+/** จุดนี้ผ่านตัวกรองไหม — `st` = { n, cpk, oos } · Cpk คิดไม่ได้ (null) ไม่นับเป็น "ต่ำ" (ไม่รู้ ≠ แย่) */
+export function pointPasses(st, filter) {
+  if (filter === 'low') return st.cpk != null && st.cpk < CPK_OK;
+  if (filter === 'oos') return (st.oos || 0) > 0;
+  if (filter === 'nodata') return !st.n;
+  return true;
+}
+
+/** เรียงจุด: แย่สุดขึ้นก่อน — หลุด spec → Cpk น้อย→มาก → คิด Cpk ไม่ได้ → ไม่มีค่า · เสมอกันเรียงเลขบอลลูน */
+export function sortPoints(list) {
+  const rank = (s) => (!s.n ? 3 : s.oos > 0 ? 0 : s.cpk != null ? 1 : 2);
+  return [...(list || [])].sort((a, b) =>
+    rank(a) - rank(b)
+    || (rank(a) <= 1 ? (a.cpk ?? 0) - (b.cpk ?? 0) : 0)
+    || String(a.balloon || '').localeCompare(String(b.balloon || ''), undefined, { numeric: true }));
+}
