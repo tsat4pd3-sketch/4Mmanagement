@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -466,6 +466,20 @@
+@@ -501,6 +501,20 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -21,7 +21,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -571,7 +585,7 @@
+@@ -606,7 +620,7 @@
       ถ้าไม่มีแถวนี้ harness จะไม่เคยเรนเดอร์สาขานั้นเลย */
    production_sessions: (r, i) => ({
      ...r,

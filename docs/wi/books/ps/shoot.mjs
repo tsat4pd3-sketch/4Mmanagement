@@ -9,7 +9,7 @@ import { createRequire } from 'module'; const require = createRequire(import.met
 import fs from 'fs';
 const OUT=process.argv[2]; const SPEC=JSON.parse(fs.readFileSync(process.argv[3]));
 const only = process.argv[4] ? process.argv[4].split(',') : null;
-const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSync(EXE) ? { executablePath: EXE } : {}); const pg=await b.newPage({viewport:{width:1600,height:1000}});
+const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSync(EXE) ? { executablePath: EXE } : {}); const pg=await b.newPage({viewport:{width:1600,height:1000}, timezoneId:'Asia/Bangkok'});
 const res = fs.existsSync(OUT+'/boxes.json') ? JSON.parse(fs.readFileSync(OUT+'/boxes.json')) : {};
 async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
 const inView = (bb) => bb && bb.width>0 && bb.y>=0 && bb.y+bb.height<=1000 && bb.x>=0 && bb.x<1600;
@@ -32,6 +32,8 @@ async function findVisible(raw, looseAll){
   }
   return null;
 }
+// อุ่นเครื่อง: หน้าแรกหลัง vite เพิ่งขึ้น = จอว่าง (dep ยัง optimize) — โหลดทิ้ง 1 รอบก่อนถ่ายจริง (13/11)
+await pg.goto(`http://localhost:${process.env.PORT||5198}/audit/index.html?p=${SPEC[0].p}&role=admin`).catch(()=>{}); await pg.waitForTimeout(8000);
 for (const s of SPEC){
   if (only && !only.includes(s.id)) continue;
   await pg.goto(`http://localhost:${process.env.PORT||5198}/audit/index.html?p=${s.p}&role=admin${s.q?'&'+s.q:''}`); await pg.waitForTimeout(3500); await dismiss();
