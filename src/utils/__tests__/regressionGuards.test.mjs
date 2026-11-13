@@ -10765,3 +10765,21 @@ test('⏳ mo-details-pending — เรียกช่าง = ต้องม�
     '\n\n❌ เอาธง details_pending ไปบล็อกขั้น/ปุ่ม — ใบที่รอเอกสารต้องยังรับงาน/ซ่อม/ปิดได้ตามปกติ\n'
     + '   (กฎโมดูล: "งานซ่อมกับบริการ แค่แจ้งให้ทราบ ไม่งั้นไลน์จะหยุดรอการอนุมัติ")\n');
 });
+
+test('🧾 qbin-edit-modal-both-modes — modal บันทึก/แก้ไขของถังต้องวาดทั้งโหมดคิวและโหมดเต็ม', () => {
+  /* บั๊ก 13/11: โหมดคิว (/qa?tab=bins) `return` ก่อนถึง modal ⇒ ปุ่ม "✏️ กรอกเลขใบ FM-QA-042" กดแล้วเงียบ */
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  const bad = [];
+  const i = q.indexOf('if (queueOnly) return (');
+  if (i < 0) bad.push(`${Q}: หา "if (queueOnly) return (" ไม่เจอ — เปลี่ยนโครงแล้วต้องแก้ด่านนี้`);
+  else {
+    const def = q.indexOf('const renderEditModal = ');
+    if (def < 0 || def > i) bad.push(`${Q}: ต้องประกาศ renderEditModal() ก่อน return โหมดคิว`);
+    const after = q.slice(i);
+    const n = (after.match(/\{renderEditModal\(\)\}/g) || []).length;
+    if (n < 2) bad.push(`${Q}: ต้องเรียก {renderEditModal()} ทั้งใน return โหมดคิวและโหมดเต็ม (เจอ ${n})`);
+  }
+  if (/ระบบไม่ย้ายให้เอง/.test(q)) bad.push(`${Q}: ข้อความ "ระบบไม่ย้ายให้เอง" ไม่ตรงพฤติกรรม (save() เรียก toRed ให้แล้ว)`);
+  assert.deepEqual(bad, []);
+});

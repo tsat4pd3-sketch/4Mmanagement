@@ -909,9 +909,148 @@ export default function QualityBins({ mode = 'full' }) {
     </div>
   );
 
+  /* ── modal บันทึก/แก้ไข — ใช้ทั้ง 2 โหมด (บั๊ก 13/11: โหมดคิว /qa คืนค่าก่อนถึง modal นี้ ⇒
+     ปุ่ม "✏️ กรอกเลขใบ FM-QA-042" ในคิวกดแล้วไม่มีอะไรเกิดขึ้น) ── */
+  const renderEditModal = () => editing && (
+        <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
+          style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 720px)', maxHeight: '92vh', overflowY: 'auto' }}>
+            <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
+              {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {trI18n(B.short)}
+            </h3>
+            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
+              <div><label style={lbl}>{trI18n('วันที่ลงถัง *')}</label>
+                <input type="date" value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date: e.target.value }))} style={inp} /></div>
+              <div><label style={lbl}>{trI18n('ไลน์การผลิต')}</label>
+                <LineSelect lines={lineObjs} value={form.line_name} style={inp}
+                  onChange={v => setForm(f => ({ ...f, line_name: v }))} /></div>
+              <div><label style={lbl}>{trI18n('จำนวน (ชิ้น) *')}</label>
+                <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
+
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)')}</label>
+                {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
+                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
+                  placeholder={trI18n('MAT / รหัสชิ้นงาน')} inputStyle={inp}
+                  onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
+                    const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
+                    setMatLocked(inReg);
+                    setForm(f => ({ ...f, mat_no, ...(inReg ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
+                  }} /></div>
+              {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
+              <div><label style={lbl}>{trI18n('ชื่อชิ้นงาน')}</label>
+                <input value={form.part_name} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
+              <div><label style={lbl}>{trI18n('Part No. (เลขลูกค้า)')}</label>
+                <input value={form.part_no} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
+
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('สาเหตุ')}</label>
+                <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
+              {/* 📷 รูปตอนพบ — ทางเลือก ห้ามบังคับ (หน้างานใส่ถุงมือ/รีบ · คำสั่ง user 12/10)
+                  ประโยชน์หลัก: QA ตัดสิน 4 ทางจากรูปได้โดยไม่ต้องเดินไปดูของ และของที่ถูกซ่อม/
+                  ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <QualityPhotoField
+                  label={trI18n('รูปตอนพบของเสีย')} hint={trI18n('ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ')}
+                  url={form.found_img || null} file={foundFile}
+                  onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
+                />
+              </div>
+              {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
+              <div><label style={lbl}>{trI18n('ผู้แจ้ง (พนักงาน)')}</label>
+                <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
+              <div><label style={lbl}>{trI18n('ผู้ตรวจสอบ (QA)')}</label>
+                <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} history={qaByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
+
+              {isY ? (<>
+                {/* ── §5.4 ผลการพิจารณาของ QA — 4 ทางตาม WI (เดิมระบบมีแค่ ซ่อม กับ ทำลาย) ──
+                    ยังไม่เลือก = "รอ QA พิจารณา" ซึ่งเป็นสถานะจริง ห้ามบังคับเลือก
+                    เลือกแล้วกดซ้ำ = ยกเลิกการตัดสิน (QA เปลี่ยนใจได้ก่อนของออกจากถัง) */}
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
+                  ผลการพิจารณาของ QA <span style={{ fontWeight: 400 }}>(WI-PD3-069 §5.4)</span>
+                </div>
+                <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                  {QA_DECISIONS.map(d => {
+                    const on = form.qa_decision === d.value;
+                    return (
+                      <button key={d.value} type="button" title={canDecide ? trI18n(d.hint) : trI18n('ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)')}
+                        disabled={!canDecide}
+                        onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
+                        style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800,
+                          cursor: canDecide ? 'pointer' : 'not-allowed', opacity: canDecide || on ? 1 : 0.5,
+                          border: `1px solid ${on ? d.color : 'var(--border2)'}`,
+                          background: on ? `${d.color}22` : 'transparent', color: on ? d.color : 'var(--text2)' }}>
+                        {trI18n(d.label)}
+                      </button>
+                    );
+                  })}
+                </div>
+                {form.qa_decision && (
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
+                    ↳ {decisionOf(form.qa_decision)?.hint}
+                  </div>
+                )}
+                {form.qa_decision === 'use_as_is' && (
+                  <div style={{ gridColumn: '1 / -1' }}>
+                    <label style={lbl}>{trI18n('เลขที่ใบ')} {SPECIAL_USE_FORM} {trI18n('(ใบขออนุมัติใช้ชิ้นส่วนเป็นกรณีพิเศษ)')}</label>
+                    <input value={form.special_use_doc_no} placeholder={trI18n('ยังไม่ออกใบ = เว้นว่างไว้ก่อน (จะยังนับเป็นของค้างในถัง)')}
+                      onChange={e => setForm(f => ({ ...f, special_use_doc_no: e.target.value }))} style={inp} />
+                  </div>
+                )}
+                {form.qa_decision === 'scrap' && (
+                  <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: '#f59e0b', lineHeight: 1.5 }}>
+                    ⚠ บันทึกแล้วระบบจะถามยืนยันจำนวนเพื่อย้ายลงถังแดงให้ทันที — กดยกเลิก = ใบยังค้างในคิวรอพิจารณา
+                    (“เอาของลงถังแดง” เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน)
+                  </div>
+                )}
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ผลการซ่อม')}</div>
+                <div><label style={lbl}>{trI18n('วันที่ซ่อมชิ้นงาน')}</label>
+                  <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
+                <div><label style={lbl}>{trI18n('ผู้ดำเนินการซ่อม')}</label>
+                  <PersonSelect value={form.repair_by} source="both" lines={famLines} history={repairByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
+                <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('รายละเอียดการซ่อมชิ้นงาน')}</label>
+                  <input value={form.repair_detail} onChange={e => setForm(f => ({ ...f, repair_detail: e.target.value }))} style={inp} /></div>
+                <div><label style={lbl}>{trI18n('ผลซ่อม OK (ชิ้น)')}</label>
+                  <input type="number" value={form.qty_ok} onChange={e => setForm(f => ({ ...f, qty_ok: e.target.value }))} style={inp} /></div>
+                <div><label style={lbl}>{trI18n('ผลซ่อม NG (ชิ้น)')}</label>
+                  <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
+                <div><label style={lbl}>{trI18n('วันที่นำกลับเข้ากระบวนการ')}</label>
+                  <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : trI18n('วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น')}
+                    onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
+                {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <QualityPhotoField
+                    label={trI18n('รูปหลังซ่อม')} hint={trI18n('ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง')}
+                    url={form.repair_img || null} file={repairFile}
+                    onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
+                  />
+                </div>
+              </>) : (<>
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('การกำจัดทำลาย (ตาม DOA)')}</div>
+                <div><label style={lbl}>{trI18n('ผู้กำจัดทำลาย')}</label>
+                  {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
+                  <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}
+                    onChange={({ name, position, opt }) => setForm(f => ({ ...f, disposed_by: name, ...(opt && position ? { disposed_position: positionLabel(position) || position } : {}) }))} /></div>
+                <div><label style={lbl}>{trI18n('ตำแหน่ง')}</label>
+                  <input value={form.disposed_position} onChange={e => setForm(f => ({ ...f, disposed_position: e.target.value }))}
+                    placeholder={trI18n('ระดับหัวหน้ากลุ่ม-วิศวกรขึ้นไป')} style={inp} /></div>
+              </>)}
+
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('หมายเหตุ')}</label>
+                <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
+              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
+              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
+                {saving ? trI18n('กำลังบันทึก…') : trI18n('บันทึก')}
+              </button>
+            </div>
+          </div>
+        </div>
+  );
+
   if (queueOnly) return (
     <div>
       {renderRepairModal()}
+      {renderEditModal()}
       <ReadOnlyNote show={!canDecide} role={role} what="ตัดสินผลของในถังเหลือง (เฉพาะ QA)" permKey="qa:bin_decide" />
       {renderPendQueue()}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
@@ -1141,141 +1280,7 @@ export default function QualityBins({ mode = 'full' }) {
       )}
 
       {/* ── modal บันทึก/แก้ไข ── */}
-      {editing && (
-        <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
-          style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 720px)', maxHeight: '92vh', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
-              {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {trI18n(B.short)}
-            </h3>
-            <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
-              <div><label style={lbl}>{trI18n('วันที่ลงถัง *')}</label>
-                <input type="date" value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date: e.target.value }))} style={inp} /></div>
-              <div><label style={lbl}>{trI18n('ไลน์การผลิต')}</label>
-                <LineSelect lines={lineObjs} value={form.line_name} style={inp}
-                  onChange={v => setForm(f => ({ ...f, line_name: v }))} /></div>
-              <div><label style={lbl}>{trI18n('จำนวน (ชิ้น) *')}</label>
-                <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
-
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)')}</label>
-                {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
-                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
-                  placeholder={trI18n('MAT / รหัสชิ้นงาน')} inputStyle={inp}
-                  onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
-                    const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
-                    setMatLocked(inReg);
-                    setForm(f => ({ ...f, mat_no, ...(inReg ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
-                  }} /></div>
-              {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
-              <div><label style={lbl}>{trI18n('ชื่อชิ้นงาน')}</label>
-                <input value={form.part_name} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
-              <div><label style={lbl}>{trI18n('Part No. (เลขลูกค้า)')}</label>
-                <input value={form.part_no} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
-
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('สาเหตุ')}</label>
-                <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
-              {/* 📷 รูปตอนพบ — ทางเลือก ห้ามบังคับ (หน้างานใส่ถุงมือ/รีบ · คำสั่ง user 12/10)
-                  ประโยชน์หลัก: QA ตัดสิน 4 ทางจากรูปได้โดยไม่ต้องเดินไปดูของ และของที่ถูกซ่อม/
-                  ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
-              <div style={{ gridColumn: '1 / -1' }}>
-                <QualityPhotoField
-                  label={trI18n('รูปตอนพบของเสีย')} hint={trI18n('ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ')}
-                  url={form.found_img || null} file={foundFile}
-                  onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
-                />
-              </div>
-              {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
-              <div><label style={lbl}>{trI18n('ผู้แจ้ง (พนักงาน)')}</label>
-                <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
-              <div><label style={lbl}>{trI18n('ผู้ตรวจสอบ (QA)')}</label>
-                <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} history={qaByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
-
-              {isY ? (<>
-                {/* ── §5.4 ผลการพิจารณาของ QA — 4 ทางตาม WI (เดิมระบบมีแค่ ซ่อม กับ ทำลาย) ──
-                    ยังไม่เลือก = "รอ QA พิจารณา" ซึ่งเป็นสถานะจริง ห้ามบังคับเลือก
-                    เลือกแล้วกดซ้ำ = ยกเลิกการตัดสิน (QA เปลี่ยนใจได้ก่อนของออกจากถัง) */}
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
-                  ผลการพิจารณาของ QA <span style={{ fontWeight: 400 }}>(WI-PD3-069 §5.4)</span>
-                </div>
-                <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                  {QA_DECISIONS.map(d => {
-                    const on = form.qa_decision === d.value;
-                    return (
-                      <button key={d.value} type="button" title={canDecide ? trI18n(d.hint) : trI18n('ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)')}
-                        disabled={!canDecide}
-                        onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
-                        style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800,
-                          cursor: canDecide ? 'pointer' : 'not-allowed', opacity: canDecide || on ? 1 : 0.5,
-                          border: `1px solid ${on ? d.color : 'var(--border2)'}`,
-                          background: on ? `${d.color}22` : 'transparent', color: on ? d.color : 'var(--text2)' }}>
-                        {trI18n(d.label)}
-                      </button>
-                    );
-                  })}
-                </div>
-                {form.qa_decision && (
-                  <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    ↳ {decisionOf(form.qa_decision)?.hint}
-                  </div>
-                )}
-                {form.qa_decision === 'use_as_is' && (
-                  <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={lbl}>{trI18n('เลขที่ใบ')} {SPECIAL_USE_FORM} {trI18n('(ใบขออนุมัติใช้ชิ้นส่วนเป็นกรณีพิเศษ)')}</label>
-                    <input value={form.special_use_doc_no} placeholder={trI18n('ยังไม่ออกใบ = เว้นว่างไว้ก่อน (จะยังนับเป็นของค้างในถัง)')}
-                      onChange={e => setForm(f => ({ ...f, special_use_doc_no: e.target.value }))} style={inp} />
-                  </div>
-                )}
-                {form.qa_decision === 'scrap' && (
-                  <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: '#f59e0b', lineHeight: 1.5 }}>
-                    ⚠ บันทึกแล้วอย่าลืมกดปุ่ม 🔴 ที่แถวนี้เพื่อสร้างรายการถังแดง — ระบบไม่ย้ายให้เอง
-                    (“เอาของลงถังแดง” เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน)
-                  </div>
-                )}
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ผลการซ่อม')}</div>
-                <div><label style={lbl}>{trI18n('วันที่ซ่อมชิ้นงาน')}</label>
-                  <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>{trI18n('ผู้ดำเนินการซ่อม')}</label>
-                  <PersonSelect value={form.repair_by} source="both" lines={famLines} history={repairByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
-                <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('รายละเอียดการซ่อมชิ้นงาน')}</label>
-                  <input value={form.repair_detail} onChange={e => setForm(f => ({ ...f, repair_detail: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>{trI18n('ผลซ่อม OK (ชิ้น)')}</label>
-                  <input type="number" value={form.qty_ok} onChange={e => setForm(f => ({ ...f, qty_ok: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>{trI18n('ผลซ่อม NG (ชิ้น)')}</label>
-                  <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>{trI18n('วันที่นำกลับเข้ากระบวนการ')}</label>
-                  <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : trI18n('วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น')}
-                    onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
-                {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <QualityPhotoField
-                    label={trI18n('รูปหลังซ่อม')} hint={trI18n('ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง')}
-                    url={form.repair_img || null} file={repairFile}
-                    onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
-                  />
-                </div>
-              </>) : (<>
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('การกำจัดทำลาย (ตาม DOA)')}</div>
-                <div><label style={lbl}>{trI18n('ผู้กำจัดทำลาย')}</label>
-                  {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
-                  <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}
-                    onChange={({ name, position, opt }) => setForm(f => ({ ...f, disposed_by: name, ...(opt && position ? { disposed_position: positionLabel(position) || position } : {}) }))} /></div>
-                <div><label style={lbl}>{trI18n('ตำแหน่ง')}</label>
-                  <input value={form.disposed_position} onChange={e => setForm(f => ({ ...f, disposed_position: e.target.value }))}
-                    placeholder={trI18n('ระดับหัวหน้ากลุ่ม-วิศวกรขึ้นไป')} style={inp} /></div>
-              </>)}
-
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('หมายเหตุ')}</label>
-                <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
-              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
-                {saving ? trI18n('กำลังบันทึก…') : trI18n('บันทึก')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderEditModal()}
     </div>
   );
 }
