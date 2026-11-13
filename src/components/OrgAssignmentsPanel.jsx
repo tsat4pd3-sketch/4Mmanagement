@@ -138,7 +138,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12,
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
           borderRadius: 'var(--r-md)', padding: '8px 11px', alignItems: 'center' }}>
-          <b style={{ color: '#f59e0b' }}>ต้องทบทวน</b>
+          <b style={{ color: '#f59e0b' }}>{tr('ต้องทบทวน')}</b>
           {sum.openEnded.length > 0 && chip('rgba(245,158,11,0.2)', '#f59e0b',
             `🔄 รักษาการไม่มีวันสิ้นสุด ${sum.openEnded.length}`)}
           {sum.expired.length > 0 && chip('rgba(239,68,68,0.2)', '#ef4444',
@@ -160,7 +160,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
               (ส่งผิดรูปแล้ว build ยังผ่าน แต่ลิสต์จะว่างและเลือกไม่ติด) */}
           <SearchSelect value={form.profile_id} placeholder={tr('— เลือกคน —')}
             onChange={({ id }) => setForm(f => ({ ...f, profile_id: id || '' }))}
-            options={people.map(p => ({ id: p.id, label: p.full_name || '(ไม่ระบุชื่อ)', sub: p.role }))} />
+            options={people.map(p => ({ id: p.id, label: p.full_name || tr('(ไม่ระบุชื่อ)'), sub: p.role }))} />
           <SearchSelect value={form.org_node_id} placeholder={tr('— เลือกหน่วยงาน —')}
             onChange={({ id }) => setForm(f => ({ ...f, org_node_id: id || '' }))}
             options={nodes.map(n => ({ id: n.id, label: n.name,
@@ -214,7 +214,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                       {ASSIGNMENT_KINDS[r.kind]?.icon} {assignmentRoleText(r.kind, positionLabel(profById.get(r.profile_id)?.position))}</td>
                     <td style={{ textAlign: 'center' }}>
                       {chip(`${m.color}22`, m.color, m.label)}
-                      {needsConfirm(r) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>จากผังองค์กร</div>}
+                      {needsConfirm(r) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('จากผังองค์กร')}</div>}
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       {canEdit
@@ -228,11 +228,11 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                         <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                           {needsConfirm(r) && (
                             <button type="button" className="tbtn" onClick={() => confirmRow(r)} disabled={busy}
-                              title="ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง"
+                              title={tr('ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง')}
                               style={{ height: 30, padding: '0 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
                                 border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>{tr('✓ ยืนยัน')}</button>
                           )}
-                          <DeleteButton onClick={() => remove(r)} disabled={busy} title="ลบรายการนี้" />
+                          <DeleteButton onClick={() => remove(r)} disabled={busy} title={tr('ลบรายการนี้')} />
                         </div>
                       </td>
                     )}

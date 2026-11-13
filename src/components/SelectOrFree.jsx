@@ -39,7 +39,7 @@ export default function SelectOrFree({
         style={{ flex: 1, minWidth: 0, width: 'auto', padding: pad, fontSize: fs, ...inputStyle }}
         onChange={e => { setFree(true); onChange?.(e.target.value); }} />
       {!readOnly && (
-        <button type="button" disabled={disabled} title="กลับไปเลือกจากลิสต์"
+        <button type="button" disabled={disabled} title={tr('กลับไปเลือกจากลิสต์')}
           onClick={() => { setFree(false); onChange?.(''); }}
           style={{ padding: compact ? '2px 7px' : '2px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>↩</button>
       )}

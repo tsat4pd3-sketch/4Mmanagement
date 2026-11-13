@@ -210,18 +210,18 @@ export default function ParetoAbcChart({
             ))}
           </div>
         )}
-        <button onClick={() => setOpen(true)} title="ขยายดูทุกรายการ"
+        <button onClick={() => setOpen(true)} title={tr('ขยายดูทุกรายการ')}
           style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>{tr('⤢ ขยาย')}</button>
       </div>
       {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
       {hasMoney && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.55 }}>
-          มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
+          มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} {tr('บาท')}</b>
           {recTotals.unpriced > 0 && (
-            <span style={{ color: '#f59e0b' }}> · ⚠ ตีมูลค่าไม่ได้ {recTotals.unpriced} รายการ
+            <span style={{ color: '#f59e0b' }}> {tr('· ⚠ ตีมูลค่าไม่ได้')} {recTotals.unpriced} รายการ
               (ไลน์ยังไม่ตั้ง cost center / activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate)</span>
           )}
-          {money && <span> · กำลังเรียงตามเงิน — ลำดับและกลุ่ม ABC เปลี่ยนตามมูลค่า ไม่ใช่{unit}</span>}
+          {money && <span> {tr('· กำลังเรียงตามเงิน — ลำดับและกลุ่ม ABC เปลี่ยนตามมูลค่า ไม่ใช่')}{unit}</span>}
         </div>
       )}
       {strip}
@@ -229,10 +229,10 @@ export default function ParetoAbcChart({
       {vague.pct >= 40 && (
         <div style={{ background: '#ef444414', border: '1px solid #ef444455', borderRadius: 'var(--r-md)',
           padding: '7px 10px', marginBottom: 8, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-          <b style={{ color: '#ef4444' }}>⚠ {vague.pct.toFixed(0)}% ของข้อมูลยังไม่บอกสาเหตุ</b>
-          {' '}({vague.names.join(' · ')} รวม {fmt(vague.vagueVal)} จาก {fmt(vague.total)} {unitOf})
-          {' — '}พาเรโตยัง<b>ชี้เป้าไม่ได้</b>จนกว่าจะระบุสาเหตุตอนบันทึก
-          {noteDim && <span> · กดแท่งนั้นเพื่อดูหมายเหตุที่พนักงานเขียนจริง</span>}
+          <b style={{ color: '#ef4444' }}>⚠ {vague.pct.toFixed(0)}{tr('% ของข้อมูลยังไม่บอกสาเหตุ')}</b>
+          {' '}({vague.names.join(' · ')} {tr('รวม')} {fmt(vague.vagueVal)} {tr('จาก')} {fmt(vague.total)} {unitOf})
+          {' — '}{tr('พาเรโตยัง')}<b>{tr('ชี้เป้าไม่ได้')}</b>จนกว่าจะระบุสาเหตุตอนบันทึก
+          {noteDim && <span> {tr('· กดแท่งนั้นเพื่อดูหมายเหตุที่พนักงานเขียนจริง')}</span>}
         </div>
       )}
       {/* "อื่นๆ / ไม่ระบุ" ติดกลุ่ม A = อันดับต้นๆ แต่บอกอะไรไม่ได้ → ชี้ทางไปดูหมายเหตุจริงทันที */}
@@ -240,8 +240,8 @@ export default function ParetoAbcChart({
         <div key={i} onClick={() => openDrill(d.name, noteDim.key)}
           style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', cursor: 'pointer', marginBottom: 8,
             background: '#f59e0b14', border: '1px solid #f59e0b55', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 11.5, color: 'var(--text2)' }}>
-          <b style={{ color: '#f59e0b' }}>“{d.name}” = {d._pct.toFixed(0)}% แต่ยังไม่บอกสาเหตุ</b>
-          <span>— กดดูหมายเหตุที่พนักงานเขียนจริง แยกเป็นกลุ่มสาเหตุให้แล้ว</span>
+          <b style={{ color: '#f59e0b' }}>“{d.name}” = {d._pct.toFixed(0)}{tr('% แต่ยังไม่บอกสาเหตุ')}</b>
+          <span>{tr('— กดดูหมายเหตุที่พนักงานเขียนจริง แยกเป็นกลุ่มสาเหตุให้แล้ว')}</span>
           <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontWeight: 800, whiteSpace: 'nowrap' }}>{noteDim.label} →</span>
         </div>
       ))}
@@ -250,14 +250,14 @@ export default function ParetoAbcChart({
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             <span style={{ width: 9, height: 9, borderRadius: 'var(--r-xs)', background: ABC[k].color, opacity: OPA[k] }} />
-            {k} · {groups[k].length} รายการ ({(groups[k].reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%)
+            {k} · {groups[k].length} {tr('รายการ (')}{(groups[k].reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%)
           </span>
         ))}
         {/* 🔴 "แสดงกี่อันดับ" ย้ายไปอยู่ใน ParetoChart แล้ว — ที่นี่ไม่รู้ว่าผู้ใช้กางหางยาวอยู่หรือย่ออยู่
             เดิมเขียนตายตัวว่า "แสดง 11 อันดับแรกจาก 46" แล้ว**ยังขึ้นอยู่ทั้งที่จอกางครบ 46 แท่งแล้ว**
             (user ส่งภาพมา 22/09) · ที่เหลือไว้ตรงนี้คือสิ่งที่หน้าแม่รู้จริง = สัดส่วน A/B/C นับครบทุกรายการ */}
         {rows.length > MAX_BARS + 1 && (
-          <span style={{ color: 'var(--muted)' }}>สัดส่วน A/B/C ข้างบนนับครบทุกรายการ ไม่ใช่เฉพาะแท่งที่เห็น</span>
+          <span style={{ color: 'var(--muted)' }}>{tr('สัดส่วน A/B/C ข้างบนนับครบทุกรายการ ไม่ใช่เฉพาะแท่งที่เห็น')}</span>
         )}
         {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>คลิกแท่ง/ชิป = เจาะลึก</span>}
       </div>
@@ -297,7 +297,7 @@ export default function ParetoAbcChart({
               <div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                  ABC Analysis · รวม {fmt(total)} {unitOf} · {rows.length} รายการ — <b style={{ color: ABC.A.color }}>กลุ่ม A {groups.A.length} รายการ = {(groups.A.reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%</b>
+                  ABC Analysis · รวม {fmt(total)} {unitOf} · {rows.length} {tr('รายการ —')} <b style={{ color: ABC.A.color }}>{tr('กลุ่ม A')} {groups.A.length} รายการ = {(groups.A.reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%</b>
                 </div>
               </div>
               <button onClick={() => setOpen(false)} style={closeBtn}>✕</button>
@@ -317,7 +317,7 @@ export default function ParetoAbcChart({
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                     <th style={thL}>#</th><th style={thL}>{tr('รายการ')}</th><th style={thC}>{tr('กลุ่ม')}</th>
-                    <th style={thR}>{tr(unitOf)}</th>{hasMoney && <th style={thR}>{money ? unit : 'บาท'}</th>}<th style={thR}>{tr('ครั้ง')}</th><th style={thR}>%</th><th style={thR}>{tr('สะสม %')}</th>
+                    <th style={thR}>{tr(unitOf)}</th>{hasMoney && <th style={thR}>{money ? unit : tr('บาท')}</th>}<th style={thR}>{tr('ครั้ง')}</th><th style={thR}>%</th><th style={thR}>{tr('สะสม %')}</th>
                   </tr></thead>
                   <tbody>
                     {rows.map((d, i) => (
@@ -351,11 +351,11 @@ export default function ParetoAbcChart({
           <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 900 }}>
             <div style={head}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>เจาะลึก · {title}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('เจาะลึก ·')} {title}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{drill}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                  {fmt(drillTotal)} {unitOf} · {drillRecs.length} ครั้ง · {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
-                        {hasMoney && <> · <b style={{ color: '#fbbf24' }}>{money ? `${fmt(drillRecs.reduce((s, r) => s + (r.value || 0), 0))} ${unit}` : `${fmt(drillTotals.baht)} บาท`}</b>{drillTotals.unpriced > 0 && <span style={{ color: '#f59e0b' }}> · ตีมูลค่าไม่ได้ {drillTotals.unpriced} รายการ</span>}</>}
+                  {fmt(drillTotal)} {unitOf} · {drillRecs.length} {tr('ครั้ง ·')} {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
+                        {hasMoney && <> · <b style={{ color: '#fbbf24' }}>{money ? `${fmt(drillRecs.reduce((s, r) => s + (r.value || 0), 0))} ${unit}` : `${fmt(drillTotals.baht)} บาท`}</b>{drillTotals.unpriced > 0 && <span style={{ color: '#f59e0b' }}> {tr('· ตีมูลค่าไม่ได้')} {drillTotals.unpriced} {tr('รายการ')}</span>}</>}
                 </div>
               </div>
               <button onClick={() => setDrill(null)} style={closeBtn}>✕</button>
@@ -375,13 +375,13 @@ export default function ParetoAbcChart({
               {/* มิติหมายเหตุ: อธิบายว่าจับกลุ่มมายังไง + ชวนยกระดับกลุ่มใหญ่เป็นประเภทจริง */}
               {drillCluster && (
                 <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.65 }}>
-                  จับกลุ่มจาก<b> ข้อความที่พนักงานพิมพ์เอง </b>โดยเทียบความคล้ายของตัวอักษร (พิมพ์ต่างกันเล็กน้อย/มีเว้นวรรค/ใส่เวลา = กลุ่มเดียวกัน)
+                  จับกลุ่มจาก<b> {tr('ข้อความที่พนักงานพิมพ์เอง')} </b>โดยเทียบความคล้ายของตัวอักษร (พิมพ์ต่างกันเล็กน้อย/มีเว้นวรรค/ใส่เวลา = กลุ่มเดียวกัน)
                   {drillCluster.missing.count > 0 && (
-                    <> · <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังไม่กรอกหมายเหตุ {drillCluster.missing.count} ครั้ง ({fmt(drillCluster.missing.value)} {unit})</span></>
+                    <> · <span style={{ color: '#f59e0b', fontWeight: 700 }}>{tr('ยังไม่กรอกหมายเหตุ')} {drillCluster.missing.count} {tr('ครั้ง (')}{fmt(drillCluster.missing.value)} {unit})</span></>
                   )}
                   {drillRows[0] && !drillRows[0]._noNote && drillRows[0]._pct >= 15 && (
                     <div style={{ marginTop: 5, color: 'var(--accent)', fontWeight: 700 }}>
-                      “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
+                      “{drillRows[0].name}{tr('” กิน')} {drillRows[0]._pct.toFixed(0)}{tr('% ของ “')}{drill}{tr('” — ควรตั้งเป็น')}<b>{tr('ประเภทของตัวเอง')}</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
                     </div>
                   )}
                 </div>
@@ -389,7 +389,7 @@ export default function ParetoAbcChart({
 
               {/* สัดส่วนตามมิติที่เลือก — แถบ + ตัวเลข (ABC เหมือนกัน) */}
               {drillRows.length === 0 ? (
-                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>ไม่มีข้อมูลในมิตินี้</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>{tr('ไม่มีข้อมูลในมิตินี้')}</div>
               ) : (
                 <div style={{ display: 'grid', gap: 5 }}>
                   {drillRows.map((d, i) => (
@@ -402,12 +402,12 @@ export default function ParetoAbcChart({
                         </span>
                         <span style={{ fontSize: 12.5, fontWeight: 800, color: ABC[d._cls].color, whiteSpace: 'nowrap' }}>{fmt(d._val)} {unitOf}
                           {hasMoney && <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginLeft: 5 }}>{money ? `${fmt(d.value)} ${unit}` : `${fmt(d.baht)} บาท`}</span>}</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} ครั้ง</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', width: 76, textAlign: 'right' }}>{d._pct.toFixed(1)}% · {d.count} {tr('ครั้ง')}</span>
                       </div>
                       {/* กลุ่มคำ: บอกว่ารวมข้อความที่เขียนต่างกันกี่แบบ + ตัวอย่าง — โปร่งใสว่าจับกลุ่มอะไรเข้ามา */}
                       {d.variants > 1 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                          รวม {d.variants} แบบที่เขียนต่างกัน{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
+                          รวม {d.variants} {tr('แบบที่เขียนต่างกัน')}{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
                         </div>
                       )}
                       <div style={{ height: 5, borderRadius: 'var(--r-xs)', background: 'var(--bg)', marginTop: 5, overflow: 'hidden' }}>
@@ -426,17 +426,17 @@ export default function ParetoAbcChart({
                 {[...drillRecs].sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 40).map((r, i) => (
                   <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 9px', fontSize: 11.5 }}>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}{r.baht != null && <span style={{ color: '#fbbf24', marginLeft: 5 }}>· {fmt(r.baht)} บาท</span>}</b>
+                      <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}{r.baht != null && <span style={{ color: '#fbbf24', marginLeft: 5 }}>· {fmt(r.baht)} {tr('บาท')}</span>}</b>
                       {dims.filter(dm => !dm.cluster).map(dm => r[dm.key] ? (
                         <span key={dm.key} style={{ color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-                          <span style={{ color: 'var(--muted)' }}>{dm.label}</span> {r[dm.key]}
+                          <span style={{ color: 'var(--muted)' }}>{tr(dm.label)}</span> {r[dm.key]}
                         </span>
                       ) : null)}
                     </div>
                     {r.note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                   </div>
                 ))}
-                {drillRecs.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: 6 }}>… และอีก {drillRecs.length - 40} รายการ</div>}
+                {drillRecs.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: 6 }}>{tr('… และอีก')} {drillRecs.length - 40} {tr('รายการ')}</div>}
               </div>
             </div>
           </div>

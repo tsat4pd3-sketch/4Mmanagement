@@ -160,7 +160,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
   const doSign = async () => {
     if (!signing) return
     // 🔴 ด่าน stale: ทะเบียนลงนาม/ตารางเดือนต้องเป็นของ เดือน+กะ ที่เลือกอยู่จริง
-    if (isStale(sign.key, curKey) || !rep || raw?.month !== month) { toast.error(staleBlockText({ unitWord: 'เดือน/กะ' })); return }
+    if (isStale(sign.key, curKey) || !rep || raw?.month !== month) { toast.error(staleBlockText({ unitWord: tr('เดือน/กะ') })); return }
     const row = rep.rows.find(r => r.line_name === signing.line)
     const v = signVerdict(signing.line)   // คิดใหม่ตอนกด — ไม่ใช้ค่าตอน render
     setBusy(true)
@@ -176,7 +176,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
   }
   const doRevoke = async () => {
     if (!revoking) return
-    if (isStale(sign.key, curKey)) { toast.error(staleBlockText({ unitWord: 'เดือน/กะ' })); return }
+    if (isStale(sign.key, curKey)) { toast.error(staleBlockText({ unitWord: tr('เดือน/กะ') })); return }
     const v = revokeVerdict(revoking, reason)
     setBusy(true)
     const ok = await revokeAmMonthly({ verdict: v, id: revoking.id, reason, userId: uid, fullName })
@@ -238,12 +238,12 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)' }}>
           {tr('เดือน')} <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} />
         </label>
-        <Segmented label="กะ" value={shift} onChange={setShift} options={AM_SHIFT_OPTIONS} />
+        <Segmented label={tr('กะ')} value={shift} onChange={setShift} options={AM_SHIFT_OPTIONS} />
         <LineScopeSelect lines={scopedLines} section={scope.section} line={scope.line}
           onChange={(section, line, info) => setScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
-        <Segmented label="แสดง" value={view} onChange={setView} options={VIEW_OPTIONS} />
+        <Segmented label={tr('แสดง')} value={view} onChange={setView} options={VIEW_OPTIONS} />
         <span className="spacer" />
-        {rep && <span className="filter-count">{shown.length} ไลน์ · {shown.reduce((a, r) => a + r.machines.length, 0)} เครื่อง</span>}
+        {rep && <span className="filter-count">{shown.length} {tr('ไลน์ ·')} {shown.reduce((a, r) => a + r.machines.length, 0)} {tr('เครื่อง')}</span>}
         <button type="button" onClick={exportXlsx} disabled={!rep || exporting || !shown.length}
           style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
           {exporting ? tr('⏳ กำลังส่งออก…') : '📥 Excel'}
@@ -255,15 +255,15 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
           ⚠ โหลดรายงาน AM ไม่สำเร็จ: {err} — ตารางไม่แสดง (ไม่ได้แปลว่าไม่มีใครตรวจ) · ลองเปลี่ยนเดือนหรือรีเฟรช
         </div>
       )}
-      {loading && !rep && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div>}
+      {loading && !rep && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{tr('กำลังโหลด...')}</div>}
 
       {rep && (
         <div className="card" style={{ padding: 16, opacity: loading ? 0.6 : 1 }}>
           {/* 🔴 ตัวเลข "ตรวจแล้ว N" ลอยๆ ไม่พอ — ต้องมีตัวหาร (utils/dailyCheckDay.js) */}
           <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 8 }}>
             <span style={{ color: sum.missed ? 'var(--red)' : 'var(--text2)' }}>{checkDaysNote(sum)}</span>
-            {pct != null && <> · ความครบ <b style={{ color: 'var(--text)' }}>{pct}%</b></>}
-            {' · '}<span style={{ color: ngN ? 'var(--red)' : 'var(--muted)', fontWeight: ngN ? 800 : 500 }}>พบผิดปกติ (NG) {ngN} ครั้ง</span>
+            {pct != null && <> {tr('· ความครบ')} <b style={{ color: 'var(--text)' }}>{pct}%</b></>}
+            {' · '}<span style={{ color: ngN ? 'var(--red)' : 'var(--muted)', fontWeight: ngN ? 800 : 500 }}>{tr('พบผิดปกติ (NG)')} {ngN} {tr('ครั้ง')}</span>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
               นับเป็น "เครื่อง-วัน" · ความครบ = ตรวจแล้ว ÷ (ตรวจแล้ว + ขาด) — ไม่นับวันไม่ได้ผลิต/ไม่มีแผน/ไม่รู้ ·
               กะที่กำลังเดินอยู่ยังไม่ตัดสิน (ดูแท็บ 📊 สถานะวันนี้) · เครื่องที่เอาออกจากทะเบียนแล้วไม่แสดงย้อนหลัง
@@ -274,23 +274,23 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               </div>
             )}
             {!raw?.runsError && unknownN > 0 && (
-              <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>❔ ไม่รู้ว่าผลิตหรือไม่ {unknownN} เครื่อง-วัน</div>
+              <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>{tr('❔ ไม่รู้ว่าผลิตหรือไม่')} {unknownN} {tr('เครื่อง-วัน')}</div>
             )}
-            {!cal && <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>ยังโหลดปฏิทินบริษัทไม่ได้ — ยังไม่ระบายวันหยุด</div>}
-            {hiddenN > 0 && <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>ซ่อน {hiddenN} ไลน์ตามตัวกรอง</div>}
+            {!cal && <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>{tr('ยังโหลดปฏิทินบริษัทไม่ได้ — ยังไม่ระบายวันหยุด')}</div>}
+            {hiddenN > 0 && <div style={{ marginTop: 3, fontSize: 11, color: 'var(--muted)' }}>{tr('ซ่อน')} {hiddenN} {tr('ไลน์ตามตัวกรอง')}</div>}
           </div>
 
           {/* คำอธิบาย 2 ชุดแยกกัน (แบบเดียวกับ LPA): ผลตรวจ = ไปตรวจแล้วเจออะไร · สถานะวัน = ต้องตรวจไหม/มีใครตรวจไหม */}
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
             <span>
-              <b style={{ color: 'var(--text2)' }}>ผลตรวจในช่อง:</b>{' '}
+              <b style={{ color: 'var(--text2)' }}>{tr('ผลตรวจในช่อง:')}</b>{' '}
               {Object.values(AM_RESULT_META).map(m => (
                 <span key={m.mark} style={{ marginRight: 8 }}><b style={{ color: m.color }}>{m.mark}</b> {m.label}</span>
               ))}
-              {view === 'line' && <span style={{ marginRight: 8 }}><b style={{ color: 'var(--green)' }}>n/n</b> ตรวจครบทุกเครื่อง</span>}
+              {view === 'line' && <span style={{ marginRight: 8 }}><b style={{ color: 'var(--green)' }}>n/n</b> {tr('ตรวจครบทุกเครื่อง')}</span>}
             </span>
             <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
-              <b style={{ color: 'var(--text2)' }}>สถานะวัน:</b>{' '}
+              <b style={{ color: 'var(--text2)' }}>{tr('สถานะวัน:')}</b>{' '}
               {CHECK_DAY_LEGEND.map(k => (
                 <span key={k} style={{ marginRight: 8 }}><StateChip state={k} /> {CHECK_DAY_META[k].label}</span>
               ))}
@@ -303,17 +303,17 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               ยังไม่มีเครื่องที่ลงทะเบียนตรวจ AM {shift === 'day' ? 'กะเช้า' : 'กะดึก'} — ไปที่แท็บ “⚙️ ลงทะเบียนเครื่องตรวจ” ก่อน
             </div>
           ) : shown.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>ไม่มีไลน์ที่ตรงกับตัวกรอง (ซ่อน {hiddenN} ไลน์)</div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{tr('ไม่มีไลน์ที่ตรงกับตัวกรอง (ซ่อน')} {hiddenN} ไลน์)</div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ ...cell, ...stickyCol, zIndex: 2 }}>{view === 'line' ? 'ไลน์' : 'ไลน์ / เครื่อง'}</th>
+                    <th style={{ ...cell, ...stickyCol, zIndex: 2 }}>{view === 'line' ? tr('ไลน์') : tr('ไลน์ / เครื่อง')}</th>
                     {rep.days.map(d => <th key={d} style={{ ...cell, background: holiday(d) ? HOLIDAY_BG : undefined }}>{Number(d.slice(8))}</th>)}
-                    <th style={cell} title="ตรวจแล้ว / ต้องตรวจ (เครื่อง-วัน)">{tr('ตรวจ/ต้อง')}</th>
+                    <th style={cell} title={tr('ตรวจแล้ว / ต้องตรวจ (เครื่อง-วัน)')}>{tr('ตรวจ/ต้อง')}</th>
                     <th style={cell}>{tr('ขาด')}</th>
-                    <th style={cell} title="ไม่ได้เปิดกะ/ไม่ได้ผลิต">NP</th>
+                    <th style={cell} title={tr('ไม่ได้เปิดกะ/ไม่ได้ผลิต')}>NP</th>
                     <th style={cell}>{tr('%ครบ')}</th>
                     <th style={cell}>NG</th>
                   </tr>
@@ -324,7 +324,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                       <tr key={r.line_name}>
                         <td style={{ ...cell, ...stickyCol, fontWeight: 800, fontSize: 12, color: 'var(--text)', background: view === 'machine' ? 'var(--bg3)' : 'var(--card)' }}>
                           {r.line_name === '—' ? '⚠ ยังไม่ระบุไลน์' : r.line_name}
-                          <span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 11 }}> · {r.machines.length} เครื่อง</span>
+                          <span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 11 }}> · {r.machines.length} {tr('เครื่อง')}</span>
                         </td>
                         {r.cells.map(c => {
                           const m = CHECK_DAY_META[c.state]
@@ -374,7 +374,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
       {/* ✍️ ขั้น 3 ของสาย AM — หัวหน้าแผนก/ส่วนทบทวนรายเดือน (ต่อไลน์ · เดือน+กะที่เลือก) */}
       {rep && shown.length > 0 && (
         <div className="card" style={{ padding: 16, marginTop: 12 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>✍️ ลงนามทบทวนรายเดือน — หัวหน้าแผนก/ส่วน</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('✍️ ลงนามทบทวนรายเดือน — หัวหน้าแผนก/ส่วน')}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, marginBottom: 8 }}>
             ขั้นที่ 3 ของสาย AM: พนักงานตรวจทุกต้นกะ → หัวหน้ากลุ่มรับทราบรายวัน → หัวหน้าแผนก/ส่วนทบทวนรายเดือน ·
             ลงนามต่อไลน์ของเดือน {month} {shift === 'day' ? 'กะเช้า' : 'กะดึก'} · ระบบเก็บสรุป ณ ตอนลงนามไว้เทียบภายหลัง
@@ -385,7 +385,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
             </div>
           )}
           {!signFresh ? (
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดทะเบียนลงนาม…</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลดทะเบียนลงนาม…')}</div>
           ) : sign.missing ? (
             <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>
               ⚠ ระบบลงนามรายเดือนยังไม่เปิดใช้ — ตาราง am_monthly_signoffs ยังไม่ถูกสร้างบน Main (รอ admin apply migration) ·
@@ -417,13 +417,13 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                     return (
                       <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                         <b style={{ minWidth: 140, fontSize: 12, color: 'var(--text)' }}>{lineLabel}</b>
-                        <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✅ ลงนามแล้ว</span>
+                        <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ลงนามแล้ว')}</span>
                         <span style={{ fontSize: 12, color: 'var(--text2)' }}>
                           {a.signed_by_name || 'ไม่ทราบชื่อ'}{a.position ? ` · ${positionLabel(a.position)}` : ' · ไม่ทราบตำแหน่ง'} · {fmtWhen(a.signed_at)}
                         </span>
                         {a.signature_url
                           ? <img src={a.signature_url} alt="ลายเซ็น" style={{ height: 28, maxWidth: 110, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }} />
-                          : <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ไม่มีลายเซ็นในโปรไฟล์)</span>}
+                          : <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('(ไม่มีลายเซ็นในโปรไฟล์)')}</span>}
                         {a.note && <span style={{ fontSize: 11, color: 'var(--muted)' }}>“{a.note}”</span>}
                         {revNote}
                         <span style={{ flex: 1 }} />
@@ -436,7 +436,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                         {drift.length > 0 && (
                           <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
                             ⚠ ตัวเลขตอนนี้ต่างจากที่ลงนามไว้ — {amSignoffDriftText(drift)} · ลายเซ็นนี้รับรองตัวเลข ณ ตอนลงนาม
-                            (ตรวจ {a.snapshot?.sum?.done ?? '–'}/{a.snapshot?.sum?.due ?? '–'} · ขาด {a.snapshot?.sum?.missed ?? '–'} · NG {a.snapshot?.ngN ?? '–'})
+                            (ตรวจ {a.snapshot?.sum?.done ?? '–'}/{a.snapshot?.sum?.due ?? '–'} {tr('· ขาด')} {a.snapshot?.sum?.missed ?? '–'} · NG {a.snapshot?.ngN ?? '–'})
                             {rv.ok ? ' — ถ้าต้องรับรองตัวเลขใหม่ ให้เพิกถอนแล้วลงนามใหม่' : ''}
                           </div>
                         )}
@@ -449,7 +449,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                   return (
                     <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                       <b style={{ minWidth: 140, fontSize: 12, color: 'var(--text)' }}>{lineLabel}</b>
-                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ลงนาม</span>
+                      <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่ลงนาม')}</span>
                       {revNote}
                       <span style={{ flex: 1 }} />
                       {v.ok ? (
@@ -459,7 +459,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                         </button>
                       ) : (
                         /* ปุ่มซ่อนได้ เหตุผลห้ามซ่อน — ยกเว้นคนที่ไม่มีสิทธิ์เลย (ไม่ใช่คนที่ต้องลงนาม) เขียนสั้นๆ */
-                        <span style={{ fontSize: 11, color: v.code === 'no_perm' ? 'var(--muted)' : 'var(--amber)' }}>{v.code === 'no_perm' ? 'รอหัวหน้าแผนก/ส่วนลงนาม' : why}</span>
+                        <span style={{ fontSize: 11, color: v.code === 'no_perm' ? 'var(--muted)' : 'var(--amber)' }}>{v.code === 'no_perm' ? tr('รอหัวหน้าแผนก/ส่วนลงนาม') : why}</span>
                       )}
                     </div>
                   )
@@ -479,14 +479,14 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
           <div className="modal-scroll" onClick={() => { if (!busy && !note.trim()) setSigning(null) }}
             style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>✍️ ลงนามทบทวน AM รายเดือน</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('✍️ ลงนามทบทวน AM รายเดือน')}</div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
-                ไลน์ <b>{signing.line}</b> · เดือน {month} · {shift === 'day' ? 'กะเช้า' : 'กะดึก'}
+                ไลน์ <b>{signing.line}</b> {tr('· เดือน')} {month} · {shift === 'day' ? 'กะเช้า' : 'กะดึก'}
               </div>
               {row && (
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)' }}>
-                  {checkDaysNote(row.sum)}{row.sum.pct != null ? ` · ความครบ ${row.sum.pct}%` : ''} · NG {row.ngN} ครั้ง · {row.machines.length} เครื่อง
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ตัวเลขชุดนี้จะถูกบันทึกไว้กับลายเซ็น — แก้ใบตรวจย้อนหลังทีหลัง จอจะเตือนว่าต่างจากที่ลงนาม</div>
+                  {checkDaysNote(row.sum)}{row.sum.pct != null ? ` · ความครบ ${row.sum.pct}%` : ''} · NG {row.ngN} {tr('ครั้ง ·')} {row.machines.length} เครื่อง
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('ตัวเลขชุดนี้จะถูกบันทึกไว้กับลายเซ็น — แก้ใบตรวจย้อนหลังทีหลัง จอจะเตือนว่าต่างจากที่ลงนาม')}</div>
                 </div>
               )}
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>
@@ -494,7 +494,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               </div>
               {mySignature
                 ? <img src={mySignature} alt="ลายเซ็นของคุณ" style={{ height: 40, maxWidth: 180, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2, marginTop: 4 }} />
-                : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>บัญชีนี้ยังไม่มีลายเซ็นในโปรไฟล์ — บันทึกได้ แต่ Excel จะมีแค่ชื่อ (ตั้งลายเซ็นที่เมนูบัญชี)</div>}
+                : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{tr('บัญชีนี้ยังไม่มีลายเซ็นในโปรไฟล์ — บันทึกได้ แต่ Excel จะมีแค่ชื่อ (ตั้งลายเซ็นที่เมนูบัญชี)')}</div>}
               {myRank == null && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{amApprovalAssumptionText(['approver'])}</div>}
               <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder={tr('ความเห็น/ข้อสั่งการ (ถ้ามี)')}
                 style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
@@ -515,11 +515,11 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         <div className="modal-scroll" onClick={() => { if (!busy && !reason.trim()) setRevoking(null) }}
           style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(480px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>↩ เพิกถอนลายเซ็นทบทวนรายเดือน</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('↩ เพิกถอนลายเซ็นทบทวนรายเดือน')}</div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
-              ไลน์ <b>{revoking.line_name}</b> · {month} · ลงนามโดย {revoking.signed_by_name || '—'} เมื่อ {fmtWhen(revoking.signed_at)}
+              ไลน์ <b>{revoking.line_name}</b> · {month} {tr('· ลงนามโดย')} {revoking.signed_by_name || '—'} {tr('เมื่อ')} {fmtWhen(revoking.signed_at)}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>ลายเซ็นไม่ถูกลบ — เก็บไว้เป็นประวัติพร้อมเหตุผล แล้วลงนามใหม่ได้</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{tr('ลายเซ็นไม่ถูกลบ — เก็บไว้เป็นประวัติพร้อมเหตุผล แล้วลงนามใหม่ได้')}</div>
             <textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} placeholder={`เหตุผลการเพิกถอน (อย่างน้อย ${AM_REVOKE_REASON_MIN} ตัวอักษร)`}
               style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>

@@ -474,7 +474,7 @@ const RULES = [
        + 'ทั้งที่โครงหลักแปลแล้ว ⇒ ห่อ tr() ให้ครบทั้งระบบ (2,890 จุด) แล้วห้ามเขียนดิบกลับมา',
     fix: "{tr('ข้อความ')} (import { tr } from '<path>/utils/i18n' · ไฟล์ที่มี const tr = useTimeRange() ใช้ `tr as trI18n`) "
        + "+ เติมคำใน src/i18n/en.js หมวดรอบ 2 · UI-CONVENTIONS §6.34 ข้อ 7",
-    allow: {},
+    allow: { 'src/pages/Report.jsx': 'ใบพิมพ์ OT เป็น HTML string ใน template literal (กระดาษไทย ไม่แปล · {tr()} ในสตริงพิมพ์ออกมาตรงตัว — บั๊กรอบ 2 แก้ 13/11)' },
   },
   {
     id: 'i18n-import-path-depth',
@@ -7164,7 +7164,7 @@ test('🧹 ปุ่มล้างตัวกรองอยู่ในแถ
     if (rel.startsWith('src/i18n/')) continue;   // 🌐 พจนานุกรม ไทย→English ถือคำนี้เป็นคีย์แปล ไม่ใช่ปุ่ม (02/11)
     const src = stripComments(readFileSync(f, 'utf8'));
     // ปุ่มที่มีข้อความ "ล้างตัวกรอง" ของตัวเอง = วาดเอง
-    if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /'ล้างตัวกรอง'/.test(src)) bad.push(rel);
+    if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /(?<!tr\()(?<!trI18n\()'ล้างตัวกรอง'/.test(src)) bad.push(rel);   // 🌐 13/11: ข้อความอธิบายที่ครอบ tr('ล้างตัวกรอง') ไม่ใช่ปุ่ม
   }
   assert.deepEqual(bad, [], '\n\n❌ วาดปุ่มล้างตัวกรองเองใน: ' + bad.join(', ') + '\n'
     + '   แก้: ลบออก แล้วปล่อยให้ <FilterBar>/<TimeRangeBar> วาดให้ —\n'
@@ -9766,7 +9766,7 @@ test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime �
     '\n\n❌ ป๊อปอัพไม่ได้เขียนว่า "เครื่องยังเบรกดาวน์อยู่" (ทางที่ 1 — ส่งต่อกะถัดไป)\n');
   assert.match(src, /เปิดรายการต่อให้กะถัดไป/,
     '\n\n❌ ป๊อปอัพต้องบอกว่าใบที่ยังเบรกดาวน์จะถูกเปิดต่อในกะถัดไป\n');
-  assert.match(src, /ปิดรายการที่ \{endStr/,
+  assert.match(src, /ปิดรายการที่(?:'\)\})? \{endStr/,   // 🌐 13/11: รองรับ {tr('… ปิดรายการที่')} {endStr}
     '\n\n❌ ป๊อปอัพไม่ได้บอกเวลาปิดของใบที่ "เครื่องกลับมาแล้ว" (ทางที่ 2)\n');
 });
 
@@ -9937,7 +9937,8 @@ test('🪪 badge-scan-saves-now — สแกนบัตรต้องเข�
   if (!/problem = await res/.test(sm)) bad.push('ScanModal ไม่ await onScan ที่เป็น Promise — ขึ้นเขียวก่อนรู้ผลจริง');
   if (!/await emit\(/.test(sm)) bad.push('ลูปกล้องไม่ await emit — ยิงใบถัดไปทับระหว่างบันทึกใบแรก');
 
-  const foot = ck.slice(ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"'), ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"') + 2200);
+  const SCAN_RE = /<ScanModal title=(?:"สแกนบัตรพนักงาน"|\{tr\('สแกนบัตรพนักงาน'\)\})/;   // 🌐 13/11: title ครอบ tr() แล้ว
+  const foot = ck.slice(ck.search(SCAN_RE), ck.search(SCAN_RE) + 2200);
   if (/ยังไม่ได้บันทึก<\/span>/.test(foot)) bad.push('ตัวนับในหน้าต่างสแกนยัง hardcode "ยังไม่ได้บันทึก" (จอโกหก)');
   if (!/scanSaved\.length/.test(foot)) bad.push('หน้าต่างสแกนไม่บอกว่ารอบนี้บันทึกไปกี่คน');
   assert.deepEqual(bad, [], bad.join('\n'));
@@ -10338,6 +10339,31 @@ test('✍️ PMCheckData: ใบ PM อนุมัติต้องผ่า�
     '\n\n❌ ปุ่มยืนยันใบ PM ต้องเช็ค verdict ด้วย ไม่ใช่แค่ pm:approve\n')
 })
 
+/* ═══ 🔫 cross-close-auto-both-paths — 2026-11-13 · feedback หน้างาน ═══════════════════════
+   *"สแกนข้ามไลน์ เก็บ log พอ ไม่ต้องเด้งแจ้ง เพราะหน้างานใช้สแกนเนอร์ยิงบาร์โค้ดปิด order
+     ไม่ได้อยู่หน้าคอม กดคอนเฟิร์มไม่ได้"*
+   ของที่ user สั่งไว้ 03/11 ลงแค่ทางเดียว: เครื่องสแกนส่ง Enter ได้ **2 แบบ**
+     ① แทรก `\n` ลงในค่า → `handleCloseProdNoChange` (ส่ง auto แล้ว)
+     ② ส่งเป็น "คีย์" Enter  → `onKeyDown` ของช่อง  ← **ทางนี้ลืมส่ง auto** = ค้างรอกดปุ่ม
+   ⇒ เครื่องยิงส่วนใหญ่ใช้ทาง ② ⇒ ของที่สั่งไว้ไม่มีผลกับหน้างานเลย · การ์ดบนจอก็เขียนเองว่า
+     "สแกนด้วยเครื่องยิง = ปิดให้ทันทีไม่ต้องกดยืนยัน" = จอโกหก                                   */
+test('🔫 cross-close-auto-both-paths — ทางสแกนทั้ง 2 ทางต้องปิดใบข้ามไลน์ให้เอง', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  // ① ทาง \n ในค่า
+  if (!/hasEnter && !found && v\) crossLookup\(v, \{ auto: true \}\)/.test(s))
+    bad.push('ทาง `\\n` (handleCloseProdNoChange) ไม่ได้ส่ง { auto: true }');
+  // ② ทางคีย์ Enter — เครื่องยิงส่วนใหญ่มาทางนี้
+  // ⚠️ ไฟล์นี้มี onKeyDown Enter หลายช่อง — ยึดช่องที่เรียก crossLookup เท่านั้น
+  const kd = s.slice(Math.max(0, s.indexOf('crossLookup(closeProdNo') - 320), s.indexOf('crossLookup(closeProdNo') + 60);
+  if (!/if \(e\.key !== 'Enter'\) return;[\s\S]*crossLookup\(closeProdNo, \{ auto: true \}\)/.test(kd))
+    bad.push('ทางคีย์ Enter (onKeyDown ของช่องสแกน) ไม่ได้ส่ง { auto: true } — หน้างานกดยืนยันไม่ได้');
+  // ปุ่ม "ค้นทั้งโรงงาน" ที่คนพิมพ์มือกดเอง ต้องไม่ auto (คนอยู่หน้าจอ เลือกไลน์เองได้)
+  if (/onClick=\{\(\) => crossLookup\(closeProdNo, \{ auto: true \}\)\}/.test(s))
+    bad.push('ปุ่มค้นทั้งโรงงาน (พิมพ์มือ) กลายเป็น auto — คนพิมพ์มือต้องได้เลือกเอง');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 /* ═══ 📸 ปิดกะต้องตรึง CT + นโยบายพัก แล้วสูตรต้องอ่าน snapshot ก่อนทะเบียนสด (11/11 · คำสั่ง user)
    เคสจริง 10/11: restamp 5 กะเก่า ไม่มีกะไหนได้ค่าเดิม เพราะ `break_policies` ถูกแก้ 20/10 + 05/11
    ⇒ ออดิทเทียบ "เลขที่เก็บ" กับ "เลขที่คำนวณได้" ไม่ตรง · ถอดด่านนี้ = ปัญหากลับมาทั้งระบบ */
@@ -10418,6 +10444,16 @@ test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสีย�
     + '   เขียนค่าดิบ/`|| false` = ยัด false ให้ประเภทที่ยังไม่มีใครติ๊ก\n');
   assert.ok(!/is_machine_breakdown[^\n]*\|\|\s*false/.test(dr) && !/!!\s*\w*\.?is_machine_breakdown/.test(dr),
     '\n\n❌ เจอการบีบธงเป็น boolean 2 สถานะในหน้า (`|| false` / `!!`) — null ต้องคงเป็น null\n');
+  /* ②ข ช่องติ๊กต้องอยู่ **แผงประเภท downtime** ไม่ใช่แผงประเภทงานเสีย
+     เคสจริง 13/11: UI ไปโผล่ในฟอร์ม `dr_defect_types` ส่วน payload อยู่ฟอร์ม `dr_downtime_types`
+     ⇒ คนกดติ๊กในฟอร์มงานเสีย = ส่ง `mb_flag` ลงตารางที่ไม่มีคอลัมน์นี้ = บันทึกล้มทั้งใบ
+     (เจอเพราะ merge conflict ไม่ใช่เพราะเทส — จึงต้องมีด่าน) */
+  const iPayload = dr.indexOf('is_machine_breakdown: mbValueForDb');
+  const iUi = dr.indexOf('MB_FLAGS.map(');
+  assert.ok(iPayload > 0 && iUi > iPayload,
+    '\n\n❌ ช่องติ๊กธง (MB_FLAGS.map) ไม่ได้อยู่ในแผงประเภท downtime เดียวกับตัวบันทึก\n'
+    + '   แผงประเภทงานเสีย (dr_defect_types) ไม่มีคอลัมน์ is_machine_breakdown\n'
+    + '   ⇒ ติ๊กแล้วกดบันทึก = ส่งคีย์ที่ตารางไม่รู้จัก = บันทึกล้มทั้งใบ\n');
 
   /* ③ ธงห้ามไปอยู่ในสูตรที่ส่งกลุ่ม */
   const auto = stripComments(readFileSync(join(ROOT, 'src/utils/kpiAuto.js'), 'utf8'));

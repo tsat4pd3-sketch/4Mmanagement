@@ -232,10 +232,10 @@ export default function StorageLocPanel() {
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>พื้นที่ SAP · ทะเบียนรหัสคลัง (Storage Location)</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('พื้นที่ SAP · ทะเบียนรหัสคลัง (Storage Location)')}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
             รหัสบัญชีคลังแบบ SAP ที่อ้างในทุกบรรทัดของ BOM · {SLOC_FORMAT_HINT}
-            <br />🔗 <b>ผูกไลน์แม่ครั้งเดียว ไลน์ลูกตกทอด</b> (P411 = ทั้ง Apron Assy) — ระบบแปะรหัสคลังให้ใบขอเติม / ledger / จุดส่ง เองตอนเขียน
+            <br />🔗 <b>{tr('ผูกไลน์แม่ครั้งเดียว ไลน์ลูกตกทอด')}</b> (P411 = ทั้ง Apron Assy) — ระบบแปะรหัสคลังให้ใบขอเติม / ledger / จุดส่ง เองตอนเขียน
             · ของยังนับที่ไลน์ย่อยที่สุดเหมือนเดิม (มุม SAP กับมุมไลน์คือรายการเดียวกัน) · คนละเรื่องกับ “โซนคลัง (ผัง)” ด้านล่าง
           </div>
         </div>
@@ -264,7 +264,7 @@ export default function StorageLocPanel() {
       )}
       {!missing && noLineMap && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-          ⚠️ ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — <b>ผูกไลน์กับรหัสคลังยังไม่ได้</b> ใบ/ledger จึงยังไม่มีมุม SAP (แจ้ง admin)
+          ⚠️ ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — <b>{tr('ผูกไลน์กับรหัสคลังยังไม่ได้')}</b> ใบ/ledger จึงยังไม่มีมุม SAP (แจ้ง admin)
         </div>
       )}
 
@@ -272,14 +272,14 @@ export default function StorageLocPanel() {
           ที่ถูกบล็อกจะดูเหมือนบั๊ก) · ลบไม่ได้ทุกแถวตราบที่ยังนับไม่ได้ */}
       {!missing && countFailed && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#ef4444', marginBottom: 10 }}>
-          <b>⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่</b> — คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ
-          ⇒ <b>ปุ่มลบถูกปิดไว้ทั้งหมด</b> กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง
+          <b>{tr('⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่')}</b> — คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ
+          ⇒ <b>{tr('ปุ่มลบถูกปิดไว้ทั้งหมด')}</b> กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง
         </div>
       )}
 
       {!missing && orphan.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-          <b>⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน {orphan.length} รหัส</b> — อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน
+          <b>{tr('⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน')} {orphan.length} {tr('รหัส')}</b> — อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน
           <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {orphan.map(c => (
               <span key={c} onClick={canManage ? () => setEdit({ code: c, name: '', kind: slocKindGuess(c) || '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] }) : undefined}
@@ -294,13 +294,13 @@ export default function StorageLocPanel() {
       {/* worklist: ไลน์ย่อยที่ยังไม่มีมุม SAP — ใบ/ledger ของไลน์พวกนี้จะไม่ถูกแปะรหัส (ห้ามซ่อน · ไม่เดาให้) */}
       {!missing && !noLineMap && !loading && unmappedLeaf.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-          <b style={{ color: '#3b82f6' }}>ไลน์ที่ยังไม่ผูกรหัสคลัง {unmappedLeaf.length} ไลน์</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
+          <b style={{ color: '#3b82f6' }}>{tr('ไลน์ที่ยังไม่ผูกรหัสคลัง')} {unmappedLeaf.length} {tr('ไลน์')}</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
           <div style={{ marginTop: 4, color: 'var(--muted)', lineHeight: 1.6 }}>{unmappedLeaf.slice(0, 30).join(' · ')}{unmappedLeaf.length > 30 ? ` … (+${unmappedLeaf.length - 30})` : ''}</div>
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด...')}</div>
       ) : !missing && rows.length === 0 ? (
         <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border)' }}>
           ยังไม่มีรหัสคลังในทะเบียน{canManage && ' — กด "+ เพิ่มรหัสคลัง"'}
@@ -323,22 +323,22 @@ export default function StorageLocPanel() {
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
                     {meta.icon} {meta.label}
-                    {!r.kind && <span style={{ color: '#f59e0b' }}> · ⚠ ยังไม่ระบุชนิด</span>}
+                    {!r.kind && <span style={{ color: '#f59e0b' }}> {tr('· ⚠ ยังไม่ระบุชนิด')}</span>}
                     {r.note && <span> · {r.note}</span>}
-                    {!r.is_active && <span style={{ color: '#f59e0b' }}> · ปิดใช้งาน</span>}
+                    {!r.is_active && <span style={{ color: '#f59e0b' }}> {tr('· ปิดใช้งาน')}</span>}
                   </div>
                   {!noLineMap && (
                     <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5 }}>
                       {own.length
                         ? <><span style={{ color: '#3b82f6', fontWeight: 700 }}>{own.join(' · ')}</span>
-                            {inherited.length > 0 && <span style={{ color: 'var(--muted)' }}> → ตกทอด {inherited.length} ไลน์: {inherited.slice(0, 8).join(' · ')}{inherited.length > 8 ? ` … (+${inherited.length - 8})` : ''}</span>}</>
+                            {inherited.length > 0 && <span style={{ color: 'var(--muted)' }}> {tr('→ ตกทอด')} {inherited.length} {tr('ไลน์:')} {inherited.slice(0, 8).join(' · ')}{inherited.length > 8 ? ` … (+${inherited.length - 8})` : ''}</span>}</>
                         : isStoreKind(r.kind)
-                          ? <span style={{ color: 'var(--muted)' }}>ที่จัดเก็บหลักของ {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)</span>
-                          : <span style={{ color: 'var(--muted)' }}>— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)</span>}
+                          ? <span style={{ color: 'var(--muted)' }}>{tr('ที่จัดเก็บหลักของ')} {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} {tr('พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)')}</span>
+                          : <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)')}</span>}
                     </div>
                   )}
                 </div>
-                {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>มีคนใช้อยู่</span>}
+                {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>{tr('มีคนใช้อยู่')}</span>}
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                     <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
@@ -398,7 +398,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                 ? <span style={{ color: '#ef4444', fontWeight: 700 }}>🔴 {SLOC_FORMAT_HINT}</span>
                 : <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT}</span>}
               {/* รหัสเป็น PK และถูกอ้างใน BOM → แก้ไม่ได้ ต้องบอกเหตุผล ไม่ใช่ปิดเฉยๆ */}
-              {!isNew && <div style={{ color: 'var(--muted)' }}>รหัสแก้ไม่ได้ (ถูกอ้างใน BOM) — ถ้าตั้งผิด ให้เพิ่มรหัสใหม่แล้วปิดใช้งานตัวเก่า</div>}
+              {!isNew && <div style={{ color: 'var(--muted)' }}>{tr('รหัสแก้ไม่ได้ (ถูกอ้างใน BOM) — ถ้าตั้งผิด ให้เพิ่มรหัสใหม่แล้วปิดใช้งานตัวเก่า')}</div>}
             </div>
           </div>
           <div>
@@ -414,7 +414,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
             {guess && guess !== f.kind && (
               <div onClick={() => setF(v => ({ ...v, kind: guess }))} style={{ fontSize: 11, color: '#0ea5e9', cursor: 'pointer', marginTop: 3, fontWeight: 700 }}>
-                รหัสขึ้นต้น {code[0]} — น่าจะเป็น “{slocKindMeta(guess).label}” (กดเพื่อใช้)
+                รหัสขึ้นต้น {code[0]} {tr('— น่าจะเป็น “')}{slocKindMeta(guess).label}” (กดเพื่อใช้)
               </div>
             )}
           </div>
@@ -423,7 +423,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           <div>
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์/พื้นที่ที่อยู่ในรหัสคลังนี้')}</label>
             {noLineMap ? (
-              <div style={{ fontSize: 11.5, color: '#f59e0b' }}>ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — ผูกไลน์ยังไม่ได้</div>
+              <div style={{ fontSize: 11.5, color: '#f59e0b' }}>{tr('ยังไม่ได้ apply migration')} <code>{MIG_DR}</code> {tr('(DR) — ผูกไลน์ยังไม่ได้')}</div>
             ) : (
               <>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -440,7 +440,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                   {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง "ที่จัดเก็บหลัก" ที่ทะเบียนพาร์ท (/products แท็บ Parts)</div>}
                   ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว
-                  {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>→ ครอบเพิ่ม {preview.length} ไลน์: {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
+                  {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>{tr('→ ครอบเพิ่ม')} {preview.length} {tr('ไลน์:')} {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
                 </div>
               </>
             )}

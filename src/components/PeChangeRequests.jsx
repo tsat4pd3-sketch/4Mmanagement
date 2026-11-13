@@ -47,17 +47,17 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
               ระบบเสนอ · ความมั่นใจ {cr.confidence != null ? `${Math.round(cr.confidence * 100)}%` : '—'}
             </span>
           )}
-          {cr.ref_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {cr.ref_label}</span>}
+          {cr.ref_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จาก')} {cr.ref_label}</span>}
           {/* 🪜 ถึงขั้นไหน — กฎ crFlow() (utils/peLink.js) · UI §6.30 */}
           {(() => { const f = crFlow(cr); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
         </div>
         {cr.match_note && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>{cr.match_note}</div>}
         <div style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{cr.proposal}</div>
         {cr.status === 'rejected' && cr.reject_reason && (
-          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>เหตุผลที่ไม่แก้: {cr.reject_reason}</div>
+          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>{tr('เหตุผลที่ไม่แก้:')} {cr.reject_reason}</div>
         )}
         {cr.status === 'applied' && (
-          <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ ออก revision แล้ว{cr.decided_by ? ` · ${cr.decided_by}` : ''}</div>
+          <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>{tr('✓ ออก revision แล้ว')}{cr.decided_by ? ` · ${cr.decided_by}` : ''}</div>
         )}
       </div>
       {canDecide && (cr.status === 'proposed' || cr.status === 'accepted') && (
@@ -264,13 +264,13 @@ export default function PeChangeRequests({
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', background: 'var(--bg2)', flexWrap: 'wrap' }}>
-        <b style={{ fontSize: 12.5 }}>เอกสารที่ต้องตามแก้</b>
+        <b style={{ fontSize: 12.5 }}>{tr('เอกสารที่ต้องตามแก้')}</b>
         {pending > 0 && <Pill label={`ค้าง ${pending}`} color="#f59e0b" />}
-        {rows.length === 0 && !loading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการ</span>}
+        {rows.length === 0 && !loading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ยังไม่มีรายการ')}</span>}
         <span style={{ flex: 1 }} />
         {mode === 'source' && canPropose && (
           <>
-            <button style={ghost} disabled={busy} onClick={runSuggest} title="ให้ระบบค้น PFMEA / Control Plan ที่เกี่ยวกับอาการและสาเหตุที่กรอกไว้">
+            <button style={ghost} disabled={busy} onClick={runSuggest} title={tr('ให้ระบบค้น PFMEA / Control Plan ที่เกี่ยวกับอาการและสาเหตุที่กรอกไว้')}>
               {busy ? tr('⏳ กำลังค้น...') : tr('🔍 หาเอกสารที่เกี่ยว')}
             </button>
             <button style={ghost} onClick={() => setManual({ doc_type: 'fmea', leg: 'occurrence', proposal: '', set_id: setInfo?.set?.id || '' })}>{tr('➕ เพิ่มเอง')}</button>
@@ -280,8 +280,8 @@ export default function PeChangeRequests({
 
       {mode === 'source' && (
         <div style={{ padding: '7px 11px', fontSize: 11, color: 'var(--muted)', borderBottom: rows.length || sugs ? '1px solid var(--border)' : 'none', lineHeight: 1.6 }}>
-          IATF 16949 §10.2.3/10.2.4 — แก้ปัญหาแล้ว <b>ต้องทบทวน PFMEA และ Control Plan</b> ด้วย ·
-          ระบบ<b>เสนอ</b>ให้เท่านั้น ทีม PE เป็นผู้ตัดสินและออก revision
+          IATF 16949 §10.2.3/10.2.4 — แก้ปัญหาแล้ว <b>{tr('ต้องทบทวน PFMEA และ Control Plan')}</b> ด้วย ·
+          ระบบ<b>{tr('เสนอ')}</b>ให้เท่านั้น ทีม PE เป็นผู้ตัดสินและออก revision
         </div>
       )}
 
@@ -291,15 +291,15 @@ export default function PeChangeRequests({
           {setInfo?.set && (
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
               ชุดเอกสารที่จับคู่ได้: <b style={{ color: 'var(--text)' }}>{setInfo.set.part_no}</b> {setInfo.set.part_name || ''}
-              {setInfo.how === 'line_name' && <span style={{ color: '#f59e0b' }}> · จับคู่จากชื่อไลน์ (ไม่ใช่เลขพาร์ท) — ตรวจให้แน่ใจ</span>}
+              {setInfo.how === 'line_name' && <span style={{ color: '#f59e0b' }}> {tr('· จับคู่จากชื่อไลน์ (ไม่ใช่เลขพาร์ท) — ตรวจให้แน่ใจ')}</span>}
             </div>
           )}
           {!sugs.length ? (
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบข้อเสนอ — ลองกรอก D2 (อาการ) และ D4 (สาเหตุ) ให้ละเอียดขึ้นแล้วค้นใหม่</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่พบข้อเสนอ — ลองกรอก D2 (อาการ) และ D4 (สาเหตุ) ให้ละเอียดขึ้นแล้วค้นใหม่')}</div>
           ) : (
             <>
               <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
-                ระบบเสนอ {sugs.length} รายการ — <b>ติ๊กเฉพาะที่เห็นว่าใช่</b> แล้วส่งให้ทีม PE (ยังไม่มีอะไรถูกแก้)
+                ระบบเสนอ {sugs.length} {tr('รายการ —')} <b>{tr('ติ๊กเฉพาะที่เห็นว่าใช่')}</b> แล้วส่งให้ทีม PE (ยังไม่มีอะไรถูกแก้)
               </div>
               <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--card)' }}>
                 {sugs.map((x) => (
@@ -348,7 +348,7 @@ export default function PeChangeRequests({
         </div>
       )}
 
-      {loading ? <div style={{ padding: 14, fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
+      {loading ? <div style={{ padding: 14, fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
         : rows.map((cr) => <CrRow key={cr.id} cr={cr} canDecide={canDecide} onDecide={decide} onApply={openApply} />)}
 
       {/* ออก revision */}
@@ -357,8 +357,8 @@ export default function PeChangeRequests({
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>{tr('✅ ออก revision —')} {DOC_LABEL[applyFor.cr.doc_type]}</h3>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
-              บันทึกนี้จะไปอยู่ในประวัติ revision ของชุดเอกสาร <b>พร้อมที่มา</b> ({applyFor.cr.ref_label || applyFor.cr.ref_kind}) ·
-              <b> แก้เนื้อหาเอกสารจริงที่ /pe-docs เอง</b> — ระบบไม่แก้ให้อัตโนมัติ
+              บันทึกนี้จะไปอยู่ในประวัติ revision ของชุดเอกสาร <b>{tr('พร้อมที่มา')}</b> ({applyFor.cr.ref_label || applyFor.cr.ref_kind}) ·
+              <b> {tr('แก้เนื้อหาเอกสารจริงที่ /pe-docs เอง')}</b> — ระบบไม่แก้ให้อัตโนมัติ
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 9 }}>
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('Rev. (ถ้ามี)')}

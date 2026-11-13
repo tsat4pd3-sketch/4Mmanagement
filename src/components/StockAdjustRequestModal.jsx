@@ -54,10 +54,10 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
       <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(460px, 94vw)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>ขอปรับยอดคลัง — {mat}</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{tr('ขอปรับยอดคลัง —')} {mat}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{partName || ' '}</div>
           </div>
-          <button className="tbtn" onClick={onClose} aria-label="ปิด"
+          <button className="tbtn" onClick={onClose} aria-label={tr('ปิด')}
             style={{ background: 'none', border: 'none', fontSize: 18, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 12 }}>
@@ -71,7 +71,7 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ fontSize: 13 }}>
-              คลัง <b>{loc}</b> · ยอดในระบบ <b>{noBase ? 'ยังไม่มีแถว (ถือเป็น 0)' : fmt(onHand)}</b>
+              คลัง <b>{loc}</b> {tr('· ยอดในระบบ')} <b>{noBase ? tr('ยังไม่มีแถว (ถือเป็น 0)') : fmt(onHand)}</b>
             </div>
             <div>
               <label style={lbl}>{tr('ยอดที่นับได้จริง (ชิ้น)')}</label>

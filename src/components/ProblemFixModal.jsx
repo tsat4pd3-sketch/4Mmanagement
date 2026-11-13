@@ -145,7 +145,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {wiHits.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>WI การซ่อม</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
+              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>{tr('WI การซ่อม')}</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {wiHits.map(w => (
@@ -197,7 +197,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         )}
 
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้แก้ไข</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผู้แก้ไข')}</span>
           {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (ผู้แก้มักเป็นช่าง/พนักงาน) — เก็บชื่อ snapshot (ตาราง DR) */}
           <PersonSelect value={fixBy} source="both" history={fixByHist} placeholder={tr('ชื่อผู้แก้ไข')} style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setFixBy(name)} />
@@ -209,7 +209,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <textarea value={res} onChange={e => setRes(e.target.value)} style={ta}
           placeholder={tr('แก้แล้วหายจริงไหม ตามดูแล้วผลเป็นยังไง — ลงทีหลังได้ ไม่ต้องกรอกพร้อมวิธีแก้')} />
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้ตรวจติดตาม</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผู้ตรวจติดตาม')}</span>
           {/* 2026-09-07 <PersonSelect> — default ผู้ใช้ปัจจุบันเหมือนเดิม */}
           <PersonSelect value={resBy} source="both" history={followHist} placeholder={tr('ชื่อผู้ตรวจติดตาม')} style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setResBy(name)} />

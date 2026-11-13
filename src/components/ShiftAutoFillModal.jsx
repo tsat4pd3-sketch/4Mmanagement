@@ -84,7 +84,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         existingMondays: [...(weeksMap || new Map()).keys()],
       });
       skipped += sk;
-      if (!proj.length) { blocked.push({ key, label, kind, reason: 'ตั้งครบทุกสัปดาห์ในช่วงนี้แล้ว', seen: list.length, done: true }); return; }
+      if (!proj.length) { blocked.push({ key, label, kind, reason: tr('ตั้งครบทุกสัปดาห์ในช่วงนี้แล้ว'), seen: list.length, done: true }); return; }
       rowCount += proj.length * 7;
       ready.push({ key, label, kind, id, rot, weeks: proj, inheritFrom });
     };
@@ -180,25 +180,25 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         background: 'var(--bg3)', border: '2px solid rgba(77,159,255,0.5)', borderRadius: 'var(--r-lg)',
         padding: 22, width: 'min(96vw,860px)', maxHeight: '92vh', overflowY: 'auto',
       }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>เติมตารางกะล่วงหน้า</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>{tr('เติมตารางกะล่วงหน้า')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.7 }}>
-          ระบบดูรอบสลับที่ตั้งไว้จริงย้อนหลัง แล้วต่อไปข้างหน้าให้ — <b style={{ color: 'var(--text)' }}>เริ่มจากสัปดาห์ที่เปิดอยู่ ({weekStart})</b>
-          {' '}· <b style={{ color: 'var(--text)' }}>ไม่ทับสัปดาห์ที่ตั้งไว้แล้ว</b> · เป็นค่าตั้งต้นให้ระบบมีอะไรใช้ ถ้าจริงๆ สลับต่างไป แก้ทับได้ตลอด
+          ระบบดูรอบสลับที่ตั้งไว้จริงย้อนหลัง แล้วต่อไปข้างหน้าให้ — <b style={{ color: 'var(--text)' }}>{tr('เริ่มจากสัปดาห์ที่เปิดอยู่ (')}{weekStart})</b>
+          {' '}· <b style={{ color: 'var(--text)' }}>{tr('ไม่ทับสัปดาห์ที่ตั้งไว้แล้ว')}</b> · เป็นค่าตั้งต้นให้ระบบมีอะไรใช้ ถ้าจริงๆ สลับต่างไป แก้ทับได้ตลอด
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          <span style={{ fontSize: 12, fontWeight: 700 }}>เติมไปข้างหน้า</span>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>{tr('เติมไปข้างหน้า')}</span>
           {WEEK_CHOICES.map(w => (
             <button key={w} onClick={() => setWeeks(w)} style={{
               padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1px solid ${weeks === w ? '#4d9fff' : 'var(--border2)'}`,
               background: weeks === w ? 'rgba(77,159,255,0.15)' : 'transparent',
               color: weeks === w ? '#4d9fff' : 'var(--text2)',
-            }}>{w} สัปดาห์</button>
+            }}>{w} {tr('สัปดาห์')}</button>
           ))}
         </div>
 
-        {loading && <div style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>กำลังอ่านประวัติตารางกะ...</div>}
+        {loading && <div style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>{tr('กำลังอ่านประวัติตารางกะ...')}</div>}
 
         {err && (
           <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12.5, color: '#ef4444' }}>
@@ -209,10 +209,10 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         {!loading && !err && (
           <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-              <Stat label="ต่อรอบให้ได้" value={`${ready.length} รายการ`} color="#22c55e" />
-              <Stat label="ตรวจรอบไม่ได้" value={`${blocked.filter(b => !b.done).length} รายการ`} color={blocked.filter(b => !b.done).length ? '#f59e0b' : 'var(--muted)'} />
-              <Stat label="สัปดาห์ที่ข้าม (ตั้งไว้แล้ว)" value={`${skipped}`} color="var(--muted)" />
-              <Stat label="แถวที่จะเขียน" value={`${rowCount}`} color="#4d9fff" />
+              <Stat label={tr('ต่อรอบให้ได้')} value={`${ready.length} รายการ`} color="#22c55e" />
+              <Stat label={tr('ตรวจรอบไม่ได้')} value={`${blocked.filter(b => !b.done).length} รายการ`} color={blocked.filter(b => !b.done).length ? '#f59e0b' : 'var(--muted)'} />
+              <Stat label={tr('สัปดาห์ที่ข้าม (ตั้งไว้แล้ว)')} value={`${skipped}`} color="var(--muted)" />
+              <Stat label={tr('แถวที่จะเขียน')} value={`${rowCount}`} color="#4d9fff" />
             </div>
 
             {ready.length > 0 && (
@@ -232,8 +232,8 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
                           {r.kind === 'dept' ? '🏢 ' : ''}{r.label}
                         </td>
                         <td style={{ ...td, color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                          สลับทุก {r.rot.periodWeeks} สัปดาห์ · จาก {r.rot.weeksSeen} สัปดาห์ที่ตั้งไว้
-                          {r.inheritFrom && <span style={{ color: '#4d9fff' }}> · ↳ ตามไลน์แม่ {r.inheritFrom}</span>}
+                          สลับทุก {r.rot.periodWeeks} {tr('สัปดาห์ · จาก')} {r.rot.weeksSeen} สัปดาห์ที่ตั้งไว้
+                          {r.inheritFrom && <span style={{ color: '#4d9fff' }}> {tr('· ↳ ตามไลน์แม่')} {r.inheritFrom}</span>}
                         </td>
                         {r.weeks.slice(0, 8).map(w => (
                           <td key={w.monday} style={{ ...td, textAlign: 'center' }}>{chip(w.team)}</td>

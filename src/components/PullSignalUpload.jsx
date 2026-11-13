@@ -485,8 +485,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
-          ไฟล์จากพอร์ทัลลูกค้า = <b>ยอดยืนยันสุดท้ายก่อนส่ง</b> · ระบบอัพเดท<b>เฉพาะพาร์ทที่อยู่ในไฟล์</b> ·
-          พาร์ทที่ไม่อยู่ในไฟล์ถือว่า<b>ตรงกับ 862 อยู่แล้ว ไม่ถูกแตะ</b>
+          ไฟล์จากพอร์ทัลลูกค้า = <b>{tr('ยอดยืนยันสุดท้ายก่อนส่ง')}</b> {tr('· ระบบอัพเดท')}<b>{tr('เฉพาะพาร์ทที่อยู่ในไฟล์')}</b> ·
+          พาร์ทที่ไม่อยู่ในไฟล์ถือว่า<b>{tr('ตรงกับ 862 อยู่แล้ว ไม่ถูกแตะ')}</b>
         </div>
 
         {profileMissing && (
@@ -510,7 +510,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           </div>
         </label>
 
-        {loading && <div style={{ fontSize: 12, color: 'var(--text2)' }}>⏳ กำลังอ่าน…</div>}
+        {loading && <div style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('⏳ กำลังอ่าน…')}</div>}
 
         {parsed && !parsed.ok && (
           <div style={noteBox('#ef4444')}>🔴 {parsed.error}</div>
@@ -520,8 +520,8 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
           <>
             <div style={{ ...noteBox('#0ea5e9'), marginBottom: 10 }}>
               <b>{parsed.profile?.name}</b>{parsed.guessed && ' · ⚠ เดารูปแบบจากคอลัมน์ (ไม่เจอคำสำคัญในหัวไฟล์)'}
-              {' · '}ช่วงเวลา {parsed.windowStart ? `${timeStr(parsed.windowStart)}–` : ''}{parsed.windowEnd ? timeStr(parsed.windowEnd) : '—'}
-              {' · '}{rowsInFile} แถว{dupCount > 0 && ` · ⏭ เคยนำเข้าแล้ว ${dupCount} แถว (ไม่นับซ้ำ)`}
+              {' · '}{tr('ช่วงเวลา')} {parsed.windowStart ? `${timeStr(parsed.windowStart)}–` : ''}{parsed.windowEnd ? timeStr(parsed.windowEnd) : '—'}
+              {' · '}{rowsInFile} {tr('แถว')}{dupCount > 0 && ` · ⏭ เคยนำเข้าแล้ว ${dupCount} แถว (ไม่นับซ้ำ)`}
               {parsed.meta?.supplier_code && ` · GSDB ${parsed.meta.supplier_code}`}
               {/* ⭐ เวลาที่ลูกค้าออกไฟล์ (จากชื่อไฟล์) — เป็นไม้บรรทัดที่ตัวอ่านใช้ตัดสินวันที่ด้วย
                   โชว์ให้เห็นก่อนกดยืนยัน จะได้ทวนสอบว่าเป็นไฟล์ของรอบไหนจริง */}
@@ -531,16 +531,16 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 const lag = Math.round((Date.now() - made.getTime()) / 60000);
                 return <div style={{ marginTop: 4 }}>
                   ไฟล์ออกเมื่อ <b>{dateStr(made)} {timeStr(made)}</b>
-                  {lag >= 0 && <span style={{ color: lag > 120 ? '#f59e0b' : 'var(--muted)' }}> · ผ่านมาแล้ว {lag} นาที{lag > 120 ? ' (ข้อมูลอาจเก่า)' : ''}</span>}
+                  {lag >= 0 && <span style={{ color: lag > 120 ? '#f59e0b' : 'var(--muted)' }}> {tr('· ผ่านมาแล้ว')} {lag} {tr('นาที')}{lag > 120 ? ' (ข้อมูลอาจเก่า)' : ''}</span>}
                 </div>;
               })()}
             </div>
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
             {dateRisk.length > 0 && (
               <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>ตรวจวันที่ให้แน่ก่อนยืนยัน</div>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>{tr('ตรวจวันที่ให้แน่ก่อนยืนยัน')}</div>
                 <div style={{ fontSize: 12, marginBottom: 6 }}>
-                  วันงานที่ระบบอ่านได้คือ <b>{workDate || '—'}</b> รอบส่ง <b>{shipTime || '—'}</b> —
+                  วันงานที่ระบบอ่านได้คือ <b>{workDate || '—'}</b> {tr('รอบส่ง')} <b>{shipTime || '—'}</b> —
                   ถ้าไม่ตรงกับไฟล์ ให้แก้ 2 ช่องด้านบนก่อน · <b>วันที่ผิด = ใบไปโผล่ผิดวันและสต็อกถูกตัดซ้ำ</b>
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
@@ -560,13 +560,13 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {dupUploads.slice(0, 3).map(({ batch: b, reason }) => (
                   <div key={b.id} style={{ fontSize: 12, marginTop: 3 }}>
                     • {reason === 'same_file' ? 'ชื่อไฟล์เดียวกัน' : 'ช่วงเวลาเดียวกัน (คนละชื่อไฟล์)'}
-                    {' — '}{whenText(b.uploaded_at)} โดย {b.uploaded_by || 'ไม่ระบุ'}
+                    {' — '}{whenText(b.uploaded_at)} {tr('โดย')} {b.uploaded_by || 'ไม่ระบุ'}
                     {b.ship_time && ` · ลงรอบ ${b.ship_time}`}
-                    {' → '}อัพเดท {fmt(b.orders_updated)} ใบ · สร้าง {fmt(b.orders_created)} ใบ
+                    {' → '}{tr('อัพเดท')} {fmt(b.orders_updated)} {tr('ใบ · สร้าง')} {fmt(b.orders_created)} ใบ
                   </div>
                 ))}
                 <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6, lineHeight: 1.6 }}>
-                  ยืนยันต่อได้ถ้าตั้งใจ (เช่นรอบก่อนล้มกลางทาง) — ระบบจะ<b>ไม่สร้างใบซ้ำ</b> เพราะเทียบกับของจริงก่อนเขียนเสมอ
+                  ยืนยันต่อได้ถ้าตั้งใจ (เช่นรอบก่อนล้มกลางทาง) — ระบบจะ<b>{tr('ไม่สร้างใบซ้ำ')}</b> เพราะเทียบกับของจริงก่อนเขียนเสมอ
                   และมีด่านกันซ้ำที่ฐานข้อมูลอีกชั้น · ถ้าไม่มีอะไรต้องแก้จริง ระบบจะบอกว่า “นำเข้าไปแล้ว” แล้วปิดให้เอง
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
@@ -577,7 +577,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             )}
 
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
-              <Field label="ลูกค้า (Plant Code)">
+              <Field label={tr('ลูกค้า (Plant Code)')}>
                 <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={inputSt}>
                   {!shipTo && <option value="">{tr('— เลือก —')}</option>}
                   {[...new Set([shipTo, ...Object.keys(shipToMap || {})].filter(Boolean))].sort().map(c => (
@@ -585,7 +585,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                   ))}
                 </select>
               </Field>
-              <Field label="วันงานที่ส่ง">
+              <Field label={tr('วันงานที่ส่ง')}>
                 <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} style={inputSt} />
               </Field>
               <Field label={activeRound
@@ -600,7 +600,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                    (feedback: "เพิ่มข้อมูลช่วงโอทีของลูกค้าแล้วข้อมูลไม่ขึ้น") */}
             {patOpts.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รูปแบบวัน:</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('รูปแบบวัน:')}</span>
                 {patOpts.map(o => (
                   <button key={o.key} onClick={() => setPattern(o.key)}
                     style={{
@@ -609,11 +609,11 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                       background: pattern === o.key ? 'var(--accent)' : 'var(--bg2)',
                       color: pattern === o.key ? '#08130a' : 'var(--text2)',
                     }}>
-                    {o.label} · รับ {String(o.round.pickup_time).slice(0, 5)}
+                    {o.label} {tr('· รับ')} {String(o.round.pickup_time).slice(0, 5)}
                   </button>
                 ))}
                 {patOpts.length > 1 && (
-                  <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠️ วัน OT ต้องกดเปลี่ยนเอง</span>
+                  <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('⚠️ วัน OT ต้องกดเปลี่ยนเอง')}</span>
                 )}
               </div>
             )}
@@ -624,15 +624,15 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
                 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{activeRound.period_start}-{activeRound.period_end}</b>
                 {activeRound.dock_code ? <> · Dock <b>{activeRound.dock_code}</b></> : null}
-                {' '}→ รถมารับ <b>{String(activeRound.pickup_time).slice(0, 5)}</b>
-                {activeRound.delivery_time ? <> · ถึงลูกค้า {String(activeRound.delivery_time).slice(0, 5)}</> : null}
-                {activeRound.prepare_from ? <> · เตรียมของ {String(activeRound.prepare_from).slice(0, 5)}-{String(activeRound.prepare_to || '').slice(0, 5)}</> : null}
+                {' '}{tr('→ รถมารับ')} <b>{String(activeRound.pickup_time).slice(0, 5)}</b>
+                {activeRound.delivery_time ? <> {tr('· ถึงลูกค้า')} {String(activeRound.delivery_time).slice(0, 5)}</> : null}
+                {activeRound.prepare_from ? <> {tr('· เตรียมของ')} {String(activeRound.prepare_from).slice(0, 5)}-{String(activeRound.prepare_to || '').slice(0, 5)}</> : null}
               </div>
             )}
             {roundsMissing && !activeRound && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
                 ⚠️ ยังไม่มีตารางรอบรับในระบบ — ใช้สูตร “ปลายช่วง +{parsed.profile?.lead_min ?? 60} นาที” เดารอบให้
-                <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>Ship-to Config</b>
+                <b> {tr('ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง')}</b> {tr('· ตั้งตารางจริงได้ที่แท็บ')} <b>Ship-to Config</b>
               </div>
             )}
 
@@ -644,17 +644,17 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             {shipTo && !scopedByCustomer && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
                 ⚠ ยังไม่ได้ตั้ง “ชื่อลูกค้า” ให้ ship-to นี้ (หรือไม่มีสินค้าไหนใช้ชื่อนั้น) — เลขพาร์ทลูกค้า 1 ตัวชี้ได้หลาย MAT
-                จึงอาจ<b>จับคู่ไม่ได้</b> · ตั้งที่ ⚙️ Ship-to Config ให้ตรงกับช่อง “ลูกค้า” ใน Product Master
+                จึงอาจ<b>{tr('จับคู่ไม่ได้')}</b> · ตั้งที่ ⚙️ Ship-to Config ให้ตรงกับช่อง “ลูกค้า” ใน Product Master
               </div>
             )}
             {ctxError && <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>🔴 {ctxError}</div>}
             {/* ⭐ ไฟล์หลาย dock = หลายเที่ยวรถ — โชว์ให้เห็นว่าแต่ละ dock ไปลงรอบไหน วันงานไหน */}
             {legs.length > 1 && (
               <div style={{ ...noteBox('#0ea5e9'), marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, marginBottom: 2 }}>ไฟล์นี้มี {legs.length} dock — แยกเป็น {legs.length} เที่ยว</div>
+                <div style={{ fontWeight: 800, marginBottom: 2 }}>{tr('ไฟล์นี้มี')} {legs.length} {tr('dock — แยกเป็น')} {legs.length} {tr('เที่ยว')}</div>
                 {legs.map(l => (
                   <div key={l.dock || '-'}>
-                    • Dock <b>{l.dock || '—'}</b> {l.rows.length} แถว → รอบ <b>{l.shipTime || '—'}</b> วันงาน <b>{l.workDate || '—'}</b>
+                    • Dock <b>{l.dock || '—'}</b> {l.rows.length} {tr('แถว → รอบ')} <b>{l.shipTime || '—'}</b> {tr('วันงาน')} <b>{l.workDate || '—'}</b>
                     {l.primary ? ' (ช่องด้านบน)' : l.fromLead ? ' ⚠ ไม่มีตารางรอบรับ ใช้สูตรปลายช่วง' : ` (ตารางรอบรับ ${String(l.round?.pickup_time || '').slice(0, 5)})`}
                   </div>
                 ))}
@@ -690,7 +690,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                         <td style={{ ...td, fontWeight: 700, whiteSpace: 'nowrap' }}>
                           {x.order ? String(x.order.ship_time || '').slice(0, 5) : x.leg?.shipTime}
                           {x.order && String(x.order.ship_time || '').slice(0, 5) !== x.leg?.shipTime && (
-                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>ใบ 862 เดิม → {x.leg?.shipTime}</div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>{tr('ใบ 862 เดิม →')} {x.leg?.shipTime}</div>
                           )}
                           {legs.length > 1 && <div style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 800 }}>Dock {x.leg?.dock || '—'}</div>}
                         </td>
@@ -699,12 +699,12 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                           {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
                           {x.merge?.length > 0 && (
                             <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700 }}>
-                              ↳ ปิดใบแผน 862 ในช่วงเดียวกันอีก {x.merge.length} ใบ ({x.merge.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — แทนด้วยยอด e-SMART
+                              ↳ ปิดใบแผน 862 ในช่วงเดียวกันอีก {x.merge.length} {tr('ใบ (')}{x.merge.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — แทนด้วยยอด e-SMART
                             </div>
                           )}
                           {x.extras?.length > 0 && (
                             <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
-                              ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} ใบ ({x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
+                              ⚠ มีใบ 862 อื่นในช่วงนี้อีก {x.extras.length} {tr('ใบ (')}{x.extras.map(o => `${String(o.ship_time || '').slice(0, 5)} × ${fmt(o.qty)}`).join(' · ')}) — ระบบไม่แตะ ต้องตัดสินเอง
                             </div>
                           )}</td>
                       </tr>
@@ -722,7 +722,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
               <span style={{ fontSize: 12, color: 'var(--text2)', flex: '1 1 240px' }}>
                 จะเขียน <b style={{ color: 'var(--accent)' }}>{willWrite}</b> ใบ
-                (อัพเดท {tally.update} · สร้างใหม่ {tally.create})
+                (อัพเดท {tally.update} {tr('· สร้างใหม่')} {tally.create})
                 {tally.same ? ` · ตรงอยู่แล้ว ${tally.same}` : ''}
                 {tally.locked ? ` · ทำไปแล้ว ${tally.locked}` : ''}
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}

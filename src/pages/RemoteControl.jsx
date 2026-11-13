@@ -107,13 +107,13 @@ export default function RemoteControl() {
 
   return (
     <Page width="narrow" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <PageHeader title="รีโมทจอ (Remote)" icon="🎮" />
+      <PageHeader title={tr('รีโมทจอ (Remote)')} icon="🎮" />
 
       {!joined ? (
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.7 }}>
-            1. บนจอ TV/คอม เปิดเมนู sidebar → กด <b>รับรีโมทจอ</b> (ล่างสุด)<br />
-            2. จอจะโชว์<b>รหัส 6 หลัก</b>ที่ป้ายมุมล่างซ้าย — เอามาใส่ที่นี่
+            1. บนจอ TV/คอม เปิดเมนู sidebar → กด <b>{tr('รับรีโมทจอ')}</b> {tr('(ล่างสุด)')}<br />
+            2. จอจะโชว์<b>{tr('รหัส 6 หลัก')}</b>ที่ป้ายมุมล่างซ้าย — เอามาใส่ที่นี่
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
@@ -156,7 +156,7 @@ export default function RemoteControl() {
 
           {/* ── สั่งจอเปลี่ยนหน้า — เมนูชุดเดียวกับ sidebar (สิทธิ์เข้าหน้าคุมที่ฝั่งจอเอง) ── */}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>สั่งจอไปหน้า…</div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>{tr('สั่งจอไปหน้า…')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {pages.map(p => (
                 <button key={p.to} onClick={() => send({ type: 'nav', to: p.to })}

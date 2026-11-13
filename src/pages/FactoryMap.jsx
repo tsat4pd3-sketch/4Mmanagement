@@ -131,7 +131,7 @@ const facHealthTextOf = (st) => {
 const prodHealthSignals = (s) => {
   const sig = [];
   if (s.dtActive) sig.push({ cat: 'down', txt: `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` });
-  if (s.supAtRisk) sig.push({ cat: 'down', txt: '⚠ utility ที่จ่ายไลน์กำลังซ่อม' });
+  if (s.supAtRisk) sig.push({ cat: 'down', txt: tr('⚠ utility ที่จ่ายไลน์กำลังซ่อม') });
   if (s.target > 0 && s.onTimeTarget >= 1) {
     const p = s.actual / s.onTimeTarget * 100;   // เกณฑ์เดียวกับแท็บยอดผลิต (≥95 เขียว / ≥80 เหลือง)
     if (p < 80) sig.push({ cat: 'bad', txt: `ตามหลังจังหวะ ${Math.round(p)}%` });
@@ -141,7 +141,7 @@ const prodHealthSignals = (s) => {
   else if (s.ng > 0) sig.push({ cat: 'ok', txt: `NG ${s.ng}` });
   /* ⚠️ PM (ช่าง) กับ AM (ผลิตตรวจเอง) แยกกันเสมอ — คนละคนรับผิดชอบ รวมเป็นก้อนเดียวแล้วตอบไม่ได้ว่าใครต้องไปทำ
      "กำลังทำ PM อยู่" ไม่ใช่ปัญหา แต่ต้องเห็นบนป้าย (ไม่งั้นคนอ่านคิดว่าไลน์หยุดเพราะเสีย) */
-  if (s.pmBusy) sig.push({ cat: 'good', txt: '🔧 กำลังทำ PM' });
+  if (s.pmBusy) sig.push({ cat: 'good', txt: tr('🔧 กำลังทำ PM') });
   if (s.pmOverdue) sig.push({ cat: 'bad', txt: `PM เกิน ${s.pmOverdue}` });
   else if (s.pmDueSoon) sig.push({ cat: 'ok', txt: `PM ใกล้ครบ ${s.pmDueSoon}` });
   // 🔴 แผนที่ไม่เคยตรวจ/ไม่รู้รอบ ≠ ปกติ (08/10 — JIG MTN 106 แผนเคยถูกนับเป็น "PM ปกติ" ทั้งที่ไม่เคยตรวจสักใบ)
@@ -2606,9 +2606,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
   return (
     <Page width="full">
-      <PageHeader title="ผังรวมโรงงาน" icon="🗺️"
-        sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>สวิตช์ ⚡ Live / 📅 ทบทวนรายวัน คุมทั้งผัง แผงขวา และรายละเอียดที่คลิก</b> · hover/คลิก = เฉพาะเรื่องของแท็บที่เลือก</>}
-        actions={canEdit && <button type="button" className="pg-btn" onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? 'เสร็จ' : 'แก้ผัง'}<ToggleDot on={editing} /></button>} />
+      <PageHeader title={tr('ผังรวมโรงงาน')} icon="🗺️"
+        sub={<>{tr('ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง ·')} <b>{tr('วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน')}</b> {tr('· อัปเดตสดอัตโนมัติ ·')} <b>{tr('สวิตช์ ⚡ Live / 📅 ทบทวนรายวัน คุมทั้งผัง แผงขวา และรายละเอียดที่คลิก')}</b> · hover/คลิก = เฉพาะเรื่องของแท็บที่เลือก</>}
+        actions={canEdit && <button type="button" className="pg-btn" onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? tr('เสร็จ') : tr('แก้ผัง')}<ToggleDot on={editing} /></button>} />
       {partial && (
         <NoticeBar tone="bad" style={{ marginBottom: 10 }}>
           {partial}
@@ -2618,7 +2618,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}
       {!editing && (
         <div className="tv-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
+          <Segmented label={tr('ช่วงเวลาของทั้งหน้า')} value={viewMode} onChange={setViewMode} options={[
             { value: 'live', label: 'Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
             { value: 'review', label: 'ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
           ]} />
@@ -2628,17 +2628,17 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               style={{ width: 150, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 13, textAlign: 'center' }} />
             <button onClick={() => setReviewDate(d => (d < getWorkDate() ? shiftDate(d, 1) : d))} disabled={reviewDate >= getWorkDate()} style={{ ...navBtn, opacity: reviewDate >= getWorkDate() ? 0.4 : 1 }}>▶</button>
             <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{fmtThaiDate(reviewDate)}</span>
-            {reviewLoading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>กำลังโหลด…</span>}
+            {reviewLoading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</span>}
             {reviewError && <span style={{ fontSize: 11.5, color: 'var(--red)', fontWeight: 700 }}>⚠ โหลดยอดของวันนี้ไม่สำเร็จ — ผังเป็น 0 ไม่ใช่ "ไม่มีการผลิต"</span>}
           </>)}
         </div>
       )}
       {!editing && isReview && (
         <div className="tv-hide" style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 'var(--r-md)', fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
-          📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
-          <b> แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
-          <b> พลังงาน:</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
-          {reviewOpenN > 0 && <> · <b style={{ color: 'var(--amber)' }}>⚠ มี {reviewOpenN} กะที่ยังไม่ปิด — OEE ในโหมดนี้นับเฉพาะกะที่ปิดแล้ว (ค่าสดดูที่โหมดสด)</b></>}
+          📅 <b style={{ color: 'var(--text)' }}>{tr('โหมดทบทวน')} {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
+          <b> {tr('แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน')}</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
+          <b> {tr('พลังงาน:')}</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
+          {reviewOpenN > 0 && <> · <b style={{ color: 'var(--amber)' }}>{tr('⚠ มี')} {reviewOpenN} {tr('กะที่ยังไม่ปิด — OEE ในโหมดนี้นับเฉพาะกะที่ปิดแล้ว (ค่าสดดูที่โหมดสด)')}</b></>}
         </div>
       )}
 
@@ -2664,13 +2664,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
               </span>
               {cycleList.length > 1 && cycleOn && (
-                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>{tr('เรื่องที่')} {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
               )}
             </div>
             <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 25, fontWeight: 800 }}>
               {order.length ? order.map(k => (
                 <span key={k} style={{ color: CAT[k].color }}>● {CAT[k].label} {cnt[k]}</span>
-              )) : <span style={{ color: 'var(--muted)' }}>ยังไม่มีกรอบไลน์บนผัง</span>}
+              )) : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่มีกรอบไลน์บนผัง')}</span>}
             </div>
           </div>
         );
@@ -2679,7 +2679,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       <TabBar className="tv-hide" size="sm" style={{ marginBottom: 8 }} value={metric} onChange={setMetric}
         tabs={Object.entries(METRICS).map(([k, m]) => ({ key: k, label: m.label }))}
         right={cycleList.length > 1 && (
-          <button type="button" className="pg-btn" onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+          <button type="button" className="pg-btn" onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title={tr('วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)')}
             style={{ height: 28, fontSize: 12, position: 'relative', color: cycleOn ? 'var(--accent)' : undefined }}>
             {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
           </button>
@@ -2695,10 +2695,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
             <span style={{ color: 'var(--muted)' }}>
-              {energyMonth && energyMonth !== monthKeyOf() && <b style={{ color: 'var(--amber)' }}>เดือนล่าสุดที่มีข้อมูล · </b>}
+              {energyMonth && energyMonth !== monthKeyOf() && <b style={{ color: 'var(--amber)' }}>{tr('เดือนล่าสุดที่มีข้อมูล ·')} </b>}
               สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)
               {energyLive && <> · <b style={{ color: 'var(--green)' }}>การ์ด "kW · สด" = ค่ามิเตอร์ตอนนี้ (อัปเดตทุก 1 นาที)</b></>}
-              {!energyEf && <> · <span title="ตั้งค่าที่ /energy แท็บ ⚙️">ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e</span></>}
+              {!energyEf && <> · <span title={tr('ตั้งค่าที่ /energy แท็บ ⚙️')}>{tr('ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e')}</span></>}
             </span>
           </span>
         )}
@@ -2735,19 +2735,19 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               background: showFac ? 'var(--bg3)' : facZones.warn.length ? 'var(--amber)1a' : 'transparent',
               border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? 'var(--amber)55' : 'var(--border)'}`,
               color: facZones.warn.length ? 'var(--amber)' : 'var(--muted)' }}>
-            {showFac ? <>👁 กำลังแสดงโซนสนับสนุน<span className="tv-hide"> — แตะเพื่อซ่อน</span></>
-              : <>{`ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''}`}<span className="tv-hide"> — แตะเพื่อดู</span></>}
+            {showFac ? <>{tr('👁 กำลังแสดงโซนสนับสนุน')}<span className="tv-hide"> {tr('— แตะเพื่อซ่อน')}</span></>
+              : <>{`ซ่อนโซนสนับสนุน ${facZones.all.length} โซน${facZones.warn.length ? ` · ⚠ ${facZones.warn.length} มีสัญญาณ` : ''}`}<span className="tv-hide"> {tr('— แตะเพื่อดู')}</span></>}
           </button>
         )}
         {/* 🛠️ แผน PM ที่อุปกรณ์ยังไม่ผูกไลน์ — วางบนผังไม่ได้ แต่ต้องรู้ว่ามีค้างอยู่ (ห้ามหายเงียบ) */}
         {!editing && metric === 'pm' && pmOrphan.total > 0 && (
           <Link to="/pm?tab=setup"
-            title="ไปตั้ง 'ไลน์' ให้อุปกรณ์ที่ PM Setup — ตั้งแล้วแผนจะขึ้นบนกรอบไลน์นั้นเอง"
+            title={tr('ไปตั้ง \'ไลน์\' ให้อุปกรณ์ที่ PM Setup — ตั้งแล้วแผนจะขึ้นบนกรอบไลน์นั้นเอง')}
             style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, textDecoration: 'none', whiteSpace: 'nowrap', borderRadius: 6, padding: '3px 8px',
               color: pmOrphan.overdue ? 'var(--red)' : 'var(--amber)',
               background: pmOrphan.overdue ? 'var(--red)1a' : 'var(--amber)1a',
               border: `1px solid ${pmOrphan.overdue ? 'var(--red)55' : 'var(--amber)55'}` }}>
-            ⚠ แผน PM {pmOrphan.total} รายการยังไม่ผูกไลน์ — ไม่ขึ้นบนผัง{pmOrphan.overdue ? ` · เกินกำหนดแล้ว ${pmOrphan.overdue}` : ''}
+            ⚠ แผน PM {pmOrphan.total} {tr('รายการยังไม่ผูกไลน์ — ไม่ขึ้นบนผัง')}{pmOrphan.overdue ? ` · เกินกำหนดแล้ว ${pmOrphan.overdue}` : ''}
           </Link>
         )}
         {/* 🏭 AM รายวัน — บอกว่าตัดสินจากกะไหน · โหลดล้ม = เขียนบนจอ (ค่าที่เห็นเป็นของรอบก่อน ไม่ใช่ "ไม่มีจุดตรวจ") */}
@@ -2760,11 +2760,11 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         )}
         {/* legend อธิบายเลขบนป้าย — เลข 3 ตัวติดกันไม่มีคำอธิบายคนอ่านไม่ออก (คำสั่ง user 2026-08-06) */}
         {!editing && metric === 'productivity' && (
-          <span title="ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม"
+          <span title={tr('ทำได้ / ควรได้ตอนนี้ / เป้ากะ · สีกรอบ = ทันจังหวะไหม')}
             style={{ alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <b style={{ color: 'var(--green)' }}>ทำได้</b> /
-            <b style={{ color: 'var(--text2)' }} title="ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)">ควรได้ตอนนี้</b> /
-            <b style={{ color: 'var(--text2)' }} title="เป้ารวมของใบงานที่เปิดในกะนี้">เป้ากะ</b>
+            <b style={{ color: 'var(--green)' }}>{tr('ทำได้')}</b> /
+            <b style={{ color: 'var(--text2)' }} title={tr('ถ้าเดินตามจังหวะปกติ ถึงตอนนี้ควรได้เท่านี้ (คิดจากเวลาที่ผลิตได้จริง ÷ รอบเวลาชิ้นงาน)')}>{tr('ควรได้ตอนนี้')}</b> /
+            <b style={{ color: 'var(--text2)' }} title={tr('เป้ารวมของใบงานที่เปิดในกะนี้')}>{tr('เป้ากะ')}</b>
             <span style={{ opacity: 0.65 }}>· สีกรอบ = ทันจังหวะไหม</span>
           </span>
         )}
@@ -2776,16 +2776,16 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           </span>
         )}
         {!editing && !labelLayout.hidden.length && !!autoHulls.length && (
-          <span title="▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม"
+          <span title={tr('▣ กลุ่ม (ยอดรวมทั้งกลุ่ม · เส้นประ) · ↳ ไลน์ย่อย ในกลุ่ม')}
             style={{ marginLeft: 'auto', alignSelf: 'center', fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            <b style={{ color: 'var(--text2)' }}>▣ กลุ่ม</b> (ยอดรวมทั้งกลุ่ม · เส้นประ) · <b style={{ color: 'var(--text2)' }}>↳ ไลน์ย่อย</b> ในกลุ่ม
+            <b style={{ color: 'var(--text2)' }}>{tr('▣ กลุ่ม')}</b> {tr('(ยอดรวมทั้งกลุ่ม · เส้นประ) ·')} <b style={{ color: 'var(--text2)' }}>{tr('↳ ไลน์ย่อย')}</b> ในกลุ่ม
           </span>
         )}
         {/* ปรับขนาดป้ายต่อเครื่อง + ซ่อนแผงขวา — สำหรับจอ TV ที่ OS scaling ทำสัดส่วนป้าย/ผังเพี้ยน (2026-08-25)
             ค่าจำใน localStorage ของเครื่องนั้น: ตั้งครั้งเดียวต่อจอ ทุกจอเลยดูสม่ำเสมอได้แม้ scaling ไม่เท่ากัน */}
         {!editing && (
           <span className="fm-keep tv-hide" style={{ marginLeft: (!labelLayout.hidden.length && !autoHulls.length) ? 'auto' : 0, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}
-            title="ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−">
+            title={tr('ขนาดป้ายบนผัง (จำค่าต่อเครื่อง) — จอ TV ที่ป้ายใหญ่/ทับกัน ให้กด A−')}>
             <button onClick={() => applyScale(lblScale - 0.1)} disabled={lblScale <= 0.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale <= 0.6 ? 0.4 : 1 }}>A−</button>
             <span style={{ fontSize: 11, fontWeight: 700, color: lblScale === 1 ? 'var(--muted)' : 'var(--accent)', minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
@@ -2794,11 +2794,11 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <button onClick={() => applyScale(lblScale + 0.1)} disabled={lblScale >= 1.6}
               style={{ ...miniTab(false), padding: '3px 8px', fontSize: 12, opacity: lblScale >= 1.6 ? 0.4 : 1 }}>A+</button>
             <button onClick={toggleView3d} style={{ ...miniTab(view3d), padding: '3px 8px', fontSize: 11.5 }}
-              title={view3d ? 'กลับเป็นผังแบนแบบเดิม' : 'เอียงผังเป็นมุมเฉียง + เสาสถานะตั้งขึ้นจากแต่ละไลน์ (ทดลอง)'}>
+              title={view3d ? tr('กลับเป็นผังแบนแบบเดิม') : tr('เอียงผังเป็นมุมเฉียง + เสาสถานะตั้งขึ้นจากแต่ละไลน์ (ทดลอง)')}>
               {view3d ? '2D' : '3D'}
             </button>
             <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
-              title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
+              title={panelHide ? tr('แสดงแผงสรุปด้านขวา') : tr('ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)')}>
               {panelHide ? tr('แผงขวา') : tr('ซ่อนแผงขวา')}
             </button>
           </span>
@@ -2812,25 +2812,25 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
           </label>
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>{tr('วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)')}</button>}
-          {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">Undo</button>}
-          {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>}
+          {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title={tr('ย้อนกลับ (Ctrl+Z)')}>Undo</button>}
+          {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title={tr('ทำซ้ำ (Ctrl+Y)')}>Redo</button>}
           {!drawing && regions.length > 0 && <button onClick={straightenAll} disabled={hist.busy} style={btn(false)} title={`ขอบที่เอียงไม่เกิน ${AXIS_TOL_DEG}° ดีดเข้าแนวตั้ง/นอน · ขอบเฉียงจริงไม่แตะ · Undo ได้`}>{tr('📐 จัดให้ตรง')}</button>}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากมุม = คงมุมฉาก (กด <b>Alt</b> ค้าง = อิสระ) · ลากวงกลมกลางขอบ = ดันทั้งด้าน</span>}
           {drawing && (
             <>
-              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
+              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>{tr('คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด')} <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
               <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>{tr('เสร็จ (')}{draft.length} {tr('จุด)')}</button>
               <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>{tr('ลบจุดล่าสุด')}</button>
               <button onClick={cancelDraw} style={btn(false)}>{tr('ยกเลิก')}</button>
             </>
           )}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>ตีกรอบแล้ว {framedTopCount}/{topNames.length} ไลน์ (กลุ่มบนสุด · รวมยอดลูกให้อัตโนมัติ)</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{tr('ตีกรอบแล้ว')} {framedTopCount}/{topNames.length} {tr('ไลน์ (กลุ่มบนสุด · รวมยอดลูกให้อัตโนมัติ)')}</span>
         </div>
       )}
 
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !imageUrl ? (
         <div style={{ padding: 48, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
           ยังไม่มีรูปผังโรงงาน — {canEdit ? 'กด "✏️ แก้ผัง" แล้วอัปโหลดรูป' : 'ให้ผู้ดูแลอัปโหลดรูปผังก่อน'}
@@ -2851,21 +2851,21 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1),
               /* 📺 TV: แถวนี้เหลือแค่ตัวนับป้ายแน่น ⇒ ห้ามมีพื้นทึบทับป้ายเสาที่ยกขึ้นมา · เว้นหัวเพิ่มให้ป้ายตัวใหญ่ */
               ...(tv ? { background: 'transparent', zIndex: 'auto', marginBottom: Math.round(wrapW * 0.1) + 48 } : {}) }}>
-              <span className="tv-hide">มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span className="tv-hide">{tr('มุมมอง 3D (ทดลอง) ·')} {pillarLegend(metric)}</span>
               <span className="tv-hide">กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
-              {pillarCrowded > 0 && <b style={{ color: 'var(--amber)', ...(tv ? { fontSize: 18 } : {}) }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ<span className="tv-hide"> — ชี้/แตะกล่องเพื่อดู</span></b>}
+              {pillarCrowded > 0 && <b style={{ color: 'var(--amber)', ...(tv ? { fontSize: 18 } : {}) }}>{tr('ป้ายแน่นจนวางไม่ได้')} {pillarCrowded} {tr('ใบ')}<span className="tv-hide"> {tr('— ชี้/แตะกล่องเพื่อดู')}</span></b>}
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
               <span className="tv-hide" onPointerDown={e => e.stopPropagation()} style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>ลาก = หมุน/ก้มเงย · ล้อเมาส์/2 นิ้ว = ซูม · Shift+ลาก = เลื่อน</span>
-                <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title="ซูมออก" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
+                <button onClick={() => orbit.zoomBy(1 / 1.3)} disabled={orbit.zoom <= 1} title={tr('ซูมออก')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom <= 1 ? 0.45 : 1 }}>－</button>
                 <span style={{ minWidth: 34, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{Math.round(orbit.zoom * 100)}%</span>
-                <button onClick={() => orbit.zoomBy(1.3)} disabled={orbit.zoom >= 3} title="ซูมเข้า (กลางผัง)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom >= 3 ? 0.45 : 1 }}>＋</button>
-                <button onClick={() => orbit.step(-15)} title="หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
-                <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
-                <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
-                <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
-                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? tr('หยุดทัวร์') : tr('ทัวร์')}</button>
-                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>{tr('มุมเดิม')}</button>
+                <button onClick={() => orbit.zoomBy(1.3)} disabled={orbit.zoom >= 3} title={tr('ซูมเข้า (กลางผัง)')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12, opacity: orbit.zoom >= 3 ? 0.45 : 1 }}>＋</button>
+                <button onClick={() => orbit.step(-15)} title={tr('หมุนซ้าย 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟲</button>
+                <button onClick={() => orbit.step(15)} title={tr('หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
+                <button onClick={() => orbit.tiltBy(8)} title={tr('ก้มลง (มองเฉียงขึ้น)')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
+                <button onClick={() => orbit.tiltBy(-8)} title={tr('เงยขึ้น (มองจากบนมากขึ้น)')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title={tr('แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)')} style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? tr('หยุดทัวร์') : tr('ทัวร์')}</button>
+                <button onClick={orbit.reset} title={tr('กลับมุมเริ่มต้น + ซูมพอดีกรอบ')} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>{tr('มุมเดิม')}</button>
               </span>
             </div>
           )}
@@ -2984,7 +2984,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       {st.dtActive && metric !== 'breakdown' && <span className="dt-alarm-icon" style={{ color: 'var(--red)' }}>🔴 </span>}▣ {h.name}
                       {/* 🔴 `em` คูณกับแม่ (clamp 12-16px) **และคูณ `zoom: lblScale` ที่ผู้ใช้กด A− ลงได้ถึง 0.6**
                           ⇒ เดิม 0.72em ได้ ~5px บนจอจริง · ตรึงเป็น clamp พื้น 11px เหมือนป้ายอื่น */}
-                      {kids > 0 && <span style={{ fontSize: 'clamp(11px,0.85vw,12.5px)', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} ไลน์</span>}
+                      {kids > 0 && <span style={{ fontSize: 'clamp(11px,0.85vw,12.5px)', fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{kids} {tr('ไลน์')}</span>}
                     </div>
                     {txt && <div style={{ fontSize: 'clamp(11px,1vw,13.5px)', fontWeight: 800, color: meta.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{txt}</div>}
                   </div>
@@ -3055,9 +3055,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       {/* แถวเนื้อหาการ์ดทุกแถวต้อง nowrap — ข้อความยาวห้ามดันการ์ดสูงเกิน KPI_H ที่ layout จองไว้ (2026-08-26 "box ทับกันเละ") */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '▲ +' : d < 0 ? '▼ ' : ''}${d} จุด·วันก่อน`}</span>
-                        {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· สด</span>}
-                        {st.oeeCtPartial && <span style={{ color: 'var(--amber)' }}>· ⚠CT ไม่ครบ</span>}
-                        {st.oeePOver && <span style={{ color: 'var(--amber)' }}>· ⚠%P ตัน</span>}
+                        {st.oeeLive && <span style={{ color: 'rgba(255,255,255,0.55)' }}>{tr('· สด')}</span>}
+                        {st.oeeCtPartial && <span style={{ color: 'var(--amber)' }}>{tr('· ⚠CT ไม่ครบ')}</span>}
+                        {st.oeePOver && <span style={{ color: 'var(--amber)' }}>{tr('· ⚠%P ตัน')}</span>}
                       </div>
                       {/* แตก A·P·Q ให้เห็นบนการ์ด (user 2026-08-25 "บอกแต่ OEE ก็ทำแต่ OEE หรอ") — ถ่วงน้ำหนักตามกฎแล้วใน stOf */}
                       {(st.oeeA != null || st.oeeP != null || st.oeeQ != null) && (
@@ -3106,26 +3106,26 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`มิเตอร์ ${st.day.meters.join(', ')} · วันที่ ${st.day.date} (00:00–24:00)${st.day.sharedWith.length ? ` · ใช้ร่วมกับ ${st.day.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>
-                        {st.day.have < st.day.total && <span style={{ color: 'var(--amber)' }}>{st.day.have}/{st.day.total} ตู้ ·</span>}
-                        {st.day.sharedWith.length > 0 && <span style={{ color: 'var(--amber)' }}>รวม {st.day.sharedWith.join(', ')} ·</span>}
-                        {st.day.resets > 0 && <span style={{ color: 'var(--amber)' }}>มิเตอร์ reset ·</span>}
-                        <span style={{ color: 'var(--muted)' }}>จากมิเตอร์</span>
+                        {st.day.have < st.day.total && <span style={{ color: 'var(--amber)' }}>{st.day.have}/{st.day.total} {tr('ตู้ ·')}</span>}
+                        {st.day.sharedWith.length > 0 && <span style={{ color: 'var(--amber)' }}>{tr('รวม')} {st.day.sharedWith.join(', ')} ·</span>}
+                        {st.day.resets > 0 && <span style={{ color: 'var(--amber)' }}>{tr('มิเตอร์ reset ·')}</span>}
+                        <span style={{ color: 'var(--muted)' }}>{tr('จากมิเตอร์')}</span>
                       </div>
                       </>) : st.live ? (<>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: st.live.over ? 'var(--red)' : 'var(--green)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kW · สด</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>{tr('kW · สด')}</span>
                         {/* กราฟวันนี้ตั้งแต่ 00:00 (เฉลี่ยราย 15 นาที · ผลรวมตู้ของกรอบนี้) */}
-                        <span style={{ marginLeft: 'auto' }} title="kW วันนี้ตั้งแต่ 00:00 · จุดละ 15 นาที"><Spark data={st.live.spark} color={st.live.over ? 'var(--red)' : 'var(--green)'} /></span>
+                        <span style={{ marginLeft: 'auto' }} title={tr('kW วันนี้ตั้งแต่ 00:00 · จุดละ 15 นาที')}><Spark data={st.live.spark} color={st.live.over ? 'var(--red)' : 'var(--green)'} /></span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`ตู้ ${st.live.meters.join(', ')}${st.live.sharedWith.length ? ` · ใช้ร่วมกับ ${st.live.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>
-                        {st.live.kw == null && <span style={{ color: 'var(--amber)' }}>ขาดการติดต่อ ·</span>}
-                        {st.live.kw != null && st.live.online < st.live.total && <span style={{ color: 'var(--amber)' }}>{st.live.online}/{st.live.total} ตู้ ·</span>}
-                        {st.live.sharedWith.length > 0 && <span style={{ color: 'var(--amber)' }}>รวม {st.live.sharedWith.join(', ')} ·</span>}
-                        <span style={{ color: dCol }}>เดือนนี้ {fmtKwh(st.kwh)} kWh</span>
+                        {st.live.kw == null && <span style={{ color: 'var(--amber)' }}>{tr('ขาดการติดต่อ ·')}</span>}
+                        {st.live.kw != null && st.live.online < st.live.total && <span style={{ color: 'var(--amber)' }}>{st.live.online}/{st.live.total} {tr('ตู้ ·')}</span>}
+                        {st.live.sharedWith.length > 0 && <span style={{ color: 'var(--amber)' }}>{tr('รวม')} {st.live.sharedWith.join(', ')} ·</span>}
+                        <span style={{ color: dCol }}>{tr('เดือนนี้')} {fmtKwh(st.kwh)} kWh</span>
                       </div>
                       </>) : (<>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
@@ -3138,7 +3138,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
                         {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· {fmtTco2e(st.kwhCo2)} t</span>}
-                        {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
+                        {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>{tr('· ฿')}{fmtKwh(st.kwhCost)}</span>}
                       </div>
                       </>)}
                     </div>
@@ -3184,7 +3184,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {/* จุดจับกลางขอบ = ดันทั้งด้านเข้า-ออก (วงกลมเล็ก แยกจากจุดมุมสี่เหลี่ยม) */}
                   {r.points.map((pt, i) => {
                     const q = r.points[(i + 1) % r.points.length];
-                    return <div key={`e${i}`} data-handle title="ลากเพื่อดันทั้งด้าน" onPointerDown={(e) => startDrag(e, r, null, i)} style={{ position: 'absolute', left: `${(pt[0] + q[0]) / 2}%`, top: `${(pt[1] + q[1]) / 2}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', background: '#fff', border: '2px solid var(--blue)', borderRadius: '50%', cursor: 'move', touchAction: 'none' }} />;
+                    return <div key={`e${i}`} data-handle title={tr('ลากเพื่อดันทั้งด้าน')} onPointerDown={(e) => startDrag(e, r, null, i)} style={{ position: 'absolute', left: `${(pt[0] + q[0]) / 2}%`, top: `${(pt[1] + q[1]) / 2}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', background: '#fff', border: '2px solid var(--blue)', borderRadius: '50%', cursor: 'move', touchAction: 'none' }} />;
                   })}
                   <button type="button" className="pg-btn sm pg-btn-icon" onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22 }}>✕</button>
                 </div>
@@ -3214,10 +3214,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       {fmtThaiDate(reviewDate)}
                       {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>{tr('วันล่าสุด')}</button>}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{tr('ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน')}<span className="tv-hide"> {tr('· คลิกแถวเปิดรายละเอียดไลน์')}</span></div>
                   </>) : (
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                      <b style={{ color: 'var(--accent)' }}>วันนี้ {fmtThaiDate(getWorkDate())} (สด)</b> — ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน <InfoMore label="อ่านยังไง" size={11}>ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></InfoMore>
+                      <b style={{ color: 'var(--accent)' }}>{tr('วันนี้')} {fmtThaiDate(getWorkDate())} {tr('(สด)')}</b> {tr('— ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน')} <InfoMore label={tr('อ่านยังไง')} size={11}>{tr('ยอดถึงตอนนี้ ไม่ใช่ยอดทั้งวัน · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน')}<span className="tv-hide"> {tr('· คลิกแถวเปิดรายละเอียดไลน์')}</span></InfoMore>
                     </div>
                   )}
 
@@ -3236,13 +3236,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
                         {stats.map(s => (
                           <div key={s.label} onClick={s.explain ? () => setOeeExplain(s.explain) : undefined}
-                            title={s.explain ? 'ดูวิธีคิดค่าเฉลี่ย' : undefined}
+                            title={s.explain ? tr('ดูวิธีคิดค่าเฉลี่ย') : undefined}
                             style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 10px', cursor: s.explain ? 'pointer' : 'default' }}>
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
                               {s.label}{s.explain && <span style={{ color: 'var(--accent)', fontWeight: 800 }}> ⓘ</span>}
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 800, color: s.color, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{s.val}</div>
-                            {s.explain && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ถ่วงน้ำหนักตามเวลารับภาระ</div>}
+                            {s.explain && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ถ่วงน้ำหนักตามเวลารับภาระ')}</div>}
                           </div>
                         ))}
                       </div>
@@ -3250,7 +3250,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   })()}
 
                   {sumBox.loading ? (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>กำลังโหลด...</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 16, textAlign: 'center' }}>{tr('กำลังโหลด...')}</div>
                   ) : sumBox.error ? (
                     <div style={{ fontSize: 12, color: 'var(--red)', padding: 14, textAlign: 'center', border: '1px solid var(--red)55', borderRadius: 'var(--r-md)' }}>
                       ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
@@ -3258,7 +3258,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>{tr('ลองใหม่')}</button>
                     </div>
                   ) : sumBox.ranked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
-                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{isReview ? 'ไม่มีข้อมูลการผลิตของวันที่เลือก' : 'ยังไม่มีไลน์ไหนลงยอดวันนี้'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{isReview ? tr('ไม่มีข้อมูลการผลิตของวันที่เลือก') : tr('ยังไม่มีไลน์ไหนลงยอดวันนี้')}</div>
                   ) : sumBox.ranked.map(({ name, r }, i) => {
                     const noData = !r.target && !r.dtMin && !r.ng && r.oee == null;
                     if (noData) return null;
@@ -3273,7 +3273,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 5 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                           <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {name}{hasKids ? <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}> · ▸ {kids.length} ไลน์ย่อย</span> : (!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>)}
+                            {name}{hasKids ? <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}> · ▸ {kids.length} {tr('ไลน์ย่อย')}</span> : (!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> {tr('· ยังไม่ตีกรอบ')}</span>)}
                           </div>
                           <div style={{ fontSize: 13, fontWeight: 800, color: pctCol(pct), whiteSpace: 'nowrap', flexShrink: 0 }}>{r.target > 0 ? `${fmtNum(r.actual)}/${fmtNum(r.target)} · ${pct}%` : '—'}</div>
                         </div>
@@ -3281,7 +3281,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                           <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                           <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? 'var(--amber)' : 'var(--muted)'} />
                           <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? 'var(--red)' : 'var(--muted)'} />
-                          {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
+                          {r.headTotal > 0 && <Chip label={tr('คน')} val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
                         </div>
                       </div>
                     );
@@ -3310,7 +3310,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     </div>
                     {!ax.live ? (
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-                        <Link to="/obeya?tab=sqdcm" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)' }}>🏛️ เปิดห้อง OBEYA →</Link>
+                        <Link to="/obeya?tab=sqdcm" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--accent)' }}>{tr('🏛️ เปิดห้อง OBEYA →')}</Link>
                       </div>
                     ) : ax.problems.length === 0 ? (
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
@@ -3327,22 +3327,22 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                               {dot(status, 9)}
                               <div style={{ minWidth: 0, flex: 1, fontSize: 12, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>}
+                                {name}{!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> {tr('· ยังไม่ตีกรอบ')}</span>}
                               </div>
                             </div>
                             {text && <div style={{ fontSize: 11, color: statusColor(status), marginTop: 2, paddingLeft: 16, overflowWrap: 'anywhere' }}>{text}</div>}
                           </div>
                         );
                       })}
-                      <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)' }}>กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด</div>
+                      <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('กดแถวไลน์เพื่อเน้นบนผัง + เปิดรายละเอียด')}</div>
                     </>)}
                   </div>
                 );
                 return (
                   <>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>สถานะวันนี้ (สด) — {scopeLabel}</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>{tr('สถานะวันนี้ (สด) —')} {scopeLabel}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
-                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์<span className="tv-hide"> — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ</span>
+                      หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} {tr('ไลน์ · เปิดกะแล้ว')} {B.openCount} {tr('ไลน์')}<span className="tv-hide"> {tr('— กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ')}</span>
                     </div>
 
                     {/* ไฟรวม — ต้องบอกเสมอว่าตัดสินจากกี่หัวข้อ ไม่งั้นเขียวจาก 2/6 ดูเหมือนเขียวจาก 6/6 */}
@@ -3362,7 +3362,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       const cnt = ax.counts;
                       return (
                         <div key={ax.key} onClick={() => setObeyaAxis(on ? null : ax.key)}
-                          title={ax.live ? 'กดเพื่อดูไลน์ที่เป็นต้นเหตุ' : 'หัวข้อนี้ยังดูสดจากผังไม่ได้'}
+                          title={ax.live ? tr('กดเพื่อดูไลน์ที่เป็นต้นเหตุ') : tr('หัวข้อนี้ยังดูสดจากผังไม่ได้')}
                           style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', marginBottom: 5, cursor: 'pointer', background: on ? 'var(--bg2)' : 'var(--bg3)', border: `1px solid ${on ? col : 'var(--border2)'}`, borderLeft: `4px solid ${col}` }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             {dot(ax.status, 11)}
@@ -3393,8 +3393,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     })}
 
                     <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, lineHeight: 1.5, borderTop: '1px solid var(--border2)', paddingTop: 8 }}>
-                      เกณฑ์สีของทุกหัวข้อ<b> ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง</b> — แผงขวากับสีบนผังจึงตอบตรงกันเสมอ<br />
-                      ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ห้อง OBEYA</Link>
+                      เกณฑ์สีของทุกหัวข้อ<b> {tr('ยืมมาจากแท็บ metric ของเรื่องนั้นบนผังนี้เอง')}</b> {tr('— แผงขวากับสีบนผังจึงตอบตรงกันเสมอ')}<br />
+                      ต้องการแนวโน้มย้อนหลัง/เป้ารายเดือน → <Link to="/obeya?tab=sqdcm" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ห้อง OBEYA')}</Link>
                     </div>
                   </>
                 );
@@ -3405,7 +3405,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 const isPct = ['productivity', 'oee', 'people'].includes(metric);
                 return (
                   <>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} — จัดอันดับ (สด)</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{M.label} {tr('— จัดอันดับ (สด)')}</div>
                     {/* สรุปจำนวนไลน์ตามสถานะ */}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                       {['bad', 'down', 'ok', 'good', 'waiting', 'idle'].filter(c => counts[c]).map(c => (
@@ -3414,15 +3414,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         </span>
                       ))}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? 'มาก → น้อย (ปัญหาขึ้นบน)' : 'น้อย → มาก (ตามหลังขึ้นบน)'}<span className="tv-hide"> · คลิกแถวเพื่อเน้นบนผัง</span></div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{M.desc ? tr('มาก → น้อย (ปัญหาขึ้นบน)') : tr('น้อย → มาก (ตามหลังขึ้นบน)')}<span className="tv-hide"> {tr('· คลิกแถวเพื่อเน้นบนผัง')}</span></div>
                     {metric === 'productivity' && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, padding: '4px 8px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', lineHeight: 1.5 }}>
-                        รูปแบบ <b style={{ color: 'var(--text2)' }}>ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)</b><br />
-                        <b style={{ color: 'var(--text2)' }}>ควรได้</b> = เวลาที่มีให้ผลิต (ตั้งแต่เริ่มกะ/เปิดใบแรก − พัก − หยุดตามแผน) ÷ CT · ไม่เกินเป้าที่เปิดใบไว้
+                        รูปแบบ <b style={{ color: 'var(--text2)' }}>{tr('ทำได้ / ควรได้ ณ ตอนนี้ / เป้า (ใบที่เปิด)')}</b><br />
+                        <b style={{ color: 'var(--text2)' }}>{tr('ควรได้')}</b> = เวลาที่มีให้ผลิต (ตั้งแต่เริ่มกะ/เปิดใบแรก − พัก − หยุดตามแผน) ÷ CT · ไม่เกินเป้าที่เปิดใบไว้
                       </div>
                     )}
                     {ranked.length === 0 ? (
-                      <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>ยังไม่มีข้อมูลวันนี้</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{tr('ยังไม่มีข้อมูลวันนี้')}</div>
                     ) : ranked.map(({ name, st, cat, val }, i) => {
                       const meta = CAT[cat]; const txt = regText(st); const hasRegion = regions.some(r => r.line_name === name);
                       const barW = val == null ? 0 : isPct ? Math.min(100, Math.abs(val)) : Math.round(Math.abs(val) / maxVal * 100);
@@ -3433,7 +3433,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                             <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', width: 18, textAlign: 'right', flexShrink: 0 }}>{i + 1}</span>
                             <span className={meta.blink ? 'dt-alarm-blink' : undefined} style={{ width: 11, height: 11, borderRadius: '50%', background: meta.color, flexShrink: 0 }} />
                             <div style={{ minWidth: 0, flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {name}{(childrenOf[name]?.length) ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · รวม {childrenOf[name].length} ไลน์ย่อย</span> : (!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · ยังไม่ตีกรอบ</span>)}
+                              {name}{(childrenOf[name]?.length) ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> {tr('· รวม')} {childrenOf[name].length} {tr('ไลน์ย่อย')}</span> : (!hasRegion && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> {tr('· ยังไม่ตีกรอบ')}</span>)}
                             </div>
                             <div style={{ fontSize: 13, fontWeight: 800, color: meta.color, whiteSpace: 'nowrap', flexShrink: 0 }}>{txt || '—'}</div>
                           </div>
@@ -3453,7 +3453,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       )}
 
       {editing && imageUrl && assignableLines().length > 0 && (
-        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ตีกรอบ: <span style={{ color: 'var(--amber)' }}>{assignableLines().join(', ')}</span></div>
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่ได้ตีกรอบ:')} <span style={{ color: 'var(--amber)' }}>{assignableLines().join(', ')}</span></div>
       )}
 
       {/* ── การ์ดพรีวิวลอยตามเม้าส์ (hover) — สรุปทุกมุมมองแบบย่อ, เฉพาะ mouse ── */}
@@ -3507,7 +3507,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       {m.mat_no} · {m.qty.toLocaleString()}
                     </span>
                   ))}
-                  {f.mats.length > topMats.length && <span style={{ fontSize: 11, color: 'var(--muted)' }}>+อีก {f.mats.length - topMats.length}</span>}
+                  {f.mats.length > topMats.length && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+อีก')} {f.mats.length - topMats.length}</span>}
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
@@ -3528,7 +3528,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               <div style={{ fontSize: 15, fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text)' }}>{hoverLine}</div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, marginLeft: 19 }}>
-              สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
+              สถานะ: <span style={{ color: meta.color, fontWeight: 700 }}>{tr(meta.label)}</span>{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}
             </div>
             <div style={{ display: 'grid', gap: 6 }}>
               {/* ⚠️ โซน utility/facility ไม่ใช่ไลน์ผลิต — metric ผลิต (ยอดผลิต/OEE/DT/ของเสีย/คน) ไม่มีความหมาย
@@ -3543,7 +3543,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   <div key={k} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
                     background: isCur ? `${tint(c.color, 'dim')}` : 'var(--bg3)', border: isCur ? `1px solid ${tint(c.color, 'line')}` : '1px solid var(--border2)',
                     borderRadius: 'var(--r-md)', padding: '4px 8px' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{m.label}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: isCur ? 800 : 600, whiteSpace: 'nowrap', flexShrink: 0 }}>{tr(m.label)}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: t ? c.color : 'var(--muted)', minWidth: 0, textAlign: 'right', overflowWrap: 'anywhere', lineHeight: 1.3 }}>
                       {t || '—'}
                       {/* ไลน์เครื่องขนาน: บอกว่า "ควรได้" คิดจากเครื่องที่เดินได้จริงกี่เครื่อง
@@ -3569,12 +3569,12 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             </div>
             {metric !== 'health' && st.isFac && M.facilityNA && (
               <div style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>
-                {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน'} — ไม่ใช่ไลน์ผลิต จึงไม่มีเรื่อง {M.label}
+                {st.die ? '🔨 โซนคลังแม่พิมพ์' : '🔧 โซนระบบสนับสนุน'} {tr('— ไม่ใช่ไลน์ผลิต จึงไม่มีเรื่อง')} {M.label}
               </div>
             )}
             {metric !== 'health' && (
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.4 }}>
-                แสดงเฉพาะเรื่อง {M.label} · ดูทุกเรื่องที่แท็บ {METRICS.health.label}
+                แสดงเฉพาะเรื่อง {M.label} {tr('· ดูทุกเรื่องที่แท็บ')} {METRICS.health.label}
               </div>
             )}
             {st.isFac && metric === 'health' && (
@@ -3605,15 +3605,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
                 <div>
                   <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{oeeExplain.title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ค่าเฉลี่ยถ่วงน้ำหนัก — ไม่ใช่เอา % มาบวกกันแล้วหาร</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{tr('ค่าเฉลี่ยถ่วงน้ำหนัก — ไม่ใช่เอา % มาบวกกันแล้วหาร')}</div>
                 </div>
                 <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setOeeExplain(null)} style={{ width: 30 }}>✕</button>
               </div>
 
               {/* สูตร */}
               <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', margin: '12px 0 14px', fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.7 }}>
-                <b style={{ color: 'var(--text)' }}>สูตร:</b> OEE เฉลี่ย = Σ(OEE ของกะ × เวลารับภาระ) ÷ Σ(เวลารับภาระ)<br />
-                <b style={{ color: 'var(--text)' }}>เวลารับภาระ</b> = เวลากะ − เวลาหยุดตามแผน (นาที) · กะที่เดินเครื่องนานกว่า ถ่วงน้ำหนักมากกว่า
+                <b style={{ color: 'var(--text)' }}>{tr('สูตร:')}</b> OEE เฉลี่ย = Σ(OEE ของกะ × เวลารับภาระ) ÷ Σ(เวลารับภาระ)<br />
+                <b style={{ color: 'var(--text)' }}>{tr('เวลารับภาระ')}</b> = เวลากะ − เวลาหยุดตามแผน (นาที) · กะที่เดินเครื่องนานกว่า ถ่วงน้ำหนักมากกว่า
               </div>
 
               {/* ตารางคิดจริง */}
@@ -3630,18 +3630,18 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       <tr key={i} style={{ borderBottom: '1px solid var(--border2)', textAlign: 'right', color: 'var(--text)' }}>
                         <td style={{ textAlign: 'left', padding: '6px 7px' }}>
                           <b>{r.line}</b> <span style={{ color: 'var(--muted)' }}>· {sh(r.shift)}</span>
-                          {r.planned > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} (หยุดตามแผน)</div>}
+                          {r.planned > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.shiftMin} − {r.planned} {tr('(หยุดตามแผน)')}</div>}
                         </td>
                         <td style={{ padding: '6px 7px', fontWeight: 700, color: oeeCol(r.oee, [r.line]) }}>{r.oee.toFixed(1)}%</td>
-                        <td style={{ padding: '6px 7px' }}>{fmtNum(r.w)} น.</td>
+                        <td style={{ padding: '6px 7px' }}>{fmtNum(r.w)} {tr('น.')}</td>
                         <td style={{ padding: '6px 7px', color: 'var(--muted)' }}>{fmtNum(r.oee * r.w)}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot><tr style={{ textAlign: 'right', borderTop: '2px solid var(--border2)', color: 'var(--text)', fontWeight: 800 }}>
-                    <td style={{ textAlign: 'left', padding: '8px 7px' }}>รวม</td>
+                    <td style={{ textAlign: 'left', padding: '8px 7px' }}>{tr('รวม')}</td>
                     <td style={{ padding: '8px 7px' }}>—</td>
-                    <td style={{ padding: '8px 7px' }}>{fmtNum(sumW)} น.</td>
+                    <td style={{ padding: '8px 7px' }}>{fmtNum(sumW)} {tr('น.')}</td>
                     <td style={{ padding: '8px 7px' }}>{fmtNum(sumWX)}</td>
                   </tr></tfoot>
                 </table>
@@ -3650,18 +3650,18 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               {/* ผลลัพธ์ + เทียบกับเฉลี่ยธรรมดา */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
                 <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{tr('✅ ที่ระบบใช้ (ถ่วงน้ำหนัก)')}</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: oeeCol(weighted, rows.map(x => x.line)) }}>{weighted != null ? `${weighted.toFixed(1)}%` : '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtNum(sumWX)} ÷ {fmtNum(sumW)}</div>
                 </div>
                 <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>❌ ถ้าบวกกันหารเฉยๆ</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{tr('❌ ถ้าบวกกันหารเฉยๆ')}</div>
                   <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--muted)' }}>{plain != null ? `${plain.toFixed(1)}%` : '—'}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>เฉลี่ย {rows.length} กะเท่าๆ กัน</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('เฉลี่ย')} {rows.length} {tr('กะเท่าๆ กัน')}</div>
                 </div>
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 12, lineHeight: 1.7 }}>
-                <b style={{ color: 'var(--text2)' }}>ทำไมต่างกัน:</b> กะที่เดินเครื่องนานกว่า (หรือไลน์ที่เปิดหลายกะ) มีผลต่อผลงานรวมมากกว่า
+                <b style={{ color: 'var(--text2)' }}>{tr('ทำไมต่างกัน:')}</b> กะที่เดินเครื่องนานกว่า (หรือไลน์ที่เปิดหลายกะ) มีผลต่อผลงานรวมมากกว่า
                 ถ้าเฉลี่ยเท่าๆ กัน กะสั้นๆ จะถ่วงเท่ากะเต็มวัน — ตัวเลขจะสวยหรือแย่เกินจริง · กะที่ไม่มีผลผลิต (OEE ว่าง) ไม่ถูกนับ
               </div>
             </div>
@@ -3690,7 +3690,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)' }}>{storyLine}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     {storyDate === getWorkDate()
-                      ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>⚡ วันนี้ (สด)</span>
+                      ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('⚡ วันนี้ (สด)')}</span>
                       : 'สรุปทั้งวัน'} · {fmtThaiDate(storyDate)}{kids.length ? ` · รวม ${kids.length} ไลน์ย่อย` : ''}{s?.sessionCount ? ` · ${s.sessionCount} กะ` : ''}
                   </div>
                   {metric !== 'health' && (
@@ -3732,20 +3732,20 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 {showMap && !isMobile && lensSel && (
                   <div style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--card)', paddingBottom: 10, marginBottom: 6 }}>
                     {lens === 'productivity' ? <OrderDetailCard c={lensSel} /> : <MachineDetailCard m={lensSel} lens={lens} />}
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{lens === 'productivity' ? 'คลิกใบเดิมอีกครั้งเพื่อปิด' : 'คลิกหมุดเดิมอีกครั้งเพื่อปิด'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{lens === 'productivity' ? tr('คลิกใบเดิมอีกครั้งเพื่อปิด') : tr('คลิกหมุดเดิมอีกครั้งเพื่อปิด')}</div>
                   </div>
                 )}
                 {storyLoading ? (
-                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด...')}</div>
                 ) : !s ? (
-                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--red)', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ — ลองปิดแล้วเปิดใหม่</div>
+                  <div style={{ padding: 40, textAlign: 'center', color: 'var(--red)', fontSize: 13 }}>{tr('โหลดข้อมูลไม่สำเร็จ — ลองปิดแล้วเปิดใหม่')}</div>
                 ) : (<>
                   {/* ไม่ได้เปิดกะ = บอกแล้วไปต่อ ห้ามจบแค่บรรทัดเดียว — PM/ใบซ่อม/คน/ไฟ ยังมีเรื่องให้ดู
                       (2026-08-26 · user ทัก "คลิกมาไม่เจอข้อมูลอะไรเลย ทั้งที่บอก PM ค้าง") */}
                   {!s.sessionCount && ['summary', 'shifts', 'parts', 'dt', 'ng'].some(sec) && (
                     <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 16, fontSize: 12.5, color: 'var(--text2)' }}>
-                      ⏸ <b>ไม่มีการเปิดกะของไลน์นี้ใน{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
-                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก</div>
+                      ⏸ <b>{tr('ไม่มีการเปิดกะของไลน์นี้ใน')}{fmtThaiDate(storyDate)}</b> — ไม่มียอดผลิต/OEE/Downtime ของวันนี้
+                      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{tr('ด้านล่างคือสถานะปัจจุบันของไลน์ (PM · ใบซ่อม · คน · ไฟฟ้า) ซึ่งไม่ผูกกับวันที่เลือก')}</div>
                     </div>
                   )}
                   {/* สรุปหัวเรื่อง */}
@@ -3769,7 +3769,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* รายกะ */}
                   {sec('shifts') && s.sessionCount > 0 && (
-                  <StorySection title="แยกตามกะ">
+                  <StorySection title={tr('แยกตามกะ')}>
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
                         const p = x.target > 0 ? Math.round(x.produced / x.target * 100) : null;
@@ -3778,7 +3778,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{sh(x.shift)}</b>
                               {kids.length > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{x.line}</span>}
-                              {x.status === 'open' && <span style={{ fontSize: 11, color: 'var(--blue)', border: '1px solid var(--blue)55', borderRadius: 'var(--r-pill)', padding: '1px 7px' }}>กำลังเปิด</span>}
+                              {x.status === 'open' && <span style={{ fontSize: 11, color: 'var(--blue)', border: '1px solid var(--blue)55', borderRadius: 'var(--r-pill)', padding: '1px 7px' }}>{tr('กำลังเปิด')}</span>}
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: pctCol(p) }}>{x.target > 0 ? `${fmtNum(x.produced)}/${fmtNum(x.target)} · ${p}%` : `${fmtNum(x.produced)} ชิ้น`}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
@@ -3832,18 +3832,18 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
                          ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
                   {sec('flow') && (s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
-                    <StorySection title="สายการไหลระหว่างไลน์">
+                    <StorySection title={tr('สายการไหลระหว่างไลน์')}>
                       <div style={{ display: 'grid', gap: 6 }}>
                         {s.flowDown?.length > 0 && (
                           <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-                            <b style={{ color: s.dtUnplannedMin > 0 ? 'var(--amber)' : 'var(--text)' }}>➡️ ป้อนงานให้:</b>{' '}
+                            <b style={{ color: s.dtUnplannedMin > 0 ? 'var(--amber)' : 'var(--text)' }}>{tr('➡️ ป้อนงานให้:')}</b>{' '}
                             {s.flowDown.map((l, i) => (
                               <span key={l.id}>
                                 {i > 0 && ' · '}
                                 <b style={{ color: 'var(--text)' }}>{l.to_line}</b>
                                 {l.buffer_qty != null
                                   ? <span style={{ color: 'var(--muted)' }}> (buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น)</span>
-                                  : <span style={{ color: 'var(--muted)' }}> (ยังไม่ระบุ buffer)</span>}
+                                  : <span style={{ color: 'var(--muted)' }}> {tr('(ยังไม่ระบุ buffer)')}</span>}
                               </span>
                             ))}
                             {s.dtUnplannedMin > 0 && (
@@ -3855,7 +3855,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         )}
                         {s.flowUp?.length > 0 && (
                           <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-                            <b style={{ color: 'var(--text)' }}>⬅️ รับของจาก:</b>{' '}
+                            <b style={{ color: 'var(--text)' }}>{tr('⬅️ รับของจาก:')}</b>{' '}
                             {s.flowUp.map((l, i) => (
                               <span key={l.id}>{i > 0 && ' · '}<b style={{ color: 'var(--text)' }}>{l.from_line}</b></span>
                             ))}
@@ -3871,15 +3871,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {/* Downtime + เหตุผล */}
                   {s.sessionCount > 0 && (<>
                   {sec('dt') && <StorySection title={`Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
-                    {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
+                    {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍')}</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.dtUnplanned.map(d => (
                           <div key={d.id} style={{ background: 'var(--bg3)', borderLeft: `3px solid ${d.open ? 'var(--red)' : 'var(--amber)'}`, border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <b style={{ fontSize: 12.5, color: 'var(--text)' }}>{d.type}</b>
                               {d.machine && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {d.machine}</span>}
-                              {d.open && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>🔴 ยังหยุดอยู่</span>}
-                              {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
+                              {d.open && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('🔴 ยังหยุดอยู่')}</span>}
+                              {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ยกข้ามกะ')}</span>}
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: d.open ? 'var(--red)' : 'var(--amber)' }}>{d.open ? fmtDtElapsed(d.mins) : `${fmtNum(d.mins)} น.`}</span>
                             </div>
                             {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>{d.note}</div>}
@@ -3896,7 +3896,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* ของเสีย */}
                   {sec('ng') && <StorySection title={`ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
-                    {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของเสีย 👍</div> : (
+                    {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่มีของเสีย 👍')}</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.defects.map(d => (
                           <div key={d.type} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
@@ -3904,8 +3904,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               <b style={{ fontSize: 12.5, color: 'var(--text)', minWidth: 0 }}>{d.type}</b>
                               <span style={{ marginLeft: 'auto', display: 'flex', gap: 5, flexShrink: 0 }}>
                                 <Chip label="NG" val={fmtNum(d.ng)} color="var(--red)" />
-                                {d.suspect > 0 && <Chip label="สงสัย" val={fmtNum(d.suspect)} color="var(--amber)" />}
-                                {d.repair > 0 && <Chip label="ซ่อม" val={fmtNum(d.repair)} color="var(--text2)" />}
+                                {d.suspect > 0 && <Chip label={tr('สงสัย')} val={fmtNum(d.suspect)} color="var(--amber)" />}
+                                {d.repair > 0 && <Chip label={tr('ซ่อม')} val={fmtNum(d.repair)} color="var(--text2)" />}
                               </span>
                             </div>
                             {d.notes.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>{d.notes.join(' · ')}</div>}
@@ -3945,7 +3945,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok' && (storyAll || (metric !== 'pm' && metric !== 'am') || (metric === 'am' ? r.am : !r.am)));   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
                     const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
                     return (
-                      <StorySection title="สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
+                      <StorySection title={tr('สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)')}>
                         <div style={{ display: 'grid', gap: 9 }}>
                           {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
                           {sec('pm') && <div>
@@ -3953,16 +3953,16 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
                             </div>
                             {s.pmRows == null ? (
-                              <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ ดึงรายการ PM ไม่สำเร็จ</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>{tr('⚠ ดึงรายการ PM ไม่สำเร็จ')}</div>
                             ) : !s.pmRows.length ? (
-                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีแผน PM ของอุปกรณ์ในไลน์นี้ — ตั้งที่หน้า PM Setup</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{tr('ยังไม่มีแผน PM ของอุปกรณ์ในไลน์นี้ — ตั้งที่หน้า PM Setup')}</div>
                             ) : (<>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginTop: 4, fontSize: 12, fontWeight: 800 }}>
-                                <span style={{ color: st.pmOverdue ? 'var(--red)' : 'var(--muted)' }}>เกินกำหนด {st.pmOverdue || 0}</span>
-                                <span style={{ color: st.pmDueSoon ? 'var(--amber)' : 'var(--muted)' }}>ใกล้ครบ {st.pmDueSoon || 0}</span>
-                                <span style={{ color: st.pmNever ? 'var(--amber)' : 'var(--muted)' }}>ไม่เคยตรวจ {st.pmNever || 0}</span>
-                                {st.pmNoCycle > 0 && <span style={{ color: 'var(--amber)' }}>ไม่ตั้งรอบ {st.pmNoCycle}</span>}
-                                <span style={{ color: 'var(--muted)' }}>ทั้งหมด {st.pmTotal || 0}</span>
+                                <span style={{ color: st.pmOverdue ? 'var(--red)' : 'var(--muted)' }}>{tr('เกินกำหนด')} {st.pmOverdue || 0}</span>
+                                <span style={{ color: st.pmDueSoon ? 'var(--amber)' : 'var(--muted)' }}>{tr('ใกล้ครบ')} {st.pmDueSoon || 0}</span>
+                                <span style={{ color: st.pmNever ? 'var(--amber)' : 'var(--muted)' }}>{tr('ไม่เคยตรวจ')} {st.pmNever || 0}</span>
+                                {st.pmNoCycle > 0 && <span style={{ color: 'var(--amber)' }}>{tr('ไม่ตั้งรอบ')} {st.pmNoCycle}</span>}
+                                <span style={{ color: 'var(--muted)' }}>{tr('ทั้งหมด')} {st.pmTotal || 0}</span>
                               </div>
                               {pmDue.length > 0 && (
                                 <div style={{ display: 'grid', gap: 3, marginTop: 6 }}>
@@ -3976,32 +3976,32 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                                       </span>
                                     </div>
                                   ))}
-                                  {pmDue.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {pmDue.length - 6} รายการ</div>}
+                                  {pmDue.length > 6 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+ อีก')} {pmDue.length - 6} {tr('รายการ')}</div>}
                                 </div>
                               )}
-                              <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>→ ดูแผน PM ทั้งหมด</Link>
+                              <Link to="/pm?tab=plan" style={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', display: 'inline-block', marginTop: 4 }}>{tr('→ ดูแผน PM ทั้งหมด')}</Link>
                             </>)}
                           </div>}
 
                           {/* 🔧 ใบซ่อม MO ค้าง */}
                           {sec('mo') && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
-                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>ใบซ่อม MO ที่ยังไม่ปิด</div>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>{tr('ใบซ่อม MO ที่ยังไม่ปิด')}</div>
                             {s.moRows == null ? (
-                              <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>{tr('⚠ ดึงใบซ่อมไม่สำเร็จ')}</div>
                             ) : !s.moRows.length ? (
-                              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--green)', marginTop: 3 }}>✅ ไม่มีใบค้าง</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--green)', marginTop: 3 }}>{tr('✅ ไม่มีใบค้าง')}</div>
                             ) : (<>
-                              <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--amber)', marginTop: 2 }}>{s.moRows.length} ใบ</div>
+                              <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--amber)', marginTop: 2 }}>{s.moRows.length} {tr('ใบ')}</div>
                               <div style={{ display: 'grid', gap: 3, marginTop: 4 }}>
                                 {s.moRows.slice(0, 5).map(o => (
                                   <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, cursor: 'pointer' }}>
-                                    <span style={{ fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || '⏳ รอออกเลข'}</span>
+                                    <span style={{ fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || tr('⏳ รอออกเลข')}</span>
                                     <span style={{ color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                       {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
                                     </span>
                                   </div>
                                 ))}
-                                {s.moRows.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>+ อีก {s.moRows.length - 5} ใบ</div>}
+                                {s.moRows.length > 5 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+ อีก')} {s.moRows.length - 5} {tr('ใบ')}</div>}
                               </div>
                             </>)}
                           </div>}
@@ -4013,31 +4013,31 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               {st.headTotal || st.stationTotal ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
                                   มา {fmtNum(st.present)}/{fmtNum(st.headTotal)} คน
-                                  {st.stationTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · เข้าจุด {fmtNum(st.stationFilled)}/{fmtNum(st.stationTotal)}</span>}
+                                  {st.stationTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> {tr('· เข้าจุด')} {fmtNum(st.stationFilled)}/{fmtNum(st.stationTotal)}</span>}
                                   {st.ppeBad > 0 && <span style={{ color: 'var(--red)' }}> · ⚠PPE {fmtNum(st.ppeBad)}</span>}
                                 </div>
-                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มีข้อมูลเช็คชื่อ</div>}
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{tr('ยังไม่มีข้อมูลเช็คชื่อ')}</div>}
                             </div>}
                             {sec('energy') && <div>
-                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>⚡ ไฟฟ้า{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>{tr('⚡ ไฟฟ้า')}{energyMonth ? ` · ${monthLabel(energyMonth)}` : ''}</div>
                               {st.kwh != null ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
                                   {fmtKwh(st.kwh)} kWh
                                   {eDelta != null && <span style={{ color: eDelta <= -5 ? 'var(--green)' : eDelta > 10 ? 'var(--red)' : 'var(--muted)' }}> · {eDelta > 0 ? '+' : ''}{eDelta}%</span>}
-                                  {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} บาท</span>}
+                                  {st.kwhCost > 0 && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · {fmtBaht(st.kwhCost)} {tr('บาท')}</span>}
                                 </div>
-                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>ยังไม่กรอกของไลน์นี้</div>}
+                              ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{tr('ยังไม่กรอกของไลน์นี้')}</div>}
                             </div>}
                             {sec('supply') && (st.supList?.length > 0 ? (
                               <div>
-                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>ระบบสนับสนุนที่จ่ายให้</div>
+                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>{tr('ระบบสนับสนุนที่จ่ายให้')}</div>
                                 <div style={{ fontSize: 12, color: st.supAtRisk ? 'var(--red)' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
                                   {st.supAtRisk ? '⚠ มีเครื่องกำลังซ่อม: ' : 'ปกติ · '}
                                   {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
                                 </div>
                               </div>
                             ) : metric === 'supply' ? (
-                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)')}</div>
                             ) : null)}
                           </div>}
                         </div>
@@ -4068,24 +4068,24 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{reviewDetail}</div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แยกตามไลน์ย่อย · {fmtThaiDate(reviewDate)} (ทั้งวัน)</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{tr('แยกตามไลน์ย่อย ·')} {fmtThaiDate(reviewDate)} {tr('(ทั้งวัน)')}</div>
                 </div>
                 <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setReviewDetail(null)} style={{ width: 30 }}>✕</button>
               </div>
               {/* ยอดรวมทั้งกลุ่ม */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', margin: '10px 0 14px' }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>รวมทั้งกลุ่ม</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('รวมทั้งกลุ่ม')}</div>
                 <div style={{ fontSize: 15, fontWeight: 800, color: pctCol(ppct) }}>{parent.target > 0 ? `${fmtNum(parent.actual)}/${fmtNum(parent.target)} · ${ppct}%` : '—'}</div>
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <Chip label="OEE" val={parent.oee != null ? `${parent.oee}%` : '—'} color={oeeCol(parent.oee, [reviewDetail])} />
                   {parent.oeeRows?.length > 1 && (
                     <button onClick={() => setOeeExplain({ title: `OEE เฉลี่ย · ${reviewDetail}`, rows: parent.oeeRows })}
-                      title="ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?"
-                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
+                      title={tr('ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?')}
+                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>{tr('ⓘ วิธีคิด')}</button>
                   )}
                   <Chip label="DT" val={`${fmtNum(parent.dtMin)}น.`} color={parent.dtMin > 0 ? 'var(--amber)' : 'var(--muted)'} />
                   <Chip label="NG" val={fmtNum(parent.ng)} color={parent.ng > 0 ? 'var(--red)' : 'var(--muted)'} />
-                  {parent.headTotal > 0 && <Chip label="คน" val={`${parent.present}/${parent.headTotal}`} color="var(--text2)" />}
+                  {parent.headTotal > 0 && <Chip label={tr('คน')} val={`${parent.present}/${parent.headTotal}`} color="var(--text2)" />}
                 </div>
               </div>
               {/* รายไลน์ย่อย — คลิกเปิดผังไลน์พร้อมพนักงาน */}
@@ -4105,13 +4105,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         <Chip label="OEE" val={r.oee != null ? `${r.oee}%` : '—'} color={oeeCol(r.oee, [name])} />
                         <Chip label="DT" val={`${fmtNum(r.dtMin)}น.`} color={r.dtMin > 0 ? 'var(--amber)' : 'var(--muted)'} />
                         <Chip label="NG" val={fmtNum(r.ng)} color={r.ng > 0 ? 'var(--red)' : 'var(--muted)'} />
-                        {r.headTotal > 0 && <Chip label="คน" val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
+                        {r.headTotal > 0 && <Chip label={tr('คน')} val={`${r.present}/${r.headTotal}`} color="var(--text2)" />}
                       </div>
                     </div>
                   );
                 })}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, textAlign: 'center' }}>แตะไลน์ย่อยเพื่อเปิดผังไลน์พร้อมพนักงาน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 12, textAlign: 'center' }}>{tr('แตะไลน์ย่อยเพื่อเปิดผังไลน์พร้อมพนักงาน')}</div>
             </div>
           </div>
         );
@@ -4128,7 +4128,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 </div>
                 <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setDetailLine(null)} style={{ width: 30 }}>✕</button>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>รายละเอียดทุกมุมมอง — วันงานปัจจุบัน{kids.length ? ` · รวมยอดไลน์ลูก ${kids.length} ไลน์` : ''}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{tr('รายละเอียดทุกมุมมอง — วันงานปัจจุบัน')}{kids.length ? ` · รวมยอดไลน์ลูก ${kids.length} ไลน์` : ''}</div>
 
               {/* การ์ดทุก metric */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: kids.length ? 18 : 0 }}>
@@ -4139,7 +4139,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   const cat = m.cat(st); const meta = CAT[cat]; const txt = m.text(st);
                   return (
                     <div key={k} style={{ background: 'var(--bg3)', border: `1px solid ${tint(meta.color, 'line')}`, borderLeft: `3px solid ${meta.color}`, borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{m.label}</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 3 }}>{tr(m.label)}</div>
                       <div style={{ fontSize: 15, fontWeight: 800, color: meta.color }}>{txt || '—'}</div>
                     </div>
                   );
@@ -4149,13 +4149,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               {/* แยกตามไลน์ลูก */}
               {kids.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>แยกตามไลน์ย่อย</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>{tr('แยกตามไลน์ย่อย')}</div>
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <thead>
                         <tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
                           <th style={TH_L}>{tr('ไลน์')}</th>
-                          <th style={{ ...TH_R, whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">{tr('ผลิต (ทำ/ณ เวลานี้/เต็ม)')}</th>
+                          <th style={{ ...TH_R, whiteSpace: 'nowrap' }} title={tr('ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ')}>{tr('ผลิต (ทำ/ณ เวลานี้/เต็ม)')}</th>
                           <th style={TH_R}>{tr('คน')}</th>
                           <th style={TH_R}>{tr('DT (น.)')}</th>
                           <th style={TH_R}>NG</th>
@@ -4178,7 +4178,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>* คน/PM มักผูกกับไลน์แม่ (ลูกเป็น 0) · ผลิต/DT/NG อาจอยู่ที่ไลน์ลูก — การ์ดด้านบนรวมให้แล้ว</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{tr('* คน/PM มักผูกกับไลน์แม่ (ลูกเป็น 0) · ผลิต/DT/NG อาจอยู่ที่ไลน์ลูก — การ์ดด้านบนรวมให้แล้ว')}</div>
                 </div>
               )}
             </div>
@@ -4195,12 +4195,12 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: `1px solid ${stColor}`, borderRadius: 'var(--r-lg)', padding: '20px 22px', width: '100%', maxWidth: 640, maxHeight: '88vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginBottom: 4 }}>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>{km.icon} {z.name}</div>
-                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{km.label}</span>
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr(km.label)}</span>
                 <div style={{ flex: 1 }} />
                 <span style={{ fontSize: 13, fontWeight: 700, color: stColor }}>{zoneHealthText(f)}</span>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-                รวม {f.totQty.toLocaleString()} ชิ้น · {f.unknownPkg ? `${f.totPkgs}+? กล่อง (ไม่รู้ขนาดกล่อง ${f.unknownPkg} MAT)` : `${f.totPkgs} กล่อง`}
+                รวม {f.totQty.toLocaleString()} {tr('ชิ้น ·')} {f.unknownPkg ? `${f.totPkgs}+? กล่อง (ไม่รู้ขนาดกล่อง ${f.unknownPkg} MAT)` : `${f.totPkgs} กล่อง`}
                 {z.capacity_pkg ? ` · ความจุ ${z.capacity_pkg} กล่อง${f.fillPct != null ? ` (${f.fillPct}%)` : ''}` : ' · ⚠ ยังไม่กรอกความจุ'}
                 {z.note ? ` · ${z.note}` : ''}
               </div>
@@ -4219,7 +4219,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                           <td style={{ padding: '5px 6px', textAlign: 'right' }}>{m.pkgs ?? '—'}</td>
                           <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>{m.min ?? '—'}</td>
                           <td style={{ padding: '5px 6px', textAlign: 'right', color: 'var(--muted)' }}>{m.max ?? '—'}</td>
-                          <td style={{ padding: '5px 6px' }}>{m.short ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>🟥 ต่ำกว่า Min</span> : m.over ? <span style={{ color: 'var(--amber)' }}>⚠ เกิน Max</span> : <span style={{ color: 'var(--accent)' }}>ปกติ</span>}</td>
+                          <td style={{ padding: '5px 6px' }}>{m.short ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('🟥 ต่ำกว่า Min')}</span> : m.over ? <span style={{ color: 'var(--amber)' }}>{tr('⚠ เกิน Max')}</span> : <span style={{ color: 'var(--accent)' }}>{tr('ปกติ')}</span>}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -4243,16 +4243,16 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '22px 24px', width: '100%', maxWidth: 360 }}>
             {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); const storeOpts = assignableStore(); return <>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ตีกรอบให้ไลน์/โซนไหน?</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>{tr('ตีกรอบให้ไลน์/โซนไหน?')}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{tr('เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด (')}{assignFor.length} {tr('จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)')}</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--ctl-r)', fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
               <option value="">{tr('— เลือกไลน์/โซน —')}</option>
-              {prodOpts.length > 0 && <optgroup label="ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
-              {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
-              {facOpts.length > 0 && <optgroup label="โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
-              {dieOpts.length > 0 && <optgroup label="คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
-              {storeOpts.length > 0 && <optgroup label="โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
-              <optgroup label="อื่นๆ"><option value="__new__">{tr('พิมพ์ชื่อโซนใหม่…')}</option></optgroup>
+              {prodOpts.length > 0 && <optgroup label={tr('ไลน์ผลิต (ยังไม่มีกรอบ)')}>{prodOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {leafOpts.length > 0 && <optgroup label={tr('↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)')}>{leafOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {facOpts.length > 0 && <optgroup label={tr('โซน MTN / Facility')}>{facOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {dieOpts.length > 0 && <optgroup label={tr('คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)')}>{dieOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {storeOpts.length > 0 && <optgroup label={tr('โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)')}>{storeOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              <optgroup label={tr('อื่นๆ')}><option value="__new__">{tr('พิมพ์ชื่อโซนใหม่…')}</option></optgroup>
             </select>
             {assignLine === '__new__' && (
               <div style={{ marginBottom: 16, display: 'grid', gap: 8 }}>
@@ -4266,18 +4266,18 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   ))}
                 </div>
                 <input value={newZone} onChange={e => setNewZone(e.target.value)} autoFocus
-                  placeholder={newZoneType === 'store' ? 'เช่น FG OUT LANE 1, WIP APRON, STORE SUB PART' : 'เช่น ห้องปั๊มลม, MTN Workshop, ระบบหล่อเย็น'}
+                  placeholder={newZoneType === 'store' ? tr('เช่น FG OUT LANE 1, WIP APRON, STORE SUB PART') : tr('เช่น ห้องปั๊มลม, MTN Workshop, ระบบหล่อเย็น')}
                   style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--ctl-r)', fontSize: 14, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box' }} />
                 {newZoneType === 'store' && (
                   <>
                     <select value={newZoneKind} onChange={e => setNewZoneKind(e.target.value)} style={{ width: '100%', padding: '8px 12px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
                       {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
                     </select>
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ระบบจะสร้างทะเบียนโซนคลังให้เลย — ผูก MAT/ความจุต่อที่ /line-stock แท็บ 🏬 โซนคลัง</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ระบบจะสร้างทะเบียนโซนคลังให้เลย — ผูก MAT/ความจุต่อที่ /line-stock แท็บ 🏬 โซนคลัง')}</div>
                   </>
                 )}
                 {newZoneType === 'fac' && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>ระบบจะสร้างทะเบียนโซน facility (pm_facility_areas) ให้เลย — ผูกเครื่อง/จุดตรวจต่อที่ /pm-setup</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ระบบจะสร้างทะเบียนโซน facility (pm_facility_areas) ให้เลย — ผูกเครื่อง/จุดตรวจต่อที่ /pm-setup')}</div>
                 )}
               </div>
             )}

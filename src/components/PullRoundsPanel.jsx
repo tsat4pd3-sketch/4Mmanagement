@@ -132,7 +132,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
   return (
     <div style={{ marginTop: 18, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>ตารางรอบรับของลูกค้า (milk-run)</div>
+        <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('ตารางรอบรับของลูกค้า (milk-run)')}</div>
         {shipTos.length > 1 && (
           <select value={filterShipTo} onChange={e => setFilterShipTo(e.target.value)} style={{ ...inp, width: 'auto', maxWidth: 220 }}>
             <option value="">{tr(ALL.customer)}</option>
@@ -146,15 +146,15 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-        e-SMART ใช้ตารางนี้หา <b>รอบที่รถลูกค้ามารับ</b> จากช่วงเวลาในไฟล์ — <b>ไม่ใช่สูตรคำนวณ</b>
+        e-SMART ใช้ตารางนี้หา <b>{tr('รอบที่รถลูกค้ามารับ')}</b> {tr('จากช่วงเวลาในไฟล์ —')} <b>{tr('ไม่ใช่สูตรคำนวณ')}</b>
         (ระยะจากปลายช่วงถึงเวลารับไม่คงที่ 1–6 ชม. แล้วแต่รอบ) · ช่วงไหนไม่มีในตาราง ระบบจะเดาด้วย
-        “ปลายช่วง + lead_min” <b>พร้อมขึ้นคำเตือนบนจออัพโหลด</b>
+        “ปลายช่วง + lead_min” <b>{tr('พร้อมขึ้นคำเตือนบนจออัพโหลด')}</b>
       </div>
 
       {missing && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12 }}>
           ⚠️ ยังไม่ได้สร้างตาราง <code>customer_pull_rounds</code> — รัน migration
-          <code> 20260909_customer_pull_rounds.sql</code> ที่ project <b>Product DB (DR)</b> ก่อน
+          <code> 20260909_customer_pull_rounds.sql</code> {tr('ที่ project')} <b>Product DB (DR)</b> ก่อน
           · ระหว่างนี้ระบบใช้สูตร lead_min เดารอบให้ และเตือนบนจออัพโหลดทุกครั้ง
         </div>
       )}
@@ -250,7 +250,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
       ))}
 
       {!missing && !loadErr && !groups.length && (
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรอบรับในทะเบียน — กด ➕ เพิ่มรอบ</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีรอบรับในทะเบียน — กด ➕ เพิ่มรอบ')}</div>
       )}
     </div>
   );

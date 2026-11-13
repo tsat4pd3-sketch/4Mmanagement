@@ -341,7 +341,7 @@ export default function PEDocs() {
     if (n) toast.info(`ระบบเสนออัพเดทคลัง PFMEA ${n} รายการจาก revision นี้ — PE ตัดสินที่แท็บ 📚`);
   };
 
-  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>;
+  if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{tr('กำลังโหลด...')}</div></Page>;
 
   const lineOpts = lines.filter(l => l.parent_line_name || !lines.some(x => x.parent_line_name === l.name));
   // ครอบครัวไลน์ของ OP ที่กำลังแก้ (ไม่ระบุ = ไลน์หลักของชุด) — ให้เครื่องของไลน์นั้นขึ้นก่อนใน MachineSelect (2026-09-07)
@@ -351,7 +351,7 @@ export default function PEDocs() {
   return (
     <Page>
       <PageHeader icon="📐" title="PE Core Tools — Flow / PFMEA / Control Plan"
-        sub="เอกสารวิศวกรรมกระบวนการ ยึดเลข Process (OP) ร่วมกันทั้ง 3 เอกสาร — ข้อมูลชุดเดียว 3 มุมมอง"
+        sub={tr('เอกสารวิศวกรรมกระบวนการ ยึดเลข Process (OP) ร่วมกันทั้ง 3 เอกสาร — ข้อมูลชุดเดียว 3 มุมมอง')}
         tabs={[
           ...(curSet ? [
             { key: 'flow', label: `🗺️ Flow (${procs.length} OP)` },
@@ -365,7 +365,7 @@ export default function PEDocs() {
 
       <ReadOnlyNote show={!canEdit} role={role} what="แก้เอกสาร PE"
         permKey="pe:edit"
-        hint="ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร" />
+        hint={tr('ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร')} />
 
       {/* ── เลือกชุดเอกสาร (1 พาร์ท = 1 ชุด PFC+FMEA+CP) ── */}
       <FilterBar>
@@ -397,17 +397,17 @@ export default function PEDocs() {
             {exporting ? 'กำลังสร้างไฟล์...' : `ดาวน์โหลด Excel (${tab === 'fmea' ? 'PFMEA' : 'Control Plan'})`}
           </button>
         )}
-        {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title="อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่">{tr('นำเข้า Excel')}</button>}
-        {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>แก้ข้อมูลชุด</button>}
-        {canEdit && <button style={btnSm} onClick={() => setFromMasterOpen(true)} title="เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที">{tr('ชุดใหม่จาก master')}</button>}
-        {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>ชุดเอกสารใหม่</button>}
+        {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title={tr('อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่')}>{tr('นำเข้า Excel')}</button>}
+        {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>{tr('แก้ข้อมูลชุด')}</button>}
+        {canEdit && <button style={btnSm} onClick={() => setFromMasterOpen(true)} title={tr('เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที')}>{tr('ชุดใหม่จาก master')}</button>}
+        {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>{tr('ชุดเอกสารใหม่')}</button>}
       </FilterBar>
 
       {exportNotes && (
         <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber)55', background: 'var(--amber)14', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 14 }}>ℹ️</span>
           <div style={{ flex: 1 }}>
-            <b style={{ color: 'var(--text)' }}>ไฟล์ที่ได้ต่างจากต้นฉบับตรงไหนบ้าง</b>
+            <b style={{ color: 'var(--text)' }}>{tr('ไฟล์ที่ได้ต่างจากต้นฉบับตรงไหนบ้าง')}</b>
             {exportNotes.map((n, i) => <div key={i} style={{ marginTop: 3 }}>· {n}</div>)}
           </div>
           <button style={{ ...btnSm, padding: '2px 8px' }} onClick={() => setExportNotes(null)}>✕</button>
@@ -424,7 +424,7 @@ export default function PEDocs() {
           เลือกพาร์ทด้านบน{canEdit ? ' หรือกด "➕ ชุดเอกสารใหม่" เพื่อเริ่มพาร์ทแรก' : ''} — 1 ชุด = PFC + PFMEA + Control Plan ของพาร์ทนั้น
         </div>
       ) : detailLoading ? (
-        <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 30 }}>กำลังโหลด...</div>
+        <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 30 }}>{tr('กำลังโหลด...')}</div>
       ) : (
         <>
           {/* ── 📥 คำขอแก้เอกสารจากหน้างาน (ลูปปิด 8D → PE · docs/CLOSED-LOOP-8D-PE.md) ──
@@ -440,9 +440,9 @@ export default function PEDocs() {
               }}>
               {showCr ? '▼' : '▶'} คำขอแก้เอกสารจากหน้างาน
               {crCount > 0
-                ? <span style={{ color: 'var(--amber)' }}> · ค้าง {crCount} รายการ</span>
-                : <span style={{ color: 'var(--muted)', fontWeight: 500 }}> · ไม่มีค้าง</span>}
-              <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: 11.5 }}> — จาก 8D/CAPA ที่ปิดปัญหาแล้วและต้องทบทวน PFMEA/Control Plan</span>
+                ? <span style={{ color: 'var(--amber)' }}> {tr('· ค้าง')} {crCount} {tr('รายการ')}</span>
+                : <span style={{ color: 'var(--muted)', fontWeight: 500 }}> {tr('· ไม่มีค้าง')}</span>}
+              <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: 11.5 }}> {tr('— จาก 8D/CAPA ที่ปิดปัญหาแล้วและต้องทบทวน PFMEA/Control Plan')}</span>
             </button>
             <div style={{ display: showCr ? 'block' : 'none', marginTop: 8 }}>
               <PeChangeRequests mode="inbox" setId={setId} canDecide={canApprove} onCountChange={setCrCount} />
@@ -462,9 +462,9 @@ export default function PEDocs() {
                   {tr('เฉพาะ RPN ≥ 100')}
                 </label>
               )}
-              {tab === 'fmea' && canEdit && <button style={btnSm} onClick={() => setPullOpen(procFilter || '')} title="ดึง failure mode มาตรฐานจากคลังเข้า OP ที่ผูกกระบวนการมาตรฐานไว้">{tr('เติมจาก master')}</button>}
+              {tab === 'fmea' && canEdit && <button style={btnSm} onClick={() => setPullOpen(procFilter || '')} title={tr('ดึง failure mode มาตรฐานจากคลังเข้า OP ที่ผูกกระบวนการมาตรฐานไว้')}>{tr('เติมจาก master')}</button>}
               {tab === 'fmea' && fmea.length > 0 && (
-                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap' }} title="สถานะเทียบคลัง PFMEA กลาง">
+                <span style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap' }} title={tr('สถานะเทียบคลัง PFMEA กลาง')}>
                   {['same', 'behind', 'better', 'diverged', 'unlinked'].filter(k => mSum[k]).map(k => <span key={k} style={{ color: CMP_META[k].color, fontWeight: 700 }}>{CMP_META[k].icon} {mSum[k]}</span>)}
                 </span>
               )}
@@ -482,14 +482,14 @@ export default function PEDocs() {
                       {showChart ? '▼' : '▶'} {tr('ผังกระบวนการ (')}{procs.length} {tr('ขั้นงาน)')}
                     </button>
                     <span style={{ flex: 1 }} />
-                    {showChart && <button style={btnSm} onClick={doPrintFlow} title="พิมพ์ผัง A3 แนวนอน (หรือบันทึกเป็น PDF จากหน้าต่างพิมพ์)">{tr('พิมพ์ผัง')}</button>}
+                    {showChart && <button style={btnSm} onClick={doPrintFlow} title={tr('พิมพ์ผัง A3 แนวนอน (หรือบันทึกเป็น PDF จากหน้าต่างพิมพ์)')}>{tr('พิมพ์ผัง')}</button>}
                   </div>
                   {showChart && (
                     <div style={{ padding: 12 }}>
                       {/* ⚠️ ต้องบอกเสมอว่านี่ไม่ใช่ไฟล์ PFC ตัวจริง — ห้ามถอดข้อความนี้ */}
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-                        ผังนี้ระบบวาดจาก<b>รายการขั้นงานในตารางด้านล่าง</b> — แก้ OP แล้วผังเปลี่ยนตามทันที ·
-                        <b style={{ color: 'var(--text2)' }}> ไม่ใช่ไฟล์ PFC ต้นฉบับของ PE</b> (ไฟล์นั้นเป็นรูปทรง Excel ~560 ชิ้นวางมือข้าม 5 หน้า
+                        ผังนี้ระบบวาดจาก<b>{tr('รายการขั้นงานในตารางด้านล่าง')}</b> — แก้ OP แล้วผังเปลี่ยนตามทันที ·
+                        <b style={{ color: 'var(--text2)' }}> {tr('ไม่ใช่ไฟล์ PFC ต้นฉบับของ PE')}</b> (ไฟล์นั้นเป็นรูปทรง Excel ~560 ชิ้นวางมือข้าม 5 หน้า
                         ระบบสร้างให้เหมือนเป๊ะไม่ได้ และดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — แก้ผังตัวจริงต้องแก้ใน Excel แล้วอัพเข้ามาใหม่)
                       </div>
                       <div style={{ overflowX: 'auto' }}>
@@ -512,12 +512,12 @@ export default function PEDocs() {
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
                 {canEdit && (
-                  <button style={btnPrim} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>เพิ่ม Process (OP)</button>
+                  <button style={btnPrim} onClick={() => { setProcImgFile(null); setProcModal({ set_id: curSet.id, op_no: '', seq: (procs.length ? Math.max(...procs.map(p => Number(p.seq) || 0)) + 10 : 10), name: '', kind: 'process', machine_no: '', line_name: curSet.line_name || '', child_parts: '', connector: '', special_class: '', sccaf_no: '', remark: '' }); }}>{tr('เพิ่ม Process (OP)')}</button>
                 )}
                 {/* (ข) PFC → routing ของ VSM — ระบบเสนอ คนยืนยันก่อน insert (utils/peRouting.js) */}
                 {canRouting && procs.length > 0 && (
                   <button style={btnSm} onClick={() => setRoutingOpen(true)}
-                    title="แปลงรายการ OP เป็นลำดับกระบวนการ (part_routings) ให้ใบ VSM ใช้ — ตรวจและกดยืนยันก่อนบันทึก">
+                    title={tr('แปลงรายการ OP เป็นลำดับกระบวนการ (part_routings) ให้ใบ VSM ใช้ — ตรวจและกดยืนยันก่อนบันทึก')}>
                     {tr('เสนอ routing เข้า VSM')}
                   </button>
                 )}
@@ -528,7 +528,7 @@ export default function PEDocs() {
                     <tr>{['OP', 'ชนิด', 'ชื่อกระบวนการ', 'รูป', 'เครื่อง', 'ไลน์/พื้นที่', 'Child part / Nut', 'CC/SC', 'เชื่อม', 'FMEA', 'CP', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
-                    {procs.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มี process — เริ่มจากเพิ่ม OP ตามผัง flow (10, 20, ... หรือ 100.1)</td></tr>}
+                    {procs.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มี process — เริ่มจากเพิ่ม OP ตามผัง flow (10, 20, ... หรือ 100.1)')}</td></tr>}
                     {procs.map(p => {
                       const km = KIND_META[p.kind] || KIND_META.process;
                       const nf = fmea.filter(f => f.process_id === p.id).length;
@@ -551,7 +551,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {canEdit && <>
                               <button style={btnSm} onClick={() => { setProcImgFile(null); setProcModal({ ...p }); }}>✏️</button>{' '}
-                              <DeleteButton onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ของ OP นี้จะถูกลบด้วย)`, () => loadDetail(setId), p.image_url)} title="ลบ" />
+                              <DeleteButton onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ของ OP นี้จะถูกลบด้วย)`, () => loadDetail(setId), p.image_url)} title={tr('ลบ')} />
                             </>}
                           </td>
                         </tr>
@@ -573,7 +573,7 @@ export default function PEDocs() {
                 </button>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {fmeaView.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีแถว FMEA{rpnOnly ? ' ที่ RPN ≥ 100' : ''}</div>}
+                {fmeaView.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีแถว FMEA')}{rpnOnly ? ' ที่ RPN ≥ 100' : ''}</div>}
                 {fmeaView.map(it => {
                   const p = procById[it.process_id];
                   return (
@@ -596,13 +596,13 @@ export default function PEDocs() {
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
                             <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
-                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>เสนอแล้ว</span>
+                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>{tr('เสนอแล้ว')}</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? tr('เสนอเข้า master') : tr('เสนอเป็นรายการใหม่')}</button>}
                           </>;
                         })()}
                         {canEdit && <>
                           <button style={btnSm} onClick={() => setFmeaModal({ ...it, target_date: it.target_date || '' })}>✏️</button>
-                          <DeleteButton onClick={() => deleteRow('pe_fmea_items', it.id, 'แถว FMEA นี้', () => loadDetail(setId))} title="ลบ" />
+                          <DeleteButton onClick={() => deleteRow('pe_fmea_items', it.id, 'แถว FMEA นี้', () => loadDetail(setId))} title={tr('ลบ')} />
                         </>}
                       </div>
                       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(230px,100%), 1fr))', gap: 10, marginTop: 8, fontSize: 11, color: 'var(--text2)' }}>
@@ -641,7 +641,7 @@ export default function PEDocs() {
                     <tr>{['OP', 'No.', 'Characteristics (Product / Process)', 'CC/SC', 'ผู้คุม', 'Spec/Tolerance', 'วิธีวัด', 'Sample', 'ความถี่', 'Control method', 'Reaction plan', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
-                    {cpView.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีจุดควบคุม</td></tr>}
+                    {cpView.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีจุดควบคุม')}</td></tr>}
                     {cpView.map(it => {
                       const p = procById[it.process_id];
                       return (
@@ -666,7 +666,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {canEdit && <>
                               <button style={btnSm} onClick={() => setCpModal({ ...it })}>✏️</button>{' '}
-                              <DeleteButton onClick={() => deleteRow('pe_cp_items', it.id, 'จุดควบคุมนี้', () => loadDetail(setId))} title="ลบ" />
+                              <DeleteButton onClick={() => deleteRow('pe_cp_items', it.id, 'จุดควบคุมนี้', () => loadDetail(setId))} title={tr('ลบ')} />
                             </>}
                           </td>
                         </tr>
@@ -693,7 +693,7 @@ export default function PEDocs() {
                     <tr>{['เอกสาร', 'Rev', 'วันที่', 'Suffix (Part no.)', 'ECN', 'เนื้อหาการแก้ไข', 'ต้นเหตุ', 'ออก/ตรวจ/รับรอง', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
-                    {revs.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีประวัติ revision</td></tr>}
+                    {revs.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีประวัติ revision')}</td></tr>}
                     {revs.map(r => (
                       <tr key={r.id}>
                         <td style={{ ...tdSt, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{DOC_TYPES.find(d => d.key === r.doc_type)?.label || r.doc_type}</td>
@@ -707,7 +707,7 @@ export default function PEDocs() {
                         <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                           {canApprove && <>
                             <button style={btnSm} onClick={() => setRevModal({ ...r, rev_date: r.rev_date || '' })}>✏️</button>{' '}
-                            <DeleteButton onClick={() => deleteRow('pe_doc_revisions', r.id, `revision ${r.rev_no ?? ''}`, () => loadDetail(setId))} title="ลบ" />
+                            <DeleteButton onClick={() => deleteRow('pe_doc_revisions', r.id, `revision ${r.rev_no ?? ''}`, () => loadDetail(setId))} title={tr('ลบ')} />
                           </>}
                         </td>
                       </tr>
@@ -729,7 +729,7 @@ export default function PEDocs() {
       {setModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(640px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{setModal.id ? '✏️ แก้ข้อมูลชุดเอกสาร' : '➕ ชุดเอกสารใหม่ (1 พาร์ท)'}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{setModal.id ? tr('✏️ แก้ข้อมูลชุดเอกสาร') : tr('➕ ชุดเอกสารใหม่ (1 พาร์ท)')}</h3>
             <button onClick={() => setSetModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -759,7 +759,7 @@ export default function PEDocs() {
             <label style={lbl}>Doc No. Control Plan<input value={setModal.doc_no_cp || ''} onChange={e => setSetModal({ ...setModal, doc_no_cp: e.target.value })} placeholder="CNP-P703-01" style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('หมายเหตุ')}<input value={setModal.remark || ''} onChange={e => setSetModal({ ...setModal, remark: e.target.value })} style={{ marginTop: 4 }} /></label>
             <div style={{ gridColumn: '1 / -1' }}>
-              <div style={lbl}>รูป Product / Drawing</div>
+              <div style={lbl}>{tr('รูป Product / Drawing')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 {(setImgFile || setModal.image_url) && (
                   <img src={setImgPreview || setModal.image_url} alt=""
@@ -795,7 +795,7 @@ export default function PEDocs() {
                 if (!setModal.id) pickSet(row.id);
                 setSetModal(null); setSetImgFile(null);
               }
-            }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </div></div>
       )}
@@ -830,9 +830,9 @@ export default function PEDocs() {
               </select>
               {!procModal.master_process_id && (() => {
                 const sg = suggestMaster(procModal.name, procModal.kind, masters);
-                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>ชื่อ{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
+                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>{tr('ชื่อ')}{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
               })()}
-              {procModal.master_process_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ผูกแล้วดึง failure mode มาตรฐานได้ที่แท็บ PFMEA → 📚 เติมจาก master</div>}
+              {procModal.master_process_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('ผูกแล้วดึง failure mode มาตรฐานได้ที่แท็บ PFMEA → 📚 เติมจาก master')}</div>}
             </div>
             <label style={lbl}>{tr('ชนิด')}
               <select value={procModal.kind} onChange={e => setProcModal({ ...procModal, kind: e.target.value })} style={{ marginTop: 4 }}>
@@ -859,7 +859,7 @@ export default function PEDocs() {
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('Child part / Nut ที่ใช้ (บรรทัดละตัว)')}<textarea rows={2} value={procModal.child_parts || ''} onChange={e => setProcModal({ ...procModal, child_parts: e.target.value })} placeholder={'W520771-S NUT WELD M6\nMB3B-16C172-AC'} style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('หมายเหตุ')}<input value={procModal.remark || ''} onChange={e => setProcModal({ ...procModal, remark: e.target.value })} style={{ marginTop: 4 }} /></label>
             <div style={{ gridColumn: '1 / -1' }}>
-              <div style={lbl}>รูปประกอบ OP (ชิ้นงาน/จุดเชื่อม/drawing)</div>
+              <div style={lbl}>{tr('รูปประกอบ OP (ชิ้นงาน/จุดเชื่อม/drawing)')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                 {(procImgFile || procModal.image_url) && (
                   <img src={procImgPreview || procModal.image_url} alt=""
@@ -888,7 +888,7 @@ export default function PEDocs() {
                 loadDetail(setId);
                 setProcModal(null); setProcImgFile(null);
               }
-            }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </div></div>
       )}
@@ -897,7 +897,7 @@ export default function PEDocs() {
       {fmeaModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{fmeaModal.id ? '✏️ แก้แถว FMEA' : '➕ เพิ่ม Failure Mode'}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{fmeaModal.id ? tr('✏️ แก้แถว FMEA') : tr('➕ เพิ่ม Failure Mode')}</h3>
             <button onClick={() => setFmeaModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -925,7 +925,7 @@ export default function PEDocs() {
               RPN = {(Number(fmeaModal.severity) || 0) * (Number(fmeaModal.occurrence) || 0) * (Number(fmeaModal.detection) || 0) || '—'}
             </div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Recommended Action<textarea rows={2} value={fmeaModal.recommended_action || ''} onChange={e => setFmeaModal({ ...fmeaModal, recommended_action: e.target.value })} style={{ marginTop: 4 }} /></label>
-            <div style={lbl}>ผู้รับผิดชอบ<SelectOrFree value={fmeaModal.responsibility || ''} options={orgUnits} placeholder={tr('— เลือกหน่วยงาน —')} freePlaceholder="PD / QA / PE" style={{ marginTop: 4 }} onChange={v => setFmeaModal({ ...fmeaModal, responsibility: v })} /></div>
+            <div style={lbl}>{tr('ผู้รับผิดชอบ')}<SelectOrFree value={fmeaModal.responsibility || ''} options={orgUnits} placeholder={tr('— เลือกหน่วยงาน —')} freePlaceholder="PD / QA / PE" style={{ marginTop: 4 }} onChange={v => setFmeaModal({ ...fmeaModal, responsibility: v })} /></div>
             <label style={lbl}>{tr('วันเป้าหมาย')}<input type="date" value={fmeaModal.target_date || ''} onChange={e => setFmeaModal({ ...fmeaModal, target_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('Action Taken (ผลที่ทำจริง)')}<textarea rows={2} value={fmeaModal.action_taken || ''} onChange={e => setFmeaModal({ ...fmeaModal, action_taken: e.target.value })} style={{ marginTop: 4 }} /></label>
             {[['new_severity', 'S ใหม่'], ['new_occurrence', 'O ใหม่'], ['new_detection', 'D ใหม่']].map(([k, t]) => (
@@ -955,7 +955,7 @@ export default function PEDocs() {
                 new_severity: num(fmeaModal.new_severity), new_occurrence: num(fmeaModal.new_occurrence), new_detection: num(fmeaModal.new_detection),
               };
               if (await saveRow('pe_fmea_items', fmeaModal, patch, () => loadDetail(setId))) setFmeaModal(null);
-            }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </div></div>
       )}
@@ -964,7 +964,7 @@ export default function PEDocs() {
       {cpModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(760px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{cpModal.id ? '✏️ แก้จุดควบคุม' : '➕ เพิ่มจุดควบคุม (Control Plan)'}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{cpModal.id ? tr('✏️ แก้จุดควบคุม') : tr('➕ เพิ่มจุดควบคุม (Control Plan)')}</h3>
             <button onClick={() => setCpModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -982,7 +982,7 @@ export default function PEDocs() {
                 <option value="">—</option><option value="CC">CC</option><option value="SC">SC</option>
               </select>
             </label>
-            <div style={lbl}>ผู้คุม (Person in charge)<SelectOrFree value={cpModal.person || ''} options={orgUnits} placeholder={tr('— เลือกหน่วยงาน —')} freePlaceholder="PD / QA / JIG MTN" style={{ marginTop: 4 }} onChange={v => setCpModal({ ...cpModal, person: v })} /></div>
+            <div style={lbl}>{tr('ผู้คุม (Person in charge)')}<SelectOrFree value={cpModal.person || ''} options={orgUnits} placeholder={tr('— เลือกหน่วยงาน —')} freePlaceholder="PD / QA / JIG MTN" style={{ marginTop: 4 }} onChange={v => setCpModal({ ...cpModal, person: v })} /></div>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>Spec / Tolerance<textarea rows={2} value={cpModal.spec || ''} onChange={e => setCpModal({ ...cpModal, spec: e.target.value })} placeholder="≥ 20 NM. / FOLLOW SOP NO. FTM-P703-068" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>{tr('วิธีวัด (Measurement)')}<textarea rows={2} value={cpModal.method || ''} onChange={e => setCpModal({ ...cpModal, method: e.target.value })} placeholder="TORQUE TEST / VISUAL CHECK" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>{tr('Control Method (เอกสาร)')}<textarea rows={2} value={cpModal.control_method || ''} onChange={e => setCpModal({ ...cpModal, control_method: e.target.value })} placeholder="PPM NO.FM-PD3-001" style={{ marginTop: 4 }} /></label>
@@ -1006,7 +1006,7 @@ export default function PEDocs() {
                 reaction_plan: cpModal.reaction_plan?.trim() || null,
               };
               if (await saveRow('pe_cp_items', cpModal, patch, () => loadDetail(setId))) setCpModal(null);
-            }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </div></div>
       )}
@@ -1015,7 +1015,7 @@ export default function PEDocs() {
       {revModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(640px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{revModal.id ? '✏️ แก้ Revision' : '➕ ออก Revision ใหม่'}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{revModal.id ? tr('✏️ แก้ Revision') : tr('➕ ออก Revision ใหม่')}</h3>
             <button onClick={() => setRevModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1039,9 +1039,9 @@ export default function PEDocs() {
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('เลขอ้างอิงต้นเหตุ (เลขเคลม/NCR/MO)')}<input value={revModal.ref_id || ''} onChange={e => setRevModal({ ...revModal, ref_id: e.target.value })} placeholder={tr('เช่น WLS6033')} style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('เนื้อหาการแก้ไข *')}<textarea rows={3} value={revModal.content} onChange={e => setRevModal({ ...revModal, content: e.target.value })} placeholder="Process 210 Missing nut m6 (WLS00292)" style={{ marginTop: 4 }} /></label>
             {/* ผู้ออก/ตรวจ/รับรอง = user ระบบ (profiles) · พิมพ์เองได้สำหรับ rev เก่าที่ย้ายจากกระดาษ (ติดป้าย) (2026-09-07) */}
-            <div style={lbl}>ผู้ออก<PersonSelect value={revModal.issued_by || ''} history={issuedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, issued_by: r.name })} /></div>
-            <div style={lbl}>ผู้ตรวจสอบ<PersonSelect value={revModal.checked_by || ''} history={checkedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, checked_by: r.name })} /></div>
-            <div style={lbl}>ผู้รับรอง<PersonSelect value={revModal.approved_by || ''} history={approvedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, approved_by: r.name })} /></div>
+            <div style={lbl}>{tr('ผู้ออก')}<PersonSelect value={revModal.issued_by || ''} history={issuedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, issued_by: r.name })} /></div>
+            <div style={lbl}>{tr('ผู้ตรวจสอบ')}<PersonSelect value={revModal.checked_by || ''} history={checkedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, checked_by: r.name })} /></div>
+            <div style={lbl}>{tr('ผู้รับรอง')}<PersonSelect value={revModal.approved_by || ''} history={approvedHist} style={{ marginTop: 4 }} onChange={r => setRevModal({ ...revModal, approved_by: r.name })} /></div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
             <button style={btnSm} onClick={() => setRevModal(null)}>{tr('ยกเลิก')}</button>
@@ -1058,7 +1058,7 @@ export default function PEDocs() {
               };
               const saved = await saveRow('pe_doc_revisions', revModal, patch, () => loadDetail(setId));
               if (saved) { setRevModal(null); if (saved.doc_type === 'fmea' && !revModal.id) autoPropose(saved.id); }
-            }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            }}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </div></div>
       )}

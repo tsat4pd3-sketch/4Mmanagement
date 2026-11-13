@@ -1,5 +1,6 @@
 import { useState } from 'react';
 
+import { tr } from '../utils/i18n';
 /* 🖼️ PartThumb — รูปชิ้นงานขนาดเล็กบนการ์ด/แถวตาราง (2026-09-25 · คำสั่ง user)
    *"ควรจะมีรูปภาพชิ้นงานด้วยนะ"* — สโตร์หยิบของจากหน้าตาชิ้นงาน ไม่ได้หยิบจากเลข mat
 
@@ -22,8 +23,8 @@ export default function PartThumb({ url, alt = '', size = 46, radius = 8, zoomab
 
   if (!ok) {
     return (
-      <div style={box} title={url ? 'รูปนี้โหลดไม่ขึ้น — ไฟล์อาจถูกลบ' : 'ยังไม่มีรูป — เพิ่มได้ที่ 📦 ทะเบียนสินค้า/พาร์ท'}
-        aria-label={url ? 'รูปโหลดไม่ขึ้น' : 'ยังไม่มีรูป'}>
+      <div style={box} title={url ? tr('รูปนี้โหลดไม่ขึ้น — ไฟล์อาจถูกลบ') : tr('ยังไม่มีรูป — เพิ่มได้ที่ 📦 ทะเบียนสินค้า/พาร์ท')}
+        aria-label={url ? tr('รูปโหลดไม่ขึ้น') : tr('ยังไม่มีรูป')}>
         <span style={{ fontSize: Math.max(13, Math.round(size * 0.4)), opacity: 0.45, lineHeight: 1 }}>
           {url ? '⚠️' : '🖼️'}
         </span>

@@ -22,12 +22,12 @@ export default function DieMatLinkButton({ set, mat, role, onDone }) {
   if (mats.includes(m.toUpperCase())) return null;            // ผูกไว้แล้ว
   if (mats.length) return (
     <div style={{ fontSize: 11, color: 'var(--amber)' }}>
-      ⚠ ทะเบียนบอกว่าชุด {set.set_code} ทำ {mats.join(' + ')} — ถ้าทำพาร์ทนี้ด้วยจริง แก้ที่ /equipment?tab=die
+      ⚠ ทะเบียนบอกว่าชุด {set.set_code} {tr('ทำ')} {mats.join(' + ')} — ถ้าทำพาร์ทนี้ด้วยจริง แก้ที่ /equipment?tab=die
     </div>
   );
   if (matSlotFor(set, m) !== 'mat_no') return null;
   if (!can('machines', 'edit', role)) return (
-    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ชุด {set.set_code} ยังไม่ผูก MAT — ผู้มีสิทธิ์ทะเบียนแม่พิมพ์ผูกได้ที่ /equipment?tab=die</div>
+    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชุด')} {set.set_code} ยังไม่ผูก MAT — ผู้มีสิทธิ์ทะเบียนแม่พิมพ์ผูกได้ที่ /equipment?tab=die</div>
   );
 
   async function link() {

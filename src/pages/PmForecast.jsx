@@ -211,7 +211,7 @@ export default function PmForecast() {
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* หัวเพจมาตรฐาน + แท็บผูก URL (UI-CONVENTIONS §6.8 — ห้ามวาดหัวเรื่อง/แถบแท็บเอง) */}
       <PageHeader
-        title="PM ล่วงหน้า (Planner)" icon="🔧"
+        title={tr('PM ล่วงหน้า (Planner)')} icon="🔧"
         sub={tab === 'due'
           ? 'คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว'
           : 'ยอดผลิตสะสมของอุปกรณ์แต่ละตัว — ฐานของ PM แบบนับยอดผลิต (condition-based) แทนรอบเวลา'}
@@ -227,7 +227,7 @@ export default function PmForecast() {
       )}
       {loadErr && (
         <div role="alert" style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5, fontWeight: 700 }}>
-          ⚠️ โหลดแผน PM ไม่สำเร็จ ({loadErr}) — <u>ไม่ได้แปลว่าไม่มีแผน</u> ตารางว่างเพราะอ่านข้อมูลไม่ได้ กด 🔄 รีเฟรช
+          ⚠️ โหลดแผน PM ไม่สำเร็จ ({loadErr}) — <u>{tr('ไม่ได้แปลว่าไม่มีแผน')}</u> ตารางว่างเพราะอ่านข้อมูลไม่ได้ กด 🔄 รีเฟรช
         </div>
       )}
       {partErr && !loadErr && (
@@ -241,25 +241,25 @@ export default function PmForecast() {
       <FilterBar>
         <LineScopeSelect lines={scopeLines} section={fScope.section} line={fScope.line}
           onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
-        <select value={onlyWindow} onChange={e => setOnlyWindow(e.target.value)} aria-label="สถานะ">
+        <select value={onlyWindow} onChange={e => setOnlyWindow(e.target.value)} aria-label={tr('สถานะ')}>
           <option value="">{tr('ทุกสถานะ (')}{rows.length})</option>
           <option value="overdue">{tr('เลยกำหนด (')}{overdueCount})</option>
           <option value="window">{tr('เข้า window แล้ว (')}{windowCount})</option>
           <option value="later">{tr('ยังไม่ถึง window (')}{rows.filter(STATUS_KEEP.later).length})</option>
         </select>
         <SearchInput value={fQ} onChange={setFQ} fields="ไลน์ / อุปกรณ์" />
-        <span className="filter-count">แสดง {shown.length} จาก {rows.length}</span>
-        {droppedNoLine > 0 && <span className="filter-count" style={{ color: '#f59a3f' }} title="ชื่อไลน์ของแผนไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้">⚠ อีก {droppedNoLine} แผนไลน์ไม่ตรงทะเบียน</span>}
+        <span className="filter-count">{tr('แสดง')} {shown.length} {tr('จาก')} {rows.length}</span>
+        {droppedNoLine > 0 && <span className="filter-count" style={{ color: '#f59a3f' }} title={tr('ชื่อไลน์ของแผนไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้')}>{tr('⚠ อีก')} {droppedNoLine} {tr('แผนไลน์ไม่ตรงทะเบียน')}</span>}
         {filtered && <button type="button" onClick={clearFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>{tr('ล้างตัวกรอง')}</button>}
         <span className="spacer" />
-        {noLineN > 0 && <span className="filter-count" title="แผนที่ทั้งตัวแผน (usage_source_line) และเครื่อง (line_name) ไม่มีไลน์ — คิดยอดผลิต/วัน PM ไม่ได้ ไปตั้งไลน์ให้เครื่องที่ทะเบียนอุปกรณ์" style={{ color: '#f59a3f', fontWeight: 700 }}>⚠ {noLineN} แผนไม่มีไลน์ — ไม่แสดง</span>}
-        {totalBuffer > 0 && <span className="filter-count" style={{ color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
+        {noLineN > 0 && <span className="filter-count" title={tr('แผนที่ทั้งตัวแผน (usage_source_line) และเครื่อง (line_name) ไม่มีไลน์ — คิดยอดผลิต/วัน PM ไม่ได้ ไปตั้งไลน์ให้เครื่องที่ทะเบียนอุปกรณ์')} style={{ color: '#f59a3f', fontWeight: 700 }}>⚠ {noLineN} {tr('แผนไม่มีไลน์ — ไม่แสดง')}</span>}
+        {totalBuffer > 0 && <span className="filter-count" style={{ color: 'var(--accent2)', fontWeight: 700 }}>{tr('Σ buffer ที่ต้องเตรียม ≈')} {totalBuffer.toLocaleString()} {tr('ชิ้น')}</span>}
       </FilterBar>
 
-      {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>กำลังคำนวณ...</div>
-        : (!shown.length && rows.length) ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ไม่มีแผนที่ตรงกับตัวกรอง{droppedNoLine ? ` · อีก ${droppedNoLine} แผนไลน์ไม่ตรงทะเบียน กรองตามไลน์ไม่ได้` : ''}</div>
-        : loadErr ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน</div>
-        : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)</div>
+      {loading ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>{tr('กำลังคำนวณ...')}</div>
+        : (!shown.length && rows.length) ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>{tr('ไม่มีแผนที่ตรงกับตัวกรอง')}{droppedNoLine ? ` · อีก ${droppedNoLine} แผนไลน์ไม่ตรงทะเบียน กรองตามไลน์ไม่ได้` : ''}</div>
+        : loadErr ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>{tr('อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน')}</div>
+        : !shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>{tr('ยังไม่มีแผน PM ที่คำนวณได้ (ต้องตั้ง usage_threshold หรือรอบเวลา + มียอดผลิต/forecast)')}</div>
         : (
           <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
@@ -278,16 +278,16 @@ export default function PmForecast() {
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{r.isUsage ? `📊 ${p.usage_metric || 'shot'}` : '🗓 เวลา'}</td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
                         {r.isUsage
-                          ? <span style={{ fontFamily: 'monospace' }}>{Number(r.accumUsage).toLocaleString()}/{Number(p.usage_threshold).toLocaleString()}<div style={{ fontSize: 11, color: 'var(--muted)' }}>~{Math.round(r.dailyRate).toLocaleString()}/วัน ({r.rateSource === 'forecast' ? 'forecast' : 'จริง'})</div></span>
-                          : <span style={{ color: 'var(--muted)' }}>รอบ {p.interval_days} วัน</span>}
+                          ? <span style={{ fontFamily: 'monospace' }}>{Number(r.accumUsage).toLocaleString()}/{Number(p.usage_threshold).toLocaleString()}<div style={{ fontSize: 11, color: 'var(--muted)' }}>~{Math.round(r.dailyRate).toLocaleString()}{tr('/วัน (')}{r.rateSource === 'forecast' ? 'forecast' : 'จริง'})</div></span>
+                          : <span style={{ color: 'var(--muted)' }}>{tr('รอบ')} {p.interval_days} {tr('วัน')}</span>}
                       </td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, color: r.overdue ? 'var(--red)' : r.inWindow ? '#f59a3f' : 'var(--text)', whiteSpace: 'nowrap' }}>{fmtThai(r.projected)}</td>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: r.overdue ? 'var(--red)' : r.inWindow ? '#f59a3f' : 'var(--muted)' }}>{r.daysTo == null ? '—' : r.overdue ? `เลย ${Math.abs(r.daysTo)} วัน` : `${r.daysTo} วัน`}</td>
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.pm_duration_hours ?? ''} onBlur={e => { const v = e.target.value === '' ? null : Number(e.target.value); if (v !== (p.pm_duration_hours ?? null)) saveCfg(p.id, { pm_duration_hours: v }) }} style={inp} placeholder="—" /> : (p.pm_duration_hours ?? '—')}</td>
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.lead_time_days ?? 10} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.lead_time_days ?? 10)) saveCfg(p.id, { lead_time_days: v }) }} style={inp} /> : (p.lead_time_days ?? 10)}</td>
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.buffer_margin_pct ?? 15} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.buffer_margin_pct ?? 15)) saveCfg(p.id, { buffer_margin_pct: v }) }} style={inp} /> : (p.buffer_margin_pct ?? 15)}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 800, color: r.inWindow && r.buffer ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{r.buffer ? r.buffer.toLocaleString() : (p.pm_duration_hours ? '0' : 'ตั้งระยะ PM')}</td>
-                      {canCoord && <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><button onClick={() => toCoordination(r)} title="สร้างแผนประสานงาน PM (แจ้ง Production)" style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{tr('แผนประสานงาน')}</button></td>}
+                      <td style={{ padding: '8px 10px', fontWeight: 800, color: r.inWindow && r.buffer ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{r.buffer ? r.buffer.toLocaleString() : (p.pm_duration_hours ? '0' : tr('ตั้งระยะ PM'))}</td>
+                      {canCoord && <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><button onClick={() => toCoordination(r)} title={tr('สร้างแผนประสานงาน PM (แจ้ง Production)')} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{tr('แผนประสานงาน')}</button></td>}
                     </tr>
                   )
                 })}
@@ -296,7 +296,7 @@ export default function PmForecast() {
           </div>
         )}
 
-      <InfoMore label="สูตรคาดวัน PM" size={11.5}>
+      <InfoMore label={tr('สูตรคาดวัน PM')} size={11.5}>
         * ตาม shot: คาดวัน PM = วันนี้ + (เกณฑ์ − shot สะสม) ÷ อัตราผลิต/วัน (จาก forecast ลูกค้าเดือนนี้ ÷ วันทำงานจริงจากปฏิทินบริษัท · ไม่มี forecast ใช้เฉลี่ยจริง 30 วัน) ·
         buffer = อัตรา/วัน × (ระยะ PM ÷ 16 ชม.) × (1 + เผื่อ%) · แถวส้ม = เข้า window (ใกล้ถึงภายใน lead time) · แถวแดง = เลยกำหนด
       </InfoMore>

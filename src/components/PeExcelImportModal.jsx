@@ -195,14 +195,14 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
       {step === 'pick' && (<>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
           ใช้ไฟล์ฟอร์ม TSAT ได้เลยไม่ต้องจัดใหม่ — ระบบอ่านทุกชีท OP แล้วประกอบเป็นชุดเอกสารให้<br />
-          <b style={{ color: 'var(--text2)' }}>จะให้ดูสรุปก่อนเสมอ ยังไม่เขียนฐานข้อมูลจนกว่าจะกดยืนยัน</b>
+          <b style={{ color: 'var(--text2)' }}>{tr('จะให้ดูสรุปก่อนเสมอ ยังไม่เขียนฐานข้อมูลจนกว่าจะกดยืนยัน')}</b>
         </div>
         <div style={{ display: 'grid', gap: 10 }}>
           {FILES.map((f) => (
             <div key={f.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 10, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
               <div style={{ minWidth: 190 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{f.label}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.hint}</div>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{tr(f.label)}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.hint)}</div>
               </div>
               <input type="file" accept=".xlsx,.xlsm" style={{ width: 'auto', flex: 1, fontSize: 11.5 }}
                 onChange={(e) => setFiles({ ...files, [f.key]: e.target.files?.[0] || null })} />
@@ -229,7 +229,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
           <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 'var(--r-md)', background: 'rgba(220,60,60,.12)', border: '1px solid rgba(220,60,60,.5)', fontSize: 12 }}>
             <b style={{ color: '#ff8a8a' }}>⛔ {w.text}</b>
             {w.rows && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', maxHeight: 110, overflowY: 'auto' }}>
-              {w.rows.map((r, j) => <div key={j}>ชีท {r.sheet}{r.op ? ` · OP ${r.op}` : ''}{r.text ? ` · ${r.text}` : ''}</div>)}
+              {w.rows.map((r, j) => <div key={j}>{tr('ชีท')} {r.sheet}{r.op ? ` · OP ${r.op}` : ''}{r.text ? ` · ${r.text}` : ''}</div>)}
             </div>}
           </div>
         ))}
@@ -243,7 +243,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         {nothing ? (
           <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7 }}>
             อ่านไฟล์ไม่ออก — layout ต่างจากฟอร์มที่ระบบรู้จัก<br />
-            ระบบคาดว่า <b>PFMEA</b> ข้อมูลเริ่มแถว 10 คอลัมน์ B–S · <b>Control Plan</b> เริ่มแถว 12 มีเลข Char No. ที่คอลัมน์ D<br />
+            ระบบคาดว่า <b>PFMEA</b> {tr('ข้อมูลเริ่มแถว 10 คอลัมน์ B–S ·')} <b>Control Plan</b> {tr('เริ่มแถว 12 มีเลข Char No. ที่คอลัมน์ D')}<br />
             ถ้าไฟล์เป็นฟอร์มคนละแบบ ให้ส่งไฟล์ให้ผู้ดูแลระบบเพิ่มรูปแบบใหม่ให้
           </div>
         ) : (<>
@@ -284,7 +284,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
                 <label style={lbl}>{tr('ชื่อพาร์ท')}<input value={meta.part_name} onChange={(e) => setMeta({ ...meta, part_name: e.target.value })} style={inp} /></label>
                 <label style={lbl}>Model<input value={meta.model} onChange={(e) => setMeta({ ...meta, model: e.target.value })} placeholder="P703" style={inp} /></label>
                 {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) ให้ชุดใหม่สะกดตรงชุดอื่น (2026-09-07) */}
-                <div style={lbl}>ลูกค้า<CustomerSelect value={meta.customer || ''} placeholder="FORD" style={{ marginTop: 4 }} inputStyle={{ fontSize: 12, padding: '7px 30px 7px 9px' }} onChange={({ customer }) => setMeta({ ...meta, customer })} /></div>
+                <div style={lbl}>{tr('ลูกค้า')}<CustomerSelect value={meta.customer || ''} placeholder="FORD" style={{ marginTop: 4 }} inputStyle={{ fontSize: 12, padding: '7px 30px 7px 9px' }} onChange={({ customer }) => setMeta({ ...meta, customer })} /></div>
                 <label style={lbl}>{tr('เลขเอกสาร PFC')}<input value={meta.doc_no_pfc} onChange={(e) => setMeta({ ...meta, doc_no_pfc: e.target.value })} style={inp} /></label>
                 <label style={lbl}>{tr('เลขเอกสาร FMEA')}<input value={meta.doc_no_fmea} onChange={(e) => setMeta({ ...meta, doc_no_fmea: e.target.value })} style={inp} /></label>
                 <label style={lbl}>{tr('เลขเอกสาร CP')}<input value={meta.doc_no_cp} onChange={(e) => setMeta({ ...meta, doc_no_cp: e.target.value })} style={inp} /></label>

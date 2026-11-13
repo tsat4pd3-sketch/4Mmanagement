@@ -1326,9 +1326,9 @@ export default function Checkin() {
               && tg(rec.has_extended_ot, 'OT+23', () => toggle(emp.id, 'has_extended_ot'), false, 'var(--red)')}
           </div>
           <div className="ck-more">
-            <div><div className="ck-lbl">การลา</div>{cLeave}</div>
-            <div><div className="ck-lbl">หมายเหตุ</div>{cRemark}</div>
-            {needBooking && <div><div className="ck-lbl">จองรถ OT / งานที่ทำ</div><div className="ck-book">{cBooking}</div></div>}
+            <div><div className="ck-lbl">{tr('การลา')}</div>{cLeave}</div>
+            <div><div className="ck-lbl">{tr('หมายเหตุ')}</div>{cRemark}</div>
+            {needBooking && <div><div className="ck-lbl">{tr('จองรถ OT / งานที่ทำ')}</div><div className="ck-book">{cBooking}</div></div>}
           </div>
         </div>
       </Fragment>
@@ -1361,11 +1361,11 @@ export default function Checkin() {
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
                         {emp._helperRowId && (
                           <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                            <span>ยืมตัวจาก {emp._helperFrom}</span>
+                            <span>{tr('ยืมตัวจาก')} {emp._helperFrom}</span>
                             {canRecord && (
                               <button
                                 onClick={() => unborrowEmployee(emp)}
-                                title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
+                                title={tr('ยกเลิกยืมตัว — คืนกลับไลน์เดิม')}
                                 style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
                               >{tr('คืน')}</button>
                             )}
@@ -1427,9 +1427,7 @@ export default function Checkin() {
                                 color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
                                 transition: 'all 0.15s',
                               }}
-                            >
-                              {opt.label}
-                            </button>
+                            >{tr(opt.label)}</button>
                           ))}
                         </div>
                       )}
@@ -1468,7 +1466,7 @@ export default function Checkin() {
                             placeholder={tr('จำนวนชั่วโมง')}
                             style={{ padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, width: '100%' }}
                           />
-                          <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ชม.</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('ชม.')}</span>
                         </div>
                       )}
                     </div>
@@ -1499,7 +1497,7 @@ export default function Checkin() {
                                 <select
                                   value={otPeriods[emp.id] || ''}
                                   onChange={e => setOtPeriod(emp.id, e.target.value)}
-                                  title="วันหยุด — เลือกช่วงเวลา OT"
+                                  title={tr('วันหยุด — เลือกช่วงเวลา OT')}
                                   style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                                 >
                                   <option value="">{tr('— ช่วงเวลา OT —')}</option>
@@ -1525,7 +1523,7 @@ export default function Checkin() {
                             <select
                               value={otPeriods[emp.id] || ''}
                               onChange={e => setOtPeriod(emp.id, e.target.value)}
-                              title="วันหยุด — เลือกช่วงเวลา OT"
+                              title={tr('วันหยุด — เลือกช่วงเวลา OT')}
                               style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: 'var(--amber)', fontWeight: 700 }}
                             >
                               <option value="">{tr('— ช่วงเวลา OT —')}</option>
@@ -1562,7 +1560,7 @@ export default function Checkin() {
                               <select
                                 value={otExtraPeriods[emp.id]?.[d] || ''}
                                 onChange={e => setOtExtraPeriod(emp.id, d, e.target.value)}
-                                title="วันหยุด — เลือกช่วงเวลา OT"
+                                title={tr('วันหยุด — เลือกช่วงเวลา OT')}
                                 style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                               >
                                 <option value="">{tr('— ช่วงเวลา OT —')}</option>
@@ -1637,7 +1635,7 @@ export default function Checkin() {
                       {/* Special extended OT (day shift 20:00–23:00) — rare case */}
                       {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
                         <div
-                          title="OT พิเศษ กะเช้า ต่อถึง 23:00"
+                          title={tr('OT พิเศษ กะเช้า ต่อถึง 23:00')}
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, cursor: 'pointer' }}
                           onClick={() => toggle(emp.id, 'has_extended_ot')}
                         >
@@ -1695,7 +1693,7 @@ export default function Checkin() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '20px 24px', maxWidth: 520, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>ยืมพนักงานมาช่วยกะนี้</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{tr('ยืมพนักงานมาช่วยกะนี้')}</div>
               <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1707,7 +1705,7 @@ export default function Checkin() {
               </NoticeBar>
             )}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>มาช่วยไลน์</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{tr('มาช่วยไลน์')}</span>
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
               <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder={tr('— เลือกไลน์ปลายทาง —')} includeSupport
                 style={{ padding: '7px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 200, flex: 1 }} onChange={setBorrowLineId} />
@@ -1715,12 +1713,12 @@ export default function Checkin() {
             <SearchInput value={borrowSearch} onChange={setBorrowSearch} autoFocus grow={false}
               fields="ชื่อ / รหัสพนักงาน (อย่างน้อย 2 ตัวอักษร)" style={{ marginBottom: 10 }} />
             <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)', minHeight: 120 }}>
-              {borrowLoading && <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>⏳ กำลังค้นหา...</div>}
+              {borrowLoading && <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>{tr('⏳ กำลังค้นหา...')}</div>}
               {!borrowLoading && borrowSearch.trim().length >= 2 && borrowResults.length === 0 && (
                 <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>ไม่พบพนักงานที่ตรงกับ "{borrowSearch.trim()}"</div>
               )}
               {!borrowLoading && borrowSearch.trim().length < 2 && (
-                <div style={{ padding: 14, fontSize: 12, color: 'var(--muted)' }}>พิมพ์ชื่อหรือรหัสพนักงานเพื่อค้นหา — ค้นได้ทั้งโรงงาน ไม่จำกัดไลน์/ส่วนงาน</div>
+                <div style={{ padding: 14, fontSize: 12, color: 'var(--muted)' }}>{tr('พิมพ์ชื่อหรือรหัสพนักงานเพื่อค้นหา — ค้นได้ทั้งโรงงาน ไม่จำกัดไลน์/ส่วนงาน')}</div>
               )}
               {!borrowLoading && borrowResults.map(r => {
                 const homeLine = lines.find(l => l.id === r.line_id)?.name || r.section || '—';
@@ -1737,9 +1735,9 @@ export default function Checkin() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.employee_id_code} · {homeLine}{r.team ? ` · ทีม ${r.team}` : ''}</div>
                     </div>
                     {borrowedHere
-                      ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
+                      ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr('ยืมแล้ว →')} {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
                       : inRoster
-                        ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>อยู่ในรายชื่อแล้ว</span>
+                        ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('อยู่ในรายชื่อแล้ว')}</span>
                         : (
                           <button
                             onClick={() => borrowEmployee(r)}
@@ -1756,7 +1754,7 @@ export default function Checkin() {
       )}
 
       {/* Header — UI-STANDARD 2026-09-24: ชิปกะ/วันที่อยู่ใน sub · ปุ่มอยู่ใน actions */}
-      <PageHeader title="เช็คชื่อ & PPE" icon="📝"
+      <PageHeader title={tr('เช็คชื่อ & PPE')} icon="📝"
         sub={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{
             padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
@@ -1770,9 +1768,9 @@ export default function Checkin() {
         </span>}
         filters={<>
           {/* "เฉพาะกะนี้ / ทุกคน" = ตัวกรองการดู ⇒ อยู่แถบกรองใต้แท็บ ไม่ใช่ปุ่มคำสั่ง (05/11 · UI §6.35 · เดิมเป็นปุ่ม toggle บนหัว) */}
-          <Segmented value={filterShift ? 'shift' : 'all'} onChange={v => setFilterShift(v === 'shift')} label="แสดงใคร"
+          <Segmented value={filterShift ? 'shift' : 'all'} onChange={v => setFilterShift(v === 'shift')} label={tr('แสดงใคร')}
             options={[{ value: 'shift', label: 'เฉพาะกะนี้' }, { value: 'all', label: 'ทุกคน' }]} />
-          {previewNight && <span data-warn="1" style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>กำลัง Preview กะดึก</span>}
+          {previewNight && <span data-warn="1" style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>{tr('กำลัง Preview กะดึก')}</span>}
         </>}
         actions={<>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [ยืมพนักงาน] [บันทึก] · ที่เหลือ (Preview กะดึก · ส่งออกฟอร์ม · จองรถ OT) อยู่ใน ⋯ */}
@@ -1785,14 +1783,14 @@ export default function Checkin() {
           ]} />
           {canRecord && (
             <button type="button" className="pg-btn" onClick={openBorrowModal}
-              title="ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง">
+              title={tr('ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง')}>
               {tr('ยืมพนักงาน')}
             </button>
           )}
           <button type="button" className="pg-btn primary"
             onClick={() => setConfirmSave(true)}
             disabled={isSaving || previewNight || !canRecord}
-            title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
+            title={previewNight ? tr('ปิดโหมด Preview ก่อนบันทึก') : !canRecord ? tr('บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ') : undefined}
             style={{ opacity: (isSaving || previewNight || !canRecord) ? 0.55 : 1, cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer' }}>
             {isSaving ? tr('กำลังบันทึก...') : previewNight ? tr('ปิด Preview ก่อนบันทึก') : !canRecord ? tr('ไม่มีสิทธิ์บันทึก') : tr('บันทึก')}
           </button>
@@ -1808,14 +1806,14 @@ export default function Checkin() {
         <Icon glyph="👤" size={20} style={{ color: 'var(--accent)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>
-            กำลังเช็คชื่อในนาม: <span style={{ color: 'var(--accent)' }}>{fullName || 'ไม่ทราบชื่อ'}</span>
+            กำลังเช็คชื่อในนาม: <span style={{ color: 'var(--accent)' }}>{fullName || tr('ไม่ทราบชื่อ')}</span>
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {roleLabel(role)} · {myScopeLabel}
           </span>
         </div>
         <button type="button" className="pg-btn" onClick={handleSwitchUser} style={{ marginLeft: 'auto' }}
-          title="ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง">
+          title={tr('ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง')}>
           {tr('ไม่ใช่ฉัน — สลับผู้ใช้')}
         </button>
       </div>
@@ -1825,9 +1823,9 @@ export default function Checkin() {
           = เช็คชื่อไม่ได้ทั้งกะ) · Andon เหลือง = นิ่ง ไม่กระพริบ */}
       {scopeAnchorless({ role, lineId, sections: scopeSecs }) && (
         <NoticeBar tone="warn" style={{ marginBottom: 14 }}>
-          บัญชีนี้เป็น<b>หัวหน้ากลุ่ม</b>แต่<b>ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน</b> —
-          รายชื่อข้างล่างจึงเป็น<b>พนักงานทั้งโรงงาน</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
-          <span style={{ color: 'var(--muted)' }}> · ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้</span>
+          บัญชีนี้เป็น<b>{tr('หัวหน้ากลุ่ม')}</b>{tr('แต่')}<b>{tr('ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน')}</b> —
+          รายชื่อข้างล่างจึงเป็น<b>{tr('พนักงานทั้งโรงงาน')}</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
+          <span style={{ color: 'var(--muted)' }}> {tr('· ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้')}</span>
         </NoticeBar>
       )}
 
@@ -1836,7 +1834,7 @@ export default function Checkin() {
         <FilterBar style={{ marginBottom: 14 }}>
           {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02 · เดิมปุ่มส่วนงาน 14 ปุ่ม + ช่องไลน์
               ที่โผล่หลังเลือกส่วนงาน = หน้าตาไม่เหมือนหน้าอื่น) · ส่วนงานที่ไม่มีไลน์ (คลัง/QA) ยังเลือกได้เพราะเช็คชื่อ "คน" */}
-          <span className="filter-label">ขอบเขต</span>
+          <span className="filter-label">{tr('ขอบเขต')}</span>
           <LineScopeSelect lines={scopedLines} sections={sections} section={selSection} line={selLine} valueKey="id" includeSupport
             onChange={(sec, ln) => { setSelSection(sec); setSelLine(ln); }} />
 
@@ -1846,7 +1844,7 @@ export default function Checkin() {
             แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
             {noLineCount > 0 && (
               <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}
-                title="คนเหล่านี้อยู่ส่วนงานนี้แต่ยังไม่ได้ผูกไลน์ — จะไม่ขึ้นเมื่อกรองรายไลน์ ไปผูกที่ ฐานข้อมูลพนักงาน (ช่อง Group / กลุ่ม)">
+                title={tr('คนเหล่านี้อยู่ส่วนงานนี้แต่ยังไม่ได้ผูกไลน์ — จะไม่ขึ้นเมื่อกรองรายไลน์ ไปผูกที่ ฐานข้อมูลพนักงาน (ช่อง Group / กลุ่ม)')}>
                 ⚠ {noLineCount} คนยังไม่ผูกไลน์
               </span>
             )}
@@ -1864,7 +1862,7 @@ export default function Checkin() {
             {m.label} {counts[key]}
           </span>
         ) : null)}
-        {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>รวม {displayed.length} คน</span>}
+        {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>{tr('รวม')} {displayed.length} {tr('คน')}</span>}
       </div>
 
       <DraftRestoreBar draft={ckPending} what="การเช็คชื่อกะนี้" onRestore={restoreCkDraft}
@@ -1873,14 +1871,14 @@ export default function Checkin() {
         <NoticeBar tone="warn" style={{ marginBottom: 14 }}
           action={{ label: 'โหลดรายชื่อกะใหม่', title: 'สิ่งที่ยังไม่บันทึกจะหาย',
             onClick: () => { setPreviewNight(false); setShiftChanged(null); setRealShiftInfo(getShiftInfo()); } }}>
-          <b>เวลาข้ามเข้า {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว</b> — หน้านี้ยังเป็นรายชื่อ{realShiftInfo.label} ({realShiftInfo.workDateStr})
+          <b>{tr('เวลาข้ามเข้า')} {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว</b> {tr('— หน้านี้ยังเป็นรายชื่อ')}{realShiftInfo.label} ({realShiftInfo.workDateStr})
           · กดบันทึกตอนนี้ = บันทึกของกะเดิม (ถูกต้องถ้ายังกรอกกะเดิมอยู่)
         </NoticeBar>
       )}
 
       {previewNight && (
         <NoticeBar tone="bad" style={{ marginBottom: 14 }} action={{ label: 'ออกจาก Preview', onClick: () => setPreviewNight(false) }}>
-          <b>โหมด Preview กะดึก</b> — เวลาจริงยังเป็นกะเช้า ปุ่มบันทึกถูกปิดไว้กันข้อมูลผิดพลาด
+          <b>{tr('โหมด Preview กะดึก')}</b> — เวลาจริงยังเป็นกะเช้า ปุ่มบันทึกถูกปิดไว้กันข้อมูลผิดพลาด
         </NoticeBar>
       )}
 
@@ -1888,18 +1886,18 @@ export default function Checkin() {
           เดิมกล่องนี้ + คำเตือนดันรายชื่อลงจอที่ 2 บน handheld 360×640 */}
       {/* คำอธิบายคอลัมน์จองรถ OT = ข้อความอธิบาย ⇒ พับใน ⓘ (UI §6.10) · วันหยุดต่อเนื่องที่เพิ่มช่องให้ = ข้อเท็จจริง เขียนบนจอ */}
       {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14, fontSize: 12.5 }}>
-        <InfoMore id="ck-ot-col" label="คอลัมน์ จองรถ OT / งานที่ทำ คืออะไร">
+        <InfoMore id="ck-ot-col" label={tr('คอลัมน์ จองรถ OT / งานที่ทำ คืออะไร')}>
           {shiftInfo.shift === 'night'
-            ? <>คอลัมน์ <strong>จองรถ OT / งานที่ทำ</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} พร้อมระบุงานที่จะทำ เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>
-            : <>ติ๊ก <strong>OT</strong> แล้วเลือก <strong>งานที่ทำ</strong> ในคอลัมน์ขวา เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>}
+            ? <>{tr('คอลัมน์')} <strong>{tr('จองรถ OT / งานที่ทำ')}</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} {tr('พร้อมระบุงานที่จะทำ เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)')}</>
+            : <>{tr('ติ๊ก')} <strong>OT</strong> {tr('แล้วเลือก')} <strong>{tr('งานที่ทำ')}</strong> {tr('ในคอลัมน์ขวา เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)')}</>}
         </InfoMore>
         {!!extraAdvanceDates.length && (
-          <span data-warn="1" style={{ color: 'var(--amber)' }}>พบวันหยุดต่อเนื่อง <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> — เพิ่มช่องจองรถล่วงหน้าให้แล้ว (เลือก OT 8 หรือ 10 ชม.)</span>
+          <span data-warn="1" style={{ color: 'var(--amber)' }}>{tr('พบวันหยุดต่อเนื่อง')} <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> {tr('— เพิ่มช่องจองรถล่วงหน้าให้แล้ว (เลือก OT 8 หรือ 10 ชม.)')}</span>
         )}
       </div>}
 
       {noSchedule && (
-        <NoticeBar tone="warn" style={{ marginBottom: 14 }}>ยังไม่มีตาราง shift สำหรับวันนี้ — ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></NoticeBar>
+        <NoticeBar tone="warn" style={{ marginBottom: 14 }}>{tr('ยังไม่มีตาราง shift สำหรับวันนี้ — ไปกำหนดได้ที่หน้า')} <strong>{tr('ตารางกะ')}</strong></NoticeBar>
       )}
 
       {/* 🔴 "บางคนกะไม่ขึ้น" ต้องบอกว่าใคร/ไลน์ไหน (2026-10-13 · feedback หน้างาน PD2)
@@ -1908,18 +1906,18 @@ export default function Checkin() {
           ⚠️ คนกลุ่มนี้ **ยังอยู่ในลิสต์ให้เช็คชื่อได้ตามปกติ** — คำเตือนนี้อธิบายเหตุ ไม่ได้บล็อกงาน */}
       {!noSchedule && noShiftRows.length > 0 && (
         <NoticeBar tone="bad" style={{ marginBottom: 14 }}>
-          <strong>{noShiftPeople} คนยังไม่มีกะ</strong> — ตารางกะสัปดาห์นี้ยังไม่มีแถวของไลน์เหล่านี้
+          <strong>{noShiftPeople} {tr('คนยังไม่มีกะ')}</strong> — ตารางกะสัปดาห์นี้ยังไม่มีแถวของไลน์เหล่านี้
           (และไม่มีไลน์แม่ให้ตกทอด) · เช็คชื่อได้ตามปกติ แต่กะจะว่างและกำลังคนของไลน์นับเป็น 0
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {noShiftRows.map(([nm, n]) => (
               <span key={nm} style={{
                 padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11.5, fontWeight: 700,
                 background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--red)',
-              }}>{nm} · {n} คน</span>
+              }}>{nm} · {n} {tr('คน')}</span>
             ))}
           </div>
           <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
-            แก้ที่หน้า <strong>ตารางกะ</strong> — กด <b>+ กำหนด</b> ที่ไลน์นั้น (ไลน์ที่สร้างใหม่หลังเติมตารางล่วงหน้าไปแล้ว จะไม่มีแถวของตัวเอง)
+            แก้ที่หน้า <strong>{tr('ตารางกะ')}</strong> {tr('— กด')} <b>{tr('+ กำหนด')}</b> ที่ไลน์นั้น (ไลน์ที่สร้างใหม่หลังเติมตารางล่วงหน้าไปแล้ว จะไม่มีแถวของตัวเอง)
           </div>
         </NoticeBar>
       )}
@@ -1937,10 +1935,10 @@ export default function Checkin() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>🪪</div>
-            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>สแกนบัตรเช็คชื่อในนาม</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || 'ไม่ทราบชื่อ'}</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>{tr('สแกนบัตรเช็คชื่อในนาม')}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || tr('ไม่ทราบชื่อ')}</div>
             <div style={{ fontSize: 12.5, color: 'var(--amber)', marginTop: 10, marginBottom: 18, lineHeight: 1.5 }}>
-              ยิงบัตร 1 ใบ = <b>บันทึก “มางาน” ลงระบบทันที</b> ไม่ต้องกด 💾 บันทึกอีก<br />
+              ยิงบัตร 1 ใบ = <b>{tr('บันทึก “มางาน” ลงระบบทันที')}</b> {tr('ไม่ต้องกด 💾 บันทึกอีก')}<br />
               ({shiftInfo.workDateStr} · {shiftInfo.label})
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
@@ -1953,16 +1951,16 @@ export default function Checkin() {
         </div>
       )}
       {badgeScanOpen && (
-        <ScanModal title="สแกนบัตรพนักงาน" closeOnHit={false}
+        <ScanModal title={tr('สแกนบัตรพนักงาน')} closeOnHit={false}
           hint={`ส่องกล้องที่ QR บนบัตร หรือกดปุ่มสแกนข้างเครื่อง — ยิงทีละใบได้ต่อเนื่อง · ทุกใบบันทึกลงระบบทันที (ในนาม ${fullName || 'ไม่ทราบชื่อ'})`}
           onScan={onBadgeScan} onClose={() => setBadgeScanOpen(false)}
           footer={<div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>
             {/* 🔴 ตัวเลขต้องตอบ "รอบนี้ยิงไปกี่ใบแล้ว" — ของเดิมโชว์ยอดมางานรวม (รวมที่บันทึกไว้ก่อนหน้า)
                 ยิงเพิ่ม 1 ใบ เลขขยับ 108→109 กลืนไปกับของเดิม = มองไม่ออกว่าใบนี้ติดหรือไม่ติด
                 และต่อท้ายว่า "ยังไม่ได้บันทึก" ตายตัวทั้งที่ตอนนี้บันทึกให้แล้ว = จอโกหก */}
-            <span style={{ color: 'var(--green)' }}>บันทึกแล้วรอบนี้ {scanSaved.length} คน</span>
+            <span style={{ color: 'var(--green)' }}>{tr('บันทึกแล้วรอบนี้')} {scanSaved.length} {tr('คน')}</span>
             <span style={{ color: 'var(--muted)', fontWeight: 600 }}>
-              {' · '}มางานรวม {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน
+              {' · '}{tr('มางานรวม')} {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน
             </span>
             {ckPendingCount > 0 && (
               <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: 'var(--amber)' }}>
@@ -1989,11 +1987,11 @@ export default function Checkin() {
               <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('หมวก')}</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('รองเท้า')}</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('ถุงมือ')}</th>
-              <th style={{ textAlign: 'center', minWidth: 72 }} title="OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)">OT</th>
+              <th style={{ textAlign: 'center', minWidth: 72 }} title={tr('OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)')}>OT</th>
               <th style={{ minWidth: 220 }}>{tr('การลา')}</th>
               <th style={{ minWidth: 140 }}>{tr('หมายเหตุ')}</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>{tr('สถานะ')}</th>
-              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">{tr('จองรถ OT / งานที่ทำ')}</th>
+              <th style={{ textAlign: 'center', minWidth: 150 }} title={tr('จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)')}>{tr('จองรถ OT / งานที่ทำ')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2015,7 +2013,7 @@ export default function Checkin() {
           เรียก setConfirmSave(true) ตัวเดียวกับปุ่มบนหัว ⇒ ผ่าน popup ยืนยัน "บันทึกในนามใคร" เหมือนเดิม */}
       {isMobile && displayed.length > 0 && (
         <div className="m-savebar">
-          <span className="m-savebar-sum">มา {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน</span>
+          <span className="m-savebar-sum">{tr('มา')} {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} {tr('คน')}</span>
           <button type="button" onClick={() => setConfirmSave(true)} disabled={isSaving || previewNight || !canRecord}>
             {isSaving ? tr('กำลังบันทึก...') : previewNight ? tr('ปิด Preview ก่อน') : !canRecord ? tr('ไม่มีสิทธิ์บันทึก') : tr('บันทึก')}
           </button>
@@ -2029,8 +2027,8 @@ export default function Checkin() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
-            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
-            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || 'ไม่ทราบชื่อ'}</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>{tr('บันทึกเช็คชื่อในนาม')}</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || tr('ไม่ทราบชื่อ')}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 18 }}>
               {roleLabel(role)} · {myScopeLabel}<br />
               ระบบจะลงว่าคนนี้เป็นผู้เช็คชื่อ — ถ้าไม่ใช่ตัวคุณ ให้สลับผู้ใช้ก่อน
@@ -2044,11 +2042,11 @@ export default function Checkin() {
               background: 'var(--bg2)', border: '1px solid var(--border)',
               borderRadius: 'var(--r-md)', padding: '9px 11px', marginBottom: 14,
             }}>
-              <b style={{ color: 'var(--accent2)' }}>ℹ️ เช็คชื่อไม่ใช่การเปิดกะ</b><br />
-              ระบบ<b>ไม่เปิดกะให้อัตโนมัติ</b> — <b>เปิดกะ = สำหรับไลน์ที่จะลงข้อมูลการผลิตเท่านั้น</b>
+              <b style={{ color: 'var(--accent2)' }}>{tr('ℹ️ เช็คชื่อไม่ใช่การเปิดกะ')}</b><br />
+              ระบบ<b>{tr('ไม่เปิดกะให้อัตโนมัติ')}</b> — <b>เปิดกะ = สำหรับไลน์ที่จะลงข้อมูลการผลิตเท่านั้น</b>
               (ยอดผลิต · Downtime · ของเสีย · OEE)<br />
-              ไลน์ที่ต้องลงข้อมูลผลิต ให้ไปกด <b>“เปิดกะ” ที่หน้า Daily Report</b> ของไลน์ตัวเอง ·
-              ไลน์ที่ใช้แค่เช็คชื่อ <b>ไม่ต้องเปิดกะ</b>
+              ไลน์ที่ต้องลงข้อมูลผลิต ให้ไปกด <b>{tr('“เปิดกะ” ที่หน้า Daily Report')}</b> ของไลน์ตัวเอง ·
+              ไลน์ที่ใช้แค่เช็คชื่อ <b>{tr('ไม่ต้องเปิดกะ')}</b>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
@@ -2071,7 +2069,7 @@ export default function Checkin() {
       {showOtBookModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>จองรถ OT</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>{tr('จองรถ OT')}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               เลือกวันที่/กะ/ไลน์/ทีมได้อิสระ ไม่ต้องรอเช็คชื่อกะนั้น — เหมาะกับกรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ (เช่น จันทร์แรกหลังสลับกะ)
             </div>
@@ -2119,11 +2117,11 @@ export default function Checkin() {
 
             <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 14 }}>
               {otBookLoading ? (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด...')}</div>
               ) : !otBookLineId ? (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>เลือกไลน์ก่อน</div>
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('เลือกไลน์ก่อน')}</div>
               ) : otBookEmpOptions.length === 0 ? (
-                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่พบพนักงานในไลน์/ทีมนี้</div>
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่พบพนักงานในไลน์/ทีมนี้')}</div>
               ) : otBookEmpOptions.map((emp, i) => (
                 <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderTop: i ? '1px solid var(--border)' : 'none' }}>
                   <input type="checkbox" checked={!!otBookSelections[emp.id]}
@@ -2142,7 +2140,7 @@ export default function Checkin() {
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
                       {isHolidayDate(otBookDate) && (
                         <select value={otBookPeriods[emp.id] || ''} onChange={e => setOtBookPeriods(prev => ({ ...prev, [emp.id]: e.target.value }))}
-                          title="วันหยุด — เลือกช่วงเวลา OT"
+                          title={tr('วันหยุด — เลือกช่วงเวลา OT')}
                           style={{ fontSize: 11, padding: '4px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--amber-line)', background: 'var(--bg)', color: 'var(--amber)', fontWeight: 700, width: 150 }}>
                           <option value="">{tr('— ช่วงเวลา OT —')}</option>
                           {holidayPeriodsForShift(otBookShift).map(p => (
@@ -2176,7 +2174,7 @@ export default function Checkin() {
       {showExport && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>ส่งออกฟอร์มกระดาษ (PDF)</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>{tr('ส่งออกฟอร์มกระดาษ (PDF)')}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               สร้างฟอร์ม 2 หน้า ตามฟอร์มกระดาษจริงที่ใช้หน้างาน:<br />
               1) ใบรายงานการปฏิบัติงานชดเชย/ทำ OT &nbsp; 2) บันทึกการมาทำงาน

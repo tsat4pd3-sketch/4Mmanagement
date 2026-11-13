@@ -120,7 +120,7 @@ function ThumbMap({ imageUrl, alt, markers }) {
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, background: 'rgba(0,0,0,0.6)',
                   }}>⚙️</div>
-                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'var(--red-line)', borderRadius: 'var(--r-xs)', padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</div>
+                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'var(--red-line)', borderRadius: 'var(--r-xs)', padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(m.label)}</div>
                 </div>
               ) : (
                 <div style={{ position: 'relative' }} title={m.personAlarm?.label || m.names}>
@@ -1036,7 +1036,7 @@ export default function Dashboard({ view = 'timeline' }) {
               onChange={s => changeSection(s || 'all')} only={sections} width={280} />
           )}
           {/* Shift toggle = <Segmented> มาตรฐาน (06/11 · เดิมวาดเอง มุม 7px) · สีกะอยู่ที่ป้ายใต้ชื่อหน้าแทน */}
-          <Segmented label="กะ" value={selectedShift} onChange={setSelectedShift}
+          <Segmented label={tr('กะ')} value={selectedShift} onChange={setSelectedShift}
             options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
           {/* Date picker */}
           <div style={{
@@ -1163,7 +1163,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 textTransform: 'uppercase', letterSpacing: '0.06em',
               }}>
                 <span aria-hidden="true" style={{ fontSize: T(isWide ? 17 : 15, 24), flexShrink: 0 }}>{kpi.icon}</span>
-                <span style={{ minWidth: 0 }}>{kpi.label}</span>
+                <span style={{ minWidth: 0 }}>{tr(kpi.label)}</span>
               </div>
               <div style={{
                 fontSize: numSize, fontWeight: 800, fontFamily: 'var(--font-display)',
@@ -1215,7 +1215,7 @@ export default function Dashboard({ view = 'timeline' }) {
                   <span style={{ fontSize: T(13, 20), color: 'var(--text2)' }}>{d.line_name}</span>
                   <span style={{ fontSize: T(13, 20), fontWeight: 700, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
-                    <span style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
+                    <span style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)' }}>{tr('⏱ หยุดมาแล้ว')} {fmtDtElapsed(elapsed)}</span>
                   )}
                 </div>
               );
@@ -1306,7 +1306,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 6px ${color}` }} />
                           {line.lineAlerts > 0 && (
                             <div onClick={() => setAndonLine({ title: line.name, names: cardNames })}
-                              title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
+                              title={tr('คลิกดูรายละเอียด 4M ที่แจ้งเตือน')}
                               style={{
                                 fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                 background: cardFMPending ? 'var(--red-dim)' : 'var(--amber-dim)',
@@ -1318,7 +1318,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           )}
                           {cardDT.length > 0 && (
                             <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: line.name, names: cardNames })}
-                              title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
+                              title={tr('คลิกดูรายละเอียดเครื่องจักรที่ Downtime')}
                               style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-md)', color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
                               DT {cardDT.length}
                             </div>
@@ -1329,7 +1329,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         <span style={{ fontSize: T(isWide ? 42 : 34, 60), fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
-                        <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} คน{line._hasChildren && ' (รวมย่อย)'}</span>
+                        <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} {tr('คน')}{line._hasChildren && ' (รวมย่อย)'}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
@@ -1367,12 +1367,12 @@ export default function Dashboard({ view = 'timeline' }) {
                       borderRadius: 'var(--r-lg)', padding: isWide ? '14px 16px' : '12px 14px',
                     }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                        <span>↳ ไลน์ย่อยที่มีคนเข้าจุดงาน</span>
+                        <span>{tr('↳ ไลน์ย่อยที่มีคนเข้าจุดงาน')}</span>
                         <span style={{ color: 'var(--accent)' }}>{line.name}</span>
                         <span>({childCards.length}/{line._children.length})</span>
                       </div>
                       {childCards.length === 0 ? (
-                        <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>ยังไม่มีคนถูกจัดลงจุดงานของไลน์ย่อย — สรุปกำลังคนรวมดูที่ตัวเลขไลน์แม่ด้านบน</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>{tr('ยังไม่มีคนถูกจัดลงจุดงานของไลน์ย่อย — สรุปกำลังคนรวมดูที่ตัวเลขไลน์แม่ด้านบน')}</div>
                       ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: isUltra ? 'repeat(auto-fill, minmax(180px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(170px, 1fr))' : 'repeat(auto-fill, minmax(150px, 1fr))', gap: isMobile ? 8 : 12 }}>
                         {childCards.map(({ cs, pl }) => {
@@ -1385,14 +1385,14 @@ export default function Dashboard({ view = 'timeline' }) {
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
+                                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tr('ไลน์ย่อย')}</span>
                                   <div style={{ fontSize: isWide ? 15 : 14, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: cColor, boxShadow: `0 0 6px ${cColor}` }} />
                                   {cs.lineAlerts > 0 && (
                                     <div onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
-                                      title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
+                                      title={tr('คลิกดูรายละเอียด 4M ที่แจ้งเตือน')}
                                       style={{
                                         fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                         background: csFMPending ? 'var(--red-dim)' : 'var(--amber-dim)',
@@ -1404,7 +1404,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                   )}
                                   {csDT.length > 0 && (
                                     <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
-                                      title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
+                                      title={tr('คลิกดูรายละเอียดเครื่องจักรที่ Downtime')}
                                       style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-md)', color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
                                       DT {csDT.length}
                                     </div>
@@ -1413,7 +1413,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                                 <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{pl.people}</span>
-                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>คน · {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>{tr('คน ·')} {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
                               </div>
                               <MiniBar value={pl.staffed} max={pl.total || 1} color={cColor} />
                               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
@@ -1511,8 +1511,8 @@ export default function Dashboard({ view = 'timeline' }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                 Heijunka Board — ไทม์ไลน์การผลิต
-                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>ย้อนหลัง {boardDate}</span>}
-                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>ล่วงหน้า {boardDate}</span>}
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>{tr('ย้อนหลัง')} {boardDate}</span>}
+                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>{tr('ล่วงหน้า')} {boardDate}</span>}
               </div>
               <div className="tv-hide" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
@@ -1538,7 +1538,7 @@ export default function Dashboard({ view = 'timeline' }) {
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 'var(--r-xs)', background: toneDim(item.t), border: `1.5px solid ${toneVar(item.t)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T(11, 16), fontWeight: 800, color: toneVar(item.t), flexShrink: 0 }}>{item.icon}</span>
-                  <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                  <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{tr(item.label)}</span>
                 </div>
               ))}
             </div>
@@ -1655,7 +1655,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         return (
                           <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
                             style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)' }}>
-                            ⬜ ไม่รู้ {unknown} น. ({Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
+                            ⬜ ไม่รู้ {unknown} {tr('น. (')}{Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
                           </span>
                         );
                       })()}
@@ -1916,7 +1916,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 <div style={{ fontSize: T(11, 16), color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
-                                  {isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
+                                  {isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> {tr('🔴ล้น+')}{(overMs / 3600000).toFixed(1)}{tr('ชม.')}</span>}
                                 </div>
                               </div>
                               )}
@@ -1937,7 +1937,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             )}
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                             {tailWidthPct > 0 && (
-                              <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
+                              <div title={tr('ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่')}
                                 style={{
                                   position: 'absolute', top: 4, bottom: 4,
                                   left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
@@ -2129,8 +2129,8 @@ export default function Dashboard({ view = 'timeline' }) {
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
-                            <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                            <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                            <span>{tr('กะเช้า')}{isMobile ? '' : ' (แถบบน)'}</span>
+                            <span>{tr('กะดึก')}{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
                           {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                           {(() => {
@@ -2164,7 +2164,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} {tr('พาร์ทของไลน์นี้')}{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
                           </div>
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
@@ -2176,7 +2176,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)',
                             }}>
                             <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
-                            <span>✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) · {manualRows.length} พาร์ท</span>
+                            <span>{tr('✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) ·')} {manualRows.length} {tr('พาร์ท')}</span>
                             <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
                               {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
                             </span>
@@ -2219,8 +2219,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: T(15, 26), fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                    <span style={{ fontSize: T(11, 18), color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                    {delayed > 0 && <span style={{ fontSize: T(11, 18), color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    <span style={{ fontSize: T(11, 18), color: 'var(--muted)' }}>/{rowDemand} {tr('ชิ้น ·')} {doneCount}/{row.cards.length}{tr('ใบ')}</span>
+                                    {delayed > 0 && <span style={{ fontSize: T(11, 18), color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}{tr('ใบ')}</span>}
                                     {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: 'var(--green)', fontWeight: 700 }}>● Live</span>}
                                   </div>
                                   {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
@@ -2230,8 +2230,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                     — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
                                 {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact size={T(11, 16)} />}
                                     {finOver && (
-                                      <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--red)' }}>🔴 ล้นวันงาน</span>
+                                      <span title={tr('งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต')}
+                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--red)' }}>{tr('🔴 ล้นวันงาน')}</span>
                                     )}
                                   </div>
                                 </div>
@@ -2272,11 +2272,11 @@ export default function Dashboard({ view = 'timeline' }) {
                           {multi && (
                             <div style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
                               {childName}
-                              {emptyCount > 0 && <span style={{ fontSize: T(11, 17), fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
+                              {emptyCount > 0 && <span style={{ fontSize: T(11, 17), fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} {tr('กะไม่มีแผน')}</span>}
                             </div>
                           )}
                           {active.length === 0 && (
-                            <div style={{ fontSize: T(13, 20), color: 'var(--muted)' }}>ไม่มีแผนผลิต</div>
+                            <div style={{ fontSize: T(13, 20), color: 'var(--muted)' }}>{tr('ไม่มีแผนผลิต')}</div>
                           )}
                           {active.map(s => {
                       const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
@@ -2290,10 +2290,10 @@ export default function Dashboard({ view = 'timeline' }) {
                         <div key={s.id} style={{ minWidth: 180 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
                             <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}</span>
+                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{s.shift === 'day' ? tr('☀️ กะเช้า') : tr('🌙 กะดึก')}</span>
                               <span style={{ fontSize: T(20, 30), fontWeight: 900, color: barColor, lineHeight: 1 }}>{s.actual}</span>
-                              <span style={{ fontSize: T(13, 19), color: 'var(--muted)' }}>/ {s.demand} ชิ้น</span>
-                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{doneCount}/{s.orders.length} ใบ</span>
+                              <span style={{ fontSize: T(13, 19), color: 'var(--muted)' }}>/ {s.demand} {tr('ชิ้น')}</span>
+                              <span style={{ fontSize: T(12, 18), color: 'var(--muted)' }}>{doneCount}/{s.orders.length} {tr('ใบ')}</span>
                               {(() => {
                                 const prods = [...new Set(s.orders.map(o => nameByMatNo[o.mat_no] || o.mat_no).filter(Boolean))];
                                 if (!prods.length) return null;
@@ -2305,7 +2305,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               })()}
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              {s.target > 0 && <span style={{ fontSize: T(12, 18), color: tpct >= 100 ? 'var(--green)' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
+                              {s.target > 0 && <span style={{ fontSize: T(12, 18), color: tpct >= 100 ? 'var(--green)' : 'var(--muted)' }}>{tr('เป้า')} {tpct.toFixed(0)}%</span>}
                               <span style={{ fontSize: T(15, 22), fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
                               {oee && <span style={{ fontSize: T(15, 22), fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
                             </div>
@@ -2368,12 +2368,12 @@ export default function Dashboard({ view = 'timeline' }) {
             </div>
             {visibleLayouts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
-                ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>ตั้งค่าผังไลน์</strong>
+                ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>{tr('ตั้งค่าผังไลน์')}</strong>
               </div>
             ) : floorCards.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
-                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>จัดการไลน์ผลิต</strong>
-                <div style={{ fontSize: T(12, 18), marginTop: 6, opacity: 0.7 }}>(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)</div>
+                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>{tr('จัดการไลน์ผลิต')}</strong>
+                <div style={{ fontSize: T(12, 18), marginTop: 6, opacity: 0.7 }}>{tr('(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)')}</div>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : floorBig ? 'repeat(auto-fit, minmax(min(100%, 480px), 1fr))' : isUltra ? 'repeat(3, 1fr)' : '1fr 1fr', gap: isWide ? 14 : 12 }}>
@@ -2423,9 +2423,9 @@ export default function Dashboard({ view = 'timeline' }) {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 'var(--r-xs)' }}>{presentPeople}</span>
+                          <span title={tr('จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)')} style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 'var(--r-xs)' }}>{presentPeople}</span>
                           {totalStations > 0 && (
-                            <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
+                            <span title={tr('จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้')}
                               style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? 'var(--green)' : 'var(--amber)', background: allStaffed ? 'var(--green-dim)' : 'var(--amber-dim)', padding: '2px 6px', borderRadius: 'var(--r-xs)' }}>
                               {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
                             </span>
@@ -2451,8 +2451,8 @@ export default function Dashboard({ view = 'timeline' }) {
                 {visibleFourMLogs.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '48px 20px' }}>
                     <div style={{ fontSize: T(28, 40), marginBottom: 8 }}>✅</div>
-                    <div style={{ fontSize: T(15, 24), color: 'var(--muted)' }}>ไม่มีการแจ้งเตือน 4M</div>
-                    <div style={{ fontSize: T(13, 20), color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>สถานะปกติ</div>
+                    <div style={{ fontSize: T(15, 24), color: 'var(--muted)' }}>{tr('ไม่มีการแจ้งเตือน 4M')}</div>
+                    <div style={{ fontSize: T(13, 20), color: 'var(--muted)', marginTop: 4, opacity: 0.6 }}>{tr('สถานะปกติ')}</div>
                   </div>
                 ) : visibleFourMLogs.map((log, i) => {
                   const meta = getCatMeta(log.category);
@@ -2521,9 +2521,9 @@ export default function Dashboard({ view = 'timeline' }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span className={level === 'red' ? 'dt-alarm-icon' : undefined} style={{ fontSize: 26 }}>{LV.icon}</span>
                   <div>
-                    <div style={{ fontSize: 19, fontWeight: 900, color: LV.color, fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>{LV.label}</div>
+                    <div style={{ fontSize: 19, fontWeight: 900, color: LV.color, fontFamily: 'var(--font-display)', letterSpacing: '0.04em' }}>{tr(LV.label)}</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{andonLine.title}</div>
-                    <div style={{ fontSize: 12, color: LV.color, fontWeight: 700, marginTop: 2 }}>{LV.desc}</div>
+                    <div style={{ fontSize: 12, color: LV.color, fontWeight: 700, marginTop: 2 }}>{tr(LV.desc)}</div>
                   </div>
                 </div>
                 <button onClick={() => setAndonLine(null)}
@@ -2535,7 +2535,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
               </div>
               {dts.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>{tr('ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน')}</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                   {dts.map(d => {
@@ -2550,10 +2550,10 @@ export default function Dashboard({ view = 'timeline' }) {
                         <span style={{ fontSize: 16, fontWeight: 900, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{d.machine_no || '—'}</span>
                         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                         <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
-                        <span style={{ fontSize: 13, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
+                        <span style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('เริ่ม')} {fmtTime(d.started_at || d.created_at)}</span>
                         {ongoing
-                          ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)' }}>⏱ ค้างมาแล้ว {elapsed} นาที</span>)
-                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
+                          ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)' }}>{tr('⏱ ค้างมาแล้ว')} {elapsed} {tr('นาที')}</span>)
+                          : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ปิดรายการแล้ว (เพิ่งบันทึก)')}</span>}
                         {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>{d.detail}</span>}
                       </div>
                     );
@@ -2576,10 +2576,10 @@ export default function Dashboard({ view = 'timeline' }) {
                         return (
                           <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
                             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>{d.machine_no || '—'}</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || 'หยุดตามแผน'}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || tr('หยุดตามแผน')}</span>
                             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.line_name}</span>
-                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
-                            {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} นาที</span>}
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('เริ่ม')} {fmtTime(d.started_at || d.created_at)}</span>
+                            {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} {tr('นาที')}</span>}
                           </div>
                         );
                       })}
@@ -2606,14 +2606,14 @@ export default function Dashboard({ view = 'timeline' }) {
                       คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
                     </div>
                     {types.length === 0 ? (
-                      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีของเสียวันนี้ 👍</div>
+                      <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>{tr('ไม่มีของเสียวันนี้ 👍')}</div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {types.map(t => (
                           <div key={t.name} style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)', minWidth: 0, flex: 1 }}>{t.name}</span>
-                              <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} {tr('ชิ้น')}</span>
                             </div>
                             {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>{t.notes.join(' · ')}</div>}
                           </div>
@@ -2629,7 +2629,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 4M Changes · {fms.length} รายการ
               </div>
               {fms.length === 0 ? (
-                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>ไม่มีรายการ 4M ของวันนี้</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>{tr('ไม่มีรายการ 4M ของวันนี้')}</div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {fms.map(f => (
@@ -2901,12 +2901,12 @@ export default function Dashboard({ view = 'timeline' }) {
                   <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, background: lv.bg, borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
                     <div style={{ width: 9, height: 9, borderRadius: '50%', background: lv.color, boxShadow: `0 0 4px ${lv.color}` }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{lv.min}</span>
-                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{lv.label}</span>
+                    <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr(lv.label)}</span>
                   </div>
                 ))}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 'var(--r-md)', padding: '3px 8px', background: 'var(--bg3)' }}>
                   <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--muted)' }} />
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่มีข้อกำหนด')}</span>
                 </div>
               </div>
             </div>
@@ -2960,7 +2960,7 @@ function AttendCol({ title, tone = 'info', items, absent }) {
           </div>
         ))}
         {items.length === 0 && (
-          <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', padding: '16px 0' }}>ไม่มีข้อมูล</div>
+          <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', padding: '16px 0' }}>{tr('ไม่มีข้อมูล')}</div>
         )}
       </div>
     </div>

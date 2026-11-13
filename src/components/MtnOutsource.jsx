@@ -118,25 +118,25 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
   return (
     <div style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
-        <b style={{ fontSize: 12.5 }}>🔧 ของที่ถอดออกมา ส่งซ่อมนอก</b>
+        <b style={{ fontSize: 12.5 }}>{tr('🔧 ของที่ถอดออกมา ส่งซ่อมนอก')}</b>
         <span style={{ fontSize: 11.5, fontWeight: 600, color: pending.length ? 'var(--amber)' : 'var(--muted)' }}>
           ยังอยู่ข้างนอก {pending.length}
         </span>
-        {!!done.length && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· จบแล้ว {done.length}</span>}
+        {!!done.length && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('· จบแล้ว')} {done.length}</span>}
         {canEdit && <button onClick={() => setAdding(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{adding ? tr('ปิดฟอร์ม') : tr('+ ส่งของไปซ่อม')}</button>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 6 }}>
-        ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้ = <b>ปิดใบ MO ได้เลย ไม่ต้องรอของ</b> ·
+        ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้ = <b>{tr('ปิดใบ MO ได้เลย ไม่ต้องรอของ')}</b> ·
         ตัวที่ถอดออกมาส่งซ่อมแล้วบันทึกไว้ตรงนี้ · <b>กดรับของเข้า = เข้าสต็อกอะไหล่ให้อัตโนมัติ</b>
       </div>
-      {err && <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>⚠ โหลดรายการส่งซ่อมนอกไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
+      {err && <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{tr('⚠ โหลดรายการส่งซ่อมนอกไม่สำเร็จ:')} {err} {tr('— ตัวนับข้างบนอาจไม่ครบ')}</div>}
 
       {adding && canEdit && (
         <AddForm parts={parts} fullName={fullName} orderId={orderId}
           onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load(); }} />
       )}
 
-      {!rows.length && !err && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการส่งซ่อมนอกในใบนี้</div>}
+      {!rows.length && !err && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ยังไม่มีรายการส่งซ่อมนอกในใบนี้')}</div>}
 
       {rows.map(r => {
         const state = outsourceState(r);
@@ -154,7 +154,7 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
               )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-              {!r.part_id && <span style={{ color: 'var(--amber)' }}>ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก) · </span>}
+              {!r.part_id && <span style={{ color: 'var(--amber)' }}>{tr('ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก) ·')} </span>}
               ส่ง {fmtDateTime(r.sent_at)}{r.sent_by ? ` · ${r.sent_by}` : ''}
               {r.supplier ? ` · ร้าน ${r.supplier}` : ''}
               {r.pr_no ? ` · PR ${r.pr_no}` : ''}
@@ -179,12 +179,12 @@ function BackForm({ row, busy, onCancel, onConfirm }) {
   const short = num(q) != null && num(q) < Number(row.qty || 0);
   return (
     <div style={{ marginTop: 6, padding: '7px 9px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>รับกลับเข้าสต็อก — {row.part_name}</div>
+      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>{tr('รับกลับเข้าสต็อก —')} {row.part_name}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
         <label style={lbl}>{tr('จำนวนที่รับกลับ')}<input type="number" min="0" value={q} onChange={e => setQ(e.target.value)} style={inp} /></label>
         <label style={lbl}>{tr('หมายเหตุ')}<input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('เช่น ซ่อมแล้วใช้ได้')} style={inp} /></label>
       </div>
-      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>⚠ น้อยกว่าที่ส่งไป ({row.qty}) — ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน</div>}
+      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{tr('⚠ น้อยกว่าที่ส่งไป (')}{row.qty}) — ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
         <button disabled={busy} onClick={() => onConfirm(row, q, note)} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? tr('กำลังบันทึก…') : tr('ยืนยันรับเข้าสต็อก')}</button>
         <button disabled={busy} onClick={onCancel} style={btnGhost}>{tr('ยกเลิก')}</button>
@@ -242,7 +242,7 @@ function AddForm({ parts, fullName, orderId, onCancel, onDone }) {
         <label style={lbl}>{tr('นัดรับกลับ')}<input type="date" value={f.expected_at} onChange={e => set('expected_at', e.target.value)} style={inp} /></label>
       </div>
       <div style={{ marginTop: 6 }}>
-        <div style={lbl}>ส่งไปร้านไหน</div>
+        <div style={lbl}>{tr('ส่งไปร้านไหน')}</div>
         <SupplierSelect value={f.supplier} onChange={res => set('supplier', res.supplier || '')}
           placeholder={tr('ค้นชื่อร้าน/ผู้รับจ้าง — พิมพ์เองได้')} inputStyle={{ background: 'var(--bg)' }} />
       </div>

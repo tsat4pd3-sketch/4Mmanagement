@@ -111,7 +111,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         ✅ ไม่มีเครื่องที่ระบบสงสัยว่าเป็นจิ๊ก/ฟิกเจอร์แล้ว
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
           ระบบดูจากเลขเครื่อง (JHYD/GPHYD/JIG) · ชื่อ (JIG/GRIPPER/CENTERING/MARKING/POKA-YOKE) และการวางบนผังไลน์
-          — ถ้ามีตัวที่ระบบไม่รู้จัก ให้เปลี่ยนชนิดรายตัวที่ <b>ฐานข้อมูลเครื่องจักร</b>
+          — ถ้ามีตัวที่ระบบไม่รู้จัก ให้เปลี่ยนชนิดรายตัวที่ <b>{tr('ฐานข้อมูลเครื่องจักร')}</b>
         </div>
       </div>
     );
@@ -121,7 +121,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
                     borderRadius: 'var(--r-md)', padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
-        <b>⚠️ ระบบ “เสนอ” เท่านั้น — คนเป็นคนตัดสิน</b><br />
+        <b>{tr('⚠️ ระบบ “เสนอ” เท่านั้น — คนเป็นคนตัดสิน')}</b><br />
         ชื่ออย่าง <code>Welding</code> / <code>Tower load</code> / <code>MAGAZINE</code> แยกไม่ออกว่าเป็นจิ๊กหรือเครื่องจักร
         ระบบจึงไม่เปลี่ยนให้เอง · ติ๊กเฉพาะตัวที่ช่างยืนยันว่าเป็นจิ๊ก/ฟิกเจอร์จริง
         <div style={{ marginTop: 6, color: 'var(--muted)' }}>
@@ -138,7 +138,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ" />
         <span className="spacer" />
         {hiddenCount > 0 && (
-          <span className="filter-count">ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
+          <span className="filter-count">{tr('ซ่อนอยู่')} {hiddenCount} {tr('รายการ (ไม่ตรงตัวกรอง)')}</span>
         )}
         <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
@@ -183,7 +183,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
 
       {canEdit && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12.5 }}>ตั้งเป็น:</span>
+          <span style={{ fontSize: 12.5 }}>{tr('ตั้งเป็น:')}</span>
           <select value={kind} onChange={e => setKind(e.target.value)}
                   style={{ width: 200, padding: '7px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)',
                            background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>

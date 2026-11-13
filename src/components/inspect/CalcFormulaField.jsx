@@ -26,12 +26,12 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
-              <select value={c?.a || ''} onChange={e => set({ a: e.target.value })} style={sel} aria-label="จุด A">
+              <select value={c?.a || ''} onChange={e => set({ a: e.target.value })} style={sel} aria-label={tr('จุด A')}>
                 <option value="">{tr('— จุด A —')}</option>
                 {options.map(o => <option key={o.key} value={o.key}>{tr(o.label)}</option>)}
               </select>
               <span style={{ fontWeight: 800, fontSize: 14 }}>−</span>
-              <select value={c?.b || ''} onChange={e => set({ b: e.target.value })} style={sel} aria-label="จุด B">
+              <select value={c?.b || ''} onChange={e => set({ b: e.target.value })} style={sel} aria-label={tr('จุด B')}>
                 <option value="">{tr('— จุด B —')}</option>
                 {options.map(o => <option key={o.key} value={o.key}>{tr(o.label)}</option>)}
               </select>

@@ -17,6 +17,7 @@ import useProducts from '../utils/useProducts';
 import useChildParts from '../utils/useChildParts';
 import { buildMatIndex, matInfo } from '../utils/matLabel';
 
+import { tr } from '../utils/i18n';
 /* index ผูกกับ "ก้อน products" + "ก้อน parts_master" ที่ cachedMaster คืนมา (reference เดียวทั้งแอป)
    ⇒ สร้างจริงครั้งเดียว ต่อให้ component นี้ถูก mount เป็นร้อยตัวในลิสต์เดียว
    ใช้ WeakMap ซ้อน 2 ชั้น (products → childParts → index) เพราะคีย์เป็น "อาร์เรย์ 2 ก้อน"
@@ -75,7 +76,7 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   return (
     <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: oneLine ? 'nowrap' : 'wrap', minWidth: 0, ...style }}>
       {head && (
-        <span title={headIsCode ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+        <span title={headIsCode ? tr('Part No. ของลูกค้า') : tr('ชื่อชิ้นงาน / สเปควัตถุดิบ')}
           style={{ fontSize: size, fontWeight: 700, color: 'var(--text2)', minWidth: 0,
             ...(headIsCode
               ? { fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }
@@ -89,7 +90,7 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
         </span>
       )}
       {/* MAT SAP อยู่ท้าย แต่ **ห้ามตัดทิ้ง/ห้ามตัดครึ่ง** — เป็นเลขบนบาร์โค้ดกล่อง/บัตรคัมบังที่ด่านสแกนเทียบ */}
-      <span title="เลข MAT (SAP)"
+      <span title={tr('เลข MAT (SAP)')}
         style={{ flexShrink: 0, whiteSpace: 'nowrap', fontSize: small, fontFamily: 'monospace', color: 'var(--muted)', opacity: 0.85 }}>
         {(head || sub) ? '· ' : ''}MAT {i.mat}
       </span>

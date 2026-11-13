@@ -237,7 +237,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
         <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
-        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
+        <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label={trI18n('กะ')} />
         <span className="spacer" />
         <button onClick={() => downloadCSV('csv_manpower_daily', `manpower_${from}_${to}.csv`,
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
@@ -254,16 +254,16 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Kpi label="มาทำงานล่าสุด" value={latest ? latest.present : '—'}
+        <Kpi label={trI18n('มาทำงานล่าสุด')} value={latest ? latest.present : '—'}
           sub={delta != null ? `${delta >= 0 ? '▲' : '▼'} ${Math.abs(delta)} เทียบเฉลี่ยก่อนหน้า` : null}
           color={delta != null ? (delta >= 0 ? 'var(--accent)' : 'var(--red)') : null} />
-        <Kpi label="เฉลี่ยมาทำงาน/วัน" value={avgPresent} sub={`${daily.length} วันในช่วงนี้`} />
-        <Kpi label="อัตรามาทำงาน" value={attendanceRate != null ? `${attendanceRate.toFixed(1)}%` : '—'} sub="มา ÷ เช็คชื่อทั้งหมด" />
-        <Kpi label="ลารวมช่วงนี้" value={totalLeave} color="var(--amber)" sub="คน-วัน" />
-        <Kpi label="ขาด (ไม่ระบุเหตุ)" value={totalAbsentNoReason} color={totalAbsentNoReason > 0 ? 'var(--red)' : null} sub="คน-วัน — ควรตรวจสอบ" />
+        <Kpi label={trI18n('เฉลี่ยมาทำงาน/วัน')} value={avgPresent} sub={`${daily.length} วันในช่วงนี้`} />
+        <Kpi label={trI18n('อัตรามาทำงาน')} value={attendanceRate != null ? `${attendanceRate.toFixed(1)}%` : '—'} sub={trI18n('มา ÷ เช็คชื่อทั้งหมด')} />
+        <Kpi label={trI18n('ลารวมช่วงนี้')} value={totalLeave} color="var(--amber)" sub={trI18n('คน-วัน')} />
+        <Kpi label={trI18n('ขาด (ไม่ระบุเหตุ)')} value={totalAbsentNoReason} color={totalAbsentNoReason > 0 ? 'var(--red)' : null} sub={trI18n('คน-วัน — ควรตรวจสอบ')} />
       </div>
 
-      {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div> : (
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>{trI18n('กำลังโหลด…')}</div> : (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <ResponsiveContainer width="100%" height={280}>
             <ComposedChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
@@ -285,8 +285,8 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
             นับจากการเช็คชื่อรายวัน (daily_production_logs){shift !== 'all' && stdTotal == null ? ' · ยังไม่ตั้งกำลังคนมาตรฐานของขอบเขตนี้ (ตั้งที่ LineSetup)' : ''}
             {offLine.people > 0 && (
               <> · <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
-                ไม่นับช่าง/สายสนับสนุน {offLine.people} คน ({offLine.logs} แถวเช็คชื่อ)
-              </span> — จอนี้นับกำลังคนของไลน์เท่านั้น (ใบเช็คชื่อเห็นครบทุกกลุ่ม)</>
+                ไม่นับช่าง/สายสนับสนุน {offLine.people} {trI18n('คน (')}{offLine.logs} แถวเช็คชื่อ)
+              </span> {trI18n('— จอนี้นับกำลังคนของไลน์เท่านั้น (ใบเช็คชื่อเห็นครบทุกกลุ่ม)')}</>
             )}
           </div>
         </div>
@@ -296,7 +296,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         <table style={{ minWidth: 480 }}>
           <thead><tr><th>{trI18n('วันที่')}</th><th>{trI18n('มาทำงาน')}</th><th>{trI18n('ลา')}</th><th>{trI18n('ขาด')}</th><th>OT</th><th>{trI18n('รวมเช็คชื่อ')}</th></tr></thead>
           <tbody>
-            {daily.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีข้อมูล</td></tr>
+            {daily.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>{trI18n('ไม่มีข้อมูล')}</td></tr>
               : [...daily].reverse().map(d => (
                 <tr key={d.date}>
                   <td style={{ fontWeight: 600 }}>{d.date}</td>
@@ -413,12 +413,12 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, org
       )}
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Kpi label="ครั้งที่ย้ายจุดงาน" value={moves.length} sub={`ในช่วง ${daily.length} วัน`} />
-        <Kpi label="คนที่ถูกย้าย" value={totalDistinctPeople} sub="คนไม่ซ้ำ" />
-        <Kpi label="เฉลี่ย/วัน" value={daily.length ? (moves.length / daily.length).toFixed(1) : '—'} sub="ครั้ง/วัน" />
+        <Kpi label={trI18n('ครั้งที่ย้ายจุดงาน')} value={moves.length} sub={`ในช่วง ${daily.length} วัน`} />
+        <Kpi label={trI18n('คนที่ถูกย้าย')} value={totalDistinctPeople} sub={trI18n('คนไม่ซ้ำ')} />
+        <Kpi label={trI18n('เฉลี่ย/วัน')} value={daily.length ? (moves.length / daily.length).toFixed(1) : '—'} sub={trI18n('ครั้ง/วัน')} />
       </div>
 
-      {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div> : (
+      {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>{trI18n('กำลังโหลด…')}</div> : (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={daily} margin={{ top: 10, left: 0, right: 12, bottom: 0 }}>
@@ -437,12 +437,12 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, org
 
       {topMovers.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{trI18n('คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {topMovers.map(t => (
               <div key={t.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, alignItems: 'center' }}>
                 <span style={{ color: 'var(--blue)', fontWeight: 700, minWidth: 24, textAlign: 'right' }}>{t.n}×</span>
-                <span style={{ fontWeight: 600 }}>{t.emp?.name || '(ไม่พบชื่อ)'}</span>
+                <span style={{ fontWeight: 600 }}>{t.emp?.name || trI18n('(ไม่พบชื่อ)')}</span>
                 <span style={{ color: 'var(--muted)' }}>{t.emp?.employee_id_code} · {t.emp?.section || '—'}</span>
               </div>
             ))}
@@ -454,7 +454,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, org
         <table style={{ minWidth: 640 }}>
           <thead><tr><th>{trI18n('วันที่')}</th><th>{trI18n('กะ')}</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('ไลน์')}</th><th>{trI18n('จุดเดิม → จุดใหม่')}</th><th>{trI18n('เวลา')}</th><th>{trI18n('ผู้มอบหมาย')}</th></tr></thead>
           <tbody>
-            {moves.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีการย้ายจุดงานในช่วงนี้</td></tr>
+            {moves.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>{trI18n('ไม่มีการย้ายจุดงานในช่วงนี้')}</td></tr>
               : moves.slice(0, 300).map((mv, i) => {
                 const emp = empById[mv.employee_id];
                 return (
@@ -471,7 +471,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, org
               })}
           </tbody>
         </table>
-        {moves.length > 300 && <div style={{ padding: 10, textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>แสดง 300 รายการล่าสุด จากทั้งหมด {moves.length} รายการ — ดาวน์โหลด CSV เพื่อดูครบ</div>}
+        {moves.length > 300 && <div style={{ padding: 10, textAlign: 'center', fontSize: 12, color: 'var(--muted)' }}>{trI18n('แสดง 300 รายการล่าสุด จากทั้งหมด')} {moves.length} {trI18n('รายการ — ดาวน์โหลด CSV เพื่อดูครบ')}</div>}
       </div>
     </div>
   );
@@ -571,7 +571,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
   // Pareto ส่วนงานที่ออกมากสุด (เฉพาะกลุ่มที่รู้วันที่ออกจริง — N เล็ก แต่ไม่เดา)
   const bySection = useMemo(() => {
     const c = {};
-    knownExits.forEach(x => { const s = x.emp.section || 'ไม่ระบุส่วนงาน'; c[s] = (c[s] || 0) + 1; });
+    knownExits.forEach(x => { const s = x.emp.section || trI18n('ไม่ระบุส่วนงาน'); c[s] = (c[s] || 0) + 1; });
     return Object.entries(c).map(([section, n]) => ({ section, n })).sort((a, b) => b.n - a.n);
   }, [knownExits]);
 
@@ -584,7 +584,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
           <option value={6}>{trI18n('6 เดือนล่าสุด')}</option>
           <option value={12}>{trI18n('12 เดือนล่าสุด')}</option>
         </select>
-        {(loading) && <span className="filter-count">กำลังโหลดประวัติการออกงาน…</span>}
+        {(loading) && <span className="filter-count">{trI18n('กำลังโหลดประวัติการออกงาน…')}</span>}
       </FilterBar>
 
       {partial && (
@@ -594,17 +594,17 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       )}
 
       <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(245,154,63,0.08)', border: '1px solid rgba(245,154,63,0.3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-        ⚠️ <b>ระบบเริ่มบันทึกวันที่ "ออกงาน" อัตโนมัติตั้งแต่ 2026-08-07</b> — พนักงานที่ inactive ก่อนหน้านั้นจะ<b>ไม่มีวันที่ออกให้ดู</b> (ไม่ใช่ว่าไม่เคยออก)
-        {' · '}ในขอบเขตที่เลือกตอนนี้: รู้วันที่ออก <b style={{ color: 'var(--text)' }}>{knownExits.length}</b> คน · ไม่ทราบวันที่ออก <b style={{ color: 'var(--text)' }}>{unknownExits.length}</b> คน
-        {anomalousInScope.length > 0 && <><br />⚠️ พบพนักงาน <b style={{ color: 'var(--red)' }}>{anomalousInScope.length}</b> คนที่วันที่เริ่มงานผิดปกติ (เช่น กรอกปี พ.ศ. ลงช่องปี ค.ศ.) — ไม่รวมในกราฟ/อายุงานด้านล่าง ไปแก้ที่หน้า <a href="/operator" style={{ color: 'var(--blue)' }}>ฐานข้อมูลพนักงาน</a></>}
+        ⚠️ <b>ระบบเริ่มบันทึกวันที่ "ออกงาน" อัตโนมัติตั้งแต่ 2026-08-07</b> {trI18n('— พนักงานที่ inactive ก่อนหน้านั้นจะ')}<b>{trI18n('ไม่มีวันที่ออกให้ดู')}</b> (ไม่ใช่ว่าไม่เคยออก)
+        {' · '}{trI18n('ในขอบเขตที่เลือกตอนนี้: รู้วันที่ออก')} <b style={{ color: 'var(--text)' }}>{knownExits.length}</b> {trI18n('คน · ไม่ทราบวันที่ออก')} <b style={{ color: 'var(--text)' }}>{unknownExits.length}</b> คน
+        {anomalousInScope.length > 0 && <><br />{trI18n('⚠️ พบพนักงาน')} <b style={{ color: 'var(--red)' }}>{anomalousInScope.length}</b> {trI18n('คนที่วันที่เริ่มงานผิดปกติ (เช่น กรอกปี พ.ศ. ลงช่องปี ค.ศ.) — ไม่รวมในกราฟ/อายุงานด้านล่าง ไปแก้ที่หน้า')} <a href="/operator" style={{ color: 'var(--blue)' }}>{trI18n('ฐานข้อมูลพนักงาน')}</a></>}
       </div>
 
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        <Kpi label="ลาออก (ที่รู้วันที่)" value={exitsInWindow} sub={`ใน ${monthsBack} เดือนล่าสุด`} color="var(--red)" />
-        <Kpi label="อัตราออกเฉลี่ย/เดือน" value={turnoverRate != null ? `${turnoverRate.toFixed(2)}%` : '—'} sub={`เทียบกำลังคนปัจจุบัน ${currentHeadcount} คน (ประมาณ)`} />
-        <Kpi label="อายุงานเฉลี่ยก่อนออก" value={avgTenureDays != null ? `${avgTenureDays.toLocaleString()} วัน` : '—'} sub={`จาก ${tenureSamples.length} คนที่มีข้อมูลครบ`} />
-        <Kpi label="ออกภายใน 90 วันแรก" value={tenureSamples.length ? `${earlyLeavers}/${tenureSamples.length}` : '—'} color={earlyLeavers > 0 ? 'var(--amber)' : null} sub="early attrition" />
-        <Kpi label="ไม่ทราบวันที่ออก" value={unknownExits.length} color={unknownExits.length > 0 ? 'var(--amber)' : null} sub="ก่อนเริ่มมี audit log" />
+        <Kpi label={trI18n('ลาออก (ที่รู้วันที่)')} value={exitsInWindow} sub={`ใน ${monthsBack} เดือนล่าสุด`} color="var(--red)" />
+        <Kpi label={trI18n('อัตราออกเฉลี่ย/เดือน')} value={turnoverRate != null ? `${turnoverRate.toFixed(2)}%` : '—'} sub={`เทียบกำลังคนปัจจุบัน ${currentHeadcount} คน (ประมาณ)`} />
+        <Kpi label={trI18n('อายุงานเฉลี่ยก่อนออก')} value={avgTenureDays != null ? `${avgTenureDays.toLocaleString()} วัน` : '—'} sub={`จาก ${tenureSamples.length} คนที่มีข้อมูลครบ`} />
+        <Kpi label={trI18n('ออกภายใน 90 วันแรก')} value={tenureSamples.length ? `${earlyLeavers}/${tenureSamples.length}` : '—'} color={earlyLeavers > 0 ? 'var(--amber)' : null} sub="early attrition" />
+        <Kpi label={trI18n('ไม่ทราบวันที่ออก')} value={unknownExits.length} color={unknownExits.length > 0 ? 'var(--amber)' : null} sub={trI18n('ก่อนเริ่มมี audit log')} />
       </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -642,11 +642,11 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       )}
 
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16 }}>
-        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>รายชื่อที่ inactive — รู้วันที่ออก</div>
+        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>{trI18n('รายชื่อที่ inactive — รู้วันที่ออก')}</div>
         <table style={{ minWidth: 640 }}>
           <thead><tr><th>{trI18n('รหัส')}</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('ส่วนงาน')}</th><th>{trI18n('แผนก')}</th><th>{trI18n('ตำแหน่ง')}</th><th>{trI18n('เริ่มงาน')}</th><th>{trI18n('ออกงาน')}</th><th>{trI18n('อายุงาน')}</th></tr></thead>
           <tbody>
-            {knownExits.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีข้อมูล</td></tr>
+            {knownExits.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>{trI18n('ไม่มีข้อมูล')}</td></tr>
               : knownExits.map(x => {
                 const tenure = isValidStartDate(x.emp.start_date, today) ? Math.round((new Date(x.exitAt) - new Date(x.emp.start_date)) / 86400000) : null;
                 return (
@@ -656,7 +656,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
                     <td>{x.emp.section || '—'}</td>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>{x.emp.department || '—'}</td>
                     <td style={{ fontSize: 12 }}>{positionLabel(x.emp.position)}</td>
-                    <td style={{ fontSize: 12 }}>{isValidStartDate(x.emp.start_date, today) ? x.emp.start_date : (x.emp.start_date ? '⚠ ผิดปกติ' : '—')}</td>
+                    <td style={{ fontSize: 12 }}>{isValidStartDate(x.emp.start_date, today) ? x.emp.start_date : (x.emp.start_date ? trI18n('⚠ ผิดปกติ') : '—')}</td>
                     <td style={{ fontSize: 12, color: 'var(--red)' }}>{x.exitAt.slice(0, 10)}</td>
                     <td style={{ fontSize: 12 }}>{tenure != null ? `${tenure.toLocaleString()} วัน` : '—'}</td>
                   </tr>
@@ -668,8 +668,8 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
 
       {unknownExits.length > 0 && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>❔ inactive แต่ไม่ทราบวันที่ออก ({unknownExits.length} คน)</div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>คนกลุ่มนี้อาจออกก่อน 2026-08-07 (ก่อนระบบเริ่มบันทึก) — แสดงไว้เพื่อไม่ให้ตกหล่น ไม่ใช่ข้อมูลใหม่</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{trI18n('❔ inactive แต่ไม่ทราบวันที่ออก (')}{unknownExits.length} คน)</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>{trI18n('คนกลุ่มนี้อาจออกก่อน 2026-08-07 (ก่อนระบบเริ่มบันทึก) — แสดงไว้เพื่อไม่ให้ตกหล่น ไม่ใช่ข้อมูลใหม่')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {unknownExits.map(x => (
               <span key={x.emp.id} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)' }}>
@@ -840,7 +840,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
           {trI18n('แสดงเฉพาะที่ถึงเกณฑ์')}
         </label>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
-          title="วันหยุดมักไม่มีการเช็คชื่อ แต่มีใบจอง OT อยู่ — ปิดตัวเลือกนี้ = นับเฉพาะวันที่มีการเช็คชื่อจริง">
+          title={trI18n('วันหยุดมักไม่มีการเช็คชื่อ แต่มีใบจอง OT อยู่ — ปิดตัวเลือกนี้ = นับเฉพาะวันที่มีการเช็คชื่อจริง')}>
           <input type="checkbox" checked={useBookings} onChange={e => setUseBookings(e.target.checked)} />
           {trI18n('นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย')}
         </label>
@@ -849,21 +849,21 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
         <button onClick={doCSV} style={csvBtnSt}>CSV</button>
       </FilterBar>
 
-      {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}
+      {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>{trI18n('กำลังโหลด…')}</div>}
       {partial && (
         <div className="card" style={{ padding: 12, marginBottom: 12, borderLeft: '4px solid var(--red)' }}>
-          <b style={{ fontSize: 13 }}>⚠ ข้อมูลอาจไม่ครบ</b>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>คิวรีบางส่วนล้มเหลว/ถูกตัด — อย่าใช้ตัวเลขนี้ส่ง HR จนกว่าจะโหลดใหม่แล้วไม่ขึ้นข้อความนี้</div>
+          <b style={{ fontSize: 13 }}>{trI18n('⚠ ข้อมูลอาจไม่ครบ')}</b>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('คิวรีบางส่วนล้มเหลว/ถูกตัด — อย่าใช้ตัวเลขนี้ส่ง HR จนกว่าจะโหลดใหม่แล้วไม่ขึ้นข้อความนี้')}</div>
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <Kpi label={`ถึงเกณฑ์ (≥ ${threshold} วัน)`} value={overRows.length} sub={`จากคนที่ทำ OT ${rows.length} คน`} color="var(--red)" />
-        <Kpi label={`ใกล้เกณฑ์ (${Math.max(1, threshold - 3)}–${threshold - 1} วัน)`} value={nearRows.length} sub="เฝ้าดูเดือนถัดไป" color="var(--accent2)" />
-        <Kpi label="สูงสุด" value={rows[0]?.total ?? '—'} sub={rows[0]?.emp?.name || ''} />
-        <Kpi label="รวมวัน OT ทั้งเดือน" value={rows.reduce((s, r) => s + r.total, 0).toLocaleString()} sub="วัน-คน" />
+        <Kpi label={`ใกล้เกณฑ์ (${Math.max(1, threshold - 3)}–${threshold - 1} วัน)`} value={nearRows.length} sub={trI18n('เฝ้าดูเดือนถัดไป')} color="var(--accent2)" />
+        <Kpi label={trI18n('สูงสุด')} value={rows[0]?.total ?? '—'} sub={rows[0]?.emp?.name || ''} />
+        <Kpi label={trI18n('รวมวัน OT ทั้งเดือน')} value={rows.reduce((s, r) => s + r.total, 0).toLocaleString()} sub={trI18n('วัน-คน')} />
         {isCurrentMonth && (
-          <Kpi label="คาดว่าจะเกินเกณฑ์" value={willExceed.length} sub={`ถ้าทำต่อในอัตราเดิมจนสิ้นเดือน (ผ่านมา ${elapsed}/${totalDaysInMonth} วัน)`} color="var(--accent2)" />
+          <Kpi label={trI18n('คาดว่าจะเกินเกณฑ์')} value={willExceed.length} sub={`ถ้าทำต่อในอัตราเดิมจนสิ้นเดือน (ผ่านมา ${elapsed}/${totalDaysInMonth} วัน)`} color="var(--accent2)" />
         )}
       </div>
 
@@ -872,14 +872,14 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>⚠ ช่องโหว่ข้อมูล — ตัวเลขนี้คือ "ขั้นต่ำ" ไม่ใช่ยอดเต็ม</div>
           {coverage.missingDays.length > 0 && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-              {coverage.missingDays.length} วันในเดือนนี้ไม่มีการเช็คชื่อในระบบเลย (วันหยุด {coverage.missingHolidayDays} วัน · วันทำงาน {coverage.missingWorkingDays} วัน) —
+              {coverage.missingDays.length} {trI18n('วันในเดือนนี้ไม่มีการเช็คชื่อในระบบเลย (วันหยุด')} {coverage.missingHolidayDays} {trI18n('วัน · วันทำงาน')} {coverage.missingWorkingDays} วัน) —
               คนที่มาทำ OT วันนั้นจะไม่ถูกนับ เว้นแต่มีใบจอง OT ไว้
             </div>
           )}
           {coverage.missingDays.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: orphanCount ? 8 : 0 }}>
               {coverage.missingDays.map(d => (
-                <span key={d.date} title={d.hasBooking ? 'ไม่มีเช็คชื่อ แต่มีใบจอง OT' : 'ไม่มีข้อมูลเลย'}
+                <span key={d.date} title={d.hasBooking ? trI18n('ไม่มีเช็คชื่อ แต่มีใบจอง OT') : trI18n('ไม่มีข้อมูลเลย')}
                   style={{
                     fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                     color: d.kind.holiday ? 'var(--red)' : 'var(--text2)',
@@ -900,7 +900,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
 
       {isCurrentMonth && willExceed.length > 0 && (
         <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: '4px solid var(--accent2)' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{trI18n('ยังไม่เกิน แต่กำลังจะเกิน (')}{willExceed.length} คน)</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {willExceed.slice(0, 30).map(r => (
               <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
@@ -914,7 +914,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 14 }}>
         <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>
           {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
-          <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8, fontSize: 11.5 }}>คลิกแถวเพื่อดูรายวัน</span>
+          <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8, fontSize: 11.5 }}>{trI18n('คลิกแถวเพื่อดูรายวัน')}</span>
         </div>
         <table style={{ minWidth: 980 }}>
           <thead>
@@ -946,15 +946,15 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
                     <td style={{ textAlign: 'center' }}>{r.working}</td>
                     <td style={{ textAlign: 'center' }}>
                       {r.holiday + r.shutdown}
-                      {r.shutdown > 0 && <span title="ม.75 (หยุดจ่าย 75%)" style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
+                      {r.shutdown > 0 && <span title={trI18n('ม.75 (หยุดจ่าย 75%)')} style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 4 }}>({r.shutdown} ม.75)</span>}
                     </td>
                     <td style={{ textAlign: 'center', fontWeight: 900, color: over ? 'var(--red)' : 'var(--text)' }}>{r.total}</td>
                     {isCurrentMonth && (
                       <td style={{ textAlign: 'center', color: r.projected >= threshold ? 'var(--accent2)' : 'var(--muted)', fontWeight: 700 }}>{r.projected}</td>
                     )}
                     <td style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                      {r.reasonText || <span style={{ color: 'var(--muted)' }}>— ไม่ได้ระบุงานในใบจอง —</span>}
-                      {r.bookingOnly > 0 && <span style={{ color: 'var(--muted)' }}> · {r.bookingOnly} วันมาจากใบจอง (ไม่มีเช็คชื่อ)</span>}
+                      {r.reasonText || <span style={{ color: 'var(--muted)' }}>{trI18n('— ไม่ได้ระบุงานในใบจอง —')}</span>}
+                      {r.bookingOnly > 0 && <span style={{ color: 'var(--muted)' }}> · {r.bookingOnly} {trI18n('วันมาจากใบจอง (ไม่มีเช็คชื่อ)')}</span>}
                     </td>
                   </tr>
                   {open && (
@@ -965,7 +965,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {r.days.map(d => (
-                            <span key={d.date} title={d.tasks.join(' · ') || 'ไม่ระบุงาน'}
+                            <span key={d.date} title={d.tasks.join(' · ') || trI18n('ไม่ระบุงาน')}
                               style={{
                                 fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                                 color: dayChipColor(d.kind), border: '1px solid var(--border)',
@@ -987,7 +987,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
 
       {topReasons.length > 0 && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>{trI18n('งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topReasons.map(t => {
               const pct = Math.round((t.n / topReasons[0].n) * 100);
@@ -997,7 +997,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
                   <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'clip' }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)' }} />
                   </div>
-                  <span style={{ fontWeight: 700, minWidth: 56, textAlign: 'right' }}>{t.n} วัน-คน</span>
+                  <span style={{ fontWeight: 700, minWidth: 56, textAlign: 'right' }}>{t.n} {trI18n('วัน-คน')}</span>
                 </div>
               );
             })}
@@ -1051,8 +1051,8 @@ export default function WorkforceInsight() {
   return (
     <Page>
       <PageHeader
-        title="กำลังคน & Turnover" icon="📈"
-        sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
+        title={trI18n('กำลังคน & Turnover')} icon="📈"
+        sub={trI18n('เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว')}
         tabs={[
           { key: 'manpower', label: 'กำลังคนรายวัน' },
           { key: 'moves', label: 'เปลี่ยนจุดงานรายวัน' },

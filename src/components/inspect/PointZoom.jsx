@@ -46,7 +46,7 @@ export function PointThumb({ url, height = 52, mobileMax = 44, ...zoomProps }) {
   const h = isMobile ? Math.min(height, mobileMax) : height
   return (
     <>
-      <button type="button" title="แตะเพื่อดูรูปซูมของจุดนี้" aria-label="ดูรูปซูมของจุดนี้" onClick={() => setOpen(true)}
+      <button type="button" title={tr('แตะเพื่อดูรูปซูมของจุดนี้')} aria-label={tr('ดูรูปซูมของจุดนี้')} onClick={() => setOpen(true)}
         style={{ width: Math.round(h * THUMB_RATIO), height: h, flex: '0 0 auto', alignSelf: 'center', padding: 0, borderRadius: 6,
           border: '1px solid var(--border)', background: 'var(--bg2)', overflow: 'hidden', cursor: 'zoom-in',
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

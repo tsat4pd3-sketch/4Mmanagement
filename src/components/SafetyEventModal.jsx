@@ -140,11 +140,11 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div>
-            <div style={lbl}>วันที่เกิดเหตุ *</div>
+            <div style={lbl}>{tr('วันที่เกิดเหตุ *')}</div>
             <input type="date" style={inp} value={f.event_date} onChange={e => set('event_date', e.target.value)} />
           </div>
           <div>
-            <div style={lbl}>กะ</div>
+            <div style={lbl}>{tr('กะ')}</div>
             <select style={inp} value={f.shift} onChange={e => set('shift', e.target.value)}>
               <option value="">{tr('— ไม่ระบุ —')}</option>
               <option value="day">{tr('กะเช้า')}</option>
@@ -153,7 +153,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           </div>
 
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>ระดับเหตุการณ์ *</div>
+            <div style={lbl}>{tr('ระดับเหตุการณ์ *')}</div>
             <select style={inp} value={f.kind} onChange={e => set('kind', e.target.value)}>
               {kindList.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
             </select>
@@ -165,7 +165,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           </div>
 
           <div>
-            <div style={lbl}>ส่วนงาน</div>
+            <div style={lbl}>{tr('ส่วนงาน')}</div>
             <select style={inp} value={f.section} onChange={e => set('section', e.target.value)}>
               <option value="">{tr('— ไม่ระบุ —')}</option>
               {sectionOpts.map(s => <option key={s} value={s}>{tr(s)}</option>)}
@@ -173,7 +173,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
             </select>
           </div>
           <div>
-            <div style={lbl}>ไลน์ (ถ้าเกิดในไลน์)</div>
+            <div style={lbl}>{tr('ไลน์ (ถ้าเกิดในไลน์)')}</div>
             {/* picker กลาง (UI §5.1.2) — lineRows ถูกกรองขอบเขต (org scope) มาจากบอร์ดแล้ว
                 จึงไม่ส่ง role/sections ซ้ำ · ค่าเก่าที่นอกลิสต์ LineSelect เติมกลับให้เอง ไม่หายเงียบ */}
             <LineSelect lines={lineRows} value={f.line_name} onChange={v => set('line_name', v)}
@@ -181,41 +181,41 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           </div>
 
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>เกิดอะไรขึ้น *</div>
+            <div style={lbl}>{tr('เกิดอะไรขึ้น *')}</div>
             <textarea style={{ ...inp, minHeight: 62, resize: 'vertical' }} value={f.description}
               onChange={e => set('description', e.target.value)}
               placeholder={tr('เช่น พนักงานยกกล่องแล้วมุมกล่องกระแทกหน้าแข้งขวา ที่ทางเดินหน้าไลน์')} />
           </div>
 
           <div>
-            <div style={lbl}>ชื่อผู้ประสบเหตุ</div>
+            <div style={lbl}>{tr('ชื่อผู้ประสบเหตุ')}</div>
             <input style={inp} value={f.employee_name} onChange={e => set('employee_name', e.target.value)} />
           </div>
           <div>
-            <div style={lbl}>รหัสพนักงาน</div>
+            <div style={lbl}>{tr('รหัสพนักงาน')}</div>
             <input style={inp} value={f.employee_code} onChange={e => set('employee_code', e.target.value)} />
           </div>
 
           <div>
-            <div style={lbl}>อวัยวะที่บาดเจ็บ</div>
+            <div style={lbl}>{tr('อวัยวะที่บาดเจ็บ')}</div>
             <input style={inp} value={f.body_part} onChange={e => set('body_part', e.target.value)} placeholder={tr('เช่น หน้าแข้งขวา')} />
           </div>
           <div>
-            <div style={lbl}>จำนวนวันหยุดงาน</div>
+            <div style={lbl}>{tr('จำนวนวันหยุดงาน')}</div>
             <input type="number" min="0" style={inp} value={f.lost_days} onChange={e => set('lost_days', e.target.value)} />
           </div>
 
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>สาเหตุ (เติมทีหลังได้)</div>
+            <div style={lbl}>{tr('สาเหตุ (เติมทีหลังได้)')}</div>
             <textarea style={{ ...inp, minHeight: 46, resize: 'vertical' }} value={f.cause} onChange={e => set('cause', e.target.value)} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
-            <div style={lbl}>มาตรการแก้ไข / ป้องกันซ้ำ</div>
+            <div style={lbl}>{tr('มาตรการแก้ไข / ป้องกันซ้ำ')}</div>
             <textarea style={{ ...inp, minHeight: 46, resize: 'vertical' }} value={f.countermeasure} onChange={e => set('countermeasure', e.target.value)} />
           </div>
 
           <div>
-            <div style={lbl}>สถานะ</div>
+            <div style={lbl}>{tr('สถานะ')}</div>
             <select style={inp} value={f.status} onChange={e => set('status', e.target.value)}>
               <option value="open">{tr('ยังไม่ปิด (ยังต้องตามแก้)')}</option>
               <option value="closed">{tr('ปิดแล้ว (แก้ไข + ป้องกันซ้ำเรียบร้อย)')}</option>

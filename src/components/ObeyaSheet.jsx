@@ -12,6 +12,7 @@ import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
 import useIsMobile from '../utils/useIsMobile';
 import useTvShell from '../utils/useTvShell';
 
+import { tr } from '../utils/i18n';
 /* คณิตของผัง (A4 · GAP · ตัวเลือกผัง) ย้ายไป `src/utils/sheetGrid.js` แล้ว (pure + มีเทส)
    re-export ไว้เพื่อไม่ต้องไล่แก้ import ของหน้าที่ใช้อยู่ */
 export { A4, GAP, MIN_SHEET_W, chooseSheetGrid } from '../utils/sheetGrid';
@@ -101,7 +102,7 @@ export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
         borderRadius: '50%', background: c, flexShrink: 0,
         boxShadow: `0 0 ${Math.round(5 * k)}px ${c}`,
       }} />
-      {!compact && <span style={{ fontSize: fs(11), fontWeight: 800, color: c }}>{stat.label}</span>}
+      {!compact && <span style={{ fontSize: fs(11), fontWeight: 800, color: c }}>{tr(stat.label)}</span>}
       {go && <span style={{ fontSize: fs(10.5), fontWeight: 700, color: 'var(--muted)' }}>↗</span>}
     </button>
   );
@@ -196,8 +197,8 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
             {icon} {title}
           </div>
           {onClose
-            ? <SheetIconBtn fs={fs} title="ปิด (Esc)" onClick={onClose}>✕</SheetIconBtn>
-            : (zoom && <SheetIconBtn className="tv-hide" fs={fs} title="ขยายดูใหญ่" onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
+            ? <SheetIconBtn fs={fs} title={tr('ปิด (Esc)')} onClick={onClose}>✕</SheetIconBtn>
+            : (zoom && <SheetIconBtn className="tv-hide" fs={fs} title={tr('ขยายดูใหญ่')} onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
         </div>
         {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
         {/* 📱 มือถือ: ขึ้นบรรทัดใหม่ได้ — "14.1 พันบาท เดือน มี.ค. (ล่าสุด) ▲ 35.9 ตามเป้า" กว้าง 371px ในแผ่น 346px (mobilesweep 15/10) */}

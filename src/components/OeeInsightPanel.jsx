@@ -12,6 +12,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
+import { tr as trI18n } from '../utils/i18n';
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
    1. "ทำไมยอดงานไม่ได้ตามเป้า" → แตกเป้าที่หายไปเป็นชิ้น: Downtime นอกแผน / NG / ความเร็วต่ำกว่า CT
@@ -87,7 +88,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       );
       if (sp.error || sp.truncated) {
         setInsights([]);
-        setMeta({ from, to, nSess: sp.rows.length, loadErr: sp.error || 'กะเยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่' });
+        setMeta({ from, to, nSess: sp.rows.length, loadErr: sp.error || trI18n('กะเยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่') });
         setLoading(false); return;
       }
       const sessions = sp.rows;
@@ -365,7 +366,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       >
         {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ */}
         {sectionHint && (
-          <span title="ขอบเขตที่เจาะมา — เปลี่ยนได้ที่ตัวกรองส่วนงานในแท็บ ⚡ ภาพรวมวันนี้"
+          <span title={trI18n('ขอบเขตที่เจาะมา — เปลี่ยนได้ที่ตัวกรองส่วนงานในแท็บ ⚡ ภาพรวมวันนี้')}
             style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
             {sectionHint}
           </span>
@@ -373,8 +374,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         <LineSelect lines={lines || []} value={selLine} onChange={setSelLine} placeholder={ALL.line} />
       </TimeRangeBar>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>วิเคราะห์ภาพรวมอัตโนมัติ</span>
-        {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{trI18n('วิเคราะห์ภาพรวมอัตโนมัติ')}</span>
+        {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('วิเคราะห์จาก')} {meta.nSess} {trI18n('กะที่ปิดแล้ว · Downtime นอกแผนรวม')} {meta.dtMin ?? 0} {trI18n('นาที')}</span>}
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
         {meta?.loadErr && (
           <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>
@@ -402,7 +403,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         return (
           <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>วิเคราะห์ความสูญเปล่าแบบ Lean</div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{trI18n('วิเคราะห์ความสูญเปล่าแบบ Lean')}</div>
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                 {[['six_big_loss', '6 Big Losses (TPM)'], ['waste_type', '8 Wastes (Lean)']].map(([k, lb]) => (
                   <button key={k} onClick={() => setLeanAxis(k)}
@@ -414,7 +415,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
               เวลาสูญเสียรวม {totalMin.toLocaleString()} นาที (นับทั้งในแผน/นอกแผน · ของเสียแปลงเป็นนาทีด้วย CT)
-              {perHr != null && <> · <b style={{ color: '#fbbf24' }}>≈ {fmtB(baht(totalMin))} บาท</b> <span style={{ opacity: 0.85 }}>(rate {Math.round(perHr).toLocaleString()} บาท/ชม. · CC {leanCc})</span></>}
+              {perHr != null && <> · <b style={{ color: '#fbbf24' }}>≈ {fmtB(baht(totalMin))} {trI18n('บาท')}</b> <span style={{ opacity: 0.85 }}>(rate {Math.round(perHr).toLocaleString()} {trI18n('บาท/ชม. · CC')} {leanCc})</span></>}
               {unclassified ? ` · ⚠️ ยังไม่จัดหมวด ${unclassified.min.toLocaleString()} นาที — จัดได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime` : ''}
             </div>
             {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
@@ -434,10 +435,10 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                       <span style={{ fontWeight: 700, color: r.meta ? 'var(--text)' : 'var(--muted)' }}>
                         {r.meta ? `${r.meta.icon} ${r.meta.label}` : '❔ ยังไม่จัดหมวด'}
                       </span>
-                      {r.meta?.oee && <span style={{ fontSize: 11, fontWeight: 800, color: c }}>กระทบ {r.meta.oee}</span>}
+                      {r.meta?.oee && <span style={{ fontSize: 11, fontWeight: 800, color: c }}>{trI18n('กระทบ')} {r.meta.oee}</span>}
                       <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
-                        {r.min.toLocaleString()} น. · {r.count} ครั้ง{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
-                        {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} บาท</b>}
+                        {r.min.toLocaleString()} {trI18n('น. ·')} {r.count} {trI18n('ครั้ง')}{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
+                        {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} {trI18n('บาท')}</b>}
                         {totalMin > 0 ? <span style={{ color: 'var(--muted)' }}> ({Math.round(r.min / totalMin * 100)}%)</span> : null}
                       </span>
                     </div>
@@ -458,9 +459,9 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       })()}
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>กำลังวิเคราะห์...</div>
+        <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>{trI18n('กำลังวิเคราะห์...')}</div>
       ) : meta?.error ? (
-        <div style={{ textAlign: 'center', padding: 30, color: '#ef4444', fontSize: 12 }}>วิเคราะห์ไม่สำเร็จ: {meta.error}</div>
+        <div style={{ textAlign: 'center', padding: 30, color: '#ef4444', fontSize: 12 }}>{trI18n('วิเคราะห์ไม่สำเร็จ:')} {meta.error}</div>
       ) : !insights?.length ? (
         <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>
           {meta && meta.nSess < 3 ? `ข้อมูลยังไม่พอวิเคราะห์ (มี ${meta?.nSess ?? 0} กะในช่วงนี้ — ต้องอย่างน้อย 3 กะ)` : 'ไม่พบ pattern ผิดปกติในช่วงนี้ 🎉 (เป้าครบ/ไม่มีปัญหาซ้ำ)'}

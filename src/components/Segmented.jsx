@@ -4,10 +4,11 @@
    • "ทั้งหมด/ทุก…" อยู่ **ซ้ายสุดเสมอ**
    • สูงเท่าช่องกรองอื่น (--ctl-h) → วางในแถบกรองแล้วเสมอกัน
 
-   <Segmented value={shift} onChange={setShift} options={SHIFT_OPTIONS} label="กะ" />
+   <Segmented value={shift} onChange={setShift} options={SHIFT_OPTIONS} label={tr('กะ')} />
    • `option.color` = สีตอนถูกเลือก เฉพาะตัวเลือกที่สีมี "ความหมาย" (ถังเหลือง/ถังแดง) — ไม่ใช่ใส่เพื่อความสวย (UI §6.17)
    ═══════════════════════════════════════════════════════════════════════════════════ */
 import useLang from '../utils/useLang';
+import { tr } from '../utils/i18n';
 import { stripIcon } from './Icon';   // ✒️ ตัด emoji นำหน้าป้าย (UI §6.36) — ทะเบียน options เดิมไม่ต้องแก้   // 🌐 ป้ายตัวเลือก (เช่น SHIFT_OPTIONS) แปลที่จุดวาด
 
 export default function Segmented({ value, onChange, options, label, size, style }) {

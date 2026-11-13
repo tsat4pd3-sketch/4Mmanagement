@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import useIsMobile from '../utils/useIsMobile';
+import { tr } from '../utils/i18n';
 import { FRAME_START } from '../utils/timeFrame';   // กรอบวันงาน 08:00→08:00 — ของกลาง ห้ามประกาศซ้ำ
 
 /* ─── Internal Time Board — บอร์ดเวลาสไตล์ Shipping Chart สำหรับงานส่งภายในโรงงาน ──
@@ -74,7 +75,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
       <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
       <div style={isMobile ? { minWidth: 780 } : undefined}>
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
-        <div style={{ width: leftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...stickyLabel('var(--bg2)') }}>ปลายทาง · คลิกเพื่อย่อ/ขยาย</div>
+        <div style={{ width: leftW, flexShrink: 0, padding: '3px 10px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', borderRight: '1px solid var(--border2)', ...stickyLabel('var(--bg2)') }}>{tr('ปลายทาง · คลิกเพื่อย่อ/ขยาย')}</div>
         <div style={{ flex: 1, position: 'relative', height: 22 }}>
           {hourMarks.map((m, i) => (i % 2 === 0 &&
             <span key={m} style={{ position: 'absolute', left: `${pct(m)}%`, fontSize: 11, color: (m % 1440) === 480 || (m % 1440) === 1200 ? 'var(--text2)' : 'var(--muted)', fontWeight: (m % 1440) === 480 || (m % 1440) === 1200 ? 800 : 500, transform: m === FRAME_START + SPAN ? 'translateX(-100%)' : 'translateX(-50%)', top: 4, whiteSpace: 'nowrap' }}>
@@ -90,7 +91,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
         )}
       </div>
       {groups.length === 0 && (
-        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการในวันงานนี้</div>
+        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีรายการในวันงานนี้')}</div>
       )}
       {groups.map(g => {
         const isCol = !!collapsed[g.key];
@@ -99,7 +100,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
         return (
           <div key={g.key} style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
             <div onClick={() => setCollapsed(m => ({ ...m, [g.key]: !m[g.key] }))}
-              title={isCol ? 'คลิกเพื่อขยาย' : 'คลิกเพื่อย่อ'}
+              title={isCol ? tr('คลิกเพื่อขยาย') : tr('คลิกเพื่อย่อ')}
               style={{ width: leftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...stickyLabel('var(--card)') }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{g.label}

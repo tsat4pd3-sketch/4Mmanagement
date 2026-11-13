@@ -14,6 +14,7 @@
 
 import { useState } from 'react';
 
+import { tr } from '../utils/i18n';
 /* กรอบแผนที่ (lon/lat) + สเกล → viewBox 1000 × H
    ซูมไว้ที่ "แนวโรงงานจริง" (สมุทรปราการ → ระยอง) ไม่กินพื้นที่ว่างทางเหนือ */
 const B = { lon0: 99.90, lon1: 102.15, lat0: 12.42, lat1: 14.15 };
@@ -98,7 +99,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
       {/* ฟิลเตอร์กลุ่มธุรกิจ — กดแล้วเห็นว่ากลุ่มนั้นกระจายอยู่โซนไหนบ้าง (คนละแกนกับโซน) */}
       {!!groups.length && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไฮไลต์กลุ่มธุรกิจ:</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไฮไลต์กลุ่มธุรกิจ:')}</span>
           {[{ key: null, icon: '🏢', short: 'ทุกกลุ่ม' }, ...groups].map(g => {
             const on = gFilter === g.key;
             return (
@@ -130,11 +131,11 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
           {/* ถนนสายหลัก */}
           <polyline points={pts(RD_BANGNA)} fill="none" stroke="#6b7280" strokeWidth="3.5" strokeDasharray="10 7" strokeLinecap="round" opacity="0.75" />
           <polyline points={pts(RD_MOTORWAY)} fill="none" stroke="#6b7280" strokeWidth="3.5" strokeDasharray="10 7" strokeLinecap="round" opacity="0.75" />
-          <text x={px(100.86)} y={py(13.60)} fill="#94a3b8" fontSize="13" fontWeight="600">บางนา-ตราด</text>
-          <text x={px(100.99)} y={py(12.90)} fill="#94a3b8" fontSize="13" fontWeight="600" transform={`rotate(-58 ${px(100.99)} ${py(12.90)})`}>มอเตอร์เวย์</text>
+          <text x={px(100.86)} y={py(13.60)} fill="#94a3b8" fontSize="13" fontWeight="600">{tr('บางนา-ตราด')}</text>
+          <text x={px(100.99)} y={py(12.90)} fill="#94a3b8" fontSize="13" fontWeight="600" transform={`rotate(-58 ${px(100.99)} ${py(12.90)})`}>{tr('มอเตอร์เวย์')}</text>
 
           {/* ป้ายอ่าวไทย */}
-          <text x={px(100.42)} y={py(12.75)} fill="#5b93b0" fontSize="20" fontWeight="700" letterSpacing="3">อ่าวไทย</text>
+          <text x={px(100.42)} y={py(12.75)} fill="#5b93b0" fontSize="20" fontWeight="700" letterSpacing="3">{tr('อ่าวไทย')}</text>
 
           {/* จังหวัด/เมือง */}
           {CITIES.map(c => (
@@ -153,7 +154,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
                 fill={z.color} fillOpacity="0.12" stroke={z.color} strokeWidth="2.5" strokeDasharray="12 8" />
               <text x={x + 4} y={y - 10} fill={z.color} fontSize="20" fontWeight="800">{z.icon} {z.name}</text>
               <text x={x + 4 + (z.name.length * 11) + 40} y={y - 10} fill="#9fb0c0" fontSize="14" fontWeight="600">
-                {z.companies.length} บริษัท · OEE {z.oee == null ? '—' : z.oee + '%'} · {mixOf(z).map(m => `${m.g.icon}${m.n}`).join(' ')}
+                {z.companies.length} {tr('บริษัท · OEE')} {z.oee == null ? '—' : z.oee + '%'} · {mixOf(z).map(m => `${m.g.icon}${m.n}`).join(' ')}
               </text>
             </g>
           ))}
@@ -207,18 +208,18 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
               <b style={{ color: statusColor(hover.status) }}>{hover.oee == null ? '—' : hover.oee + '%'}</b>
             </div>
             <div style={{ fontSize: 12, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-              <span style={{ color: 'var(--muted)' }}>ผลิต/เป้า</span>
+              <span style={{ color: 'var(--muted)' }}>{tr('ผลิต/เป้า')}</span>
               <b>{Math.round(hover.actual).toLocaleString('en-US')}/{Math.round(hover.target).toLocaleString('en-US')}</b>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>คลิกเพื่อดูรายไลน์</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{tr('คลิกเพื่อดูรายไลน์')}</div>
           </div>
         )}
       </div>
 
       {/* legend — สีหมุด = สถานะ · ไอคอนในหมุด = กลุ่มธุรกิจ (2 มิติในหมุดเดียว) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-        <span><b>สี:</b> <b style={{ color: '#22c55e' }}>●</b> ตามเป้า <b style={{ color: '#f59e0b' }}>●</b> เฝ้าระวัง <b style={{ color: '#ef4444' }}>●</b> ต้องแก้</span>
-        <span><b>ไอคอน:</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>
+        <span><b>{tr('สี:')}</b> <b style={{ color: '#22c55e' }}>●</b> {tr('ตามเป้า')} <b style={{ color: '#f59e0b' }}>●</b> {tr('เฝ้าระวัง')} <b style={{ color: '#ef4444' }}>●</b> {tr('ต้องแก้')}</span>
+        <span><b>{tr('ไอคอน:')}</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>
         <span>★ = บริษัทเรา (ข้อมูลจริง)</span>
         <span>คลิกหมุด = ดูรายไลน์ · คลิกกรอบโซน = ดูบริษัทในโซน</span>
       </div>

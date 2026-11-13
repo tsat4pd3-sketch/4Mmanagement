@@ -80,7 +80,7 @@ export default function SkillEditHistory({ employeeId, limit = 30 }) {
             แสดงเฉพาะการแก้ด้วยมือในระบบ — การสะสม EXP อัตโนมัติรายวัน/รายสัปดาห์ไม่ถูกบันทึกที่นี่
           </div>
 
-          {loading && <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div>}
+          {loading && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}
 
           {err && (
             <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444415', border: '1px solid #ef444440', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
@@ -91,7 +91,7 @@ export default function SkillEditHistory({ employeeId, limit = 30 }) {
           )}
 
           {!loading && !err && rows?.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีการแก้คะแนนด้วยมือ</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีการแก้คะแนนด้วยมือ')}</div>
           )}
 
           {!loading && !err && rows?.length > 0 && (

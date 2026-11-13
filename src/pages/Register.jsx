@@ -160,7 +160,7 @@ export default function Register() {
        พอตรึง 640 แล้วชิดซ้าย กลายเป็นเสาผอมเกาะขอบ เหลือที่ว่างขวาค่อนจอ (feedback user)
        `narrow` มีไว้สำหรับกล่องสั้นจริงๆ (login/ยืนยัน) ไม่ใช่ฟอร์มกรอกข้อมูล */
     <Page width="form">
-      <PageHeader title="เพิ่มพนักงานใหม่" icon="📸" sub="บันทึกข้อมูลพนักงานเข้าระบบ" />
+      <PageHeader title={tr('เพิ่มพนักงานใหม่')} icon="📸" sub={tr('บันทึกข้อมูลพนักงานเข้าระบบ')} />
       {/* 🔴 การ์ดต้องเต็มคอลัมน์ของ <Page width="form"> (960px) — ห้ามตั้ง maxWidth ซ้อนอีกชั้น (14/10)
           เดิมตรึง 440px ไว้ตั้งแต่ยุคที่หน้านี้จัดกลางจอ ⇒ พอเปลี่ยนเป็นชิดซ้าย กลายเป็น
           ฟอร์มผอมเกาะขอบซ้าย เหลือที่ว่างขวาค่อนจอ · ช่อง 2 คอลัมน์แคบจนป้ายล้น
@@ -192,8 +192,8 @@ export default function Register() {
                     border: `1px solid ${staffKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                     background: staffKind === k.key ? 'var(--green-dim)' : 'var(--bg2)',
                     color: staffKind === k.key ? 'var(--text)' : 'var(--text2)' }}>
-                  <div style={{ fontWeight: 700 }}>{k.label}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</div>
+                  <div style={{ fontWeight: 700 }}>{tr(k.label)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(k.desc)}</div>
                 </button>
               ))}
             </div>
@@ -232,7 +232,7 @@ export default function Register() {
             <div>
               <label style={labelSt}>{tr('Department / แผนก')}</label>
               <select value={department} onChange={e => { setDepartment(e.target.value); setGroupName(''); setLineId(null); }} disabled={!section}>
-                <option value="">{section ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                <option value="">{section ? tr('— เลือก —') : tr('เลือก Section ก่อน')}</option>
                 {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
               </select>
               {isOrphanSec && (
@@ -246,7 +246,7 @@ export default function Register() {
               {!isOrphanSec && section && deptOpts.length === 0 && (
                 <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.5 }}>
                   ⚠️ ส่วนงาน <b>{section}</b> ยังไม่มีแผนกในผังองค์กร — เลือกแผนกไม่ได้จนกว่าจะเพิ่มก่อน
-                  <div style={{ color: 'var(--muted)' }}>เพิ่มที่ <b>ตั้งค่า → ผังองค์กร (/org-setup)</b></div>
+                  <div style={{ color: 'var(--muted)' }}>{tr('เพิ่มที่')} <b>{tr('ตั้งค่า → ผังองค์กร (/org-setup)')}</b></div>
                 </div>
               )}
             </div>
@@ -257,7 +257,7 @@ export default function Register() {
               <select value={isSupportKind ? '' : team} disabled={isSupportKind}
                 onChange={e => setTeam(e.target.value)}
                 style={isSupportKind ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}>
-                <option value="">{isSupportKind ? '— สายสนับสนุนไม่ผูกทีม —' : '— เลือก —'}</option>
+                <option value="">{isSupportKind ? tr('— สายสนับสนุนไม่ผูกทีม —') : tr('— เลือก —')}</option>
                 {teamOpts.map(t => <option key={t} value={t}>Team {t}</option>)}
               </select>
             </div>
@@ -270,7 +270,7 @@ export default function Register() {
             <label style={labelSt}>{tr('Group / กลุ่ม (Line)')}</label>
             {isSupportKind ? (
               <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', lineHeight: 1.5 }}>
-                สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>ส่วนงาน + แผนก</b> ข้างบนแทน
+                สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>{tr('ส่วนงาน + แผนก')}</b> ข้างบนแทน
               </div>
             ) : (() => {
               // cascade Section→แผนก→กลุ่ม (UI-CONVENTIONS §5.3): กลุ่มจากผังองค์กร (org_nodes kind='line') ใต้แผนกที่เลือก
@@ -295,7 +295,7 @@ export default function Register() {
                     const g = orgGroupOpts.find(x => x.name === val || x.code === val);
                     setLineId(g?.ref_line_id || null);
                   }}>
-                    <option value="">{department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                    <option value="">{department ? tr('— เลือกกลุ่ม —') : tr('เลือกแผนกก่อน')}</option>
                     {orgGroupOpts.map(g => (
                       <option key={g.id} value={g.name}>{g.name}{g.ref_line_id ? '' : '  ⚠ ยังไม่ผูกไลน์'}</option>
                     ))}
@@ -303,8 +303,8 @@ export default function Register() {
                   {curNode && !curNode.ref_line_id && (
                     <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.45 }}>
                       ⚠️ กลุ่ม <b>{curNode.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่พนักงานคนนี้
-                      <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
-                      <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                      <b> {tr('จะไม่ขึ้นในหน้าเช็คชื่อ')}</b> {tr('· ผูกไลน์ให้กลุ่มนี้ที่')}{' '}
+                      <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('ผังองค์กร')}</Link> ก่อน
                     </div>
                   )}
                   {!curNode && noRef.length > 0 && (
@@ -326,7 +326,7 @@ export default function Register() {
                   const line = lines.find(l => l.name === val);
                   setLineId(line?.id || null);
                 }}>
-                  <option value="">{department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}</option>
+                  <option value="">{department ? tr('— เลือก Line —') : tr('เลือกแผนกก่อน')}</option>
                   {(() => {
                     // ลำดับ+หัวกลุ่มส่วนงานชุดเดียวกับ <LineSelect> (2026-10-01)
                     const { pinned, groups } = groupLineOptions(lineOptions(lineOpts, { current: groupName }));
@@ -362,7 +362,7 @@ export default function Register() {
           </div>
           {cropFile && (
             <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480}
-              title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false} webp
+              title={tr('จัดตำแหน่งรูปพนักงานให้ตรงกรอบ')} allowGif={false} webp
               onCancel={() => setCropFile(null)}
               onConfirm={f => { setPhoto(f); setCropFile(null); }} />
           )}
@@ -370,7 +370,7 @@ export default function Register() {
           <button
             type="submit"
             disabled={isUploading || !canRegister}
-            title={canRegister ? undefined : 'บัญชีของคุณไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
+            title={canRegister ? undefined : tr('บัญชีของคุณไม่มีสิทธิ์ลงทะเบียนพนักงาน')}
             style={{
               marginTop: 4, padding: '13px',
               background: (isUploading || !canRegister) ? 'var(--muted)' : 'var(--accent)',

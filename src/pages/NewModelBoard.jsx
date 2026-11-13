@@ -67,7 +67,7 @@ function EvaBadge({ eva, label, note, big }) {
       }}>{m.short}</div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em' }}>{label}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{m.label}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr(m.label)}</div>
         {note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, lineHeight: 1.45 }}>{note}</div>}
       </div>
     </div>
@@ -91,8 +91,8 @@ function Trail({ items }) {
         <span key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {i > 0 && <span style={{ color: 'var(--muted)' }}>›</span>}
           {it.onClick
-            ? <button onClick={it.onClick} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 12 }}>{it.label}</button>
-            : <span style={{ color: 'var(--text)', fontWeight: 700 }}>{it.label}</span>}
+            ? <button onClick={it.onClick} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', fontSize: 12 }}>{tr(it.label)}</button>
+            : <span style={{ color: 'var(--text)', fontWeight: 700 }}>{tr(it.label)}</span>}
         </span>
       ))}
     </div>
@@ -195,8 +195,8 @@ function PanelNpiLink({ proj, panel }) {
   return (
     <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 'var(--r-md)',
       '--nmb-color': 'var(--accent)', fontSize: 12.5, lineHeight: 1.55 }}>
-      🔗 <b>ของจริงของแผงนี้อยู่ใน NPI</b> — {link.what}
-      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>เปิด {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
+      🔗 <b>{tr('ของจริงของแผงนี้อยู่ใน NPI')}</b> — {link.what}
+      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>{tr('เปิด')} {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
     </div>
   );
 }
@@ -220,14 +220,14 @@ function NpiLinkCard({ proj, isMobile }) {
   const linkable = linkedPanelCount(proj.panels);
 
   if (loading) {
-    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…</div>;
+    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…')}</div>;
   }
   if (error) {
     /* 🔴 โหลดล่ม ต้องเขียนว่าล่ม ห้ามกลืนเป็น "ยังไม่ผูก" */
     return (
       <div className="nmb-card" data-eva="R" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
         '--nmb-color': 'var(--red)', fontSize: 12.5 }}>
-        <b>อ่านข้อมูล NPI ไม่สำเร็จ</b> — ตัวเลขฝั่ง NPI จึงยังไม่แสดง (ไม่ได้แปลว่ารุ่นนี้ยังไม่ผูก)
+        <b>{tr('อ่านข้อมูล NPI ไม่สำเร็จ')}</b> — ตัวเลขฝั่ง NPI จึงยังไม่แสดง (ไม่ได้แปลว่ารุ่นนี้ยังไม่ผูก)
         <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>{error}</div>
       </div>
     );
@@ -235,11 +235,11 @@ function NpiLinkCard({ proj, isMobile }) {
   if (!sum) {
     return (
       <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)', fontSize: 12.5, lineHeight: 1.6 }}>
-        🔗 <b>รุ่นนี้ยังไม่ผูกกับโปรเจค NPI</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
+        🔗 <b>{tr('รุ่นนี้ยังไม่ผูกกับโปรเจค NPI')}</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
         <div style={{ color: 'var(--text2)', marginTop: 4 }}>
-          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
-          <b> “🧭 รุ่นบนบอร์ด New Model”</b> → เลือก <b>{proj.title}</b>
-          {linkable > 0 && <> · ผูกแล้ว <b>{linkable}</b> แผงบนบอร์ดนี้จะกดเข้าไปดูของจริงได้</>}
+          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>{tr('พาร์ทใหม่ APQP / PPAP')}</a> {tr('→ เลือกโปรเจค →')} <b>{tr('✏️ โปรเจค')}</b> → ช่อง
+          <b> {tr('“🧭 รุ่นบนบอร์ด New Model”')}</b> {tr('→ เลือก')} <b>{proj.title}</b>
+          {linkable > 0 && <> {tr('· ผูกแล้ว')} <b>{linkable}</b> {tr('แผงบนบอร์ดนี้จะกดเข้าไปดูของจริงได้')}</>}
         </div>
       </div>
     );
@@ -251,25 +251,25 @@ function NpiLinkCard({ proj, isMobile }) {
     <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
       '--nmb-color': 'var(--accent)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <span className="nmb-eyebrow" style={{ fontSize: 11 }}>โปรเจค NPI ของรุ่นนี้</span>
-        <b style={{ fontSize: 13 }}>{sum.code || '(ไม่มีรหัสโปรเจค)'}</b>
+        <span className="nmb-eyebrow" style={{ fontSize: 11 }}>{tr('โปรเจค NPI ของรุ่นนี้')}</span>
+        <b style={{ fontSize: 13 }}>{sum.code || tr('(ไม่มีรหัสโปรเจค)')}</b>
         <span style={{ fontSize: 12, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sum.name}</span>
         <a href={`/npi?project=${encodeURIComponent(sum.projectId)}`} style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
           เปิดใน /npi →
         </a>
       </div>
       <div style={st}>
-        <NpiStat label="พาร์ท" value={sum.parts} suffix="ตัว" />
-        <NpiStat label="PPAP ผ่าน" value={sum.ppapApproved} suffix={sum.parts != null ? `/ ${sum.parts}` : ''} />
-        <NpiStat label="เอกสารครบ" value={sum.docPct} suffix="%" />
-        <NpiStat label="ECI ยังไม่จบ" value={sum.eciOpen} suffix={sum.eciTotal != null ? `/ ${sum.eciTotal}` : ''}
+        <NpiStat label={tr('พาร์ท')} value={sum.parts} suffix="ตัว" />
+        <NpiStat label={tr('PPAP ผ่าน')} value={sum.ppapApproved} suffix={sum.parts != null ? `/ ${sum.parts}` : ''} />
+        <NpiStat label={tr('เอกสารครบ')} value={sum.docPct} suffix="%" />
+        <NpiStat label={tr('ECI ยังไม่จบ')} value={sum.eciOpen} suffix={sum.eciTotal != null ? `/ ${sum.eciTotal}` : ''}
           tone={sum.eciOpen ? 'var(--amber)' : undefined} />
-        <NpiStat label="ถึง SOP" value={sum.sopIn == null ? null : (sum.sopIn >= 0 ? sum.sopIn : -sum.sopIn)}
+        <NpiStat label={tr('ถึง SOP')} value={sum.sopIn == null ? null : (sum.sopIn >= 0 ? sum.sopIn : -sum.sopIn)}
           suffix={sum.sopIn == null ? '' : (sum.sopIn >= 0 ? 'วัน' : 'วัน (เลยแล้ว)')}
           tone={sum.sopIn != null && sum.sopIn < 0 ? 'var(--red)' : undefined} />
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9, lineHeight: 1.5 }}>
-        ตัวเลขชุดนี้มาจากเอกสารจริงใน NPI · <b>ไม่ได้เอาไปเปลี่ยนสี EVA บนบอร์ด</b> — สีบอร์ดคนตั้งเองตามกติกา IEC
+        ตัวเลขชุดนี้มาจากเอกสารจริงใน NPI · <b>{tr('ไม่ได้เอาไปเปลี่ยนสี EVA บนบอร์ด')}</b> — สีบอร์ดคนตั้งเองตามกติกา IEC
         {sum.docTotal === null && ' · นับเอกสารไม่ครบรอบนี้ จึงยังไม่แสดง %'}
       </div>
     </div>
@@ -313,9 +313,7 @@ function MetricBlock({ panel, size = 'page', level = 3, trailing = null }) {
         {metricSuffix(m) && (
           <span className="nmb-num" style={{ fontSize: F.suffix, color: 'var(--muted)', fontWeight: 700 }}>{metricSuffix(m)}</span>
         )}
-        <span style={{ fontSize: F.meta, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {m.label}
-        </span>
+        <span style={{ fontSize: F.meta, color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tr(m.label)}</span>
         {inlineFresh && trailing && (
           <span style={{ marginLeft: 'auto', fontSize: F.meta, color: 'var(--muted)', flex: '0 0 auto' }}>{trailing}</span>
         )}
@@ -364,7 +362,7 @@ function LevelOverview({ data, go }) {
         {axes.map(a => <EvaBadge key={a.key} big eva={a.eva} label={a.label} note={a.hint} />)}
       </div>
 
-      <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0 8px' }}>ลูกค้า</div>
+      <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0 8px' }}>{tr('ลูกค้า')}</div>
       <div style={{ display: 'grid', gap: 10, alignContent: 'start', marginBottom: 16,
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(215px, 1fr))' }}>
         {data.customers.map(c => {
@@ -399,8 +397,8 @@ function LevelOverview({ data, go }) {
       <div style={{ display: 'grid', gap: 12, alignContent: 'start',
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(330px, 1fr))' }}>
         <div style={CARD}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>⏰ งานเลยกำหนด ({overdue.length})</div>
-          {!overdue.length ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี</div> : overdue.map((r, i) => (
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{tr('⏰ งานเลยกำหนด (')}{overdue.length})</div>
+          {!overdue.length ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่มี')}</div> : overdue.map((r, i) => (
             <button key={i} onClick={() => go({ cust: r.project.customer, proj: r.project.id, panel: r.panel.key })}
               style={{ background: 'none', border: 'none', borderBottom: '1px solid var(--border)', width: '100%',
                 textAlign: 'left', padding: '7px 0', cursor: 'pointer' }}>
@@ -412,8 +410,8 @@ function LevelOverview({ data, go }) {
           ))}
         </div>
         <div style={CARD}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>แผงที่ต้องรีบดู ({attention.length})</div>
-          {!attention.length ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี</div> : attention.map((p, i) => (
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{tr('แผงที่ต้องรีบดู (')}{attention.length})</div>
+          {!attention.length ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไม่มี')}</div> : attention.map((p, i) => (
             <button key={i} onClick={() => go({ cust: p.project.customer, proj: p.project.id, panel: p.key })}
               style={{ background: 'none', border: 'none', borderBottom: '1px solid var(--border)', width: '100%',
                 textAlign: 'left', padding: '7px 0', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -472,7 +470,7 @@ function RuleNote({ ruleKey }) {
   return (
     <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6, marginTop: 8,
       borderTop: '1px dashed var(--border)', paddingTop: 7 }}>
-      <b style={{ color: 'var(--muted)' }}>เกณฑ์สีของแผงนี้</b> ·{' '}
+      <b style={{ color: 'var(--muted)' }}>{tr('เกณฑ์สีของแผงนี้')}</b> ·{' '}
       <Dot eva="R" size={9} /> {r.red} ·{' '}
       <Dot eva="Y" size={9} /> {r.yellow} ·{' '}
       <Dot eva="G" size={9} /> {r.green}
@@ -496,7 +494,7 @@ function BucketBar({ proj, leaves, go, isMobile }) {
   const noNote = redWithoutNote(leaves);
   return (
     <div style={{ marginBottom: 14 }}>
-      <SectionHead n="①" title="สรุป EVA ของ sub KPI ทั้งใบ POP"
+      <SectionHead n="①" title={tr('สรุป EVA ของ sub KPI ทั้งใบ POP')}
         sub={`ประเมินแล้ว ${c.total - c.none} จาก ${c.total} หัวข้อ`} />
       <div style={{ display: 'grid', gap: 9, alignContent: 'start',
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(190px, 1fr))' }}>
@@ -511,7 +509,7 @@ function BucketBar({ proj, leaves, go, isMobile }) {
                 borderLeft: `3px solid ${meta.color}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 26, fontWeight: 800, color: meta.color, lineHeight: 1 }}>{n}</span>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{b.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{tr(b.label)}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>
                 {n ? 'กดเพื่อดูรายการ' : 'ยังไม่มีหัวข้อในถังนี้'}
@@ -522,16 +520,16 @@ function BucketBar({ proj, leaves, go, isMobile }) {
         <div style={{ ...CARD, borderLeft: '3px solid var(--border2)', display: 'flex', flexDirection: 'column', gap: 3 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--muted)', lineHeight: 1 }}>{c.none}</span>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>ยังไม่ประเมิน</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{tr('ยังไม่ประเมิน')}</span>
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.4 }}>
-            ยังไม่ถึงด่าน หรือยังไม่มีใครตั้งสี — <b>ไม่ใช่ผ่าน</b>
+            ยังไม่ถึงด่าน หรือยังไม่มีใครตั้งสี — <b>{tr('ไม่ใช่ผ่าน')}</b>
           </div>
         </div>
       </div>
       {!!noNote.length && (
         <div style={{ ...CARD, marginTop: 9, borderLeft: '3px solid var(--red)', fontSize: 12, lineHeight: 1.55 }}>
-          ⚠️ <b>แดงแต่ไม่มีคำอธิบาย {noNote.length} หัวข้อ</b> — IEC กำหนดว่าแดงต้องเขียนว่าเกิดอะไร
+          ⚠️ <b>{tr('แดงแต่ไม่มีคำอธิบาย')} {noNote.length} {tr('หัวข้อ')}</b> — IEC กำหนดว่าแดงต้องเขียนว่าเกิดอะไร
           แก้ยังไง ไม่งั้นคนมาดูบอร์ดไม่รู้เรื่อง:{' '}
           <span style={{ color: 'var(--text2)' }}>{noNote.map(l => `${l.no} ${l.label}`).join(' · ')}</span>
         </div>
@@ -570,7 +568,7 @@ function PopTable({ proj, go }) {
                     style={{ cursor: 'pointer' }}>
                     <td style={td}><Dot eva={eva} title={evaMeta(eva).label} /></td>
                     <td style={{ ...td, color: 'var(--muted)', fontWeight: 700 }}>{m.no}</td>
-                    <td style={{ ...td, fontWeight: 700 }}>{m.label}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{tr(m.label)}</td>
                     <td style={{ ...td, color: 'var(--muted)', fontSize: 11.5 }}>
                       {kids.length ? `${kids.length} หัวข้อ` : '—'}
                     </td>
@@ -634,7 +632,7 @@ function ResponsibleCard({ proj, isMobile }) {
   if (!list?.length) return null;
   return (
     <div style={{ marginBottom: 14 }}>
-      <SectionHead n="④" title="Responsible" sub="เจอของแดงแล้วโทรหาใคร" />
+      <SectionHead n="④" title="Responsible" sub={tr('เจอของแดงแล้วโทรหาใคร')} />
       <div style={{ display: 'grid', gap: 9, alignContent: 'start',
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))' }}>
         {list.map(r => (
@@ -667,7 +665,7 @@ function LevelProject({ proj, go }) {
       <NpiLinkCard proj={proj} isMobile={isMobile} />
       {proj.evaNote && (
         <div style={{ ...CARD, borderLeft: '3px solid var(--red)', marginBottom: 12, fontSize: 12.5, lineHeight: 1.5 }}>
-          <b>ทำไมถึงแดง:</b> {proj.evaNote}
+          <b>{tr('ทำไมถึงแดง:')}</b> {proj.evaNote}
         </div>
       )}
 
@@ -681,7 +679,7 @@ function LevelProject({ proj, go }) {
       )}
 
       <div style={{ ...CARD, marginBottom: 12 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 7 }}>เส้นทางด่าน</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 7 }}>{tr('เส้นทางด่าน')}</div>
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {proj.sptt.map(s => (
             <span key={s.name} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5,
@@ -694,7 +692,7 @@ function LevelProject({ proj, go }) {
 
       <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0 8px' }}>
         แผงบนบอร์ดกระดาษ {proj.panels.length} แผง
-        <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11.5 }}> · {countsLabel(counts)} · หลักฐานที่ใบ POP อ้างถึง</span>
+        <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11.5 }}> · {countsLabel(counts)} {tr('· หลักฐานที่ใบ POP อ้างถึง')}</span>
       </div>
       <div style={{ display: 'grid', gap: 9, alignContent: 'start',
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(245px, 1fr))' }}>
@@ -718,7 +716,7 @@ function LevelProject({ proj, go }) {
                   letterSpacing: '0.04em', color: p.eva === 'none' || !p.eva ? 'var(--muted)' : evaMeta(p.eva).color }}>
                   {evaMeta(p.eva).short}
                 </span>
-                <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{p.label}</span>
+                <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{tr(p.label)}</span>
                 <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: 14, flex: '0 0 auto' }}>›</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
@@ -727,7 +725,7 @@ function LevelProject({ proj, go }) {
                 ? <div style={{ fontSize: hot ? 12.5 : 11.5, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>
                 : p.eva === 'R'
                   /* กฎ IEC ข้อ 2 — แดงต้องมีข้อความ · ยังไม่เขียน = ฟ้องบนจอ ห้ามปล่อยว่างเนียนๆ */
-                  ? <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.45 }}>⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง</div>
+                  ? <div style={{ fontSize: 11.5, color: '#fca5a5', lineHeight: 1.45 }}>{tr('⚠️ แดงแต่ยังไม่เขียนว่าเกิดอะไร / จะแก้ยังไง')}</div>
                   : null}
               <div style={{ marginTop: 'auto' }}><FreshChip iso={p.updated_at} /></div>
             </button>
@@ -764,7 +762,7 @@ function LevelBucket({ proj, bucket, go }) {
                     style={{ cursor: 'pointer' }}>
                     <td style={td}><Dot eva={l.eva} /></td>
                     <td style={{ ...td, color: 'var(--muted)', fontWeight: 700 }}>{l.no}</td>
-                    <td style={{ ...td, fontWeight: 700 }}>{l.label}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{tr(l.label)}</td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--muted)' }}>
                       {l.path === l.mainKey ? '—' : l.mainLabel}
                     </td>
@@ -794,7 +792,7 @@ function LevelPop({ proj, main, go }) {
           <b style={{ fontSize: 14 }}>{main.no}. {main.label}</b>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
-          ไฟของหัวข้อใหญ่ = <b>แย่สุดของหัวข้อย่อยชนะ</b> — IEC เขียนไว้ว่า
+          ไฟของหัวข้อใหญ่ = <b>{tr('แย่สุดของหัวข้อย่อยชนะ')}</b> — IEC เขียนไว้ว่า
           &ldquo;ถ้ามี 1 ตัวเป็นสีแดง ต้องโชว์แดงเลย&rdquo;
         </div>
         <RuleNote ruleKey="pop" />
@@ -803,7 +801,7 @@ function LevelPop({ proj, main, go }) {
         <div style={CARD}>
           <div style={{ fontSize: 12.5, lineHeight: 1.6 }}>
             หัวข้อนี้ไม่มีหัวข้อย่อย — ประเมินที่ตัวมันเอง
-            {main.panel && <> · หลักฐานอยู่ที่แผง <b>{proj.panels.find(p => p.key === main.panel)?.label}</b></>}
+            {main.panel && <> {tr('· หลักฐานอยู่ที่แผง')} <b>{proj.panels.find(p => p.key === main.panel)?.label}</b></>}
           </div>
           {main.note && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 6 }}>{main.note}</div>}
           {main.panel && (
@@ -832,7 +830,7 @@ function LevelPop({ proj, main, go }) {
                       <td style={{ ...td, color: 'var(--muted)', fontWeight: 700 }}>{s.no}</td>
                       <td style={{ ...td, fontWeight: 700 }}>
                         {s.label}
-                        {s.owner && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> · {s.owner}อัปเดตเอง</span>}
+                        {s.owner && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> · {s.owner}{tr('อัปเดตเอง')}</span>}
                       </td>
                       <td style={{ ...td, fontSize: 11.5, color: 'var(--muted)' }}>
                         {s.topics?.length ? `${s.topics.length} หัวข้อ →` : '—'}
@@ -882,7 +880,7 @@ function LevelPopSub({ proj, main, sub, go }) {
                   <tr key={t.label} style={{ cursor: t.panel ? 'pointer' : 'default' }}
                     onClick={() => t.panel && go({ cust: proj.customer, proj: proj.id, panel: t.panel })}>
                     <td style={td}><Dot eva={t.eva} /></td>
-                    <td style={{ ...td, fontWeight: 700 }}>{t.label}</td>
+                    <td style={{ ...td, fontWeight: 700 }}>{tr(t.label)}</td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--muted)' }}>
                       {t.panel ? `แผง ${proj.panels.find(p => p.key === t.panel)?.label || t.panel} →` : 'ยังไม่ผูก'}
                     </td>
@@ -1077,7 +1075,7 @@ function LevelPanel({ proj, panel }) {
         <EvaBadge big eva={panel.eva} label={panel.label} note={panel.evaNote} />
         <div style={{ ...CARD, fontSize: 11.5, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span>{kind.icon} {kind.label}</span>
-          <span>{kind.hint}</span>
+          <span>{tr(kind.hint)}</span>
           <FreshChip iso={panel.updated_at} />
         </div>
       </div>
@@ -1092,7 +1090,7 @@ function LevelPanel({ proj, panel }) {
       <PanelNpiLink proj={proj} panel={panel} />
       {panel.key === 'eva-milestone' && (
         <div style={{ ...CARD, marginTop: 12 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>เกณฑ์ผ่านของแต่ละด่าน (Requirement of SPTT Milestone)</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{tr('เกณฑ์ผ่านของแต่ละด่าน (Requirement of SPTT Milestone)')}</div>
           <Scroller>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
               <thead><tr>{['SPTT', 'ด่านลูกค้า', 'Off-Tool', 'Off-Process', 'คุณภาพที่ต้องได้', 'กำลังผลิตที่ต้องได้'].map(c => <th key={c} style={th}>{tr(c)}</th>)}</tr></thead>
@@ -1239,15 +1237,15 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                   '--nmb-glow': k === 'R' ? 'var(--red-line)' : 'transparent',
                   '--nmb-ring-w': 'clamp(3px, 0.32vw, 8px)',
                 }}>{m.short}</div>
-                <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, marginTop: '0.6vh', whiteSpace: 'nowrap' }}>{a.label}</div>
+                <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, marginTop: '0.6vh', whiteSpace: 'nowrap' }}>{tr(a.label)}</div>
               </div>
             );
           })}
           <div style={{ textAlign: 'right', marginLeft: '0.6vw' }}>
             <div className="nmb-num" style={{ fontSize: F.clock, fontWeight: 300, lineHeight: 1, letterSpacing: '-0.02em' }}>{clock}</div>
-            <div style={{ fontSize: F.note, color: 'var(--muted)', marginTop: '0.4vh' }}>ข้อมูลจากบอร์ด {SOURCE_DATE}</div>
+            <div style={{ fontSize: F.note, color: 'var(--muted)', marginTop: '0.4vh' }}>{tr('ข้อมูลจากบอร์ด')} {SOURCE_DATE}</div>
           </div>
-          <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
+          <button onClick={onExit} title={tr('ออกจากโหมดจอ TV')} style={{
             background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
             borderRadius: 'var(--r-md)', width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1266,7 +1264,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
           '--nmb-color': 'var(--red)', '--nmb-rail': 'clamp(4px, 0.3vw, 8px)',
         }}>
           {/* ป้ายไทย — ห้ามใช้ชั้น .nmb-eyebrow (letter-spacing .16em ดันสระ/วรรณยุกต์ออกจากพยัญชนะ) */}
-          <div style={{ fontSize: F.eyebrow, color: '#f87171', fontWeight: 700, letterSpacing: '0.02em' }}>ทำไมบอร์ดถึงแดง</div>
+          <div style={{ fontSize: F.eyebrow, color: '#f87171', fontWeight: 700, letterSpacing: '0.02em' }}>{tr('ทำไมบอร์ดถึงแดง')}</div>
           <div style={{ fontSize: F.axis, lineHeight: 1.35, marginTop: '0.25vh' }}>{proj.evaNote}</div>
         </div>
       )}
@@ -1310,7 +1308,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                       fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700,
                       lineHeight: 1.16, minWidth: 0, letterSpacing: hot ? '-0.01em' : 0,
                       display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'clip',
-                    }}>{p.label}</span>
+                    }}>{tr(p.label)}</span>
                     <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: F.panel, flex: '0 0 auto' }}>›</span>
                   </div>
                   <MetricBlock panel={p} size="tv" level={w}
@@ -1381,7 +1379,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
         {/* ตัวนับสถานะเป็น "ชิป" — ตัวอักษร EVA + จำนวน (ไม่ใช่อีโมจิวงกลมต่อกันเป็นพรืด)
             🔴 ชิปที่นับได้ 0 ต้องยังอยู่ แค่จาง — "ไม่มีใบแดงเลย" เป็นข้อมูล ห้ามให้หายไปเฉยๆ */}
         <span style={{ display: 'flex', alignItems: 'center', gap: '0.45vw', flexWrap: 'wrap' }}>
-          <span className="nmb-num" style={{ color: 'var(--text2)' }}>{proj.panels.length} แผง</span>
+          <span className="nmb-num" style={{ color: 'var(--text2)' }}>{proj.panels.length} {tr('แผง')}</span>
           {['R', 'Y', 'G', 'none'].map(k => {
             const m = evaMeta(k);
             const n = counts[k] || 0;
@@ -1394,7 +1392,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                 <span style={{ width: '0.5vw', height: '0.5vw', minWidth: 7, minHeight: 7, maxWidth: 12, maxHeight: 12,
                   borderRadius: '50%', background: m.color, flex: '0 0 auto' }} />
                 <b className="nmb-num" style={{ color: 'var(--text)' }}>{n}</b>
-                <span style={{ color: 'var(--muted)' }}>{m.label}</span>
+                <span style={{ color: 'var(--muted)' }}>{tr(m.label)}</span>
               </span>
             );
           })}
@@ -1497,7 +1495,7 @@ export default function NewModelBoard() {
   return (
     <Page>
       {/* UI-STANDARD 2026-09-24: กรอบ <Page> + ปุ่มโหมดจอ TV ย้ายเข้า actions ของหัวเพจ (โหมด ?tv=1 ยังเต็มจอเหมือนเดิม) */}
-      <PageHeader title="บอร์ด New Model (IEC)" icon="🧭" sub={sub}
+      <PageHeader title={tr('บอร์ด New Model (IEC)')} icon="🧭" sub={sub}
         actions={proj && !panel && !popMain && !bucket ? (
           <button type="button" className="pg-btn" onClick={() => { setTvIndex(Math.max(0, data.projects.findIndex(p => p.id === proj.id))); go({ cust: cust.code, proj: proj.id, tv: '1' }); }}
             style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
@@ -1508,8 +1506,8 @@ export default function NewModelBoard() {
       <Trail items={trail} />
 
       <div style={{ ...CARD, borderLeft: '3px solid var(--accent2)', marginBottom: 12, fontSize: 12, lineHeight: 1.55 }}>
-        ℹ️ <b>เฟสดูภาพรวม</b> — ข้อมูลถอดจากรูปบอร์ดกระดาษ ({SOURCE_DATE}) ยังแก้ในจอไม่ได้ และยังไม่ต่อฐานข้อมูล ·
-        ลูกค้าที่ไม่มีโปรเจคในระบบขึ้นเป็นสีเทา <b>ไม่ใช่เขียว</b> เพราะยังไม่มีข้อมูลจริง ·
+        ℹ️ <b>{tr('เฟสดูภาพรวม')}</b> {tr('— ข้อมูลถอดจากรูปบอร์ดกระดาษ (')}{SOURCE_DATE}) ยังแก้ในจอไม่ได้ และยังไม่ต่อฐานข้อมูล ·
+        ลูกค้าที่ไม่มีโปรเจคในระบบขึ้นเป็นสีเทา <b>{tr('ไม่ใช่เขียว')}</b> เพราะยังไม่มีข้อมูลจริง ·
         รายละเอียดการออกแบบอยู่ใน <code>docs/IEC-NEW-MODEL-OBEYA-DESIGN.md</code>
       </div>
 

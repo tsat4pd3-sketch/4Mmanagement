@@ -74,7 +74,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
   }, [rootMat, bomOf, sheetFor, ownSheetOf, isOpSheet, startSheet]);
 
   if (!rows.length) {
-    return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>ยังไม่มี BOM ของ {rootMat}</div>;
+    return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มี BOM ของ')} {rootMat}</div>;
   }
 
   const shown = showAll ? rows : rows.slice(0, 40);
@@ -96,7 +96,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{rootMat}</span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{rootName || ''}</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
-          {rows.length} รายการ · ลึก {maxLevel} ชั้น
+          {rows.length} {tr('รายการ · ลึก')} {maxLevel} ชั้น
         </span>
       </div>
 
@@ -104,17 +104,17 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       {dupCount > 0 && (
         <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)',
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
-          🔴 <b style={{ color: TONE.crit }}>นับซ้ำ {dupCount} รายการ</b> — ของพวกนี้อยู่ในชั้นลึกอยู่แล้ว
+          🔴 <b style={{ color: TONE.crit }}>{tr('นับซ้ำ')} {dupCount} {tr('รายการ')}</b> — ของพวกนี้อยู่ในชั้นลึกอยู่แล้ว
           แต่ถูกใส่ที่ชั้น 1 ด้วย (BOM ถูก “แบน” มาจากโครงหลายชั้นของ SAP)
           <div style={{ marginTop: 4 }}>
             {flatDupes.map(d => (
               <div key={d.mat_no} style={{ fontFamily: 'monospace', fontSize: 11 }}>
-                • {d.mat_no} — อยู่ใต้ {d.via.join(', ')} (ชั้น {d.deepestLevel}) แต่ชั้น 1 ก็มี ×{fmtQty(d.qtyAtLevel1)}
+                • {d.mat_no} {tr('— อยู่ใต้')} {d.via.join(', ')} {tr('(ชั้น')} {d.deepestLevel}) แต่ชั้น 1 ก็มี ×{fmtQty(d.qtyAtLevel1)}
               </div>
             ))}
           </div>
           <div style={{ marginTop: 4, color: 'var(--muted)' }}>
-            ระบบ<b>ไม่ลบให้เอง</b> — ลบแถวชั้น 1 ออก = เหลือเส้นทางเดียว (ต่อโซ่ ตรงของจริง) ·
+            ระบบ<b>{tr('ไม่ลบให้เอง')}</b> — ลบแถวชั้น 1 ออก = เหลือเส้นทางเดียว (ต่อโซ่ ตรงของจริง) ·
             คงไว้ = ยอมรับว่ายอดชั้น 1 นับรวมของที่อยู่ข้างในแล้ว
           </div>
           {delRows.length > 0 && (
@@ -136,7 +136,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       {flowCount > 0 && (
         <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)',
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
-          ⚠️ <b style={{ color: TONE.warn }}>ผิด pattern การไหล {flowCount} รายการ</b> — ดูคำอธิบายในแถว
+          ⚠️ <b style={{ color: TONE.warn }}>{tr('ผิด pattern การไหล')} {flowCount} {tr('รายการ')}</b> — ดูคำอธิบายในแถว
           <div style={{ marginTop: 2, color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>
             เตือนเฉพาะที่พิสูจน์ได้ — 5xx ที่อยู่ใต้พี่น้อง 2xx อยู่แล้ว (นับซ้ำ) · FG ถูกใส่เป็นชิ้นส่วน
             <br />(5xx ไปเป็นลูกของ 1xx ตรงๆ = ปกติ ไม่เตือน — มีงานแบบนั้นจริง)
@@ -146,11 +146,11 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
 
       {cycles.length > 0 && (
         <div style={{ fontSize: 11.5, color: TONE.crit, fontWeight: 700, marginBottom: 8 }}>
-          🔴 BOM วนกลับหาตัวเอง {cycles.length} เส้น — {cycles.map(c => c.join(' → ')).join(' · ')} (ต้องแก้ที่ master)
+          🔴 BOM วนกลับหาตัวเอง {cycles.length} {tr('เส้น —')} {cycles.map(c => c.join(' → ')).join(' · ')} (ต้องแก้ที่ master)
         </div>
       )}
       {truncated && (
-        <div style={{ fontSize: 11.5, color: TONE.warn, marginBottom: 8 }}>⚠️ โครงลึกเกินกำหนด — ตัดการกางที่ชั้นลึกสุด</div>
+        <div style={{ fontSize: 11.5, color: TONE.warn, marginBottom: 8 }}>{tr('⚠️ โครงลึกเกินกำหนด — ตัดการกางที่ชั้นลึกสุด')}</div>
       )}
 
       <div style={{ overflowX: 'auto' }}>
@@ -206,7 +206,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                     {r.part_name || '—'}
                     {r.fromOtherSheet && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
-                        title="นิยามไว้ครั้งเดียวในใบของตัวเอง — ใบนี้ยืมมากางให้ ไม่ได้กรอกซ้ำ">
+                        title={tr('นิยามไว้ครั้งเดียวในใบของตัวเอง — ใบนี้ยืมมากางให้ ไม่ได้กรอกซ้ำ')}>
                         ชั้นล่างมาจากใบของ {r.mat_no} เอง
                       </div>
                     )}
@@ -237,7 +237,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                         display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                         🔴 นับซ้ำ — ตัวนี้อยู่ชั้นลึกอยู่แล้ว
                         {onDeleteDupes && r.id && (
-                          <button onClick={() => doDelete([r])} disabled={busy} title="ลบแถวชั้น 1 นี้ทิ้ง"
+                          <button onClick={() => doDelete([r])} disabled={busy} title={tr('ลบแถวชั้น 1 นี้ทิ้ง')}
                             style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-md)',
                               cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)',
                               color: TONE.crit, border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
@@ -251,7 +251,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                         {w.level === 'crit' ? '🔴' : '⚠️'} {w.text}
                       </div>
                     )}
-                    {r.cycle && <div style={{ fontSize: 11, color: TONE.crit, marginTop: 1 }}>🔴 วนกลับหาตัวเอง — หยุดกาง</div>}
+                    {r.cycle && <div style={{ fontSize: 11, color: TONE.crit, marginTop: 1 }}>{tr('🔴 วนกลับหาตัวเอง — หยุดกาง')}</div>}
                   </td>
                   <td style={{ ...td, textAlign: 'right', fontWeight: 700, whiteSpace: 'nowrap' }}>{fmtQty(r.qty)}</td>
                   {/* หน่วยต้องมีเสมอ — ไม่มีในฐาน = บอกตรงๆ ห้ามเดา */}
@@ -278,9 +278,9 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       )}
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
-        <b>จำนวน/ตัวแม่</b> = ต่อ 1 หน่วยของชิ้นที่อยู่เหนือขึ้นไป (ตรงกับคอลัมน์ Qty ของ SAP) ·
-        <b> ต่อ 1 FG</b> = คูณสะสมทั้งสายแล้ว
-        <br />จอนี้แก้ BOM ไม่ได้ (ยกเว้นปุ่มลบแถว<b>นับซ้ำ</b>) — เพิ่ม/แก้พาร์ทที่ตารางด้านล่าง
+        <b>{tr('จำนวน/ตัวแม่')}</b> = ต่อ 1 หน่วยของชิ้นที่อยู่เหนือขึ้นไป (ตรงกับคอลัมน์ Qty ของ SAP) ·
+        <b> {tr('ต่อ 1 FG')}</b> = คูณสะสมทั้งสายแล้ว
+        <br />{tr('จอนี้แก้ BOM ไม่ได้ (ยกเว้นปุ่มลบแถว')}<b>{tr('นับซ้ำ')}</b>) — เพิ่ม/แก้พาร์ทที่ตารางด้านล่าง
       </div>
     </div>
   );

@@ -35,7 +35,7 @@ export default function ConnBanner() {
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap',
       boxShadow: 'var(--shadow-float)',
     }}>
-      <span>⚠️ เชื่อมต่อฐานข้อมูลไม่ได้ — ข้อมูลบนจอตอนนี้อาจไม่ใช่ล่าสุด</span>
+      <span>{tr('⚠️ เชื่อมต่อฐานข้อมูลไม่ได้ — ข้อมูลบนจอตอนนี้อาจไม่ใช่ล่าสุด')}</span>
       <span style={{ opacity: 0.85, fontWeight: 500 }}>
         {left > 0 ? `ระบบจะลองใหม่ให้เองใน ${left} วิ` : 'กำลังลองใหม่…'}
       </span>

@@ -111,7 +111,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
     <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg)', padding: '10px 12px' }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>
         คอมเมนต์{items ? ` (${items.length})` : ''}
-        <span style={{ fontWeight: 500, color: 'var(--muted)', marginLeft: 8, fontSize: 11 }}>คุยกันใต้ใบงาน — ประวัติติดรายการนี้</span>
+        <span style={{ fontWeight: 500, color: 'var(--muted)', marginLeft: 8, fontSize: 11 }}>{tr('คุยกันใต้ใบงาน — ประวัติติดรายการนี้')}</span>
       </div>
 
       {unavailable ? (
@@ -122,8 +122,8 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
         <>
           {/* รายการคอมเมนต์ */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', marginBottom: 8 }}>
-            {items == null && <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>}
-            {items != null && items.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีคอมเมนต์ — เริ่มคุยเรื่องรายการนี้ได้เลย</div>}
+            {items == null && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>}
+            {items != null && items.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีคอมเมนต์ — เริ่มคุยเรื่องรายการนี้ได้เลย')}</div>}
             {(items || []).map(c => (
               <div key={c.id} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -165,7 +165,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
                           {u.full_name}
                         </button>
                       ))}
-                      {shownUsers.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 8px' }}>ไม่พบรายชื่อ</div>}
+                      {shownUsers.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 8px' }}>{tr('ไม่พบรายชื่อ')}</div>}
                     </div>
                   </div>
                 )}

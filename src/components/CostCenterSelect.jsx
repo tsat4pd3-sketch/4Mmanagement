@@ -11,6 +11,7 @@ import { useCostCentersState } from '../utils/useCostCenters';
 import { registryFailText } from '../utils/useMasterRows.js';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
+import { tr } from '../utils/i18n';
 const norm = (s) => String(s ?? '').trim();
 
 export default function CostCenterSelect({
@@ -27,7 +28,7 @@ export default function CostCenterSelect({
       _pref: pref ? norm(r.section).toUpperCase() === pref : false,
     }));
     tagged.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, undefined, { numeric: true }));
-    const base = tagged.map(o => ({ ...o, group: pref ? (o._pref ? '🎯 ส่วนงานนี้' : '🏢 ส่วนงานอื่น') : undefined }));
+    const base = tagged.map(o => ({ ...o, group: pref ? (o._pref ? tr('🎯 ส่วนงานนี้') : tr('🏢 ส่วนงานอื่น')) : undefined }));
     return appendHistoryOptions(base, { history, current: value, keyOf: norm, make: (v) => ({ name: '', section: null }) });
   }, [rows, value, history, section]);
   const sel = useMemo(() => options.find(o => o.key === norm(value)) || null, [options, value]);
@@ -37,7 +38,7 @@ export default function CostCenterSelect({
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
-      allowFree={allowFree} placeholder={placeholder} emptyText="ไม่พบรหัสในทะเบียน — เพิ่มได้ที่ /org-setup แผง 💰 Cost Center"
+      allowFree={allowFree} placeholder={placeholder} emptyText={tr('ไม่พบรหัสในทะเบียน — เพิ่มได้ที่ /org-setup แผง 💰 Cost Center')}
       loadFail={failed ? registryFailText('ทะเบียน Cost Center', stale) : ''}
       disabled={disabled} inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style} />
   );

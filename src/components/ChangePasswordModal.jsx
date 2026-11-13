@@ -142,7 +142,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               >{showNew ? '🙈' : '👁'}</button>
             </div>
             {weak && (
-              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>⚠ ต้องมีอย่างน้อย 6 ตัวอักษร</div>
+              <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{tr('⚠ ต้องมีอย่างน้อย 6 ตัวอักษร')}</div>
             )}
           </div>
 
@@ -162,8 +162,8 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               }}
               disabled={loading}
             />
-            {match   && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>✓ รหัสผ่านตรงกัน</div>}
-            {noMatch && <div style={{ fontSize: 11, color: '#ef4444',       marginTop: 4 }}>✗ รหัสผ่านไม่ตรงกัน</div>}
+            {match   && <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 4 }}>{tr('✓ รหัสผ่านตรงกัน')}</div>}
+            {noMatch && <div style={{ fontSize: 11, color: '#ef4444',       marginTop: 4 }}>{tr('✗ รหัสผ่านไม่ตรงกัน')}</div>}
           </div>
 
           {/* Strength bar */}

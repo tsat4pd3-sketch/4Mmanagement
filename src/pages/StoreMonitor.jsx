@@ -18,6 +18,7 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import usePartImages from '../utils/usePartImages';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
@@ -130,8 +131,8 @@ export default function StoreMonitor() {
 
   return (
     <Page>
-      <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
-        sub="จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)" />
+      <PageHeader title={tr('เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)')} icon="🚨"
+        sub={tr('จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)')} />
 
 
       {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
@@ -148,7 +149,7 @@ export default function StoreMonitor() {
             extraGroups={[{ label: 'คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
-        <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
+        <Segmented value={kindFilter} onChange={setKindFilter} label={tr('ชนิดความผิดปกติ')}
           options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: 'จะขาด' }, { value: 'over', label: 'ล้น' }]} />
       </FilterBar>
 
@@ -170,16 +171,16 @@ export default function StoreMonitor() {
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'var(--red-line)', background: 'var(--red-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--red)', fontWeight: 700 }}>
-          ⚠ โหลดข้อมูลเฝ้าระวังไม่สำเร็จ — <b>ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ</b> ({loadErr})
+          ⚠ โหลดข้อมูลเฝ้าระวังไม่สำเร็จ — <b>{tr('ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ')}</b> ({loadErr})
         </div>
       )}
       {cutMsg && (
         <div style={{ ...card, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
-          ⚠ รายการผิดปกติเกิน {cutMsg} รายการ — แสดงเฉพาะที่รุนแรงที่สุด <b>ตัวเลขบนจอยังไม่ครบ</b>
+          ⚠ รายการผิดปกติเกิน {cutMsg} {tr('รายการ — แสดงเฉพาะที่รุนแรงที่สุด')} <b>{tr('ตัวเลขบนจอยังไม่ครบ')}</b>
         </div>
       )}
       {loading ? (
-        <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : shown.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--green)', fontSize: 14, fontWeight: 700 }}>
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
@@ -209,7 +210,7 @@ export default function StoreMonitor() {
         </div>
       )}
 
-      <InfoMore label="แหล่งข้อมูลและขอบเขต" size={11.5} style={{ marginTop: 16 }}>
+      <InfoMore label={tr('แหล่งข้อมูลและขอบเขต')} size={11.5} style={{ marginTop: 16 }}>
         แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
         เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
       </InfoMore>
