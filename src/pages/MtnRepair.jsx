@@ -1447,7 +1447,12 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
   fillOrderId = null }) {
   const [f, setF] = useState(() => {
     const base = {
-    mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
+    /* 🔴 13/11 คำสั่ง user (หน้างานแจ้ง): *"ตอนนี้มันตั้งค่าเริ่มต้นเป็น MTN ส่งผิดแผนกบ่อย
+       ... ให้บังคับต้องเลือกนะ ไม่ออโต้ MTN แน่นอน"* ⇒ **ค่าเริ่มต้นต้องว่าง**
+       เดิม `teamKeyOf(defaultDept) || 'maintenance'` — ไม่รู้ทีม = ยัด MTN ให้เงียบๆ
+       แล้วคนกดเร็วก็ส่งไปผิดทีม ⇒ ใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง
+       🔴 ทีมที่เดาได้จากทะเบียนเครื่องยังมีประโยชน์ — แต่เป็น **คำใบ้ใต้ช่อง ไม่ใช่ค่าที่เลือกให้** */
+    mtn_dept: '', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
     /* ── ช่องเฉพาะฟอร์มกระดาษของทีม MTN (FM-MTN · 2026-09-15) — ทีมอื่นไม่โชว์ ── */
     contact_phone: '', pr_no: '', io_no: '', purpose: 'repair', dept_manager_name: '', plant_manager_name: '',
@@ -1730,6 +1735,8 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
   const noteCheck = moNoteCheck({ note: f.report_note, group: f.problem_group, character: f.problem_characteristic });
 
   const save = async () => {
+    /* 🔴 ข้อแรกสุด — ส่งผิดทีมคือความเสียหายที่แก้ยากที่สุดของใบนี้ (ต้องตีกลับแล้วเปิดใหม่) */
+    if (!teamKeyOf(f.mtn_dept)) return toast.error('เลือก "แจ้งถึงทีมช่าง" ก่อน — ส่งผิดทีมแล้วใบต้องตีกลับ');
     if (!f.line_name) return toast.error('เลือกไลน์การผลิต');
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
@@ -1805,7 +1812,24 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
           → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
       <div style={{ display: 'grid', gap: 12 }}>
         <FormStep n={1} title={trI18n('แจ้งถึงทีมช่าง · ชนิดงาน')} />
-        <Field label={trI18n('แจ้งถึงทีมช่าง')} required><select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)} style={{ ...inp, borderColor: 'var(--accent)', fontWeight: 700 }}><TeamOpts list={mtnDepts} /></select></Field>
+        {/* 🔴 ต้องเลือกเอง — ห้ามมีค่าตั้งต้น (13/11 · คำสั่ง user "ส่งผิดแผนกบ่อย ให้บังคับต้องเลือก")
+            ยังไม่เลือก = ขอบส้ม + ป้ายเตือน (ไม่ใช่ขอบ accent เหมือนช่องที่กรอกแล้ว) */}
+        <Field label={trI18n('แจ้งถึงทีมช่าง')} required>
+          <select value={f.mtn_dept} onChange={e => set('mtn_dept', e.target.value)}
+            style={{ ...inp, fontWeight: 700,
+                     borderColor: f.mtn_dept ? 'var(--accent)' : 'var(--amber)',
+                     color: f.mtn_dept ? undefined : 'var(--amber)' }}>
+            <option value="">— {trI18n('เลือกทีมช่าง')} —</option>
+            <TeamOpts list={mtnDepts} />
+          </select>
+          {!f.mtn_dept && (
+            <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3, lineHeight: 1.6 }}>
+              {trI18n('ต้องเลือกทีมช่างก่อน — ส่งผิดทีมแล้วใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง')}
+              {/* 💡 คำใบ้จากทะเบียนเครื่อง/ทีมของผู้แจ้ง — บอกเฉยๆ ไม่เลือกให้ */}
+              {teamKeyOf(defaultDept) ? <div>{trI18n('💡 จากทะเบียน/ทีมของคุณ น่าจะเป็น')} <b>{deptNameOf(teamKeyOf(defaultDept))}</b></div> : null}
+            </div>
+          )}
+        </Field>
         <Field label={trI18n('ขอบเขตการซ่อม')}><select value={f.repair_scope} onChange={e => set('repair_scope', e.target.value)} style={inp}>{SCOPE_OPTS.map(o => <option key={o.v} value={o.v}>{trI18n(o.t)}</option>)}</select></Field>
         <Field label={trI18n('ประเภทงานซ่อม (BM/PM)')}>
             <select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>

@@ -10330,6 +10330,15 @@ const EN = {
     'Opened automatically when maintenance was called — open it and add the details',
   'เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)':
     'Maintenance was called — an MO was opened automatically · tap to add the details (equipment kind · problem · before photo)',
+
+  /* ── 🔴 บังคับเลือกทีมช่าง (13/11 · หน้างานแจ้ง "ส่งไปผิดแผนกบ่อย") ── */
+  'เลือกทีมช่าง': 'Select maintenance team',
+  'ต้องเลือกทีมช่างก่อน — ส่งผิดทีมแล้วใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง':
+    'Pick the maintenance team first — the wrong team means the MO gets bounced back, costing both sides time',
+  '💡 จากทะเบียน/ทีมของคุณ น่าจะเป็น': '💡 From the registry / your team, likely',
+  '↑ เลือกทีมช่างก่อน': '↑ Pick a maintenance team first',
+  'ทะเบียนเครื่องนี้อยู่ทีม': 'The registry puts this machine with',
+  'ถ้าใช่ กดเลือกด้านล่าง': 'if that is right, tap it below',
 };
 
 export default EN;
