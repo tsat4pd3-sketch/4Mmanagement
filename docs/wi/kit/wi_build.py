@@ -81,8 +81,15 @@ def page_slide(d):
 
 # ---------------- build ----------------
 title_slide(p, C.TITLE, C.SUBTITLE, C.MENU_LINE, "อ้างอิงโปรแกรม ณ " + getattr(C, "AS_OF", "03/11/2026")); nextpage()
-agenda_slide(p, nextpage(), "สารบัญ", "แบ่งบทตามบทบาท — อ่านเฉพาะบทของตัวเองได้",
-    [("ภาพรวม", "ผังการไหลของงาน · ใครใช้หน้าไหน · วิธีอ่านคู่มือ")] + [(f"บท {k} · {n}", d) for k, n, d in C.PARTS] + [("กิจวัตรรายวัน + ปัญหาที่พบบ่อย", "")])
+# สารบัญ — วาดเอง (agenda_slide ของธีมเว้น 0.92" ตายตัว ⇒ เกิน 6 รายการทับ footer · เจอจริงเล่ม Maintenance 5 บท)
+_ag = [("ภาพรวม", "ผังการไหลของงาน · ใครใช้หน้าไหน · วิธีอ่านคู่มือ")] + [(f"บท {k} · {n}", d) for k, n, d in C.PARTS] + [("กิจวัตรรายวัน + ปัญหาที่พบบ่อย", "")]
+s = blank(p); head(s, "สารบัญ", "แบ่งบทตามบทบาท — อ่านเฉพาะบทของตัวเองได้")
+_step = min(0.92, (6.75 - 1.93) / len(_ag)); yy = 1.93
+for i, (t1, t2) in enumerate(_ag):
+    text(s, 1.56, yy, 11.0, 0.42, [[(f"{i + 1}.   {t1}", {"sz": 18 if _step >= 0.8 else 16, "b": True, "c": GREEN})]])
+    if t2: text(s, 2.05, yy + (0.42 if _step >= 0.8 else 0.36), 10.5, 0.34, [[(t2, {"sz": fit_one_line(t2, 10.5, 13, 10), "c": GREY})]])
+    yy += _step
+footer(s, nextpage())
 
 s = blank(p); head(s, "วิธีอ่านคู่มือ + เข้าเมนู", C.HOWTO_MENU[0])
 items = [("1", "เข้าเมนู", C.HOWTO_MENU[1]),
