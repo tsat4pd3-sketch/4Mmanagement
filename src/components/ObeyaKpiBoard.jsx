@@ -37,7 +37,7 @@ import useTvShell from '../utils/useTvShell';
 import { balanceGrid } from '../utils/sheetGrid';
 import { applyFormulaEntries, buildBaseIndex, formulaNoteText } from '../utils/kpiFormula';
 import { headcountAuto, headcountAutoVar } from '../utils/kpiHeadcount';
-import { boardFlipSec } from '../utils/displayRotation';
+import { boardFlipSec, activeDwellSecOf } from '../utils/displayRotation';
 import BoardPager from './BoardPager';
 import useFitHeight from '../utils/useFitHeight';
 import { packPages, clampPage, pageLabels, cellsUsed } from '../utils/boardPager';
@@ -754,10 +754,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const [pgRaw, setPg] = useState(0);
   const pg = clampPage(pgRaw, pages.length);          // เปลี่ยนขอบเขต/เดือนแล้วหน้าหาย ⇒ เด้งกลับ ห้ามจอว่าง
   const pageItems = pages[pg] || [];
-  /* 📺 โหมดจอ + มีหลายหน้า = สลับหน้าเองให้ครบก่อนจอวนต่อ (15/10 · user) — จังหวะ = เวลาที่จอวนค้างหน้านี้ ÷ จำนวนหน้า
-     (`boardFlipSec` · ไม่ได้อยู่ในรอบวน = ค่าตั้งต้นของจอวน) · `pg` ใน deps = คนกด ◀▶ เอง → นับเวลาใหม่จากหน้านั้น */
+  /* 📺 สลับหน้าเอง **เฉพาะตอนอยู่ในรอบวนจอ** (DisplayRotator ประกาศ dwell ไว้ · 15/10) — จังหวะ = เวลาที่จอวนค้างหน้านี้ ÷ จำนวนหน้า
+     (`boardFlipSec`) · `pg` ใน deps = คนกด ◀▶ เอง → นับเวลาใหม่จากหน้านั้น
+     🎤 13/11 · คำสั่ง user "หน้านี้ใช้นำเสนอ ไม่ต้องมี timer ให้กดเอาเอง" ⇒ กดโหมดจอเอง (ไม่อยู่ในรอบวน · `activeDwellSecOf()` = null)
+     = **ไม่สลับเอง** เปลี่ยนหน้าด้วย ◀▶ / ลูกศรคีย์บอร์ด / รีโมตพรีเซนเตอร์เท่านั้น · จอวน (role display) ยังสลับให้ครบทุกหน้าเหมือนเดิม */
   useEffect(() => {
-    if (!board || pages.length < 2) return undefined;
+    if (!board || pages.length < 2 || activeDwellSecOf() == null) return undefined;
     const sec = boardFlipSec(pages.length);
     if (!sec) return undefined;
     const id = setInterval(() => setPg((pg + 1) % pages.length), sec * 1000);
