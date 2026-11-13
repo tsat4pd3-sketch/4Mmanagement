@@ -98,7 +98,6 @@ const EN = {
   '3 ระดับ PM': '3 Maintenance Levels',
   'Delivery — ติดตามการส่งงานลูกค้า': 'Delivery — Customer Shipment Tracking',
   'Improvements — โปรเจคปรับปรุง': 'Improvements — Kaizen Projects',
-  'Line Stock — สต๊อกหน้าไลน์': 'Line Stock — Line-side Inventory',
   'Monitoring ติดตามแผน-สต๊อก': 'Monitoring — Plan & Stock',
   'PM ล่วงหน้า (Planner)': 'PM Forecast (Planner)',
   'Planner & Sales — Forecast จากลูกค้า': 'Planner & Sales — Customer Forecast',

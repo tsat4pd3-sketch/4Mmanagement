@@ -10846,3 +10846,20 @@ test('🔴 mtn-team-must-be-picked — ทีมช่างห้ามมี�
   assert.match(dr, /team:\s*'',\s*hint:\s*teamForMachine\(/,
     '\n\n❌ ป๊อปอัพเรียกช่างกลับไปเลือกทีมให้ล่วงหน้า — ต้องเป็นคำใบ้ (hint) เท่านั้น\n');
 });
+
+test('🚫 no-fg-line-request — ทุกจุดที่ออกใบเบิกเข้าไลน์ต้องกันเลข FG 1xx', () => {
+  /* 🔴 13/11 คำสั่ง user: *"FG มันป้อนไลน์ประกอบไม่ได้ … คลังสินค้าเก็บแค่งานสำเร็จรูปพร้อมขาย หรืองานก่อนแพ็ค
+     … ไม่มี FG เข้าไลน์"* · วัดจริง: ใบเบิก 1xx เข้าไลน์มีแล้ว 7 ใบ (ยกเลิก 5 · รับ 2) + BOM 1 แถวที่มีลูกเป็น 1xx
+     (สินค้าอ้างถึงตัวเอง) ⇒ ระบบเปิดทางให้เกิดของที่ไม่มีอยู่จริงในโรงงาน
+     ด่านนี้: ไฟล์ไหน insert `wip_replenish_requests` ต้องเรียก `isFgMat` (utils/storeOps.js) ในไฟล์เดียวกัน */
+  const offenders = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (file.includes('__tests__')) continue;
+    const src = stripComments(readFileSync(file, 'utf8'));
+    if (!/from\('wip_replenish_requests'\)\.insert\(/.test(src)) continue;
+    if (!/\bisFgMat\(/.test(src)) offenders.push(relative(ROOT, file));
+  }
+  assert.deepEqual(offenders, [],
+    '\n\n❌ ไฟล์นี้ออกใบเบิกเข้าไลน์โดยไม่กันเลข FG 1xx:\n   ' + offenders.join('\n   ')
+    + '\n   ใช้ `isFgMat(mat)` + ข้อความ `FG_NO_LINE_REQUEST` จาก src/utils/storeOps.js ก่อน insert\n');
+});

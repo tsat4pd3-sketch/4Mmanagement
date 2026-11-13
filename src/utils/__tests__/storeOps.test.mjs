@@ -20,3 +20,11 @@ import { OPS_STORES_IN } from '../storeOps.js';
 test('ขาออก/ขาเข้า ไม่ซ้อนกัน — ใบล็อต/รอรับเข้า/รับกลับชุบ อยู่ขาเข้าเท่านั้น', () => {
   for (const k of ['lots', 'receipts', 'plating_in', 'purchase']) { assert.ok(OPS_STORES_IN.includes(k), k); assert.ok(!OPS_STORES_OUT.includes(k), k); }
 });
+
+import { isFgMat, FG_NO_LINE_REQUEST } from '../storeOps.js';
+test('isFgMat: เฉพาะเลข 1xx = FG (ไม่มี FG เข้าไลน์ · 13/11)', () => {
+  assert.equal(isFgMat('10101158'), true);
+  assert.equal(isFgMat(' 10052995 '), true);
+  for (const m of ['20063136', '30052550', '50027083', '90000001', 'MB3B 8A297 CB', '', null]) assert.equal(isFgMat(m), false, String(m));
+  assert.match(FG_NO_LINE_REQUEST, /ไม่มีการเบิกเข้าไลน์/);
+});
