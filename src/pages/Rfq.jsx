@@ -13,6 +13,7 @@ import SearchInput from '../components/SearchInput';
 import CustomerSelect from '../components/CustomerSelect';
 import PersonSelect from '../components/PersonSelect';
 import StepFlow from '../components/StepFlow';
+import { RfqFilesCard, RfqAssessCard } from '../components/RfqAssessPanel';
 import usePeople from '../utils/usePeople';
 import useColumnHistory from '../utils/useColumnHistory';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
@@ -26,7 +27,7 @@ import { nextProjectCode, buildPartRows } from '../utils/npi';
 import {
   RFQ_STATUS, RFQ_STATUS_PHASE1, RFQ_OUTCOMES, PROCESS_TYPES, PRIORITIES, VOLUME_SOURCES,
   rfqStatusMeta, isClosed, nextRfqNo, annualSales, awardSummary, npiProjectDraftFromRfq, snapshotDrift,
-  rfqFlow, MKT_PEOPLE_ROLES,
+  rfqFlow, MKT_PEOPLE_ROLES, JOB_TYPES, lifetimeVolume, assessmentGate,
 } from '../utils/mktRfq';
 import { issueProductionOrder, reprintProductionOrder } from '../lib/mktProductionOrderDoc';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, Modal, WarnBar } from '../components/NpiUi';
@@ -53,11 +54,13 @@ import { tr } from '../utils/i18n';
 
 const TABS = [{ key: 'list', label: 'รายการ RFQ' }, { key: 'report', label: 'ได้งาน / ไม่ได้งาน' }];
 const RFQ_COLS = 'id, rfq_no, customer, model, title, process_type, priority, received_date, due_date, sop_date_customer, status, '
-  + 'customer_target_price, annual_volume, volume_source, apw, mpw, crd_no, crd_sent_at, npi_project_id, owner_name, remark, created_by_name, created_at';
+  + 'customer_target_price, annual_volume, volume_source, apw, mpw, crd_no, crd_sent_at, npi_project_id, owner_name, remark, created_by_name, created_at'
+  + ', model_life_years, job_type, assess_requested_at';   // เฟส 2a (13/11)
 const AWARD_COLS = 'id, rfq_id, outcome, decided_at, loss_reason, unit_price, tooling_price, annual_volume, annual_sales, po_no, to_no, '
   + 'production_order_no, production_order_snapshot, production_order_issued_at, production_order_issued_by, reprint_count, decided_by_name';
 const emptyRfq = { rfq_no: '', customer: '', model: '', title: '', process_type: 'steel', priority: 'normal', received_date: '', due_date: '',
-  sop_date_customer: '', status: 'received', customer_target_price: '', annual_volume: '', volume_source: '', apw: '', mpw: '', owner_name: '', remark: '' };
+  sop_date_customer: '', status: 'received', customer_target_price: '', annual_volume: '', volume_source: '', apw: '', mpw: '', owner_name: '', remark: '',
+  model_life_years: '', job_type: '' };
 const emptyPart = { part_no: '', part_name: '', parent_part_id: '', material_spec: '', thickness_mm: '', qty_per: 1, coating: '', cad_revision: '', remark: '' };
 const num = (v) => (v === '' || v == null ? null : Number(v));
 const fmtN = (v, d = 0) => (v == null || v === '' ? '—' : Number(v).toLocaleString('th-TH', { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -66,6 +69,7 @@ export default function Rfq() {
   const { role, fullName } = useContext(UserContext);
   const canEdit = can('rfq', 'edit', role);
   const canAward = can('rfq', 'award', role);
+  const canAssess = can('rfq', 'assess', role);   // IEC ทั้งทีม = engineer_nm (seed 13/11)
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');
   const [sp] = useSearchParams();
   const setParams = useMergeParams();
@@ -85,6 +89,8 @@ export default function Rfq() {
   const [npiProjects, setNpiProjects] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [parts, setParts] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [assessments, setAssessments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [warn, setWarn] = useState('');
   const [q, setQ] = useState('');
@@ -121,10 +127,17 @@ export default function Rfq() {
 
   /* ── พาร์ทของ RFQ ที่เลือก ── */
   const loadParts = useCallback(async (id) => {
-    if (!id) { setParts([]); return; }
-    const { data, error } = await supabase.from('mkt_rfq_parts').select('*').eq('rfq_id', id).order('sort').order('created_at');
-    if (error) { toast.error(`โหลดพาร์ทไม่ได้: ${error.message}`); setParts([]); return; }
-    setParts(data || []);
+    if (!id) { setParts([]); setFiles([]); setAssessments([]); return; }
+    // พาร์ท + เอกสารแนบ + ใบประเมิน (เฟส 2a) — ก้อนไหนล่มบอกตรงๆ ไม่ใช่โชว์ว่างเงียบ
+    const [p, f, a] = await Promise.all([
+      supabase.from('mkt_rfq_parts').select('*').eq('rfq_id', id).order('sort').order('created_at'),
+      supabase.from('mkt_rfq_files').select('id, rfq_id, kind, file_url, file_name, size_bytes, note, uploaded_by_name, created_at').eq('rfq_id', id).order('created_at'),
+      supabase.from('mkt_rfq_assessments').select('*').eq('rfq_id', id).order('round'),
+    ]);
+    if (p.error) toast.error(`โหลดพาร์ทไม่ได้: ${p.error.message}`);
+    if (f.error) toast.error(`โหลดเอกสารแนบไม่ได้: ${f.error.message} — ยังไม่ apply migration 20261113a (MAIN)?`);
+    if (a.error) toast.error(`โหลดใบประเมินไม่ได้: ${a.error.message}`);
+    setParts(p.data || []); setFiles(f.data || []); setAssessments(a.data || []);
   }, []);
   useEffect(() => { let alive = true; (async () => { if (!alive) return; await loadParts(rfqId); })(); return () => { alive = false; }; }, [rfqId, loadParts]);
 
@@ -156,6 +169,7 @@ export default function Rfq() {
       status: m.status || 'received',
       customer_target_price: num(m.customer_target_price), annual_volume: num(m.annual_volume), volume_source: m.volume_source || null,
       apw: num(m.apw), mpw: num(m.mpw), owner_name: m.owner_name?.trim() || null, remark: m.remark?.trim() || null,
+      model_life_years: num(m.model_life_years), job_type: m.job_type || null,
     };
     const res = m.id
       ? await supabase.from('mkt_rfqs').update(row).eq('id', m.id).select('id')
@@ -173,6 +187,9 @@ export default function Rfq() {
   };
   const setStatus = async (s) => {
     if (!rfq) return;
+    // 🔴 ข้ามขั้นประเมินไม่ได้ (feedback 12/11) — กฎอยู่ assessmentGate() · ทางหลักคือปุ่ม "ส่งให้ IEC ประเมิน" ในการ์ดประเมิน
+    const g = assessmentGate(s, { assessments });
+    if (!g.ok) return toast.error(g.reason);
     if (!checkWriteRows(await supabase.from('mkt_rfqs').update({ status: s }).eq('id', rfq.id).select('id'), 'เปลี่ยนสถานะ')) return;
     loadAll();
   };
@@ -321,13 +338,14 @@ export default function Rfq() {
         รับ RFQ จากลูกค้า → บันทึกพาร์ท/volume → <b>{tr('ส่ง CRD')}</b> ให้ IEC = สร้างโปรเจค NPI จากหน้านี้ (ระบบเสนอชื่อ/พาร์ท คนยืนยัน) →
         ลูกค้าตัดสิน → <b>{tr('ได้งาน')}</b> = ออก <b>{tr('ใบแจ้งจัดทำ F-MKT-001/002')}</b> ให้ฝ่ายโรงงาน (ออกเลขแล้วพิมพ์ซ้ำได้ ใบเดิมเสมอ) ·
         ยอดขาย/ปี = volume × ราคาชิ้น (ขาดตัวใดตัวหนึ่ง = ไม่คิด ไม่ใช่ 0) · volume ต้องบอกที่มาเสมอ (RFQ มี 3 ชุดคนละค่า) ·
-        ยังไม่ทำ (เฟส 2-3): มอบงานแผนก IEC/RDPP/Purchasing · checklist gate · คำนวณต้นทุน ①–⑤ · ใบเสนอราคา 2 ชั้นอนุมัติ
+        เฟส 2a (13/11): แนบเอกสาร RFQ · model life · job type · <b>ส่งให้ IEC ประเมิน</b> → IEC ตอบ ผลิตได้ไหม/process flow/ราคาเป้าหมาย → สถานะเดินต่อได้ · ยังไม่ทำ (เฟส 2b-3): มอบงานแผนกอื่น · checklist gate · คำนวณต้นทุน ①–⑤ · ใบเสนอราคา 2 ชั้นอนุมัติ
       </InfoMore>
 
       {loading ? <div style={{ color: 'var(--muted)', padding: 30 }}>{tr('กำลังโหลด…')}</div> : tab === 'report' ? (
         <ReportTab rfqs={rfqs} awards={awards} onOpen={(id) => { setRfq(id); setTab('list'); }} />
       ) : rfq ? (
-        <RfqSheet rfq={rfq} award={award} parts={parts} mainParts={mainParts} npi={npiOf[rfq.npi_project_id]} canEdit={canEdit} canAward={canAward}
+        <RfqSheet rfq={rfq} award={award} parts={parts} mainParts={mainParts} npi={npiOf[rfq.npi_project_id]} canEdit={canEdit} canAward={canAward} canAssess={canAssess}
+          files={files} assessments={assessments} fullName={fullName} onReloadDetail={() => { loadParts(rfq.id); loadAll(); }}
           statusOptions={statusOptions} onStatus={setStatus} onEdit={() => setRfqModal({ ...emptyRfq, ...rfq, customer_target_price: rfq.customer_target_price ?? '', annual_volume: rfq.annual_volume ?? '', apw: rfq.apw ?? '', mpw: rfq.mpw ?? '' })}
           onDel={() => delRfq(rfq)} onAddPart={() => setPartModal({ ...emptyPart })} onEditPart={(p) => setPartModal({ ...emptyPart, ...p, parent_part_id: p.parent_part_id || '', thickness_mm: p.thickness_mm ?? '' })}
           onDelPart={delPart} onNpi={openNpiModal} onAward={openAward} onIssue={doIssue} onReprint={doReprint} today={today} />
@@ -348,6 +366,8 @@ export default function Rfq() {
             <Field label={tr('ชื่องาน (สั้นๆ)')} span={2}><input style={inp} value={rfqModal.title} onChange={e => setRfqModal({ ...rfqModal, title: e.target.value })} placeholder={tr('ว่าง = ใช้ชื่อพาร์ทแรก')} /></Field>
             <Field label={tr('ชนิดงาน')}><select style={inp} value={rfqModal.process_type} onChange={e => setRfqModal({ ...rfqModal, process_type: e.target.value })}>{Object.entries(PROCESS_TYPES).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}</select></Field>
             <Field label={tr('ความเร่งด่วน')}><select style={inp} value={rfqModal.priority} onChange={e => setRfqModal({ ...rfqModal, priority: e.target.value })}>{Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}</select></Field>
+            <Field label="Make-to-print / Co-design" hint="Q-neX job type"><select style={inp} value={rfqModal.job_type || ''} onChange={e => setRfqModal({ ...rfqModal, job_type: e.target.value })}><option value="">{tr('— ยังไม่ระบุ —')}</option>{Object.entries(JOB_TYPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+            <Field label="Model life (ปี)" hint="ยอดรวมตลอดอายุ = volume/ปี × ปี"><input type="number" step="0.5" style={inp} value={rfqModal.model_life_years ?? ''} onChange={e => setRfqModal({ ...rfqModal, model_life_years: e.target.value })} /></Field>
             <Field label={tr('ผู้รับผิดชอบ (MKT Engineer)')} hint={mktPeopleHint}>
               <PersonSelect value={rfqModal.owner_name} onChange={(v) => setRfqModal({ ...rfqModal, owner_name: typeof v === 'string' ? v : (v?.name || '') })}
                 history={ownerHist} roles={MKT_PEOPLE_ROLES} strict placeholder={tr('ค้นชื่อทีม Marketing…')}
@@ -500,7 +520,7 @@ function RfqTable({ rows, hidden, awardOf, npiOf, onPick, today }) {
 }
 
 /* ── ใบงาน RFQ 1 ใบ ── */
-function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, statusOptions, onStatus, onEdit, onDel, onAddPart, onEditPart, onDelPart, onNpi, onAward, onIssue, onReprint, today }) {
+function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, canAssess, files = [], assessments = [], fullName, onReloadDetail, statusOptions, onStatus, onEdit, onDel, onAddPart, onEditPart, onDelPart, onNpi, onAward, onIssue, onReprint, today }) {
   const st = rfqStatusMeta(rfq.status);
   const flow = rfqFlow(rfq.status, { award });
   const subsOf = (id) => parts.filter(p => p.parent_part_id === id);
@@ -529,10 +549,14 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
         </div>
         {row('ชื่องาน', rfq.title)}
         {row('ชนิดงาน', PROCESS_TYPES[rfq.process_type])}
+        {row('Make-to-print / Co-design', JOB_TYPES[rfq.job_type] || <span style={{ color: statusColor('warn') }}>{tr('ยังไม่ระบุ — ตัวนี้บอกว่า IEC ต้องออกแบบก่อนคิดราคาไหม')}</span>)}
         {row('ความเร่งด่วน', PRIORITIES[rfq.priority])}
         {row('รับ RFQ / กำหนดส่ง', `${rfq.received_date ? fmtDate(rfq.received_date) : '—'} → ${rfq.due_date ? fmtDate(rfq.due_date) : '—'}${rfq.due_date && !isClosed(rfq.status) && rfq.due_date < today ? ' (เลยกำหนด)' : ''}`)}
         {row('SOP ลูกค้า', rfq.sop_date_customer ? fmtDate(rfq.sop_date_customer) : '—')}
         {row('Volume/ปี', rfq.annual_volume != null ? <>{fmtN(rfq.annual_volume)} {tr('ชิ้น · ที่มา:')} {VOLUME_SOURCES[rfq.volume_source] || <span style={{ color: statusColor('warn') }}>{tr('ไม่ได้ระบุ')}</span>}</> : 'ยังไม่ระบุ')}
+        {row('อายุรุ่น / ยอดรวมตลอดอายุ', rfq.model_life_years != null
+          ? <>{fmtN(rfq.model_life_years, 1)} {tr('ปี')} · {lifetimeVolume(rfq.annual_volume, rfq.model_life_years) != null ? `${fmtN(lifetimeVolume(rfq.annual_volume, rfq.model_life_years))} ${tr('ชิ้น')}` : <span style={{ color: statusColor('warn') }}>{tr('คิดยอดรวมไม่ได้ — ขาด volume/ปี')}</span>}</>
+          : <span style={{ color: statusColor('warn') }}>{tr('ยังไม่ระบุ model life — ค่าแม่พิมพ์ต่อชิ้นคิดไม่ได้')}</span>)}
         {row('APW / MPW', `${fmtN(rfq.apw)} / ${fmtN(rfq.mpw)}`)}
         {row('🔒 ราคาเป้าหมายลูกค้า', rfq.customer_target_price != null ? `${fmtN(rfq.customer_target_price, 2)} THB/pc` : '—')}
         {row('ผู้รับผิดชอบ', rfq.owner_name)}
@@ -553,6 +577,10 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
           {canEdit && <button style={btn()} onClick={onNpi} disabled={isClosed(rfq.status)}>{tr('ส่ง CRD → สร้าง/ผูกโปรเจค NPI')}</button>}
         </>)}
       </div>
+
+      {/* 📐 ใบประเมินของ IEC + 📎 เอกสารแนบ (เฟส 2a) */}
+      <RfqAssessCard rfq={rfq} assessments={assessments} canEdit={canEdit} canAssess={canAssess} fullName={fullName} onReload={onReloadDetail} />
+      <RfqFilesCard rfq={rfq} files={files} canEdit={canEdit} canAssess={canAssess} fullName={fullName} onReload={onReloadDetail} />
 
       {/* พาร์ท */}
       <div style={{ ...card, gridColumn: '1 / -1' }}>

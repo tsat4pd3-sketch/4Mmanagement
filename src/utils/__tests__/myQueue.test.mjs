@@ -630,3 +630,21 @@ test('🔴 ถังแดงยังไม่ออกใบ → ชั้น 
   assert.equal(bq({}, me, now).missing.includes('redBins'), false);
   assert.ok(bq({ redBins: null }, me, now).missing.includes('redBins'));
 });
+
+test('📐 RFQ รอ IEC ประเมิน (เฟส 2a) — เข้าชั้น unit เฉพาะคนมีสิทธิ์ rfq:assess · ไม่ผ่าน keep (ไม่มีส่วนงาน) · ไม่ขึ้น badge · ไม่ส่ง = ไม่ partial', () => {
+  const now = new Date('2026-11-13T03:00:00Z');
+  const src = { mo: [], moAll: [], sessions: [], fourM: [], actions: [], summaries: [], bins: [], redBins: [],
+    rfqAssess: [{ id: 'a1', rfq_id: 'r1', round: 2, requested_at: '2026-11-10', rfq_no: 'RFQ-2026-003', customer: 'FORD', model: 'P703', priority: 'urgent' }] };
+  const q = buildQueue(src, { sections: ['PD1'], canRfqAssess: true }, now);
+  const it = q.unit.find(x => x.key === 'rfqassess:a1');
+  assert.ok(it, 'ต้องอยู่ชั้น unit'); assert.equal(it.to, '/rfq?rfq=r1'); assert.match(it.detail, /รอบ 2/); assert.equal(it.tag, '🔴 ด่วน');
+  assert.equal(it.age, 3);
+  assert.equal(q.mine.some(x => x.key === 'rfqassess:a1'), false, 'ห้ามขึ้น mine/badge');
+  // ไม่มีสิทธิ์ = ไม่โหลด = ไม่ต้องติด partial
+  const q2 = buildQueue({ ...src, rfqAssess: undefined }, { sections: [], canRfqAssess: false }, now);
+  assert.equal(q2.unit.some(x => x.key.startsWith('rfqassess:')), false);
+  assert.equal(q2.missing.includes('rfqAssess'), false);
+  // มีสิทธิ์แต่โหลดล่ม = partial (ห้ามเงียบ)
+  const q3 = buildQueue({ ...src, rfqAssess: undefined }, { sections: [], canRfqAssess: true }, now);
+  assert.ok(q3.missing.includes('rfqAssess'));
+});

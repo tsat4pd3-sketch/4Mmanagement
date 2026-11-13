@@ -37,6 +37,7 @@
 |---|---|---|
 | `mkt_rfqs` | 1 แถว = 1 งานเสนอราคา | `rfq_no` unique (`RFQ-YYYY-###`) · `status` CHECK **ครบทั้ง 13 ค่า** ของ state machine (เฟส 1 จอใช้ `RFQ_STATUS_PHASE1`) · `customer_target_price` 🔒 · `annual_volume` + **`volume_source` บังคับเมื่อมี volume** · `crd_no`/`crd_sent_at` · `npi_project_id → npi_projects` (set null) |
 | `mkt_rfq_parts` | พาร์ท + ชิ้นย่อย | `parent_part_id` self-FK (PIA01-03 ชี้แม่) · unique (rfq, part_no) · เลขพาร์ทลูกค้า = **พิมพ์เองได้โดยตั้งใจ** (ของใหม่ ยังไม่มีในทะเบียนไหน) |
+| `mkt_rfq_files` · `mkt_rfq_assessments` (เฟส 2a · §5a) |
 | `mkt_awards` | ผลสุดท้าย + ทะเบียนใบแจ้งจัดทำ | `rfq_id` **unique** (1 RFQ = 1 ผล · upsert onConflict rfq_id) · CHECK `lost` ต้องมี `loss_reason` · CHECK ใบแจ้งจัดทำออกได้เฉพาะ `awarded` · `annual_sales` = คำนวณตอนบันทึก (null ถ้าขาด) · `production_order_no` unique + `snapshot` jsonb + `reprint_count` |
 
 RLS: select = authenticated · insert/update/delete = `has_perm('rfq:edit')` (`mkt_awards` = `has_perm('rfq:award')`) · `fn_set_updated_at` + `fn_audit` ทั้ง 3 (ป้ายไทยใน `auditLabels.js`)
@@ -48,6 +49,7 @@ RLS: select = authenticated · insert/update/delete = `has_perm('rfq:edit')` (`m
 | `page:/rfq` | เข้าหน้า | admin · manager · **marketing** · engineer_nm · engineer (ดู CRD ที่ส่งมา) |
 | `rfq:edit` | สร้าง/แก้ RFQ · พาร์ท · ส่ง CRD / ผูก NPI | admin · manager · marketing |
 | `rfq:award` | บันทึกผล · ออกใบแจ้งจัดทำ | admin · manager · marketing |
+| `rfq:assess` | กรอก/ส่งใบประเมินความเป็นไปได้ (เฟส 2a) | admin · manager · **engineer_nm** (IEC ทั้งทีม · คำสั่ง user 13/11) |
 
 **role `marketing`** (ใหม่ · `roleMeta.js` 💼 · axis unit) — ทำครบ 5 จุดตาม `role-system.md`: enum 2 ไฟล์ · ROLE_META · seed สิทธิ์ · ไม่มี role array hardcode ที่ต้องแก้ · ย้าย role แล้วต้อง F5
 · marketing ได้ `page:/npi` + `page:/nm-board` **ดูอย่างเดียว** (ต้องเปิดโปรเจคที่ตัวเองส่ง CRD ไปได้) — ไม่ให้ `npi:edit`
@@ -74,7 +76,27 @@ RLS: select = authenticated · insert/update/delete = `has_perm('rfq:edit')` (`m
 11. **แถบขั้นตอน ✓→⑦ บนใบ** (`<StepFlow>` · 12/11 user "เราชอบการแสดงแบบนี้") — ขั้น/ข้อความ "⏳ รอ: ใคร — ทำอะไร" มาจาก **`rfqFlow(status, { award })`** ที่เดียว
     · ขั้นก่อนสถานะปัจจุบันนับผ่านแล้ว (ขั้น 3-6 เฟส 1 ทำนอกระบบ) · ได้งานแต่ยังไม่ออกใบแจ้งจัดทำ = ยังรอ MKT · สถานะที่ไม่รู้จัก = `known:false` จอเขียนบอก ห้ามเดา
 
-## 6. ยังไม่ทำ (เฟส 2-4 — ดู DESIGN §8 · ห้ามเริ่มจนกว่า user สั่ง)
+## 5a. เฟส 2a — "ปิดสายงานให้ IEC มีของส่งกลับจริง" (2026-11-13 · คำสั่ง user "เริ่มเฟส 2a เลย IEC = engineer_nm ทั้งทีม")
+
+ที่มา: feedback Marketing 12/11 (DESIGN §10) — ขั้น "ประเมิน (IEC)" เดิมเป็นแค่สถานะที่ MKT กดเอง ⇒ ข้าม received → quoted ได้โดยไม่มีใครประเมิน
+migration **`20261113a_mkt_rfq_phase2a_main.sql` (apply แล้ว 13/11 · MAIN)** · component `src/components/RfqAssessPanel.jsx`
+
+| ของใหม่ | ที่อยู่ | กฎ |
+|---|---|---|
+| `mkt_rfqs.model_life_years` · `job_type` (`make_to_print`/`co_design`) · `assess_requested_at` | โมดัล RFQ + ใบงาน | ยอดรวมตลอดอายุ = `lifetimeVolume(volume, years)` ขาดตัวใดตัวหนึ่ง = null (ตัวหารค่าแม่พิมพ์ต่อชิ้น เฟส 3) · job type = "IEC ต้องออกแบบก่อนคิดราคาไหม" |
+| `mkt_rfq_files` (bucket `mkt-files` public 50MB) | การ์ด 📎 | ชนิดเอกสาร = `FILE_KINDS` (`utils/mktRfq.js`) ต้องตรง CHECK + policy · **`cost`/`quotation` เห็นเฉพาะ `rfq:edit`** (RLS select) · IEC แนบได้เฉพาะ `assessment` · อัปไฟล์ก่อน → insert แถว · insert ล้ม = ลบไฟล์คืน · ลบ = นับแถว > 0 ก่อนลบไฟล์ · ⚠️ known gap: bucket public (path สุ่ม) — เฟส 2b private + signed URL |
+| `mkt_rfq_assessments` (1 รอบ = 1 แถว · `unique(rfq_id, round)`) | การ์ด 📐 | MKT กด "ส่งให้ IEC ประเมิน" = insert รอบใหม่ `draft` + RFQ → `assessing` + `notifyEvent('rfq_assess_requested')` · IEC กรอก: ผลิตได้ไหม · ชนิดงานในมุม IEC · ไลน์อ้างอิง (`LineSelect`) · ร่าง process flow (`jsonb` [{op,process,line_name,machine_no,ct_sec,note}] · เครื่องผ่าน `MachineSelect allowFree`) · ลงทุนเพิ่ม · ความเสี่ยง · เวลาเตรียมการ · **ราคาเป้าหมายลูกค้าเป็นไปได้ไหม** (บังคับเมื่อ RFQ มีราคาเป้าหมาย — IEC ไม่เห็นตัวเลข) · ส่งผล = ครบตาม `assessmentMissing()` + CAS `status='draft'` → `submitted` + RFQ `assessing`→`pre_review` (เฉพาะยังอยู่ assessing) + `notifyEvent('rfq_assessed')` · **ห้ามลบ** (ไม่มี policy delete — ประวัติรอบ) |
+| สิทธิ์ `rfq:assess` | catalog 760 | seed admin · manager · **engineer_nm** (IEC ทั้งทีม) |
+| ด่านสถานะ `assessmentGate()` | `setStatus` ใน Rfq.jsx | ไปสถานะ stage > 2 ต้องมีรอบที่ `submitted` · ยกเว้น `declined`/`cancelled` · `RFQ_STATUS_PHASE1` เพิ่ม `pre_review` |
+| คิวงานของฉัน | `myQueue.js` + `MyQueuePanel` | ชั้น `unit` รายใบสำหรับคนมี `rfq:assess` · **ไม่ผ่าน `keep()`** (RFQ ไม่มีส่วนงาน) · ไม่ขึ้น badge · โหลดเฉพาะคนมีสิทธิ์ (มีเทส) |
+| แจ้งเตือนในแอป | `notification_rules` หมวด `marketing` | `rfq_assess_requested` → role engineer_nm · `rfq_assessed` → role marketing · `can_mute=false` · link `/rfq` · ปรับผู้รับที่ `/notification-config` |
+
+กฎที่ตกผลึกเพิ่ม:
+10. **ขั้นประเมินข้ามไม่ได้** — สถานะเดินต่อขั้น 3 ขึ้นไปต้องมีใบประเมิน `submitted` (`assessmentGate`) · ทางหลักคือปุ่มในการ์ด ไม่ใช่ dropdown สถานะ
+11. **ราคาเป้าหมายลูกค้า IEC ไม่เห็นตัวเลข แต่ต้องตอบว่าเป็นไปได้ไหม** — เป็นคำตอบจากประสบการณ์ ตัวเลขจริงรอ cost model เฟส 3 (ห้ามเอาคำตอบนี้ไปแทนการคิดต้นทุน)
+12. **ร่าง process flow ตอนประเมิน ≠ PFC จริง** — ได้งานแล้ว PE ทำ PFC ที่ `/pe-docs` (ร่างนี้เป็น input ของ auto-cal เฟส 3 เท่านั้น ห้ามเอาไปสร้าง `pe_doc_sets` อัตโนมัติ)
+
+## 6. ยังไม่ทำ (เฟส 2b-4 — ดู DESIGN §8 · ห้ามเริ่มจนกว่า user สั่ง)
 
 - มอบงานแผนก (`mkt_rfq_tasks` · IEC/RDPP/R&D/TSAT P.3/Purchasing) + checklist gatekeeper 14 รายการ + access matrix ต่อชนิดเอกสาร + คิวงานของฉัน
 - ไฟล์ RFQ (CPL · CAD zip 28 MB · MSOW) — bucket ยังไม่สร้าง · เฟสนี้เก็บเลขอ้างอิงอย่างเดียว
@@ -92,5 +114,6 @@ RLS: select = authenticated · insert/update/delete = `has_perm('rfq:edit')` (`m
 5. **🖨️ ออกใบแจ้งจัดทำ** → ได้เลข `MKT/001/10/2026` + พิมพ์ 2 หน้า (F-MKT-001 + F-MKT-002) ส่งฝ่ายโรงงาน · พิมพ์ซ้ำได้ตลอด ใบเดิม
 
 ## 8. ประวัติ
+- 2026-11-13 เฟส 2a: เอกสารแนบ · model life · job type · ใบประเมิน IEC · ด่านสถานะ · คิวงาน/แจ้งเตือน IEC (§5a)
 
 - **2026-10-30** — เฟส 1 ครั้งแรก · build 3707/3707 · crashsweep (list/sheet/report × 2 role) พัง 0 · mobilesweep 87 หน้า 0 · migration apply + ตรวจกลับ (3 ตาราง · 12 policy · 6 trigger · 13 แถวสิทธิ์ · 2 doc_forms)
