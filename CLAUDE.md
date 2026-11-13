@@ -545,8 +545,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
   **ห้าม disable กฎ** ให้ย้าย hook ขึ้น · `no-use-before-define` (05/10) จับอ่าน const ก่อนประกาศใน scope เดียวกัน (TDZ จอขาว)
 - **⚠️ build ผ่าน ≠ หน้าไม่พัง** — merge งานหลาย session ชนไฟล์เดียวกัน ให้รัน **`node audit/crashsweep.mjs`** เสมอ
      (ทุกหน้า @1500px + กดปุ่มหัวเพจ · ต้องเปิด `npx vite --config audit/vite.audit.mjs` ค้างไว้)
-  · 🔭 **รัน 2 รอบ: `role=admin` scope ว่าง + `role=supervisor&sections=PD1`** — **ห้ามถอดรอบขอบเขต**
-  · 🔴 **แถวพิเศษใน mock ห้ามถอด** (รายตัว → `audit/README.md`)
+  · 🔭 **รัน 3 รอบ: `role=admin` scope ว่าง · `supervisor&sections=PD1` (แกนส่วนงาน) · `leader` ไม่ใส่ sections (แกนรายไลน์ = คนใช้งานเยอะสุด)** — **ห้ามถอดรอบไหนออก**
+  · 🔴 **แถวพิเศษใน mock ห้ามถอด · `CTX.lineId` ต้องตรงกับ `id` ของไลน์ใน mock** (ไม่ตรง = แกนรายไลน์เดิน fail-open เปล่าๆ) — รายตัว → `audit/README.md`
   · เพิ่มคอลัมน์ nullable ใน `ROW()` ต้องเติมใน `NULLISH()` ด้วย (เหตุผลรายตัว → `audit/README.md`)
 - **📱 `node audit/mobilesweep.mjs` (ทุกหน้า @390px)** — **แตะ layout ที่มี `isMobile` หรือ `position:sticky`
   ต้องรันก่อน merge** (จับ sticky ทับเนื้อหา · ของล้นแล้วปัดไม่ได้ · ข้อความถูกบีบกว้าง 0)

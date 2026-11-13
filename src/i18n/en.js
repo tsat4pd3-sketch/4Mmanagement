@@ -10308,6 +10308,36 @@ const EN = {
   'ติ๊กครบทุกประเภทแล้ว': 'Every type has been flagged',
   'แท่งนี้ไม่กระทบเลขที่ส่งกลุ่ม — Machine Break Down / MTBF / MTTR ในตารางข้างล่างยังนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม':
     'This bar does not affect the numbers reported to the group — Machine Break Down / MTBF / MTTR in the table below still count the full line stop per the KPI Guideline',
+  /* ── 🗂 แท็บกลุ่ม 2 ชั้น (13/11) ── */
+  'ทะเบียนอ้างอิง': 'Reference registries',
+  'งานรอตรวจ': 'Awaiting QA',
+  'ของเสีย / ปัญหา': 'Defects / problems',
+  'ติดตาม / กระทบยอด': 'Follow-up / reconcile',
+  'ตั้งค่าคลัง': 'Store setup',
+  'BOM': 'BOM',
+  'Product': 'Product',
+
+  /* ── ⏳ ใบ MO ที่เปิดให้ตอนกดเรียกช่าง แล้วยังรอรายละเอียด (13/11) ── */
+  'เอกสารใบ MO': 'MO paperwork',
+  'รอเพิ่มรายละเอียด': 'Details pending',
+  '⏳ รอเพิ่มรายละเอียด': '⏳ Details pending',
+  '➕ เพิ่มรายละเอียด': '➕ Add details',
+  'เพิ่มรายละเอียด': 'Add details',
+  'ใบนี้เปิดให้อัตโนมัติตอนกดเรียกช่าง': 'This MO was opened automatically when maintenance was called',
+  'ยังไม่มีใครใส่รายละเอียด': 'nobody has filled in the details yet',
+  'เปิดใบให้อัตโนมัติตอนกดเรียกช่าง — เปิดใบนี้แล้วกดเพิ่มรายละเอียดได้':
+    'Opened automatically when maintenance was called — open it and add the details',
+  'เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)':
+    'Maintenance was called — an MO was opened automatically · tap to add the details (equipment kind · problem · before photo)',
+
+  /* ── 🔴 บังคับเลือกทีมช่าง (13/11 · หน้างานแจ้ง "ส่งไปผิดแผนกบ่อย") ── */
+  'เลือกทีมช่าง': 'Select maintenance team',
+  'ต้องเลือกทีมช่างก่อน — ส่งผิดทีมแล้วใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง':
+    'Pick the maintenance team first — the wrong team means the MO gets bounced back, costing both sides time',
+  '💡 จากทะเบียน/ทีมของคุณ น่าจะเป็น': '💡 From the registry / your team, likely',
+  '↑ เลือกทีมช่างก่อน': '↑ Pick a maintenance team first',
+  'ทะเบียนเครื่องนี้อยู่ทีม': 'The registry puts this machine with',
+  'ถ้าใช่ กดเลือกด้านล่าง': 'if that is right, tap it below',
 };
 
 export default EN;

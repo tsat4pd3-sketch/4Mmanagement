@@ -47,7 +47,16 @@ const ENTRY = (() => {
 /* ?sections=PD2,PD3 — จำลอง user ที่ถูกจำกัดส่วนงาน (2026-10-05) · เดิม sections:[] ตายตัว ⇒ สาย "ขอบเขตจาก URL
    อยู่นอกสังกัด user" / ตัวกรองส่วนงานของบอร์ด OBEYA ไม่เคยถูกรันใน harness เลย */
 const SECTIONS = (new URLSearchParams(location.search).get('sections') || '').split(',').map(s => s.trim()).filter(Boolean);
-const CTX = { role:ROLE, lineId:1, team:'A', section:SECTIONS[0] || 'PD1', sections:SECTIONS, fullName:'ทดสอบ ระบบ',
+/* 🔑 **`lineId` ต้องตรงกับ `id` ของไลน์ใน mock จริงๆ** (2026-11-13 · ห้ามถอด)
+   เดิมตั้งไว้ `1` ขณะที่ `audit/mockSupabase.js` ให้ไลน์มี `id` เป็น `'id-N'`
+   ⇒ **ไม่ตรงกันเลยสักแถว** ⇒ ทุกจุดที่ถาม "ไลน์ของผู้ใช้คนนี้คือไลน์ไหน" หาไม่เจอ
+     แล้วเดินเข้ากิ่ง fail-open ทุกครั้ง ⇒ **กิ่ง "ขอบเขตรายไลน์" ไม่เคยถูกรันใน crashsweep เลย**
+     (เจอตอนแก้บั๊ก /checkin 13/11 ที่หัวหน้ากลุ่ม PD4 แจ้ง — harness โชว์พฤติกรรมนั้นไม่ได้)
+   ตอนนี้ mock ให้ `production_lines.id` เป็นเลขแล้ว (= ของจริงที่เป็น integer)
+   🔴 เลือก **2** โดยเจตนา = ไลน์**ลูก** ของไลน์ 1 และมีหลานคือไลน์ 4 (`PARENT_OF = {2:1, 3:1, 4:2}`)
+      ⇒ กิ่ง "ไลน์ลูกตกทอดจากไลน์แม่" + "ไล่ขึ้นหา ancestor" + "ครอบครัวไลน์" ถูกรันจริง
+      ตั้งเป็นไลน์แม่ (1) จะไม่เคยเดินสายตกทอดขึ้นเลย */
+const CTX = { role:ROLE, lineId:2, team:'A', section:SECTIONS[0] || 'PD1', sections:SECTIONS, fullName:'ทดสอบ ระบบ',
   userId:'x', email:'a@b.c', position:'หัวหน้าส่วน', signatureUrl:null, avatarUrl:null,
   mtnTeams:[], isDeptAdmin:false, sidebarOpen:false }
 

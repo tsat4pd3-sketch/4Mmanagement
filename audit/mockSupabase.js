@@ -257,6 +257,19 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 📈 SPC จากใบตรวจ (13/11 · ห้ามถอด) — เดิมแถวกลางไม่มี `qa_parts` embed / `values_json`
+     ⇒ แท็บ SPC "จากใบตรวจ" เดินแต่สาขา "ชิ้นงานนี้ยังไม่มีจุดวัดค่า" · ตารางสรุปจุด/กราฟ I-MR ไม่เคยถูกรัน
+     รูปทรง = ของจริง: จุด variable ผูกพาร์ท · ผล 1 แถว = 1 รอบ × 1 จุด · มีค่าหลุด spec 1 ค่า + จุดที่กด "ข้าม" */
+  qa_inspection_items: (r, i) => isNullish(r) ? r : ({
+    ...r, id: `id-${i}`, part_id: i % 2 ? 'id-1' : 'id-2', item_type: 'variable', balloon_no: String(i),
+    characteristic: `ระยะรู ${i}`, unit: 'mm', nominal: 10, lsl: 9.9, usl: 10.1, is_active: true, calc: null,
+    qa_parts: { part_no: i % 2 ? 'P-TEST-001' : 'P-TEST-002', part_name: 'พาร์ททดสอบ', line_name: LINE_NAME(1) },
+  }),
+  qa_inspection_results: (r, i) => ({
+    ...r, item_id: `id-${(i % 5) * 2 + 1}`, item_type: 'variable', judgement: i === 4 ? 'na' : 'ok',
+    values_json: isNullish(r) ? null : [i === 9 ? 10.2 : 10 + ((i % 7) - 3) * 0.02],
+    qa_inspection_sheets: { part_id: 'id-1', work_date: _recentDay(i % 10), shift: i % 2 ? 'day' : 'night', round_no: (i % 3) + 1, inspector_name: 'QA ทดสอบ' },
+  }),
   /* 🔨 ผังจัดเก็บแม่พิมพ์ — ชื่อต้องไม่ชนชื่อไลน์ (2026-10-16 · ห้ามถอด)
      เดิมได้ `name` = LINE_NAME(i) เหมือนไลน์ผลิต ⇒ FactoryMap `openLine()` เข้าใจว่าทุกกรอบเป็นโซนแม่พิมพ์
      แล้ว navigate ทิ้ง ⇒ **กล่องรายละเอียดไลน์ (story modal) ไม่เคยถูกเรนเดอร์ใน harness เลย** */
@@ -335,14 +348,23 @@ const TABLE_ROWS = {
   }),
   /* org_nodes: ผังองค์กรทรงจริง (2026-09-23 — picker ขอบเขต `orgScope.js` ต้องได้ต้นไม้ครบชั้น ไม่งั้นสาขา
      แผนก/ฝ่าย/กลุ่มไลน์ ไม่เคยถูกรันใน harness): 1 = ส่วนงาน PD1 · 2 = แผนกใต้ PD1 · 3-5 = ไลน์ในแผนก
-     (ref_line_id ชี้ production_lines mock ที่ id เป็น 'id-N') · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
+     (ref_line_id ชี้ production_lines mock ที่ id เป็น **เลข** — ดูหมายเหตุที่ production_lines) · 6 = แผนกขึ้นตรงฝ่ายช่าง (ไม่มีไลน์) ·
      7 = org line node ไม่ผูก production line (สโตร์) · ที่เหลือ = ทีม · แถว NULLISH ยังคงว่างตามกติกา */
   /* 🏭 ชนิดหน่วย — **ต้องมีแถว `support` อย่างน้อย 1 ตัวเสมอ ห้ามถอด** (2026-10-13)
      ของจริงมี 3 หน่วย (Office PD4 · Coating · Rework - PD1) ที่ไม่ใช่ไลน์ผลิต
      ไม่มีในmock = สาขา "กรองหน่วยสนับสนุนออก" + ป้าย "🗂️ หน่วยสนับสนุน" ของค่าที่เลือกไว้แล้ว
      ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
      และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
-  production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+  /* 🔑 **`id` ต้องเป็นเลข ไม่ใช่ `id-N`** (2026-11-13 · ห้ามถอด)
+     ของจริง `production_lines.id` เป็น **integer** (เช่น 8/10/17) — mock เคยใช้ `id-N` เหมือนตารางอื่น
+     ⇒ ① `CTX.lineId` ของ harness (เลข) ไม่ตรงกับไลน์ไหนเลย ⇒ **กิ่ง "ขอบเขตรายไลน์" ไม่เคยถูกรัน**
+        ② `ROW().line_id = 1` ของทุกตาราง join กลับไปหาไลน์ไม่เจอเลยสักแถว
+        ③ โค้ดจริงมี `Number(lineId)` หลายจุด — ถ้า mock เป็นสตริงจะได้ `NaN` แล้วเดินผิดกิ่ง
+           คนละแบบกับของจริง (= harness โกหกอีกทาง ไม่ใช่แก้)
+     🔴 แก้ id ที่นี่แล้ว **ต้องตามไปแก้ทุกจุดที่ชี้ไลน์ให้เป็นเลขด้วย** (employees.line_id ·
+        org_nodes.ref_line_id · line_technicians.line_id · audit_log.new_data.line_id)
+     📄 docs/modules/permission-scope-audit.md §13/11 ช่องว่างของ harness */
+  production_lines: (r, i) => ({ ...r, id: i, unit_kind: i === 5 ? 'support' : 'production' }),
   /* 🔗 โซ่ส่งต่อ MO (11/11) — แผง "ส่งต่อแล้วปลายทางไม่มีใครทำ" ต้องถูกรันทั้ง 3 สาขา
      ของจริงมี 3 รูปทรง: ลิงก์ว่าง (ใบลูกถูกลบ) · ใบลูกถูกยกเลิก · ใบลูกยังทำงาน (ต้องไม่โผล่)
      ⚠️ แถว NULLISH ยังว่างตามกติกา = สาขา "ไม่มีวันเวลาให้นับ" (ต้องขึ้น "ไม่มีวันเวลาให้นับ" ไม่ใช่ 0 วัน) */
@@ -361,7 +383,7 @@ const TABLE_ROWS = {
     code: i === 1 ? 'PD1' : i <= 5 || i === 7 ? null : i === 6 ? null : r.code,
     name: i === 6 ? 'JIG MTN' : r.name,   // แผนกช่างชื่อจริง — ให้สาย ⚡ KPI ช่าง (kpi_mtn_rollup → kpiAuto) ถูกรันใน harness
     parent_id: i === 1 || i === 6 ? null : i === 2 ? 'id-1' : i <= 5 ? 'id-2' : i === 7 ? 'id-6' : 'id-3',
-    ref_line_id: i >= 3 && i <= 5 ? `id-${i}` : null,
+    ref_line_id: i >= 3 && i <= 5 ? i : null,          // 🔑 เลข — ชี้ production_lines.id (ดูหมายเหตุที่ production_lines)
     division: i === 1 ? 'production' : i === 6 ? 'maintenance' : null,
     cost_center: isNullish(r) ? null : `21406${String(i).padStart(5, '0')}`,
     sort_order: i,
@@ -374,7 +396,7 @@ const TABLE_ROWS = {
     position: ['manager', 'engineer', 'dept_head', 'line_leader', 'line_leader', 'technician'][i - 1] || 'operator',
     team: i === 1 || i === 2 ? 'C' : i % 2 ? 'A' : 'B',
     org_node_id: i <= 2 ? 'id-1' : 'id-2',
-    line_id: i <= 2 ? null : 'id-3',
+    line_id: i <= 2 ? null : 3,                        // 🔑 เลข — ไลน์ลูกของ id 1 (ดูหมายเหตุที่ production_lines)
     image_url: i % 4 === 0 ? FACTORY_MAP_IMG : '',
   }),
   // ทะเบียนตำแหน่ง — key จริงตาม seed (positions.js DEFAULT_POSITIONS) ไม่งั้นทุกคนกลายเป็น "ตำแหน่งที่ระบบไม่รู้จัก"
@@ -394,7 +416,7 @@ const TABLE_ROWS = {
     const t = ['manpower_slot_plans', 'station_slot_plans', 'line_technicians', 'employees'][i % 4];
     const act = ['INSERT', 'UPDATE', 'DELETE'][i % 3];
     const data = t === 'manpower_slot_plans' ? { org_node_id: 'id-2', team: 'A', slots: i }
-      : t === 'station_slot_plans' ? { station_id: `id-${i}`, per_shift: 1 } : { employee_id: `id-${i}`, line_id: 'id-3' };
+      : t === 'station_slot_plans' ? { station_id: `id-${i}`, per_shift: 1 } : { employee_id: `id-${i}`, line_id: 3 };
     return { ...r, id: i, table_name: t, action: act, actor: isNullish(r) ? null : `ผู้แก้ ${i}`,
       old_data: act === 'INSERT' ? null : { ...data, slots: (data.slots ?? 0) + 2 }, new_data: act === 'DELETE' ? null : data,
       changed_at: `2026-${String(8 + (i % 3)).padStart(2, '0')}-1${i % 9}T03:00:00Z` };
@@ -404,7 +426,7 @@ const TABLE_ROWS = {
      แล้วสาย **คนวิ่งข้ามแผนก** (employee_flex_units) ถูกกฎ "ไม่วาดซ้ำคนที่อยู่แผนกนี้แล้ว"
      กรองออกทุกแถว ⇒ การ์ด flex ไม่เคยถูกรันใน harness เลย (วัดจริงด้วย console probe)
      ⇒ ต้องมีคนที่ **ไม่ใช่** ทั้งคนในสังกัดและช่างของแผนก id-2 เหลืออยู่เสมอ */
-  line_technicians: (r, i) => ({ ...r, employee_id: `id-${(i % 13) + 3}`, line_id: 'id-3' }),
+  line_technicians: (r, i) => ({ ...r, employee_id: `id-${(i % 13) + 3}`, line_id: 3 }),   // 🔑 line_id เป็นเลข
   /* 🏃 คนวิ่งข้ามแผนก (14/10) — คนที่ผูกระดับ **ส่วนงาน** (employees 1-2 = org_node_id 'id-1')
      ไปช่วยแผนก 'id-2' ⇒ สายการ์ด flex + ป้าย "↗ บ้าน" + ตัวนับ "วิ่งข้ามมาช่วย" ถูกรัน
      🔴 ห้ามชี้หน่วยเดียวกับบ้านของคนนั้น — กฎกรองออก (ไม่วาดซ้ำ) แล้วสายนี้จะไม่เคยถูกรันเลย
@@ -416,11 +438,11 @@ const TABLE_ROWS = {
   employee_flex_units: (r, i) => ({ ...r, employee_id: `id-${(i % 2) + 1}`, org_node_id: i % 3 === 2 ? 'id-1' : 'id-2',
     kind: i % 3 === 2 ? 'acting' : 'flex',
     note: isNullish(r) ? null : 'ช่วยกะเช้าประจำ' }),
-  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 'id-9', shift: i % 2 ? 'day' : 'night',
+  line_helpers: (r, i) => ({ ...r, employee_id: `id-${(i % 4) + 7}`, to_line_id: 9, shift: i % 2 ? 'day' : 'night',
     work_date: _recentDay(i % 20) }),
   /* 📊 แผน vs มาจริง (08/10) — เช็คชื่อกระจาย 20 วันล่าสุด · คนตรงกับทะเบียน (id-*) · คละ มา/ลา/ขาด
      ⇒ จอย้อนหลังรายวันมีทั้งกะที่ขาด/ครบ/เกิน/ไม่ได้เช็ค · หน้าอื่นที่อ่านเช็คชื่อวันนี้ยังได้แถววันนี้ (i%20 = 0) */
-  shift_schedules: (r, i) => ({ ...r, line_id: 'id-3', dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
+  shift_schedules: (r, i) => ({ ...r, line_id: 3, dept_name: null, day_team: i % 2 ? 'A' : 'B', work_date: _recentDay(i % 20) }),
   /* 🎯 คะแนนทักษะคละ 25–100 ให้คนในทะเบียน (id-*) — มีทั้งคนผ่านครบ ผ่านบางข้อ และไม่มีคะแนน */
   employee_skills: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, skill_name: i % 2 ? 'SPOT' : 'GAUGE', score: [25, 50, 75, 100][i % 4] }),
   daily_production_logs: (r, i) => ({ ...r, employee_id: `id-${(i % 14) + 1}`, work_date: _recentDay(i % 20),
@@ -431,7 +453,7 @@ const TABLE_ROWS = {
   machine_points: (r, i) => ({ ...r, machine_no: `SP-${i}`, line_name: LINE_NAME((i % 3) + 1),
     pos_top: isNullish(r) ? null : `${(40 + (i * 7) % 22).toFixed(2)}%`, pos_left: isNullish(r) ? null : `${(35 + (i * 11) % 30).toFixed(2)}%` }),
   /* จุดงาน + จุดประจำ + รูปผัง — ให้สาย "รูปคนบนผัง LAYOUT" ถูกรัน (เดิมไม่มีพิกัด = ไม่มีจุดถูกวาด) */
-  workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 'id-3', line_name: LINE_NAME(3),
+  workstations: (r, i) => ({ ...r, station_name: `ST-${i} SPOT WELD`, line_id: 3, line_name: LINE_NAME(3),
     /* 🎯 (12/10) ทักษะที่จุดต้องการ — 2 ใน 3 จุดตั้งไว้ ⇒ แผง "ยืนจุดที่ทักษะยังไม่ถึง" + "ยังไม่ตั้งทักษะ" ถูกรันทั้งคู่ */
     station_requirements: i % 3 ? [{ skill_name: 'SPOT', min_score: 50 }, { skill_name: 'GAUGE', min_score: 75 }] : [],
     pos_top: isNullish(r) ? null : String(15 + (i * 5) % 70), pos_left: isNullish(r) ? null : String(8 + (i * 7) % 84) }),
@@ -491,7 +513,7 @@ const TABLE_ROWS = {
           ถ้าทุกแถวมีชื่อ = เส้นทางนั้นหลุดด่าน แล้วใบที่ชี้เป้าไม่ได้จะหายจากแผงโดยไม่มีใครรู้ */
     assigned_to: isNullish(r) || i % 7 === 0 ? null : 'ช่างเอก',
   }),
-  line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
+  line_layouts: (r, i) => ({ ...r, line_id: i, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),   // 🔑 line_id เป็นเลข
   /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
   stock_receipts: (r, i) => ({
     ...r, prod_order_id: `po-${i}`, prod_no: `01203${90000 + i}`, mat_no: i % 2 ? '30047001' : '20057003',

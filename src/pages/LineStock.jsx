@@ -1844,6 +1844,15 @@ const TABS = [
   { key:'timeboard', label: 'บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
   { key:'inflow',    label: 'กฎรับเข้า' },
 ];
+/* 🗂 13/11: 12 แท็บ → 6 ช่องบน (กฎ ≤7 · UI §6.8 ข้อ 6) — คีย์ลูก = ?tab= เดิม (TABS/LEGACY_TABS ไม่เปลี่ยน)
+   ขาออก/ขาเข้า/Stock = งานรายวัน อยู่หน้าสุด · ติดตาม/กระทบยอด = ของที่ค้างหลังส่ง · ตั้งค่าคลัง = ทะเบียน/กฎ */
+const lsTab = (k) => TABS.find(t => t.key === k);
+const LS_TAB_GROUPS = [
+  lsTab('out'), lsTab('in'), lsTab('stock'),
+  { key: 'recon', label: '📋 ติดตาม / กระทบยอด', children: ['sap', 'diff', 'count', 'wip'].map(lsTab) },
+  { key: 'setup', label: '⚙️ ตั้งค่าคลัง',        children: ['levels', 'zones', 'delivery', 'inflow'].map(lsTab) },
+  lsTab('timeboard'),
+];
 
 export default function LineStock() {
   const { role, fullName, lineId, sections } = useContext(UserContext);
@@ -1863,7 +1872,7 @@ export default function LineStock() {
       <PageHeader
         title={tr('Stock Management')} icon="📦"
         sub={tr('ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต')}
-        tabs={TABS} tab={activeTab} onTab={setActiveTab}
+        tabs={LS_TAB_GROUPS} tab={activeTab} onTab={setActiveTab}
       />
 
       {(activeTab === 'out' || activeTab === 'in') && (

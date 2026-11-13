@@ -60,6 +60,8 @@ import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
+import { isDetailsPending } from '../utils/moDetailsPending';   // ⏳ ใบที่เปิดให้ตอนเรียกช่าง ยังรอรายละเอียด (13/11)
+import { checkDtClosedAtShiftEnd } from '../utils/shiftDataSanity';   // 🔍 จับข้อมูลที่ทำให้ OEE โกหก (13/11)
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
 import { MB_FLAGS, mbFlagOf, mbFlagMeta, mbValueForDb } from '../utils/dtBreakdownOwner';   // 🔧 ธง "เครื่องเสียของช่างไหม" (13/11)
@@ -1450,6 +1452,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         '\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
       if (!ok) return;
     }
+    /* 🔍 ใบที่ "ปิดตรงเวลาเลิกกะ" — เตือนแต่ไม่บล็อก (13/11 · คำสั่ง user)
+       ที่มา: ไล่ใบที่ซ่อมเสร็จแล้วปิดช้าสุด 6 ใบของ ต.ค. **ทั้ง 6 ใบปิดตรงเวลาเลิกกะเป๊ะ**
+         ⇒ ไม่ใช่ "คืนไลน์นาน" แต่เป็นลงดาวไทม์แล้วไม่ปิดตอนไลน์กลับมาเดิน
+       🔴 เตือน ไม่บล็อก — ของจริงมีเคสที่หยุดยาวถึงเลิกกะจริง
+       🔴 หักเวลาพักก่อนถาม (พักถูกกันออกจากฐาน %A อยู่แล้ว) ไม่งั้นกล่าวหาเกินจริง
+       🔴 กฎอยู่ `utils/shiftDataSanity.js` ห้ามคิดเกณฑ์เองในหน้า */
+    const dtEndChk = (() => {
+      const win = selSession ? shiftWindow(selSession, Date.now()) : null;
+      if (!win?.hardEnd || !endedAt || !startedAt) return null;
+      return checkDtClosedAtShiftEnd({
+        endedMs: endedAt.getTime(), startedMs: startedAt.getTime(), shiftEndMs: win.endMs,
+        planned: dtCat === 'planned',
+        breakIntervals: breakIntervalsIn({
+          policies: breakPolicies, startMs: startedAt.getTime(), endMs: endedAt.getTime(),
+          workDate: selSession?.work_date || null, shift: selSession?.shift,
+          processType: selSession?.process_type ?? null, shiftEndMs: win.endMs,
+          lineName: selSession?.line_name ?? null,
+        }),
+      });
+    })();
+    if (dtEndChk && !window.confirm(dtEndChk.text + '\n\nยืนยันบันทึกตามนี้?')) return;
+
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -2763,6 +2787,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         dtRowCount: dtLogs.length,
         endTimeWarn: closeEndTime ? checkCloseTime(closeEndTime, selSession, Date.now(), { downtimes: previewDecidedDt() }) : null,
         suspectPending: sumSuspectPending(defectLogs),
+        /* 🔍 นับใบนอกแผนที่ "ปิดตรงเวลาเลิกกะ" (13/11) — ตัดสินรายใบที่ checkDtClosedAtShiftEnd()
+           🔴 ไม่รู้กรอบกะ (กะยังไม่ปิด/ไม่มี shift_min) = นับ 0 ⇒ ด่านไม่ขึ้น ห้ามเดา */
+        dtClosedAtShiftEnd: (() => {
+          const win = selSession ? shiftWindow(selSession, Date.now()) : null;
+          if (!win?.hardEnd) return 0;
+          return previewDecidedDt().filter(d => {
+            if (d?.dr_downtime_types?.category === 'planned') return false;
+            const st = d?.started_at ? Date.parse(d.started_at) : null;
+            const en = d?.ended_at ? Date.parse(d.ended_at) : null;
+            if (!st || !en) return false;
+            return !!checkDtClosedAtShiftEnd({ endedMs: en, startedMs: st, shiftEndMs: win.endMs });
+          }).length;
+        })(),
       });
       if (confirmChecks(checks).length) { setRecheckTicks({}); setCloseRecheck(checks); return; }
     }
@@ -3259,7 +3296,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ไม่มีทางรู้จักทีม และไฟล์ 57 KB แก้ผ่าน MCP ไม่ได้ (กฎใน docs/modules/edge-functions.md) */
   const handleCallMtn = async (d, team) => {
     if (d.call_mtn) return;
-    const teamKey = teamKeyOf(team) || 'maintenance';   // ว่าง = ไม่กรองทีม → กลับไปเด้งทั้งโรงงาน ห้ามปล่อย
+    /* 🔴 13/11 — ไม่เลือกทีม = ไม่เรียก (เดิมถอยไป 'maintenance' เงียบๆ ⇒ ส่งผิดทีมบ่อย
+       และตอนนี้ฐานเปิดใบ MO ตามทีมนี้ด้วย ⇒ ใบไปผิดคิวตามไปอีก) */
+    const teamKey = teamKeyOf(team);
+    if (!teamKey) { toast.error('เลือกทีมช่างก่อน — เรียกผิดทีมแล้วช่างที่ถูกไม่ได้รับแจ้ง'); return; }
     /* นับแถว — ถ้าเขียนไม่ติดแล้วยิงแจ้งเตือนต่อ ช่างจะมาโดยที่ใบไม่มีประวัติ "เรียกเมื่อไหร่/ใครเรียก"
        และปุ่มยังกดซ้ำได้เรื่อยๆ (กฎเขียน DB ข้อ 2) */
     const ok = checkWriteRows(await supabaseDR.from('downtime_logs').update({
@@ -3305,14 +3345,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            แล้วคนต้องเลือกชนิดอุปกรณ์ + กลุ่ม/ลักษณะปัญหาจากทะเบียน + รายละเอียดผ่านตัวตรวจ + **รูปบังคับ**
      🔴 เช็คใบซ้ำอ่าน error ด้วย — อ่านไม่ได้ = ไม่เปิด (fail-closed) · มีมากกว่า 1 ใบ = ถือว่ามีแล้ว */
   const openMoPicker = async (d) => {
-    const { data: exist, error } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).limit(1);
+    /* ⏳ 13/11 — กด "เรียกช่าง" แล้วฐานเปิดใบให้เองทันที (trigger `trg_dt_call_mtn_opens_mo`)
+       ⇒ ใบที่เจอตรงนี้อาจเป็น "ใบที่รอรายละเอียด" ไม่ใช่ใบที่กรอกครบแล้ว
+       🔴 เดิมเจอใบแล้วตอบ "มีใบแล้ว" แล้วตัน = คนเติมรายละเอียดไม่ได้จากหน้านี้เลย
+          ⇒ ใบที่ติดธงต้องพาไป **ฟอร์มเดิมในโหมดเติม** (เขียนทับใบเดิม ไม่เปิดใบที่ 2) */
+    const { data: exist, error } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, details_pending, before_img').eq('source_downtime_id', d.id)
+      .order('report_at', { ascending: true }).limit(1);
     if (error) { toast.error('ตรวจใบซ้ำไม่สำเร็จ — ยังไม่เปิดใบ ลองใหม่อีกครั้ง (' + error.message + ')'); return; }
-    if (exist?.length) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist[0].mo_no ? ` (${exist[0].mo_no})` : ''}`); return; }
+    const found = exist?.[0];
+    if (found && isDetailsPending(found) !== true) {
+      toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${found.mo_no ? ` (${found.mo_no})` : ''}`); return;
+    }
     const p = (n) => String(n).padStart(2, '0');
     const at = d.started_at ? new Date(d.started_at) : null;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     setMoFromDt({
       d,
+      fillOrderId: found?.id || null, hasBefore: !!found?.before_img,
       team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no),
       initial: {
         line_name: selSession.line_name, machine_no: d.machine_no || '',
@@ -4610,11 +4660,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {canScan && d.duration_min == null && !d.ended_at && d.dr_downtime_types?.category !== 'planned' && (
                         d.call_mtn
                           ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-pill)', padding: '3px 9px', whiteSpace: 'nowrap' }}>{tr('📞 เรียกช่างแล้ว')}</span>
-                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title={tr('แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เรียกช่าง')}</button>
+                          : <button onClick={() => setMoDtPick({ d, team: '', hint: teamForMachine(d.machine_no, machines) || '', mode: 'call' })} title={tr('แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เรียกช่าง')}</button>
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
-                        <button onClick={() => openMoPicker(d)} title={tr('เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เปิดใบซ่อม')}</button>
+                        /* ⏳ 13/11 — เรียกช่างแล้ว = ฐานเปิดใบให้เองแล้ว (trigger) ⇒ ปุ่มนี้คือ "ไปเติมรายละเอียด"
+                            ไม่ใช่ "เปิดใบใหม่" · ป้ายต้องตรงกับความจริง ไม่งั้นคนกดแล้วเจอ toast ว่ามีใบแล้วก็งง
+                            🔴 ไม่ยิงคิวรีเพิ่มเพื่อถามว่าใบครบยัง — ตอนกดถามฐานสดอยู่แล้วใน openMoPicker
+                               (จอ Downtime เปิดค้างทั้งกะ · เพิ่มคิวรีต่อแถว = egress ฟรีๆ) */
+                        <button onClick={() => openMoPicker(d)}
+                          title={d.call_mtn
+                            ? tr('เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)')
+                            : tr('เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้')}
+                          style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: d.call_mtn ? 'var(--amber)' : 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {d.call_mtn ? tr('เพิ่มรายละเอียด') : tr('เปิดใบซ่อม')}
+                        </button>
                       )}
                       {/* 🛠 วิธีแก้ไข + ผลตรวจติดตาม — โผล่เมื่อรายการนี้ยาวถึงเกณฑ์ใบรายงานปัญหา (นอกแผน ≥30 นาที)
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเกิน 30 นาที ให้มีไอคอนขึ้นมาให้ลงวิธีแก้ไข"
@@ -4729,8 +4789,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {moFromDt && (
           <MoReportFromDowntime downtime={moFromDt.d} lineName={selSession?.line_name} initial={moFromDt.initial}
               defaultDept={moFromDt.team} fullName={fullName}
+              fillOrderId={moFromDt.fillOrderId} hasBefore={moFromDt.hasBefore}
               onClose={() => setMoFromDt(null)}
-              onSaved={() => { setMoFromDt(null); toast.success('📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
+              onSaved={() => { setMoFromDt(null); toast.success(moFromDt.fillOrderId
+                ? '📝 เพิ่มรายละเอียดใบแจ้งซ่อมแล้ว'
+                : '📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
         )}
         {moDtPick && (() => { const pickTone = moDtPick.mode === 'call' ? 'bad' : 'info'; const pickColor = toneVar(pickTone);
           /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
@@ -4748,6 +4811,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {moDtPick.mode === 'call'
                   ? 'แจ้งเฉพาะช่างทีมที่เลือก + หัวหน้า/ผจก.ของส่วนงานนี้ (ทีมอื่นไม่ถูกรบกวน)'
                   : 'ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือนของทีมที่เลือก'}
+                {/* 💡 ทีมที่ทะเบียนเครื่องบอก — บอกเฉยๆ **ไม่กดให้** (ต้องเลือกเองทุกครั้ง) */}
+                {moDtPick.hint && !moDtPick.team && (
+                  <div style={{ marginTop: 4, color: 'var(--amber)' }}>
+                    💡 {tr('ทะเบียนเครื่องนี้อยู่ทีม')} <b>{deptNameOf(moDtPick.hint)}</b> — {tr('ถ้าใช่ กดเลือกด้านล่าง')}
+                  </div>
+                )}
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: moDtPick.mode === 'call' ? 16 : 12 }}>
                 {MTN_TEAMS.map(t => (
@@ -4762,9 +4831,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
                 {/* ป๊อปอัพนี้เหลือทาง "เรียกช่าง" ทางเดียว — เปิดใบซ่อมย้ายไปฟอร์มเต็ม MoReportFromDowntime (08/11) */}
-                <button disabled={moSaving} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
-                  style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
-                  {moSaving ? 'กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
+                {/* 🔴 ยังไม่เลือกทีม = กดไม่ได้ (13/11 · คำสั่ง user "ให้บังคับต้องเลือก ไม่ออโต้ MTN")
+                    เดิมปุ่มกดได้เสมอ แล้ว handleCallMtn ถอยไป 'maintenance' เงียบๆ เมื่อเดาทีมไม่ออก
+                    ⇒ กดเร็วๆ = เรียก MTN ทั้งที่งานเป็นของ JIG/DIE · ตอนนี้ใบ MO ก็ถูกเปิดตามทีมนี้ด้วย */}
+                <button disabled={moSaving || !moDtPick.team} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
+                  style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none',
+                           background: moDtPick.team ? pickColor : 'var(--bg2)',
+                           color: moDtPick.team ? '#fff' : 'var(--muted)', fontSize: 13, fontWeight: 800,
+                           cursor: moSaving ? 'wait' : (moDtPick.team ? 'pointer' : 'not-allowed'),
+                           opacity: moSaving ? 0.6 : 1 }}>
+                  {moSaving ? tr('กำลังเปิดใบ…')
+                    : !moDtPick.team ? tr('↑ เลือกทีมช่างก่อน')
+                    : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
               </div>
             </div>

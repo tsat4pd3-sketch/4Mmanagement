@@ -10670,3 +10670,179 @@ test('🏠 checkin-opens-on-own-line — ค่าตั้งต้นมาจ
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
 });
+
+/* ═══ 🔑 harness-lineid-matches-mock — harness ต้องชี้ไลน์ที่มีจริงใน mock (2026-11-13) ═══════
+   กับดักที่ทำให้ "พัง 0" เชื่อไม่ได้: `audit/main.jsx` ตั้ง `CTX.lineId` เป็นเลข แต่
+   `audit/mockSupabase.js` ให้ไลน์มี `id` เป็น `'id-N'` ⇒ ไม่ตรงกันเลยสักแถว
+   ⇒ ทุกจุดที่ถาม "ไลน์ของผู้ใช้คนนี้คือไลน์ไหน" หาไม่เจอ แล้วเดินกิ่ง fail-open ทุกครั้ง
+   ⇒ **กิ่ง "ขอบเขตรายไลน์" ไม่เคยถูกรันใน crashsweep เลย** (เจอ 13/11 ตอนแก้ /checkin)
+   🔴 ของจริง `production_lines.id` เป็น **integer** ⇒ mock ต้องเป็นเลข
+      ห้ามแก้กลับทางให้ CTX เป็นสตริง — โค้ดจริงมี `Number(lineId)` จะได้ NaN แล้วเดินผิดกิ่ง
+   📄 audit/README.md §CTX.lineId ต้องตรงกับ id ของไลน์ใน mock                                */
+test('🔑 harness-lineid-matches-mock — CTX.lineId ต้องชี้ไลน์ที่มีจริง + id ของไลน์ต้องเป็นเลข', () => {
+  const bad = [];
+  const mock = readFileSync(join(ROOT, 'audit/mockSupabase.js'), 'utf8');
+  const main = readFileSync(join(ROOT, 'audit/main.jsx'), 'utf8');
+
+  // ① ไลน์ใน mock ต้องมี id เป็นเลข (override ที่ production_lines)
+  const pl = stripComments(mock).match(/production_lines:\s*\(r, i\) => \(\{([^}]*)\}\)/);
+  if (!pl) bad.push('หา override production_lines ใน mockSupabase.js ไม่เจอ — เปลี่ยนรูปแล้วต้องแก้ด่านนี้');
+  else if (!/\bid:\s*i\b/.test(pl[1]))
+    bad.push("production_lines ของ mock ต้องตั้ง `id: i` (เลข) — ของจริง production_lines.id เป็น integer");
+
+  // ② CTX.lineId ต้องเป็นเลข และอยู่ในช่วงแถวที่ mock สร้างจริง
+  const m = stripComments(main).match(/const CTX = \{[^}]*?lineId:\s*([^,]+),/);
+  if (!m) bad.push('หา CTX.lineId ใน audit/main.jsx ไม่เจอ');
+  else {
+    const raw = m[1].trim();
+    if (!/^\d+$/.test(raw))
+      bad.push(`CTX.lineId ต้องเป็นเลข (ได้ \`${raw}\`) — สตริงจะทำให้ Number(lineId) เป็น NaN แล้วเดินผิดกิ่ง`);
+    else {
+      const n = Number(raw);
+      const rows = stripComments(mock).match(/const ROWS = \[\.\.\.Array\.from\(\{ length: (\d+) \}/);
+      const len = rows ? Number(rows[1]) : 0;
+      if (!len) bad.push('อ่านจำนวนแถว ROWS ของ mock ไม่ออก');
+      else if (n < 1 || n > len)
+        bad.push(`CTX.lineId = ${n} อยู่นอกช่วงแถวที่ mock สร้าง (1..${len}) = ชี้ไลน์ที่ไม่มีอยู่`);
+      // 🔴 ต้องเป็น "ไลน์ลูก" ไม่ใช่ไลน์แม่ ไม่งั้นสายตกทอดจากไลน์แม่ไม่เคยถูกรัน
+      const par = stripComments(mock).match(/const PARENT_OF = \{([^}]*)\}/);
+      const kids = par ? [...par[1].matchAll(/(\d+)\s*:/g)].map(x => Number(x[1])) : [];
+      if (kids.length && !kids.includes(n))
+        bad.push(`CTX.lineId = ${n} ไม่ใช่ไลน์ลูก (ลูกใน PARENT_OF = ${kids.join(',')})`
+          + ' — ตั้งเป็นไลน์แม่ = กิ่ง "ไลน์ลูกตกทอดจากไลน์แม่" ไม่เคยถูกรัน');
+    }
+  }
+
+  // ③ ห้ามเหลือจุดที่ "ชี้ไลน์" ด้วยสตริง 'id-N' (join กลับไปหาไลน์ไม่เจอ)
+  for (const key of ['line_id', 'to_line_id', 'ref_line_id']) {
+    const re = new RegExp(`${key}:\\s*(\`id-|'id-)`);
+    if (re.test(stripComments(mock)))
+      bad.push(`mockSupabase.js: \`${key}\` ยังชี้ไลน์ด้วยสตริง 'id-N' — ต้องเป็นเลขให้ตรงกับ production_lines.id`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
+});
+
+test('⏳ mo-details-pending — เรียกช่าง = ต้องมีใบ MO · ใบรอรายละเอียดต้องเห็นในคิว', () => {
+  /* 🔴 13/11 คำสั่ง user: *"บังคับเลยถ้าเรียกช่าง เพราะข้ามแผนก · อาจจะไม่บังคับใส่รายละเอียด
+     ตอนนั้นทันทีก็ได้ มาใส่ย้อนหลังได้ เป็น tab breakdown รอเพิ่มรายละเอียด MO"*
+     ข้อมูลตอนทำ: เรียกช่าง 1,072 ครั้ง — มีใบแล้ว 986 (92%) · ไม่มีใบ 86 (56 ใน 30 วัน)
+     กับดัก 4 ข้อที่ด่านนี้กัน:
+       ① ตัวบังคับหายไปจากฐาน (trigger) ⇒ กลับไปเป็น "เรียกช่างแล้วไม่มีใบ" เงียบๆ
+          — ต้องมีไฟล์ migration ในรีโป ไม่ใช่ apply ลอยๆ ผ่าน MCP แล้วลืม
+       ② `details_pending` หายจาก `MO_LIST_COLS` ⇒ ป้าย+ตัวกรองหายทั้งจอ (คอลัมน์ที่ไม่ select = undefined)
+       ③ หน้าเทียบ `details_pending === true` เอง ⇒ `undefined` (ไม่ได้ select) ถูกตัดสินเป็น "ใบครบ"
+       ④ โหมดเติมรายละเอียดเขียน status/current_step ทับ ⇒ ใบที่ช่างซ่อมอยู่ถูกดึงกลับไปกองรอรับงาน
+     📄 src/utils/moDetailsPending.js · docs/modules/mtn-work-order.md */
+  const dir = join(ROOT, 'supabase/migrations');
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql'));
+  const hasTrg = files.some(f => /create\s+trigger\s+trg_dt_call_mtn_opens_mo/i.test(readFileSync(join(dir, f), 'utf8')));
+  assert.ok(hasTrg,
+    '\n\n❌ ไม่มี migration ที่สร้าง trigger `trg_dt_call_mtn_opens_mo` ในรีโป\n'
+    + '   ⇒ ตัวบังคับ "เรียกช่าง = ต้องมีใบ MO" ไม่มีใครรู้ว่ามีอยู่ กู้ฐานใหม่แล้วหาย\n');
+
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  /* ② */
+  assert.match(mr, /MO_LIST_COLS[\s\S]{0,4000}?'details_pending'/,
+    '\n\n❌ `details_pending` ไม่อยู่ใน MO_LIST_COLS — ป้าย/ตัวกรอง "รอเพิ่มรายละเอียด" หายทั้งจอเงียบๆ\n');
+  /* ③ — ห้ามเทียบธงเองในหน้า ต้องผ่านของกลาง */
+  for (const [file, src] of [['src/pages/MtnRepair.jsx', mr],
+                             ['src/pages/DailyReport.jsx', stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))]]) {
+    assert.ok(!/\.details_pending\s*===\s*true/.test(src),
+      `\n\n❌ ${file} เทียบ \`details_pending === true\` เอง — ใช้ isDetailsPending() จาก utils/moDetailsPending.js\n`
+      + '   คอลัมน์ที่ไม่ได้ select มา = undefined ⇒ เทียบเองแล้วใบที่รอเอกสารหายจากคิว\n');
+    assert.match(src, /isDetailsPending\(/,
+      `\n\n❌ ${file} ไม่เรียก isDetailsPending() แล้ว — ใบที่รอรายละเอียดไม่ถูกแยกออกมา\n`);
+  }
+  /* ④ — โหมดเติมต้องถอดฟิลด์ของ "การเปิดใบ" ออกก่อนเขียนทับ */
+  assert.match(mr, /if \(fillOrderId\)[\s\S]{0,700}?status: _s[\s\S]{0,200}?current_step: _cs/,
+    '\n\n❌ โหมดเติมรายละเอียดไม่ได้ถอด status/current_step ออกจาก payload\n'
+    + '   ⇒ เขียน status:\'pending\' step:1 ทับใบที่ช่างรับงาน/ซ่อมไปแล้ว = ดึงใบกลับไปกองรอรับงาน\n');
+  assert.match(mr, /details_pending: done \? false : true/,
+    '\n\n❌ โหมดเติมต้องปลดธงเฉพาะเมื่อครบ (canClearDetailsFlag) — ปลดทุกครั้ง = ใบไม่ครบหลุดจากคิว\n');
+  /* ธงนี้ห้ามกลายเป็นด่านของขั้น (ไลน์ต้องไม่หยุดรอเอกสาร) */
+  assert.ok(!/details_pending[^\n]{0,80}(return toast\.error|canDoStep)/.test(mr),
+    '\n\n❌ เอาธง details_pending ไปบล็อกขั้น/ปุ่ม — ใบที่รอเอกสารต้องยังรับงาน/ซ่อม/ปิดได้ตามปกติ\n'
+    + '   (กฎโมดูล: "งานซ่อมกับบริการ แค่แจ้งให้ทราบ ไม่งั้นไลน์จะหยุดรอการอนุมัติ")\n');
+});
+
+test('🔍 dt-closed-at-shift-end — ใบที่ปิดตรงเวลาเลิกกะต้องถูกถาม (เตือน ไม่บล็อก)', () => {
+  /* 🔴 13/11 คำสั่ง user: *"พวกที่คืนไลน์นาน ค่อมช่วงเบรคด้วยรึป่าว และถ้านานจริง ผลิตก็ต้อง
+     รับผิดชอบ ว่าเกิดจากอะไร ต้องมีคำตอบ เพราะลงแบบนี้ A ตก P อาจจะ over และเราคิดแคพ 100%
+     เป็น poka-yoke ดัก OEE เกิน 100% ไว้ก็จะมีผล"*
+     วัดจริง ต.ค.: ใบที่ซ่อมเสร็จแล้วปิดช้าสุด 6 ใบ **ปิดตรงเวลาเลิกกะเป๊ะทั้ง 6 ใบ** ·
+       ค่อมเบรคทั้ง 6 ใบ (BD-08 94 นาที — เป็นเบรค 50 ⇒ ที่ต้องตอบจริง 44) ·
+       %P แตะเพดาน 100% ใน 194 จาก 783 กะ (24.8%)
+     กับดัก 4 ข้อที่ด่านนี้กัน:
+       ① ยกเป็นด่านห้ามบันทึก ⇒ หน้างานลงข้อมูลไม่ได้ตอนหยุดยาวจริง (user สั่ง "เตือนไม่บล็อก")
+       ② ลืมหักเวลาพัก ⇒ กล่าวหาเกินจริง (เบรคถูกกันออกจากฐาน %A อยู่แล้ว · dtMinOutsideBreaks)
+       ③ เขียนด่านปิดกะชุดที่ 2 แยกจาก `buildCloseChecks` ⇒ คนติ๊ก 2 ลิสต์ (เกือบทำรอบนี้)
+       ④ เตือนแต่ไม่บอกผลที่ตามมา ⇒ คนไม่รู้ว่าจะไปแก้อะไร
+     📄 src/utils/shiftDataSanity.js · src/utils/closeChecks.js */
+  const san = stripComments(readFileSync(join(ROOT, 'src/utils/shiftDataSanity.js'), 'utf8'));
+  /* ② ต้องรับช่วงพักและหักออก */
+  assert.match(san, /breakIntervals/,
+    '\n\n❌ ตัวตัดสินใบปิดตรงเลิกกะไม่รับช่วงพักแล้ว — เบรคถูกกันออกจากฐาน %A อยู่แล้ว\n'
+    + '   ไม่หัก = เตือนด้วยนาทีที่ไม่ได้กระทบ %A จริง (เคส BD-08: 94 นาที เป็นเบรค 50)\n');
+  assert.match(san, /answerMin/,
+    '\n\n❌ ต้องคืน "นาทีที่ต้องตอบ" (หักพักแล้ว) ไม่ใช่นาทีดิบ\n');
+  /* ③ ห้ามมีด่านปิดกะชุดที่ 2 */
+  assert.ok(!/export function shiftDataSanity\b/.test(san),
+    '\n\n❌ มี shiftDataSanity() กลับมา — ด่านปิดกะต้องอยู่ที่ `buildCloseChecks()` ลิสต์เดียว\n'
+    + '   (%P ทะลุเพดาน = `work_over_time` · DT เกินเวลากะ = `dt_over_shift` มีอยู่แล้ว)\n');
+
+  const cc = stripComments(readFileSync(join(ROOT, 'src/utils/closeChecks.js'), 'utf8'));
+  assert.match(cc, /key: 'dt_closed_at_shift_end'[\s\S]{0,200}?level: 'confirm'/,
+    '\n\n❌ ด่าน dt_closed_at_shift_end ต้องเป็น level `confirm`\n'
+    + '   `block` = ปิดกะไม่ได้ตอนหยุดยาวถึงเลิกกะจริง (คำสั่ง user: เตือนไม่บล็อก)\n');
+
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  /* ① ด่านรายใบต้องเป็น confirm ไม่ใช่ toast.error + return */
+  assert.match(dr, /checkDtClosedAtShiftEnd\(/,
+    '\n\n❌ หน้ารายงานผลิตไม่เรียก checkDtClosedAtShiftEnd() แล้ว — ใบที่ปิดตรงเลิกกะไม่ถูกถาม\n');
+  assert.match(dr, /dtEndChk && !window\.confirm\(/,
+    '\n\n❌ ด่านใบปิดตรงเลิกกะต้องเป็น window.confirm (เตือนแล้วไปต่อได้)\n'
+    + '   ใช้ toast.error + return = บล็อกการบันทึก ซึ่ง user สั่งว่าห้าม\n');
+  assert.match(dr, /dtClosedAtShiftEnd:/,
+    '\n\n❌ ไม่ได้ส่งตัวนับ dtClosedAtShiftEnd เข้า buildCloseChecks — ด่านตอนปิดกะไม่ขึ้นเลย\n');
+  /* ④ ต้องบอกผลที่ตามมา */
+  assert.ok(/%A/.test(san) && /%P/.test(san),
+    '\n\n❌ ข้อความเตือนไม่บอกผลต่อ %A/%P — คนอ่านไม่รู้ว่าต้องไปแก้อะไร\n');
+});
+
+test('🔴 mtn-team-must-be-picked — ทีมช่างห้ามมีค่าตั้งต้น ต้องเลือกเองทุกครั้ง', () => {
+  /* 🔴 13/11 หน้างานแจ้ง (ภาพหน้าจอ LINE): *"เปิดใบแจ้งซ่อม หัวข้อนี้แก้ไขเป็นตัวเลือกได้ไหมครับ
+     กันส่งไปผิดแผนก · ตอนนี้มันตั้งค่าเริ่มต้นเป็น MTN ครับ ส่งผิดแผนกบ่อยครับ"*
+     คำสั่ง user: *"ให้บังคับต้องเลือกนะ · ไม่ออโต้ MTN แน่นอน"* + *"บางทีกดไวไปเลย"*
+     กับดัก 3 ข้อที่ด่านนี้กัน:
+       ① `teamKeyOf(defaultDept) || 'maintenance'` — เดาทีมไม่ออก = ยัด MTN ให้เงียบๆ
+          แล้วคนกดเร็วก็ส่งผิดทีม ⇒ ใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง
+       ② ปุ่ม "เรียกช่าง" กดได้ทั้งที่ยังไม่เลือกทีม แล้ว handleCallMtn ถอยไป 'maintenance'
+          🔴 ตั้งแต่ 13/11 ฐานเปิดใบ MO ตามทีมที่เรียกด้วย ⇒ เรียกผิด = ใบไปผิดคิวตามไปอีก
+       ③ เอาทีมที่เดาจากทะเบียนมา **กดเลือกให้** แทนที่จะเป็นคำใบ้ = กลับไปปัญหาเดิม
+     📄 docs/modules/mtn-work-order.md */
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  /* ① ค่าตั้งต้นต้องว่าง */
+  assert.ok(!/mtn_dept:\s*teamKeyOf\([^)]*\)\s*\|\|/.test(mr),
+    '\n\n❌ ฟอร์มแจ้งซ่อมกลับไปตั้งค่าทีมช่างให้เอง (`teamKeyOf(...) || ...`)\n'
+    + '   คำสั่ง user: ไม่ออโต้ MTN แน่นอน — ต้องเลือกเองทุกครั้ง\n');
+  assert.match(mr, /mtn_dept:\s*''/,
+    '\n\n❌ ค่าเริ่มต้นของ "แจ้งถึงทีมช่าง" ต้องเป็นค่าว่าง\n');
+  /* บังคับตอนบันทึก */
+  assert.match(mr, /if \(!teamKeyOf\(f\.mtn_dept\)\) return toast\.error/,
+    '\n\n❌ ฟอร์มแจ้งซ่อมไม่บล็อกตอนยังไม่เลือกทีมช่าง\n');
+  /* มี placeholder ให้เห็นว่ายังไม่ได้เลือก */
+  assert.match(mr, /<option value="">— \{trI18n\('เลือกทีมช่าง'\)\} —<\/option>/,
+    '\n\n❌ ช่องทีมช่างไม่มีตัวเลือก placeholder — คนเปิดมาเห็นทีมใดทีมหนึ่งค้างอยู่แล้วกดผ่าน\n');
+
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  /* ② ปุ่มเรียกช่างต้องกดไม่ได้จนเลือกทีม + ห้าม fallback */
+  assert.match(dr, /disabled=\{moSaving \|\| !moDtPick\.team\}/,
+    '\n\n❌ ปุ่มเรียกช่างกดได้ทั้งที่ยังไม่เลือกทีม — "บางทีกดไวไปเลย" (คำ user)\n');
+  assert.ok(!/teamKeyOf\(team\)\s*\|\|\s*'maintenance'/.test(dr),
+    '\n\n❌ handleCallMtn กลับไปถอยเป็น \'maintenance\' เมื่อไม่รู้ทีม\n'
+    + '   ⇒ เรียกผิดทีม และฐานจะเปิดใบ MO ไปผิดคิวตามด้วย (trigger 13/11)\n');
+  /* ③ ทีมที่เดาได้ต้องเป็นคำใบ้ ไม่ใช่ค่าที่เลือกให้ */
+  assert.match(dr, /team:\s*'',\s*hint:\s*teamForMachine\(/,
+    '\n\n❌ ป๊อปอัพเรียกช่างกลับไปเลือกทีมให้ล่วงหน้า — ต้องเป็นคำใบ้ (hint) เท่านั้น\n');
+});
