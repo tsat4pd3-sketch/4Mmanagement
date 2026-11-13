@@ -32,6 +32,8 @@ async function findVisible(raw, looseAll){
   }
   return null;
 }
+// อุ่นเครื่อง: หน้าแรกหลัง vite เพิ่งขึ้น = จอว่าง (dep ยัง optimize) — โหลดทิ้ง 1 รอบก่อนถ่ายจริง (13/11)
+await pg.goto(`http://localhost:${process.env.PORT||5198}/audit/index.html?p=${SPEC[0].p}&role=admin`).catch(()=>{}); await pg.waitForTimeout(8000);
 for (const s of SPEC){
   if (only && !only.includes(s.id)) continue;
   await pg.goto(`http://localhost:${process.env.PORT||5198}/audit/index.html?p=${s.p}&role=admin${s.q?'&'+s.q:''}`); await pg.waitForTimeout(3500); await dismiss();
