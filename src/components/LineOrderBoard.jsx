@@ -106,7 +106,7 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 11.5 }}>
             {Object.entries(CARD_STATE_META).map(([k, m]) => (
               <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: view.counts[k] ? 'var(--text)' : 'var(--muted)', fontWeight: view.counts[k] ? 800 : 500 }}>
-                <span style={{ width: 9, height: 9, borderRadius: 'var(--r-xs)', background: m.color }} />{m.label} {view.counts[k] || 0}
+                <span style={{ width: 9, height: 9, borderRadius: 'var(--r-xs)', background: m.color }} />{tr(m.label)} {view.counts[k] || 0}
               </span>
             ))}
           </div>
@@ -135,7 +135,7 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
                           style={{ minWidth: 74, padding: '4px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', textAlign: 'left',
                             background: 'var(--card)', backgroundImage: `linear-gradient(${m.color}26, ${m.color}26)`,
                             border: `1.5px solid ${m.color}`, boxShadow: on ? `0 0 0 2px var(--text)` : 'none', color: 'var(--text)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{m.label.split(' ')[0]}</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{tr(m.label).split(' ')[0]}</div>
                           <div style={{ fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{c._made}/{c.qty ?? '—'}</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{c.shift === 'night' ? '🌙' : '☀️'} {c.orderStartMs ? fmtMs(c.orderStartMs) : 'รอเปิด'}</div>
                         </button>

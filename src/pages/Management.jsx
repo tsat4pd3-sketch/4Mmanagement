@@ -2179,7 +2179,7 @@ export default function Management() {
                             {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: 46, height: 46, objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
                               <div style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
-                                {row.label}
+                                {tr(row.label)}
                                 {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                 {multiSubLine && row.line && (
                                   <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
@@ -3393,7 +3393,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{machine.machine_name}</div>
             )}
             <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
-              {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
+              {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{tr(mtype.label)}</span>}
               {machine?.line_name && <span style={chipSt('#a78bfa')}>{machine.line_name}</span>}
               {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
             </div>

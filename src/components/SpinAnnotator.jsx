@@ -133,7 +133,7 @@ export default function SpinAnnotator({
                 {pins.map(p => (
                   <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                     offX={p.label_dx} offY={p.label_dy}
-                    label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
+                    label={tr(p.label)} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
                     /* 🔴 "หมุดที่กำลังเลือก" ต้องต่างที่ **วงไฮไลต์** ไม่ใช่แค่เปลี่ยนสี (23/09 · audit หมุดทั้งโปรเจค)
                        สีประเภทจุดตรวจตั้งเองได้ในทะเบียน — ประเภทสีเขียวจะหน้าตาเหมือนหมุดที่กำลังวางเป๊ะ */
                     selected={p.selected} hollow={p.hollow}

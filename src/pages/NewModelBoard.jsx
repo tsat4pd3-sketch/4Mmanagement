@@ -36,7 +36,7 @@ const CARD = { background: 'var(--card)', border: '1px solid var(--border)', bor
 function Dot({ eva, size = 14, title }) {
   const m = evaMeta(eva);
   return (
-    <span title={title || m.label} style={{
+    <span title={title || tr(m.label)} style={{
       width: size, height: size, borderRadius: '50%', flex: `0 0 ${size}px`,
       background: m.color, display: 'inline-block',
       border: eva === 'none' || !eva ? '1px dashed var(--border2)' : 'none',
@@ -64,7 +64,7 @@ function EvaBadge({ eva, label, note, big }) {
         '--nmb-color': none ? 'var(--border2)' : m.color,
         '--nmb-glow': eva === 'R' ? 'var(--red-line)' : 'transparent',
         '--nmb-ring-w': big ? '4px' : '3px',
-      }}>{m.short}</div>
+      }}>{tr(m.short)}</div>
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.005em' }}>{label}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr(m.label)}</div>
@@ -196,7 +196,7 @@ function PanelNpiLink({ proj, panel }) {
     <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 'var(--r-md)',
       '--nmb-color': 'var(--accent)', fontSize: 12.5, lineHeight: 1.55 }}>
       🔗 <b>{tr('ของจริงของแผงนี้อยู่ใน NPI')}</b> — {link.what}
-      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>{tr('เปิด')} {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
+      {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>{tr('เปิด')} {tr(link.label)}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
     </div>
   );
 }
@@ -359,7 +359,7 @@ function LevelOverview({ data, go }) {
     <>
       <div style={{ display: 'grid', gap: 10, alignContent: 'start', marginBottom: 14,
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(230px, 1fr))' }}>
-        {axes.map(a => <EvaBadge key={a.key} big eva={a.eva} label={a.label} note={a.hint} />)}
+        {axes.map(a => <EvaBadge key={a.key} big eva={a.eva} label={tr(a.label)} note={a.hint} />)}
       </div>
 
       <div style={{ fontSize: 13, fontWeight: 700, margin: '4px 0 8px' }}>{tr('ลูกค้า')}</div>
@@ -404,7 +404,7 @@ function LevelOverview({ data, go }) {
                 textAlign: 'left', padding: '7px 0', cursor: 'pointer' }}>
               <div style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.issue}</div>
               <div style={{ fontSize: 11.5, color: 'var(--red)' }}>
-                {tr('เลย')} {r.late} {tr('วัน · กำหนด')} {r.due} · {r.pic} · {r.project.title} / {r.panel.label}
+                {tr('เลย')} {r.late} {tr('วัน · กำหนด')} {r.due} · {r.pic} · {r.project.title} / {tr(r.panel.label)}
               </div>
             </button>
           ))}
@@ -417,7 +417,7 @@ function LevelOverview({ data, go }) {
                 textAlign: 'left', padding: '7px 0', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
               <Dot eva={p.eva} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5 }}>{p.label} <span style={{ color: 'var(--muted)' }}>· {p.project.title}</span></div>
+                <div style={{ fontSize: 12.5 }}>{tr(p.label)} <span style={{ color: 'var(--muted)' }}>· {p.project.title}</span></div>
                 {p.evaNote && <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>}
                 <FreshChip iso={p.updated_at} />
               </div>
@@ -449,7 +449,7 @@ function LevelCustomer({ cust, go }) {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
             {PROJECT_AXES.map(a => (
               <span key={a.key} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11.5 }}>
-                <Dot eva={p.eva?.[a.key]} size={11} />{a.label}
+                <Dot eva={p.eva?.[a.key]} size={11} />{tr(a.label)}
               </span>
             ))}
           </div>
@@ -503,7 +503,7 @@ function BucketBar({ proj, leaves, go, isMobile }) {
           const meta = evaMeta(b.eva);
           return (
             <button key={b.key} onClick={() => n && go({ cust: proj.customer, proj: proj.id, bucket: b.key })}
-              disabled={!n} title={b.hint}
+              disabled={!n} title={tr(b.hint)}
               className={b.key === 'delay' && n ? 'mo-card-alert' : undefined}
               style={{ ...CARD, textAlign: 'left', cursor: n ? 'pointer' : 'default', opacity: n ? 1 : 0.55,
                 borderLeft: `3px solid ${meta.color}`, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -608,7 +608,7 @@ function LotTable({ proj }) {
                 <tr key={l.key}>
                   <td style={{ ...td, color: 'var(--muted)' }}>{l.no}</td>
                   <td style={{ ...td, fontWeight: 700 }}>
-                    {l.label}
+                    {tr(l.label)}
                     {l.renamed && <div style={{ fontSize: 11, color: 'var(--accent2)', fontWeight: 400 }}>⚠️ {l.renamed}</div>}
                   </td>
                   <td style={{ ...td, fontSize: 11.5, color: 'var(--text2)' }}>{l.cond}</td>
@@ -658,7 +658,7 @@ function LevelProject({ proj, go }) {
     <>
       <div style={{ display: 'grid', gap: 10, alignContent: 'start', marginBottom: 12,
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(230px, 1fr))' }}>
-        {PROJECT_AXES.map(a => <EvaBadge key={a.key} big eva={proj.eva?.[a.key]} label={a.label} />)}
+        {PROJECT_AXES.map(a => <EvaBadge key={a.key} big eva={proj.eva?.[a.key]} label={tr(a.label)} />)}
       </div>
 
       {/* 🔗 หลักฐานของรุ่นนี้อยู่ที่ไหน — ตอบก่อนทุกอย่าง (2026-10-06) */}
@@ -719,7 +719,7 @@ function LevelProject({ proj, go }) {
                 <span style={{ fontSize: hot ? 15 : 13, fontWeight: hot ? 800 : 700, lineHeight: 1.3 }}>{tr(p.label)}</span>
                 <span className="nmb-go" style={{ marginLeft: 'auto', color: 'var(--text2)', fontSize: 14, flex: '0 0 auto' }}>›</span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {kind.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{kind.icon} {tr(kind.label)}</div>
               <MetricBlock panel={p} />
               {p.evaNote
                 ? <div style={{ fontSize: hot ? 12.5 : 11.5, color: hot ? 'var(--text)' : 'var(--text2)', lineHeight: 1.45 }}>{p.evaNote}</div>
@@ -743,7 +743,7 @@ function LevelBucket({ proj, bucket, go }) {
   return (
     <>
       <div style={{ ...CARD, marginBottom: 12, borderLeft: `3px solid ${evaMeta(b?.eva).color}`, fontSize: 12.5, lineHeight: 1.55 }}>
-        <b>{b?.label}</b> — {b?.hint}
+        <b>{tr(b?.label)}</b> — {tr(b?.hint)}
         <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>
           ข้ามจากหัวบอร์ดมาที่นี่โดยไม่ต้องไล่ทีละชั้น (ทางลัดที่ IEC ขอไว้ใน work flow)
         </div>
@@ -789,7 +789,7 @@ function LevelPop({ proj, main, go }) {
       <div style={{ ...CARD, marginBottom: 12, borderLeft: `3px solid ${evaMeta(eva).color}` }}>
         <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
           <Dot eva={eva} size={17} />
-          <b style={{ fontSize: 14 }}>{main.no}. {main.label}</b>
+          <b style={{ fontSize: 14 }}>{main.no}. {tr(main.label)}</b>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
           ไฟของหัวข้อใหญ่ = <b>{tr('แย่สุดของหัวข้อย่อยชนะ')}</b> — IEC เขียนไว้ว่า
@@ -829,7 +829,7 @@ function LevelPop({ proj, main, go }) {
                       <td style={td}><Dot eva={s.eva} /></td>
                       <td style={{ ...td, color: 'var(--muted)', fontWeight: 700 }}>{s.no}</td>
                       <td style={{ ...td, fontWeight: 700 }}>
-                        {s.label}
+                        {tr(s.label)}
                         {s.owner && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}> · {s.owner}{tr('อัปเดตเอง')}</span>}
                       </td>
                       <td style={{ ...td, fontSize: 11.5, color: 'var(--muted)' }}>
@@ -859,7 +859,7 @@ function LevelPopSub({ proj, main, sub, go }) {
     <>
       <div style={{ ...CARD, marginBottom: 12, borderLeft: `3px solid ${evaMeta(sub.eva).color}` }}>
         <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
-          <Dot eva={sub.eva} size={17} /><b style={{ fontSize: 14 }}>{sub.no} {sub.label}</b>
+          <Dot eva={sub.eva} size={17} /><b style={{ fontSize: 14 }}>{sub.no} {tr(sub.label)}</b>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5, lineHeight: 1.5 }}>
           {sub.owner ? `ทีม${sub.owner}เข้ามาอัปเดตเอง · ` : ''}ทุกหัวข้อต้องประเมินได้หมด ·
@@ -1072,9 +1072,9 @@ function LevelPanel({ proj, panel }) {
   return (
     <>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 12 }}>
-        <EvaBadge big eva={panel.eva} label={panel.label} note={panel.evaNote} />
+        <EvaBadge big eva={panel.eva} label={tr(panel.label)} note={panel.evaNote} />
         <div style={{ ...CARD, fontSize: 11.5, color: 'var(--muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span>{kind.icon} {kind.label}</span>
+          <span>{kind.icon} {tr(kind.label)}</span>
           <span>{tr(kind.hint)}</span>
           <FreshChip iso={panel.updated_at} />
         </div>
@@ -1236,7 +1236,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                   '--nmb-color': k === 'none' ? 'var(--border2)' : m.color,
                   '--nmb-glow': k === 'R' ? 'var(--red-line)' : 'transparent',
                   '--nmb-ring-w': 'clamp(3px, 0.32vw, 8px)',
-                }}>{m.short}</div>
+                }}>{tr(m.short)}</div>
                 <div className="nmb-eyebrow" style={{ fontSize: F.eyebrow, marginTop: '0.6vh', whiteSpace: 'nowrap' }}>{tr(a.label)}</div>
               </div>
             );
@@ -1303,7 +1303,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
                     <span className="nmb-num" style={{
                       flex: '0 0 auto', fontSize: F.note, fontWeight: 800, letterSpacing: '0.04em',
                       color: p.eva === 'none' || !p.eva ? 'var(--muted)' : m.color,
-                    }}>{m.short}</span>
+                    }}>{tr(m.short)}</span>
                     <span style={{
                       fontSize: hot ? F.panelHot : F.panel, fontWeight: hot ? 800 : 700,
                       lineHeight: 1.16, minWidth: 0, letterSpacing: hot ? '-0.01em' : 0,
@@ -1384,7 +1384,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
             const m = evaMeta(k);
             const n = counts[k] || 0;
             return (
-              <span key={k} title={m.label} style={{
+              <span key={k} title={tr(m.label)} style={{
                 display: 'inline-flex', alignItems: 'center', gap: '0.3vw', opacity: n ? 1 : 0.35,
                 background: 'var(--bg2)', border: `1px solid ${n ? `${tint(m.color, 'line')}` : 'var(--border)'}`,
                 borderRadius: 999, padding: '0.2vh 0.55vw', fontSize: F.sub, lineHeight: 1.3,

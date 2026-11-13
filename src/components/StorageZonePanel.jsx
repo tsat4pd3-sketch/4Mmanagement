@@ -187,7 +187,7 @@ export default function StorageZonePanel() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {f.mats.slice(0, 6).map(m => (
                     <span key={m.mat_no} title={partByMat[m.mat_no]?.part_name || ''} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 'var(--r-md)', border: `1px solid ${m.short ? '#e5484d' : 'var(--border)'}`, color: m.short ? '#e5484d' : 'var(--text2)' }}>
-                      {m.mat_no} · {m.qty.toLocaleString()}{m.short ? ' 🟥' : m.over ? ' ⚠' : ''}
+                      {m.mat_no} · {m.qty.toLocaleString()}{tr(m.short) ? ' 🟥' : m.over ? ' ⚠' : ''}
                     </span>
                   ))}
                   {f.mats.length > 6 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('+อีก')} {f.mats.length - 6}</span>}
@@ -307,7 +307,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
           </label>
           <label style={lbl}>{tr('ชนิดโซน')}
             <select value={kind} onChange={e => setKind(e.target.value)}>
-              {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+              {ZONE_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
             </select>
           </label>
           <label style={lbl}>ความจุ (จำนวนภาชนะ/กล่อง) — เว้นว่าง = ไม่รู้

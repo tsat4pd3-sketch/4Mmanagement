@@ -273,12 +273,12 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.claim_date}</td>
                   <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
                   <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.line_name}</div>}</td>
-                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
+                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={tr(SEVERITY[c.severity]?.label)} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
                     {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>{tr('เลยกำหนด')}</div>}
                   </td>
-                  <td style={tdSt}><Chip label={st.label} color={st.color} /></td>
+                  <td style={tdSt}><Chip label={tr(st.label)} color={st.color} /></td>
                   <td style={tdSt}>
                     {c.qa_capa ? <Chip label={`${c.qa_capa.capa_no}`} color={c.qa_capa.status === 'closed' ? '#22c55e' : '#f59e0b'} />
                       : <span style={{ fontSize: 11, color: '#ef4444' }}>{tr('ยังไม่มี 8D')}</span>}

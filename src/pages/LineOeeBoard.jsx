@@ -593,7 +593,7 @@ export default function LineOeeBoard() {
                                "ยังหยุดอยู่" (กระพริบค้างเป็นเดือน) และห้ามแปลงเป็น "กลับมาแล้ว" (ไม่มีใครไปตามปิด) */
                             : kind === 'forgotten'
                               ? <b style={{ color: meta.color }} title={`กะ ${d2._sessStatus === 'closed' ? 'ปิดแล้ว' : d2._sessStatus} แต่รายการนี้ยังไม่ถูกปิด — นาทีที่หยุดไม่ได้ถูกหักใน %A ของกะนั้น`}>
-                                  {meta.icon} {tv ? meta.short : meta.text}
+                                  {meta.icon} {tv ? tr(meta.short) : meta.text}
                                 </b>
                               : <span style={{ color: 'var(--green)' }}>{tv ? tr('✓ กลับมา') : tr('✓ กลับมาแล้ว')}</span>}
                           {d2.call_mtn && <span style={{ color: 'var(--amber)' }}> 📞</span>}

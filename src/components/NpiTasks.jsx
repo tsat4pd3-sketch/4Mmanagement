@@ -100,7 +100,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                     <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>{tr('ทั้งโปรเจค')}</span>}{t.phase_code && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tplPhases.find(x => x.code === t.phase_code)?.label || t.phase_code}</div>}</td>
                     <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>{tr('ยังไม่มอบหมาย')}</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน')}</div>}</td>
                     <td style={{ ...tdSt, color: lt === 'red' ? '#ef4444' : undefined, fontWeight: lt === 'red' ? 800 : 400 }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
-                    <td style={tdSt}><Pill label={TASK_STATUS[t.status]?.label} color={TASK_STATUS[t.status]?.color} /></td>
+                    <td style={tdSt}><Pill label={tr(TASK_STATUS[t.status]?.label)} color={TASK_STATUS[t.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                       {canEdit && t.status !== 'done' && t.status !== 'cancelled' && <>
                         {t.status === 'open' && <button style={{ ...ghost, padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'doing')}>{tr('▶ เริ่ม')}</button>}{' '}

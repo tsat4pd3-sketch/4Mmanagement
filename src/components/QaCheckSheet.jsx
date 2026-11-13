@@ -944,7 +944,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 4 }}>
             <Chip label={item.item_type === 'variable' ? 'Variable' : 'Attribute'} color={item.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} />
             {item.rank && <Chip label={`Rank ${item.rank}`} color={RANK[item.rank].color} />}
-            {item.stage && <Chip label={STAGE[item.stage]?.label || item.stage} color={STAGE[item.stage]?.color || '#6b7280'} />}
+            {item.stage && <Chip label={tr(STAGE[item.stage]?.label) || item.stage} color={STAGE[item.stage]?.color || '#6b7280'} />}
             {res?.ncr_id && <Chip label={tr('เปิด NCR แล้ว')} color="#ef4444" />}
           </div>
         </div>
@@ -1020,7 +1020,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       {/* ผลที่บันทึกแล้ว */}
       {judged && (
         <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Chip label={JUDGE[judged].label} color={JUDGE[judged].color} />
+          <Chip label={tr(JUDGE[judged].label)} color={JUDGE[judged].color} />
           {res.values_json?.length > 0 && <span>{tr('ค่าที่วัด:')} {res.values_json.join(', ')}</span>}
           {judged === 'ng' && res.qty_ng > 0 && <span>· NG {res.qty_ng} {tr('ชิ้น')}</span>}
           {res.note && <span>· {res.note}</span>}

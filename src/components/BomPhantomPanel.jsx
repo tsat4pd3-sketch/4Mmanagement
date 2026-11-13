@@ -268,10 +268,10 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                       )}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                      <span title={meta.hint || ''}
+                      <span title={tr(meta.hint) || ''}
                         style={{ fontSize: 11, fontWeight: 700, color: toneOf(r.verdict),
                                  border: `1px solid ${toneOf(r.verdict)}`, borderRadius: 'var(--r-pill)', padding: '1px 7px' }}>
-                        {meta.label || r.verdict}
+                        {tr(meta.label) || r.verdict}
                       </span>
                     </td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.own_orders == null ? '–' : fmtQty(r.own_orders)}</td>

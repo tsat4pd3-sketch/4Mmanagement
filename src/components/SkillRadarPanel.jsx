@@ -194,7 +194,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
               <span style={{ fontSize: 11, background: `${glowColor}22`, color: glowColor, borderRadius: 'var(--r-xs)', padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
-                {overall.label}
+                {tr(overall.label)}
               </span>
             </div>
           </div>
@@ -263,7 +263,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             return (
               <div key={g.key}>
                 <div style={{ marginBottom: 6, borderBottom: `1px solid ${g.color}33`, paddingBottom: 3 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {g.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: g.color, letterSpacing: '0.07em', textTransform: 'uppercase' }}>{g.icon} {tr(g.label)}</span>
                   {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7, marginLeft: 6 }}>{tr(g.desc)}</span>}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>

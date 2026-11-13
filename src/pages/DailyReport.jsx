@@ -5317,7 +5317,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         {c.detail && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.detail}</div>}
                         {c.hint && (
                           <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.6 }}>
-                            <b>{tr('ต้องไปตรวจ:')}</b> {c.hint}
+                            <b>{tr('ต้องไปตรวจ:')}</b> {tr(c.hint)}
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>
@@ -9800,13 +9800,13 @@ function DowntimeTypeSetup({ role }) {
               <Field label={tr('6 Big Losses (TPM) — สำหรับวิเคราะห์ ไม่กระทบ OEE')}>
                 <select value={form.six_big_loss} onChange={e => setForm(f => ({ ...f, six_big_loss: e.target.value }))} style={inputStyle}>
                   <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
-                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} {tr('(กระทบ')} {l.oee})</option>)}
+                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {tr(l.label)} {tr('(กระทบ')} {l.oee})</option>)}
                 </select>
               </Field>
               <Field label={tr('8 Wastes (Lean) — สำหรับวิเคราะห์ ไม่กระทบ OEE')}>
                 <select value={form.waste_type} onChange={e => setForm(f => ({ ...f, waste_type: e.target.value }))} style={inputStyle}>
                   <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
-                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
+                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {tr(w.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('เกิดกับเครื่องประเภทไหน (กรองช่องเลือกเครื่องตอนลง Downtime · ไม่ติ๊ก = ทุกเครื่อง)')}>
@@ -9820,7 +9820,7 @@ function DowntimeTypeSetup({ role }) {
                           const cur = f.equipment_kinds || [];
                           return { ...f, equipment_kinds: on ? cur.filter(x => x !== k.key) : [...cur, k.key] };
                         })} />
-                        {k.icon} {k.label} {tr('(ทั้งชนิด)')}
+                        {k.icon} {tr(k.label)} {tr('(ทั้งชนิด)')}
                       </label>
                     );
                   })}
@@ -9835,7 +9835,7 @@ function DowntimeTypeSetup({ role }) {
                             const cur = f.machine_type_ids || [];
                             return { ...f, machine_type_ids: on ? cur.filter(x => x !== t.id) : [...cur, t.id] };
                           })} />
-                          {t.label}
+                          {tr(t.label)}
                         </label>
                       );
                     })}

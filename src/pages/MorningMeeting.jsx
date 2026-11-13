@@ -960,7 +960,7 @@ export default function MorningMeeting() {
             <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
                 แต่เติมสถานะที่ 3 เข้า filter แล้วลืมเติมใน FOURM_STATUS = จอขาว */}
-            <span style={chip('var(--amber)')}>{FOURM_STATUS[m.status]?.label || m.status}</span>
+            <span style={chip('var(--amber)')}>{tr(FOURM_STATUS[m.status]?.label) || m.status}</span>
           </div>
         ))}
         {openActions.filter(a => a._carry).length > 0 && (

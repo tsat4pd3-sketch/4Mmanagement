@@ -155,7 +155,7 @@ export default function ProgramUpdate() {
                 background: 'var(--card)', border: `1px solid ${tint(k.color, 'line')}`, borderLeft: `4px solid ${k.color}`,
                 borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
               }}>
-                <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{k.icon} {k.label}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{k.icon} {trI18n(k.label)}</div>
                 <div style={{ fontSize: 21, fontWeight: 800, color: k.color, lineHeight: 1.25 }}>
                   {(counts[k.key] || 0).toLocaleString()}
                 </div>
@@ -210,7 +210,7 @@ export default function ProgramUpdate() {
                     borderLeft: `3px solid ${k.color}`, background: 'var(--card)',
                     border: '1px solid var(--border)', borderLeftWidth: 3, borderRadius: 'var(--r-md)', marginBottom: 4,
                   }}>
-                    <span style={{ fontSize: 13, flexShrink: 0 }} title={k.label}>{k.icon}</span>
+                    <span style={{ fontSize: 13, flexShrink: 0 }} title={trI18n(k.label)}>{k.icon}</span>
                     {/* 📱 ข้อความ commit มีคำยาวไม่มีช่องว่าง (ชื่อไฟล์/ชื่อฟังก์ชัน) ⇒ ต้องตัดคำได้
                         ไม่ใส่ = ล้นแล้วปัดไม่ได้ที่ 390px (mobilesweep จับได้ 01/10) */}
                     <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>

@@ -422,7 +422,7 @@ export default function OverseasTravelMockup() {
             return reqCard(r, (
               <div style={{ display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                  {APPROVAL_LEVELS.map(l => <Check key={l.k} ok={r.appr[l.k]}>{l.label}</Check>)}
+                  {APPROVAL_LEVELS.map(l => <Check key={l.k} ok={r.appr[l.k]}>{tr(l.label)}</Check>)}
                 </div>
                 {returnFor === r.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -432,7 +432,7 @@ export default function OverseasTravelMockup() {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>{tr('อนุมัติ (ในฐานะ')} {lvl.label})</button>
+                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>{tr('อนุมัติ (ในฐานะ')} {tr(lvl.label)})</button>
                     <button type="button" style={btnGhost} onClick={() => { setReturnFor(r.id); setReason(''); }}>{tr('ส่งกลับแก้ไข')}</button>
                   </div>
                 )}
@@ -470,7 +470,7 @@ export default function OverseasTravelMockup() {
                 <Check ok={a.visaReq != null}>{tr('ต้องใช้ Visa หรือไม่:')} {a.visaReq == null ? '—' : a.visaReq ? 'ต้องใช้' : 'ไม่ต้องใช้'}</Check>
                 {a.visaReq && <Check ok={r.visaDocsSent}>{tr('ผู้เดินทางส่งเอกสาร Visa')}</Check>}
                 {a.visaReq && <Check ok={a.visaApplied}>{tr('Admin ยื่น Visa และติดตามผล')}</Check>}
-                {ADMIN_STEPS.map(x => <Check key={x.k} ok={a[x.k]}>{x.label}</Check>)}
+                {ADMIN_STEPS.map(x => <Check key={x.k} ok={a[x.k]}>{tr(x.label)}</Check>)}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   {!a.passport && <button type="button" style={btnPrimary} onClick={() => tick('passport', 'ตรวจ Passport ผ่าน')}>{tr('ตรวจ Passport ผ่าน')}</button>}
                   {a.passport && a.visaReq == null && (<>

@@ -1433,11 +1433,11 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
         {STORE_TABS.filter(t => (opsStores ? opsStores.includes(t.key) : !t.inOnly)
           && (t.key !== 'fg' || rounds.length > 0 || wipAllBy.fg > 0)
           && (t.key !== 'other' || wipAllBy.other > 0)).map(t => (
-          <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
+          <button key={t.key} onClick={() => setStore(t.key)} title={tr(t.desc)}
             style={{ padding: '10px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? 'var(--accent-ink)' : 'var(--text2)',
               border: `1px solid ${store === t.key ? 'var(--accent)' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 150 }}>
-            <span>{t.icon} {t.label} {counts[t.key] > 0 && <span style={{ opacity: 0.8 }}>({counts[t.key]})</span>}</span>
+            <span>{t.icon} {tr(t.label)} {counts[t.key] > 0 && <span style={{ opacity: 0.8 }}>({counts[t.key]})</span>}</span>
             <span style={{ fontSize: 11, fontWeight: 500, opacity: 0.75 }}>{tr(t.desc)}</span>
           </button>
         ))}
@@ -3118,7 +3118,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             background: matFilter === m.prefix ? `${tint(m.color, 'dim')}` : 'var(--bg2)',
             color: matFilter === m.prefix ? m.color : 'var(--text2)',
             border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
-          }}>{m.label}</button>
+          }}>{tr(m.label)}</button>
         ))}
         <span className="spacer" />
         <button onClick={exportCSV} style={{
@@ -3136,7 +3136,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
           { label: 'Kanban NET', value: view.totalKanban, icon: '🎴' },
         ].map(c => (
           <span key={c.label} style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>
-            {c.icon} {c.label} <b style={{ fontSize: 17, fontFamily: 'var(--font-display)', color: 'var(--text)', marginLeft: 2 }}>{c.value}</b>
+            {c.icon} {tr(c.label)} <b style={{ fontSize: 17, fontFamily: 'var(--font-display)', color: 'var(--text)', marginLeft: 2 }}>{c.value}</b>
           </span>
         ))}
         {view.noBom.length > 0 && (

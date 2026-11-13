@@ -171,7 +171,7 @@ export default function MachineFloorMap({
                 className={p.blink ? 'dt-alarm-blink' : ''}
                 onPointerDown={(e) => startDrag(e, p)}
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
-                title={p.label}
+                title={tr(p.label)}
                 style={{
                   position: 'absolute', top: pos.top, left: pos.left, transform: sel ? 'translate(-50%, -50%) scale(1.18)' : 'translate(-50%, -50%)',   // ⚠️ ห้ามใช้ CSS `scale:` (Cr104 > จอ TV Cr94)
                   width: size, height: size, borderRadius: '50%',
@@ -206,7 +206,7 @@ export default function MachineFloorMap({
                 {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                   <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.82)', outline: sel ? `2px solid ${color}` : undefined, color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {p.label}
+                    {tr(p.label)}
                   </div>
                   {p.sub && (
                     <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -71,7 +71,7 @@ function RankChip({ rank, overridden, size = 'md' }) {
   return (
     <span title={`Rank ${rank} · ${m.desc}${overridden ? ' (กำหนดเอง)' : ''}`}
       style={{ display: 'inline-block', padding: pad, borderRadius: 'var(--r-xs)', background: m.bg, color: m.color, border: `1px solid ${m.color}`, fontSize: size === 'sm' ? 11 : 12, fontWeight: 800, whiteSpace: 'nowrap' }}>
-      {m.label}{overridden ? ' ✎' : ''}
+      {tr(m.label)}{overridden ? ' ✎' : ''}
     </span>
   );
 }
@@ -295,7 +295,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       <FilterBar>
         <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
           <option value="">{tr(ALL.team)}</option>
-          {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+          {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
         </select>
         <select value={fSection} onChange={e => setFSection(e.target.value)}
           title={tr('คลังของหน่วยงานไหน — เลือกแล้วยังเห็นของกลางของทีมด้วยเสมอ')}>
@@ -305,7 +305,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         </select>
         <select value={fCat} onChange={e => setFCat(e.target.value)}>
           <option value="">{tr(ALL.category)}</option>
-          {teamCats.map((c, i) => <option key={`${c.key}-${i}`} value={c.key}>{c.icon || ''} {c.label}</option>)}
+          {teamCats.map((c, i) => <option key={`${c.key}-${i}`} value={c.key}>{c.icon || ''} {tr(c.label)}</option>)}
         </select>
         <select value={fRank} onChange={e => setFRank(e.target.value)}>
           <option value="">{tr(ALL.rank)}</option>
@@ -459,9 +459,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
         📘 <b>{tr('Rank ตาม WI-JIG-010')}</b> {tr('(คำนวณอัตโนมัติจากการใช้จริงย้อนหลัง')} {RANK_RULE.windowMonths} เดือน + leadtime · ✎ = กำหนดเอง):
-        <span style={{ color: RANK_META.A.color, fontWeight: 700 }}> A</span> ใช้ &gt;{RANK_RULE.usageHigh} ชิ้น/เดือน หรือ LT &gt;{RANK_RULE.ltLong} {tr('วัน —')} {RANK_META.A.desc} ·
-        <span style={{ color: RANK_META.B.color, fontWeight: 700 }}> B</span> — {RANK_META.B.desc} ·
-        <span style={{ color: RANK_META.C.color, fontWeight: 700 }}> C</span> ใช้ &lt;{RANK_RULE.usageLow} ชิ้น/เดือน และ LT &lt;{RANK_RULE.ltShort} {tr('วัน —')} {RANK_META.C.desc}
+        <span style={{ color: RANK_META.A.color, fontWeight: 700 }}> A</span> ใช้ &gt;{RANK_RULE.usageHigh} ชิ้น/เดือน หรือ LT &gt;{RANK_RULE.ltLong} {tr('วัน —')} {tr(RANK_META.A.desc)} ·
+        <span style={{ color: RANK_META.B.color, fontWeight: 700 }}> B</span> — {tr(RANK_META.B.desc)} ·
+        <span style={{ color: RANK_META.C.color, fontWeight: 700 }}> C</span> ใช้ &lt;{RANK_RULE.usageLow} ชิ้น/เดือน และ LT &lt;{RANK_RULE.ltShort} {tr('วัน —')} {tr(RANK_META.C.desc)}
       </div>
 
       {movePart && <StockMoveModal {...movePart} fullName={fullName} onClose={() => setMovePart(null)} onDone={reloadAll} />}
@@ -520,7 +520,7 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
           {part.shelf ? ` · ชั้นวาง ${part.shelf}` : ''}
         </div>
         <div style={{ display: 'grid', gap: 10 }}>
-          <Field label={m.label} required hint={m.note}>
+          <Field label={tr(m.label)} required hint={m.note}>
             <input type="number" min="0" step="any" autoFocus value={qty} onChange={e => setQty(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && valid && !notEnough && save()} style={inp} />
           </Field>
@@ -704,7 +704,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               <Field label={tr('Part no. (ผู้ผลิต)')}><input value={f.part_no} onChange={e => set('part_no', e.target.value)} style={inp} /></Field>
               <Field label={tr('ทีมที่ดูแลคลัง')} required>
                 <select value={f.team} onChange={e => set('team', e.target.value)} style={inp}>
-                  {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                  {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('หน่วยงานเจ้าของ')} hint={tr('ใครดูแล/เก็บที่ไหน — เว้นว่าง = ของกลางของทีม ทุกหน่วยงานใช้ร่วม')}>
@@ -733,7 +733,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               <Field label={tr('หมวดอะไหล่')}>
                 <select value={f.category} onChange={e => set('category', e.target.value)} style={inp}>
                   <option value="">{tr('— ไม่ระบุ —')}</option>
-                  {cats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.key} · {c.label}</option>)}
+                  {cats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.key} · {tr(c.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('ตำแหน่งชั้นวาง')} hint={tr('เลือกช่องจากผังชั้นวาง (แท็บ 🗺️ ผังคลัง) — รหัสตรงกันทั้งคลัง หาของเจอเร็ว')}>
@@ -814,7 +814,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                 <Field label={tr('กำหนด Rank เอง (ทับค่าที่คำนวณ)')}>
                   <select value={f.rank_override} onChange={e => set('rank_override', e.target.value)} style={inp}>
                     <option value="">{tr('— ใช้ค่าที่ระบบคำนวณ —')}</option>
-                    {['A', 'B', 'C'].map(r => <option key={r} value={r}>Rank {r} · {RANK_META[r].desc}</option>)}
+                    {['A', 'B', 'C'].map(r => <option key={r} value={r}>Rank {r} · {tr(RANK_META[r].desc)}</option>)}
                   </select>
                 </Field>
                 <Field label={tr('เหตุผลที่กำหนดเอง')} required={!!f.rank_override}>
@@ -1215,7 +1215,7 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
               <select value={c.team || ''} onChange={e => upd(c.key, { team: e.target.value || null })}
                 title={tr('ทีมที่ใช้หมวดนี้')} style={{ ...inp, width: 165, flex: '0 0 auto' }}>
                 <option value="">{tr('🌐 ใช้ร่วมทุกทีม')}</option>
-                {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
               </select>
               <DeleteButton onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} title={tr('ลบ')} />
             </div>

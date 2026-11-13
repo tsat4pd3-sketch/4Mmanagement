@@ -44,7 +44,7 @@ export function Pill({ label, color = '#94a3b8', title, small }) {
 export function LightDot({ light = 'grey', size = 12, title }) {
   const c = (LIGHT[light] || LIGHT.grey).color;
   return (
-    <span title={title || LIGHT[light]?.label} className={light === 'red' ? 'dt-alarm-blink' : undefined}
+    <span title={title || tr(LIGHT[light]?.label)} className={light === 'red' ? 'dt-alarm-blink' : undefined}
       style={{ display: 'inline-block', width: size, height: size, borderRadius: '50%', background: c,
         boxShadow: light === 'grey' ? 'none' : `0 0 0 3px ${c}33`, flexShrink: 0 }} />
   );

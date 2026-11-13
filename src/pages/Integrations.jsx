@@ -160,7 +160,7 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
             <div style={{ flex: '999 1 320px', minWidth: 0, display: 'grid', gap: 6 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{s.name}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px' }}>● {m.label}</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px' }}>● {tr(m.label)}</span>
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>{s.code}{s.note ? ` · ${s.note}` : ''}</span>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -240,7 +240,7 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
         <button type="button" className="pg-btn" onClick={onBack}>{tr('← การเชื่อมต่อทั้งหมด')}</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{src.name}
-            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {m.label}</span>
+            <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {tr(m.label)}</span>
           </div>
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{src.code}{src.note ? ` · ${src.note}` : ''} {tr('· ไม่มีค่าใหม่เกิน')} {SOURCE_STALE_MIN} นาที = ขาดการติดต่อ</div>
         </div>
@@ -348,7 +348,7 @@ function KindsTab({ sources }) {
         const users = sources.filter(s => (s.kinds || []).includes(k.key));
         return (
           <div key={k.key} style={{ ...card, display: 'grid', gap: 4, alignContent: 'start' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{k.icon} {k.label}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{k.icon} {tr(k.label)}</div>
             <div style={{ fontSize: 12, fontWeight: 700, color: k.status === 'live' ? 'var(--green)' : 'var(--amber)' }}>
               {k.status === 'live' ? '● ESM รับได้แล้ว' : '○ ออกแบบไว้ — ยังไม่มีปลายทางรับ'}
             </div>
@@ -411,7 +411,7 @@ function CreateModal({ onClose, onCreated }) {
           {INTEGRATION_KINDS.map(k => (
             <label key={k.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, opacity: k.status === 'live' ? 1 : 0.6 }}>
               <input type="checkbox" checked={kinds.includes(k.key)} disabled={k.status !== 'live'} onChange={() => toggle(k.key)} />
-              <span>{k.icon} {k.label}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> {tr('(ยังไม่มีปลายทางรับ)')}</span>}</span>
+              <span>{k.icon} {tr(k.label)}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> {tr('(ยังไม่มีปลายทางรับ)')}</span>}</span>
             </label>
           ))}
         </div>

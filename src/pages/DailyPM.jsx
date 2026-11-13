@@ -273,7 +273,7 @@ export default function DailyPM() {
               return (
                 <span key={k} className={k === 'red' ? 'dt-alarm-banner' : undefined}
                   style={{ fontSize: 12, fontWeight: 800, padding: '4px 12px', borderRadius: 'var(--r-pill)', background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}` }}>
-                  {meta.label}: {n} ไลน์
+                  {tr(meta.label)}: {n} ไลน์
                 </span>
               )
             })}

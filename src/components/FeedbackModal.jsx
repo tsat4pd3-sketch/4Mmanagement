@@ -318,7 +318,7 @@ export default function FeedbackModal({ onClose }) {
                     fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     border: `1px solid ${kind === k.key ? k.color : 'var(--border)'}`,
                     background: kind === k.key ? `${k.color}22` : 'var(--bg3)', color: kind === k.key ? k.color : 'var(--text2)',
-                  }}>{k.icon} {k.label}</button>
+                  }}>{k.icon} {tr(k.label)}</button>
                 ))}
               </div>
 
@@ -398,7 +398,7 @@ export default function FeedbackModal({ onClose }) {
                   return (
                     <div key={r.id} style={{ ...box, marginBottom: 8 }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11 }}>
-                        <span style={{ color: k.color, fontWeight: 700 }}>{k.icon} {k.label}</span>
+                        <span style={{ color: k.color, fontWeight: 700 }}>{k.icon} {tr(k.label)}</span>
                         <span style={{ color: st.color, fontWeight: 700 }}>{tr(st.label)}</span>
                         <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{fmt(r.created_at)}</span>
                       </div>
@@ -447,7 +447,7 @@ export default function FeedbackModal({ onClose }) {
                               style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: r.status === key ? 'default' : 'pointer',
                                 border: `1px solid ${r.status === key ? s.color : 'var(--border)'}`,
                                 background: r.status === key ? `${s.color}22` : 'transparent', color: r.status === key ? s.color : 'var(--text2)' }}>
-                              {s.label}
+                              {tr(s.label)}
                             </button>
                           ))}
                         </div>

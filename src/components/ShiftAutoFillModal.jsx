@@ -229,7 +229,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
                     {ready.map(r => (
                       <tr key={r.key}>
                         <td style={{ ...td, fontWeight: 600 }}>
-                          {r.kind === 'dept' ? '🏢 ' : ''}{r.label}
+                          {r.kind === 'dept' ? '🏢 ' : ''}{tr(r.label)}
                         </td>
                         <td style={{ ...td, color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
                           สลับทุก {r.rot.periodWeeks} {tr('สัปดาห์ · จาก')} {r.rot.weeksSeen} สัปดาห์ที่ตั้งไว้
@@ -259,7 +259,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
                 <div style={{ display: 'grid', gap: 3 }}>
                   {blocked.filter(b => !b.done).map(b => (
                     <div key={b.key} style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                      <b style={{ color: 'var(--text)' }}>{b.kind === 'dept' ? '🏢 ' : ''}{b.label}</b> — {b.reason}
+                      <b style={{ color: 'var(--text)' }}>{b.kind === 'dept' ? '🏢 ' : ''}{tr(b.label)}</b> — {b.reason}
                     </div>
                   ))}
                 </div>

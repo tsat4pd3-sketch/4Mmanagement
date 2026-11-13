@@ -285,14 +285,14 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
             <span>
               <b style={{ color: 'var(--text2)' }}>{tr('ผลตรวจในช่อง:')}</b>{' '}
               {Object.values(AM_RESULT_META).map(m => (
-                <span key={m.mark} style={{ marginRight: 8 }}><b style={{ color: m.color }}>{m.mark}</b> {m.label}</span>
+                <span key={m.mark} style={{ marginRight: 8 }}><b style={{ color: m.color }}>{m.mark}</b> {tr(m.label)}</span>
               ))}
               {view === 'line' && <span style={{ marginRight: 8 }}><b style={{ color: 'var(--green)' }}>n/n</b> {tr('ตรวจครบทุกเครื่อง')}</span>}
             </span>
             <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
               <b style={{ color: 'var(--text2)' }}>{tr('สถานะวัน:')}</b>{' '}
               {CHECK_DAY_LEGEND.map(k => (
-                <span key={k} style={{ marginRight: 8 }}><StateChip state={k} /> {CHECK_DAY_META[k].label}</span>
+                <span key={k} style={{ marginRight: 8 }}><StateChip state={k} /> {tr(CHECK_DAY_META[k].label)}</span>
               ))}
               · <span style={{ display: 'inline-block', width: 11, height: 11, background: HOLIDAY_BG, border: '1px solid var(--border)', verticalAlign: -1 }} /> วันหยุดโรงงาน
             </span>

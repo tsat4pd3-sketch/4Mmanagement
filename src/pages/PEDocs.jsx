@@ -536,7 +536,7 @@ export default function PEDocs() {
                       return (
                         <tr key={p.id}>
                           <td style={{ ...tdSt, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{p.op_no}</td>
-                          <td style={tdSt}>{km.icon} {km.label}</td>
+                          <td style={tdSt}>{km.icon} {tr(km.label)}</td>
                           <td style={{ ...tdSt, fontWeight: 700, color: 'var(--text)' }}>{p.name}{p.remark ? <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{p.remark}</div> : null}</td>
                           <td style={tdSt}>{p.image_url
                             ? <img src={p.image_url} alt="" loading="lazy" onClick={() => setImgView(p.image_url)} style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', cursor: 'zoom-in' }} />
@@ -595,7 +595,7 @@ export default function PEDocs() {
                           const meta = CMP_META[c.state];
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
-                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
+                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {tr(meta.label)}{extra}</span>
                             {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>{tr('เสนอแล้ว')}</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? tr('เสนอเข้า master') : tr('เสนอเป็นรายการใหม่')}</button>}
                           </>;
@@ -836,7 +836,7 @@ export default function PEDocs() {
             </div>
             <label style={lbl}>{tr('ชนิด')}
               <select value={procModal.kind} onChange={e => setProcModal({ ...procModal, kind: e.target.value })} style={{ marginTop: 4 }}>
-                {Object.entries(KIND_META).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
+                {Object.entries(KIND_META).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}
               </select>
             </label>
             {/* machine_no ไหลต่อไป part_routings (PeRoutingSuggest) → กล่อง VSM — เลือกจากทะเบียน machines (DR) แทน datalist (2026-09-07) */}

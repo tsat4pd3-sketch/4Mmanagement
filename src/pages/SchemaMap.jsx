@@ -263,7 +263,7 @@ export default function SchemaMap() {
           <b> {tr('“🐛 แจ้งบัคเรื่องตารางนี้”')}</b> ระบบจะใส่ชื่อตาราง · ฐานข้อมูล · PK · FK · หน้าที่ใช้ ไปให้เอง
         </>}>
           <div style={{ marginTop: 6, color: 'var(--text2)' }}>
-            • <b>{tr('ระบบนี้มีฐานข้อมูล 2 ตัวแยกกัน')}</b> — {PROJ.main.label} {tr('(จอ Supabase เขียนว่า “')}{PROJ.main.screen}”)
+            • <b>{tr('ระบบนี้มีฐานข้อมูล 2 ตัวแยกกัน')}</b> — {tr(PROJ.main.label)} {tr('(จอ Supabase เขียนว่า “')}{PROJ.main.screen}”)
             และ {PROJ.dr.label} (“{PROJ.dr.screen}”) · ชื่อตารางคล้ายกันหลายตัว เวลาแจ้งให้บอกฝั่งด้วยเสมอ
             <br />• ตัวเลขแถว = <b>{tr('ค่าประมาณจากสถิติของฐาน')}</b> (ไม่ได้นับจริงทุกครั้ง) ใช้ดูขนาดคร่าวๆ เท่านั้น
             <br />{tr('• “หน้าไหนใช้ตารางไหน” มาจาก')}<b>{tr('การสแกนซอร์สตอน build')}</b> — จับเฉพาะที่โค้ดเขียนชื่อตารางตรงๆ
@@ -305,7 +305,7 @@ export default function SchemaMap() {
                     <button onClick={() => setOpenGroups(s => ({ ...s, [g.key]: !s[g.key] }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         background: 'var(--bg3)', border: 'none', color: 'var(--text)', padding: '7px 10px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{open ? '▾' : '▸'} {g.label}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{open ? '▾' : '▸'} {tr(g.label)}</span>
                       <span style={{ color: 'var(--muted)', fontWeight: 500, flexShrink: 0 }}>{g.rows.length}</span>
                     </button>
                     {open && (
@@ -408,7 +408,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
               {sel.proj === 'main' ? '🗄️' : '🏭'} {sel.table}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-              {P.label} {tr('· จอ Supabase เขียนว่า “')}{P.screen}” · {P.id}
+              {tr(P.label)} {tr('· จอ Supabase เขียนว่า “')}{P.screen}” · {P.id}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -612,7 +612,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
             }}>
               <span style={{ flexShrink: 0, fontSize: 15 }}>{p.icon || '📄'}</span>
               <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 13.5, fontWeight: 700 }}>
-                {p.label || p.comp}
+                {tr(p.label) || p.comp}
               </span>
               <code style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0 }}>{p.path}</code>
               <span style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'} {tables.length} {tr('ตาราง')}</span>
@@ -703,7 +703,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
           <div key={key} style={{ ...card(), display: 'grid', gap: 8 }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ minWidth: 0, fontSize: 14, fontWeight: 800, color: P.color }}>
-                {P.label} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} {tr('ตาราง/วิว')}</span>
+                {tr(P.label)} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} {tr('ตาราง/วิว')}</span>
               </div>
               <button onClick={() => onCopy(auditText(result, `${P.label} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
                 {tr('คัดลอกผลตรวจ')}

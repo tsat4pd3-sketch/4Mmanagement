@@ -1154,7 +1154,7 @@ ${issuesHtml}
                       <tr style={{ fontSize: 12 }}>
                         <th style={{ width: 90 }}>{tr('วันที่')}</th>
                         <th style={{ textAlign: 'left' }}>Station for audit</th>
-                        {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
+                        {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{tr(l.label)}<div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -1219,7 +1219,7 @@ ${issuesHtml}
             <div>
               <div style={lb}>{tr('ชั้นผู้ตรวจ (Layer)')}</div>
               <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
-                {LAYERS.map(l => <option key={l.key} value={l.key}>{l.label} · {l.freq}</option>)}
+                {LAYERS.map(l => <option key={l.key} value={l.key}>{tr(l.label)} · {l.freq}</option>)}
               </select>
             </div>
             <div>
@@ -1286,7 +1286,7 @@ ${issuesHtml}
                               border: '1.5px solid ' + (a?.answer === an.key ? an.color : 'var(--border2)'),
                               background: a?.answer === an.key ? an.color : 'var(--bg3)',
                               color: a?.answer === an.key ? '#fff' : 'var(--text2)',
-                            }} title={an.desc}>{an.label}</button>
+                            }} title={tr(an.desc)}>{tr(an.label)}</button>
                         ))}
                       </div>
                       {['N', 'T'].includes(a?.answer) && (
@@ -1323,7 +1323,7 @@ ${issuesHtml}
                     <span style={{
                       minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 13,
                       border: '1.5px solid ' + (m?.color || 'var(--border2)'), background: m?.color || 'var(--bg3)', color: m ? '#fff' : 'var(--text2)',
-                    }}>{m?.label || a.answer || '-'}</span>
+                    }}>{tr(m?.label) || a.answer || '-'}</span>
                   </div>
                 );
               })}
@@ -1416,7 +1416,7 @@ ${issuesHtml}
                 <b style={{ color: 'var(--text2)' }}>{tr('คำตอบในช่อง:')}</b>{' '}
                 {ANSWERS.map(a => (
                   <span key={a.key} style={{ marginRight: 8 }}>
-                    <b style={{ color: a.color }}>{tr(a.label)}</b> {a.desc.replace(/\s*\(.*\)$/, '')}
+                    <b style={{ color: a.color }}>{tr(a.label)}</b> {tr(a.desc).replace(/\s*\(.*\)$/, '')}
                   </span>
                 ))}
               </span>
@@ -1427,7 +1427,7 @@ ${issuesHtml}
                   return (
                     <span key={k} style={{ marginRight: 8 }}>
                       <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)', border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
-                      {m.label}
+                      {tr(m.label)}
                     </span>
                   );
                 })}
@@ -1460,7 +1460,7 @@ ${issuesHtml}
                       const st = dayStates[i];
                       const meta = CHECK_DAY_META[st];
                       return (
-                        <th key={d} title={meta.label}
+                        <th key={d} title={tr(meta.label)}
                           style={{ ...cellStyle, fontSize: 11, fontWeight: 700, color: meta.color,
                             padding: '3px 1px', background: meta.tint || undefined }}>
                           {meta.mark && (

@@ -79,7 +79,7 @@ function Chip({ children, color = 'var(--muted)', onRemove }) {
 
 function StatusChip({ st }) {
   const m = STATUS[st] || STATUS.pending;
-  return <Chip color={m.color}>{m.label}</Chip>;
+  return <Chip color={m.color}>{tr(m.label)}</Chip>;
 }
 
 /* แถบสถานะ 4 ขั้น (โน้ต user 29/10 "อยากให้แสดงว่าเอกสารนี้ถึงไหน") — วงกลมทึบ = ผ่านแล้ว · วงขอบหนา = อยู่ขั้นนี้

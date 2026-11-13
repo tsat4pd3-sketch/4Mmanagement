@@ -83,7 +83,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 10 }}>
           {tr('Role ที่ต้องการจำลอง')}
           <select value={role} onChange={e => { setRole(e.target.value); setSections([]); setLineId(''); setTeam(''); }} style={{ marginTop: 4 }}>
-            {roleOpts.map(r => <option key={r.value} value={r.value}>{r.icon} {r.label}</option>)}
+            {roleOpts.map(r => <option key={r.value} value={r.value}>{r.icon} {tr(r.label)}</option>)}
           </select>
         </label>
 
@@ -148,7 +148,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
                     border: mtnTeams.includes(t.key) ? '2px solid var(--accent)' : '1px solid var(--border2)',
                     background: mtnTeams.includes(t.key) ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: mtnTeams.includes(t.key) ? 'var(--accent)' : 'var(--text2)',
-                  }}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</button>
+                  }}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || tr(t.label) || t.key}</button>
               ))}
             </div>
           </div>

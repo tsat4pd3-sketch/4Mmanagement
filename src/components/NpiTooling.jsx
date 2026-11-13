@@ -153,10 +153,10 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
               <div onClick={() => toggle(t.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                   <LightDot light={r.light} /><span>{kind.icon}</span><span style={{ fontWeight: 800, fontSize: 13 }}>{t.tool_name}</span>
-                  <Pill label={TOOL_STATUS[t.status]?.label} color={TOOL_STATUS[t.status]?.color} small />
+                  <Pill label={tr(TOOL_STATUS[t.status]?.label)} color={TOOL_STATUS[t.status]?.color} small />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                  {p?.part_no || '—'} · {kind.label} {tr('· ผู้ทำ')} {t.maker_name || '—'} ({t.maker_kind === 'internal' ? tr('ภายใน') : tr('ภายนอก')}) · {r.done}/{r.total} {tr('ขั้น ·')} {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> {tr('· ล่าช้า')} {r.delayed}</span> : null}
+                  {p?.part_no || '—'} · {tr(kind.label)} {tr('· ผู้ทำ')} {t.maker_name || '—'} ({t.maker_kind === 'internal' ? tr('ภายใน') : tr('ภายนอก')}) · {r.done}/{r.total} {tr('ขั้น ·')} {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> {tr('· ล่าช้า')} {r.delayed}</span> : null}
                   {t.die_set_code && <> · {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title={tr('ไม่พบใน die_sets')}>{t.die_set_code} {tr('(ไม่พบในทะเบียน)')}</span>}</>}
                 </div>
               </div>
@@ -196,7 +196,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
           footer={<><button style={ghost} onClick={() => setPlanModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={savePlan}>{saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label={tr('พาร์ท *')}><select style={inp} value={planModal.part_id} onChange={e => setPlanModal({ ...planModal, part_id: e.target.value })}><option value="">—</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}</select></Field>
-            <Field label={tr('ชนิด')}><select style={inp} value={planModal.tool_kind} onChange={e => setPlanModal({ ...planModal, tool_kind: e.target.value })}>{Object.entries(TOOL_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
+            <Field label={tr('ชนิด')}><select style={inp} value={planModal.tool_kind} onChange={e => setPlanModal({ ...planModal, tool_kind: e.target.value })}>{Object.entries(TOOL_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}</select></Field>
             <Field label={tr('ชื่อเครื่องมือ *')} span={2}><input style={inp} value={planModal.tool_name} onChange={e => setPlanModal({ ...planModal, tool_name: e.target.value })} placeholder="OP10 DRAW DIE / CHECKING FIXTURE RH" /></Field>
             {/* 2026-09-08: maker_name เก็บชื่อ text เหมือนเดิม (npi_* อยู่ Main · suppliers อยู่ DR — คนละ project ผูก FK ไม่ได้) */}
             <Field label={tr('ผู้ทำ (maker)')} hint={tr('เลือกจากทะเบียน supplier (/products แท็บ 🏭) — พิมพ์เองได้พร้อมป้าย')}><SupplierSelect value={planModal.maker_name || ''} kinds={['tooling', 'internal']} onChange={r => setPlanModal({ ...planModal, maker_name: r.supplier })} inputStyle={inp} /></Field>

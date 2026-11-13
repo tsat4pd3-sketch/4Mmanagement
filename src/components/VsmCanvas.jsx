@@ -153,7 +153,7 @@ const InvPoint = ({ cx, y, P, inv }) => {
   const isPull = !!inv?.kanban;
   return (
     <g>
-      {inv?.label && <text x={cx} y={y - 30} fontSize="9.5" fill={P.sub} textAnchor="middle">{inv.label}</text>}
+      {inv?.label && <text x={cx} y={y - 30} fontSize="9.5" fill={P.sub} textAnchor="middle">{tr(inv.label)}</text>}
       {isPull ? (
         <g>
           <rect x={cx - 21} y={y - 21} width="42" height="20" fill={P.box} stroke={P.line} strokeWidth="1.2" />

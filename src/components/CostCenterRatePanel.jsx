@@ -336,7 +336,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
                   {RATE_COMPONENTS.map(c => (
-                    <label key={c.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{c.label} <span style={{ fontWeight: 600 }}>({c.full})</span>
+                    <label key={c.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr(c.label)} <span style={{ fontWeight: 600 }}>({c.full})</span>
                       <input type="number" min="0" step="any" value={form[c.field]} onChange={e => setForm({ ...form, [c.field]: e.target.value })} placeholder={tr('บาท/ชม.')} style={{ marginTop: 4 }} />
                     </label>
                   ))}

@@ -459,7 +459,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
       <>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button onClick={() => setDept('all')} style={S.chip(dept === 'all', 'var(--accent)')}>{ALL.team}</button>
-        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || 'var(--blue)')}>{t.icon || DEPT_ICON[t.key] || ''} {t.label || DEPT_LABEL[t.key]}</button>)}
+        {teams.map(t => <button key={t.key} onClick={() => setDept(t.key)} style={S.chip(dept === t.key, t.color || 'var(--blue)')}>{t.icon || DEPT_ICON[t.key] || ''} {tr(t.label) || DEPT_LABEL[t.key]}</button>)}
         {view === 'facility' && canEdit && (
           <button onClick={() => setFacEdit(v => { if (v) { setArmedJig(null); setArmedMachine(null) } return !v })}
             style={S.viewBtn(facEdit)} title={facEdit ? tr('กลับสู่โหมดดูสถานะ') : tr('เปิดเครื่องมือจัดผัง (เพิ่มโซน/อัปรูป/วางจุด)')}>
@@ -476,7 +476,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {Object.entries(STATUS_META).map(([k, m]) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{m.label}{counts[k] ? ` (${counts[k]})` : ''}
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{tr(m.label)}{counts[k] ? ` (${counts[k]})` : ''}
             </span>
           ))}
         </div>
@@ -594,7 +594,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                         ) : (<>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 10px', marginTop: 4 }}>
                             {Object.entries(STATUS_META).filter(([k]) => cnt[k]).map(([k, m]) => (
-                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{m.label} {cnt[k]}</span>
+                              <span key={k} style={{ fontSize: 12, fontWeight: 800, color: m.color }}>{tr(m.label)} {cnt[k]}</span>
                             ))}
                           </div>
                           {/* ⭐ ตัวที่ user ถามหา: "เครื่องไหนจะถึงคิว PM" — บอกชื่อ+วันครบ ไม่ใช่แค่ตัวเลขรวม */}

@@ -420,7 +420,7 @@ export default function QAInspectionSetup() {
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 900, fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {sel.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{sel.part_name || ''}</span>
-                  {sel.part_rank && <Chip label={PART_RANK[sel.part_rank]?.label || sel.part_rank} color={PART_RANK[sel.part_rank]?.color || '#6b7280'} />}
+                  {sel.part_rank && <Chip label={tr(PART_RANK[sel.part_rank]?.label) || sel.part_rank} color={PART_RANK[sel.part_rank]?.color || '#6b7280'} />}
                   {sel.part_kind && <Chip label={PART_KIND[sel.part_kind] || sel.part_kind} color="var(--blue)" />}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -529,7 +529,7 @@ export default function QAInspectionSetup() {
                         </td>
                         <td style={tdSt}>{it.method || '—'}</td>
                         <td style={tdSt}>{it.rank ? <Chip label={it.rank} color={QA_RANK[it.rank]?.color || '#6b7280'} /> : '—'}</td>
-                        <td style={tdSt}><Chip label={STAGE[it.stage]?.label || it.stage} color={STAGE[it.stage]?.color || '#6b7280'} /></td>
+                        <td style={tdSt}><Chip label={tr(STAGE[it.stage]?.label) || it.stage} color={STAGE[it.stage]?.color || '#6b7280'} /></td>
                         <td style={tdSt}>{[it.frequency, it.sample_size != null ? `n=${it.sample_size}` : null].filter(Boolean).join(' · ') || '—'}</td>
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>

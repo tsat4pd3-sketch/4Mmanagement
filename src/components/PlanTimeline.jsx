@@ -88,7 +88,7 @@ export default function PlanTimeline({
                 {ticks.map(t => (
                   <span key={t.ms} style={{ position: 'absolute', left: `${t.pct}%`,
                     transform: t.pct === 0 ? 'none' : t.pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-                    fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr(t.label)}</span>
                 ))}
               </div>
 

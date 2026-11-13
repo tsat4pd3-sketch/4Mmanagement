@@ -30,7 +30,7 @@ export default function LayoutSetup() {
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
       <PageHeader
         title={tr('ตั้งค่าผัง / Floorplan')} icon="🗺️"
-        sub={cur ? cur.desc : tr('รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่')}
+        sub={cur ? tr(cur.desc) : tr('รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่')}
         tabs={TABS} tab={tab} onTab={setTab}
       />
 

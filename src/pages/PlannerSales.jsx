@@ -1193,7 +1193,7 @@ function PlannerTab({ refreshKey, custLabel }) {
             ...(noCtCount ? [{ label: 'พาร์ทไม่มี cycle time', value: noCtCount, icon: '⚠️', warn: true }] : []),
           ].map(c => (
             <div key={c.label} style={{ flex: '1 1 150px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {tr(c.label)}</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: c.warn ? 'var(--amber)' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>
           ))}

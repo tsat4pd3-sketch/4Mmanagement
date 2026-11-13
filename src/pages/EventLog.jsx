@@ -493,7 +493,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
                 <div key={rk}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
-                      {rk} · {rm.label}
+                      {rk} · {tr(rm.label)}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} {tr('รายการ')}</span>
                   </div>
@@ -1339,7 +1339,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                   <div key={rk}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                       <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
-                        {rk} · {rm.label}
+                        {rk} · {tr(rm.label)}
                       </span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

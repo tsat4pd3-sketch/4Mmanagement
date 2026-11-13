@@ -149,7 +149,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                 placeholder="plant/utility/steel/power" style={{ ...inp, fontFamily: 'monospace' }} /></label>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 170px' }}>{tr('ค่าที่อ่าน')}<br />
               <select value={form.field} onChange={e => setForm(f => ({ ...f, field: e.target.value }))} style={inp}>
-                {MQTT_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}</option>)}
+                {MQTT_FIELDS.map(f => <option key={f.key} value={f.key}>{tr(f.label)}{f.unit ? ` (${f.unit})` : ''}</option>)}
               </select></label>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '2 1 220px' }}>{tr('ผูกกับจุดวัด')}<br />
               <select value={form.scope_name ? `${form.scope_kind}::${form.scope_name}` : ''}
@@ -239,7 +239,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                       {r.json_path && <div style={{ color: 'var(--muted)', fontSize: 11 }}>{r.json_path}</div>}
                       {r.note && <div style={{ color: 'var(--muted)', fontSize: 11, fontFamily: 'var(--font-body)' }}>{r.note}</div>}
                     </td>
-                    <td style={td}>{f.label}<span style={{ color: 'var(--muted)' }}>{f.unit ? ` (${f.unit})` : ''}</span></td>
+                    <td style={td}>{tr(f.label)}<span style={{ color: 'var(--muted)' }}>{f.unit ? ` (${f.unit})` : ''}</span></td>
                     <td style={td}>{r.scope_kind === 'zone' ? '🔧' : '🏭'} {r.scope_name}</td>
                     <td style={{ ...td, color: Number(r.scale) === 1 ? 'var(--muted)' : 'var(--text)' }}>×{r.scale}</td>
                     <td style={{ ...td, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>

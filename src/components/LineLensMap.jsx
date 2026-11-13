@@ -139,7 +139,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 11.5 }}>
           {(LEGEND[lens] || []).map(([k, m]) => (
             <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: counts[k] ? 'var(--text)' : 'var(--muted)', fontWeight: counts[k] ? 800 : 500 }}>
-              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{m.label} {counts[k] || 0}
+              <span style={{ width: 9, height: 9, borderRadius: '50%', background: m.color }} />{tr(m.label)} {counts[k] || 0}
             </span>
           ))}
         </div>
@@ -171,7 +171,7 @@ export function MachineDetailCard({ m, lens, onClose }) {
                       <span style={{ width: 7, height: 7, borderRadius: '50%', background: STATUS_META[c.status]?.color || NO_DATA_COLOR, flexShrink: 0 }} />
                       <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.eqName} · {c.clName}</span>
                       <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 700, color: STATUS_META[c.status]?.color || 'var(--muted)' }}>
-                        {STATUS_META[c.status]?.label || c.status}{c.nextDue ? ` · ${c.nextDue.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}` : ''}
+                        {tr(STATUS_META[c.status]?.label) || c.status}{c.nextDue ? ` · ${c.nextDue.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' })}` : ''}
                       </span>
                     </div>
                   ))}

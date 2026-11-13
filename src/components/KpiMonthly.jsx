@@ -2013,7 +2013,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
                   {f.provider === 'formula' && (
                     <select style={{ ...inp, width: 'auto' }} value={f.formula} onChange={e => set('formula', e.target.value)}>
                       <option value="">{tr('— เลือกสูตร —')}</option>
-                      {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{x.label} = {x.expr}</option>)}
+                      {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{tr(x.label)} = {x.expr}</option>)}
                     </select>
                   )}
                 </div>

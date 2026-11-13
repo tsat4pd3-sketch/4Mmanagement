@@ -432,7 +432,7 @@ export default function Rfq() {
               <Field label={tr('แม่แบบเฟส (ลูกค้า)')}>
                 <select style={inp} value={npiModal.template_id} onChange={e => setNpiModal({ ...npiModal, template_id: e.target.value })}>
                   {!templates.length && <option value="">{tr('ไม่มีแม่แบบ — ตั้งที่ /npi ⚙️')}</option>}
-                  {templates.map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''}</option>)}
+                  {templates.map(t => <option key={t.id} value={t.id}>{tr(t.label)}{t.customer ? ` (${t.customer})` : ''}</option>)}
                 </select>
               </Field>
               <Field label={tr('ชื่อโปรเจค (ระบบเสนอ แก้ได้)')} span={2}><input style={inp} value={npiModal.name} onChange={e => setNpiModal({ ...npiModal, name: e.target.value })} /></Field>
@@ -502,11 +502,11 @@ function RfqTable({ rows, hidden, awardOf, npiOf, onPick, today }) {
                   <td style={tdSt}>{r.customer || '—'}</td>
                   <td style={tdSt} className="rec-note">{[r.model, r.title].filter(Boolean).join(' · ') || '—'}</td>
                   <td style={tdSt}>{r.process_type === 'plastic' ? tr('ฉีด') : tr('ปั๊ม')}</td>
-                  <td style={tdSt}><Pill label={st.label} color={statusColor(st.tone)} small /></td>
+                  <td style={tdSt}><Pill label={tr(st.label)} color={statusColor(st.tone)} small /></td>
                   <td style={{ ...tdSt, textAlign: 'right' }}>{fmtN(r.annual_volume)}{r.annual_volume != null && !r.volume_source && <span title={tr('ไม่ได้บอกที่มา')} style={{ color: statusColor('warn') }}> ?</span>}</td>
                   <td style={{ ...tdSt, color: late ? statusColor('bad') : undefined, fontWeight: late ? 800 : 400 }}>{r.due_date ? fmtDate(r.due_date) : '—'}{late && ' เลย'}</td>
                   <td style={tdSt}>{r.crd_no ? `CRD ${r.crd_no}` : (r.npi_project_id ? '' : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ส่ง')}</span>)}{r.npi_project_id && <span style={{ marginLeft: 6 }}>{npiOf[r.npi_project_id]?.project_code || 'NPI'}</span>}</td>
-                  <td style={tdSt}>{a ? <Pill label={RFQ_OUTCOMES[a.outcome]?.label || a.outcome} color={statusColor(RFQ_OUTCOMES[a.outcome]?.tone || 'none')} small /> : '—'}</td>
+                  <td style={tdSt}>{a ? <Pill label={tr(RFQ_OUTCOMES[a.outcome]?.label) || a.outcome} color={statusColor(RFQ_OUTCOMES[a.outcome]?.tone || 'none')} small /> : '—'}</td>
                 </tr>
               );
             })}
@@ -542,7 +542,7 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, canAss
               <select value={rfq.status} onChange={e => onStatus(e.target.value)} style={{ ...inp, width: 'auto', borderColor: statusColor(st.tone) }}>
                 {statusOptions.map(k => <option key={k} value={k}>{rfqStatusMeta(k).label}</option>)}
               </select>
-            ) : <Pill label={st.label} color={statusColor(st.tone)} />}
+            ) : <Pill label={tr(st.label)} color={statusColor(st.tone)} />}
             {canEdit && <button style={ghost} onClick={onEdit}>✏️</button>}
             {canEdit && <DeleteButton onClick={onDel} title={tr('ลบ RFQ')} />}
           </div>
@@ -610,7 +610,7 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, canAss
       {/* ผล + ใบแจ้งจัดทำ */}
       <div style={{ ...card, gridColumn: '1 / -1' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ fontWeight: 800 }}>{tr('ผลได้งาน / ไม่ได้งาน')} {award && <Pill label={RFQ_OUTCOMES[award.outcome]?.label || award.outcome} color={statusColor(RFQ_OUTCOMES[award.outcome]?.tone || 'none')} />}</div>
+          <div style={{ fontWeight: 800 }}>{tr('ผลได้งาน / ไม่ได้งาน')} {award && <Pill label={tr(RFQ_OUTCOMES[award.outcome]?.label) || award.outcome} color={statusColor(RFQ_OUTCOMES[award.outcome]?.tone || 'none')} />}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {canAward && <button style={award ? ghost : btn()} onClick={onAward}>{award ? tr('แก้ผล') : tr('บันทึกผล')}</button>}
             {canAward && award?.outcome === 'awarded' && !award.production_order_no && <button style={btn()} onClick={onIssue}>{tr('ออกใบแจ้งจัดทำ F-MKT-001/002')}</button>}
@@ -680,7 +680,7 @@ function ReportTab({ rfqs, awards, onOpen }) {
             <tbody>
               {rows.map(a => { const r = rfqOf[a.rfq_id]; const sales = a.annual_sales ?? annualSales(a.annual_volume, a.unit_price); return (
                 <tr key={a.id} onClick={() => onOpen(a.rfq_id)}>
-                  <td style={tdSt}><Pill label={RFQ_OUTCOMES[a.outcome]?.label || a.outcome} color={statusColor(RFQ_OUTCOMES[a.outcome]?.tone || 'none')} small /></td>
+                  <td style={tdSt}><Pill label={tr(RFQ_OUTCOMES[a.outcome]?.label) || a.outcome} color={statusColor(RFQ_OUTCOMES[a.outcome]?.tone || 'none')} small /></td>
                   <td style={tdSt}><b>{r?.rfq_no || '—'}</b></td>
                   <td style={tdSt} className="rec-note">{r ? [r.customer, r.model, r.title].filter(Boolean).join(' · ') : tr('RFQ ถูกลบ')}</td>
                   <td style={{ ...tdSt, textAlign: 'right' }}>{fmtN(a.annual_volume)}</td>

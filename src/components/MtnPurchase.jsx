@@ -636,7 +636,7 @@ export function MtnGlMaster({ canEdit = false, fullName }) {
         const list = rows.filter(r => r.category === c.key);
         return (
           <div key={c.key} style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>{c.label} ({list.length})</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>{tr(c.label)} ({list.length})</div>
             {!list.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>{tr('⚠ ยังไม่มีรหัสในหมวดนี้')}</div>}
             {list.map(g => (
               <div key={g.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 8px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 4 }}>

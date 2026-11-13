@@ -906,7 +906,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         ) : editing.isNew ? (
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('บันทึกใบก่อน แล้วเจ้าตัวจึงกด')}{S.verb}{tr('ได้')}</div>
         ) : deny ? (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{tr('รอ')}{S.label} — {deny}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{tr('รอ')}{tr(S.label)} — {deny}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>

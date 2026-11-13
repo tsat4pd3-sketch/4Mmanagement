@@ -141,8 +141,8 @@ export default function LineSelect({
   const grouped = useMemo(() => groupLineOptions(opts), [opts]);
   const hasExtra = extraGroups.some(g => g.options?.length);
   const extraEls = extraGroups.filter(g => g.options?.length).map(g => (
-    <optgroup key={g.label} label={g.label}>
-      {g.options.map(o => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
+    <optgroup key={g.label} label={tr(g.label)}>
+      {g.options.map(o => <option key={o.value} value={o.value}>{tr(o.label) ?? o.value}</option>)}
     </optgroup>
   ));
   const selectEl = (
