@@ -159,6 +159,12 @@ export function canAccessPage(path, role) {
   if (path === '/people-board') {
     return hasPermission('page:/people-board', role) || hasPermission('page:/dashboard', role);
   }
+  /* 🧩 ออกแบบใบงาน (e-Workflow · 13/11) — Key User = bucket dept_admin แจกได้แค่ action ห้ามแจก page:*
+     ⇒ piggyback คีย์ action `wf:design` (pattern เดียวกับ /display-rotation) · ปุ่มแก้ในหน้าคุมด้วยคีย์เดียวกัน
+     · ขอบเขต "ใบของส่วนงานไหน" ตัดสินฝั่ง DB (`wf_can_own`) */
+  if (path === '/workflow-designer') {
+    return hasPermission('page:/workflow-designer', role) || hasPermission('wf:design', role) || hasPermission('wf:publish', role);
+  }
   if (path === '/display-rotation') {
     return hasPermission('page:/display-rotation', role) || hasPermission('display_rotation:manage', role);
   }

@@ -58,6 +58,16 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'wf-tables-write-via-rpc',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับการเขียนตาราง e-Workflow ตรงจาก client: from('wf_…').insert/update/upsert/delete */
+    re: /from\(\s*['"`]wf_(defs|versions|instances|tasks|actions)['"`]\s*\)\s*\.\s*(insert|update|upsert|delete)\b/g,
+    why: '🧩 e-Workflow (13/11): ตาราง wf_* ไม่มี policy เขียนเลย (ตั้งใจ) — การเปลี่ยนขั้น/สถานะต้องผ่าน RPC ที่ตรวจผู้กด + '
+       + 'compare-and-swap (step_rev) + ขอบเขตส่วนงานฝั่ง DB · เขียนตรง = ได้ 42501 หรือถ้ามีคนไปเปิด policy = ข้ามขั้นได้',
+    fix: 'เรียก supabase.rpc(\'wf_save_draft\' | \'wf_request_publish\' | \'wf_review_publish\' | \'wf_start\' | \'wf_act\' | \'wf_resubmit\' | \'wf_cancel\') — 📄 docs/modules/e-workflow.md',
+    allow: {},
+  },
+  {
     id: 'uom-write-via-normuom',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */

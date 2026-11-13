@@ -153,6 +153,8 @@ model: inherit
   2 หน้าเต็มเหมือนกัน = คนกรอกคนละที่แล้วเถียงว่าใบจริงอยู่ไหน (หลักเดียวกับ `alsoIn` = ทางลัด
   ไม่ใช่บ้านที่สอง) · โหมดคิวต้อง**ข้ามคิวรีของทะเบียน** ด้วย (egress ที่ไม่มีใครดู)
   · ต้นแบบ/ด่าน: `qa-bins-queue-only` ใน `regressionGuards` · 📄 `docs/modules/production-problem-report-bins.md`
+- [ ] **ตาราง e-Workflow (`wf_*`) เขียนผ่าน RPC เท่านั้น** (13/11) — grep `from('wf_…').insert|update|upsert|delete` ใน `src/` ต้องได้ 0 ·
+  ตารางไม่มี policy เขียนโดยตั้งใจ · ด่าน `wf-tables-write-via-rpc` · 📄 `docs/modules/e-workflow.md`
 
 ### หมวด C — Permissions (data-driven)
 
