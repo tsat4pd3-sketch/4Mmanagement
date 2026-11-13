@@ -10309,6 +10309,14 @@ const EN = {
   'ติ๊กครบทุกประเภทแล้ว': 'Every type has been flagged',
   'แท่งนี้ไม่กระทบเลขที่ส่งกลุ่ม — Machine Break Down / MTBF / MTTR ในตารางข้างล่างยังนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม':
     'This bar does not affect the numbers reported to the group — Machine Break Down / MTBF / MTTR in the table below still count the full line stop per the KPI Guideline',
+  /* ── 🗂 แท็บกลุ่ม 2 ชั้น (13/11) ── */
+  'ทะเบียนอ้างอิง': 'Reference registries',
+  'งานรอตรวจ': 'Awaiting QA',
+  'ของเสีย / ปัญหา': 'Defects / problems',
+  'ติดตาม / กระทบยอด': 'Follow-up / reconcile',
+  'ตั้งค่าคลัง': 'Store setup',
+  'BOM': 'BOM',
+  'Product': 'Product',
 };
 
 export default EN;

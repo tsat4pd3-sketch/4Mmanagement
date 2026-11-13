@@ -1847,6 +1847,16 @@ const TABS = [
   { key: 'instruments', icon: '📏', label: 'เครื่องมือวัด' },
 ];
 
+/* 🗂 13/11: 10 แท็บ → 6 ช่องบน (กฎ ≤7 · UI §6.8 ข้อ 6) — คีย์ลูก = ?tab= เดิม (TABS) · กลุ่มตามชนิดงาน:
+   งานรอตรวจ = มีคนรอผล QA อยู่ · ของเสีย/ปัญหา = ไล่ย้อนหาสาเหตุ */
+const qcTab = (k) => { const t = TABS.find(x => x.key === k); return { key: t.key, label: `${t.icon} ${t.label}` }; };
+const QC_TAB_GROUPS = [
+  qcTab('dashboard'), qcTab('sheet'),
+  { key: 'queue',   label: '🔔 งานรอตรวจ',     children: ['morepair', 'bins', 'matreq'].map(qcTab) },
+  { key: 'problem', label: '🚨 ของเสีย / ปัญหา', children: ['ncr', 'claims', 'capa'].map(qcTab) },
+  qcTab('spc'), qcTab('instruments'),
+];
+
 export default function QualityControl() {
   const { can } = usePerms();
   const { role, lineId, sections, scopeIdx } = useContext(UserContext);
@@ -1888,7 +1898,7 @@ export default function QualityControl() {
       <PageHeader
         title="Quality Control Center" icon="🔍"
         sub={trI18n('ใบตรวจตามมาตรฐาน · SPC · Process Capability · NCR · 8D CAPA · เครื่องมือวัด — งานประกันคุณภาพตามแนวทาง IATF 16949')}
-        tabs={TABS.map(t => ({ key: t.key, label: `${t.icon} ${t.label}` }))} tab={tab} onTab={setTab}
+        tabs={QC_TAB_GROUPS} tab={tab} onTab={setTab}
       />
 
       {tab === 'dashboard' && <QualityDashboard />}

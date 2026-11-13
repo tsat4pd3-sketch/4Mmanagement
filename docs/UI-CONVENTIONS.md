@@ -1319,6 +1319,15 @@ const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'list');   // src/utils/
    - ⚠️ **การสลับแท็บที่ "ระบบสั่งเอง" ต้องใช้ `setTab(k, { replace: true })`** (เช่นบันทึกเสร็จแล้วเด้งกลับหน้ารายการ) — ถ้า push ผู้ใช้กด Back จะย้อนเข้าฟอร์มที่เพิ่งบันทึกไปแล้ว · ผู้ใช้กดแท็บเอง = push (ค่าเริ่มต้น)
    - ⚠️ `setTab` จาก `useTabParam` **เปลี่ยน identity ตาม URL** — ถ้าเรียกใน `useCallback`/`useEffect` ต้องใส่ใน deps (เดิม `useState` setter นิ่ง เลยเคยใส่ `[]` ได้)
    - ⚠️ เป็น hook → ต้องอยู่บนสุดก่อน early return (กฎ rules-of-hooks — React #310)
+2.3 **🗂 แท็บเกิน 7 = จัดกลุ่ม 2 ชั้นใน `PageHeader` ด้วย `children`** (2026-11-13 · คำสั่ง user "ยุบแท็บเกิน 7" · audit กฎ Choice overload)
+   ```js
+   tabs={[ { key:'out', label:'ขาออก' },
+           { key:'recon', label:'📋 ติดตาม / กระทบยอด', children: [{ key:'sap', label:'ค้างตัด SAP' }, { key:'diff', label:'คลังพัก/ผลต่าง' }] } ]}
+   ```
+   · แถวบน = แท็บเดี่ยว + ชื่อกลุ่ม (1 ปุ่ม · `title` = รายชื่อลูก · badge = ผลรวม) · แถวล่าง (`data-subtab` · `TabBar size="sm"`) = ลูกของกลุ่มที่เลือก
+   · **`?tab=` ยังเป็นคีย์ลูกเดิม** (`useTabParam(keys)` ส่งคีย์ลูกทั้งหมดเหมือนเดิม) ⇒ ลิงก์/บุ๊กมาร์ก/`LEGACY_TABS` ไม่เปลี่ยน · กดกลุ่ม = ไปลูกตัวแรก
+   · **ไม่ใช่ dropdown** (กฎ 01/10 ยังอยู่): ทั้ง 2 ชั้นมองเห็นตลอด ไม่มีอะไรซ่อนหลังปุ่ม ⋯ · คีย์กลุ่มห้ามซ้ำคีย์ลูก
+   · ใช้แล้ว: ProductMaster 13 → 5 · LineStock 12 → 6 · QualityControl 10 → 6 (การจัดกลุ่มเขียนเหตุผลไว้ที่หน้า) · 📄 ผลวัด `docs/modules/ux-laws-audit.md`
 2.4 **🔴 แท็บซ้อนแท็บ = คนละ query param — หน้าลูกที่ถูกยุบเข้าหน้าแม่ห้ามใช้ `?tab=`** (2026-09-22)
    `useTabParam(keys, default, param)` — **อาร์กิวเมนต์ที่ 3 คือชื่อ param** (default `'tab'`)
    หน้าแม่ (hub) ถือ `?tab=` ⇒ หน้าลูกต้องเปลี่ยนเป็น param ของตัวเอง ไม่งั้นทั้งสองชั้นอ่าน/เขียนตัวเดียวกัน:
