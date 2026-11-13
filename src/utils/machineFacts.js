@@ -150,15 +150,19 @@ export function stopTotals(stopSec = {}) {
  * เหตุผลหยุดที่เห็นจากต้นทาง (สำหรับจอจับคู่) — 1 แถวต่อ (master, รหัส)
  * @returns `{ kind, code, text, count, sec, map|null }` · map = แถว machine_reason_map ที่ยืนยันแล้ว
  *   สถานะที่ยังไม่รู้ master (COMM_LOSS/อื่นๆ) ไม่อยู่ในลิสต์นี้ — คืนจำนวนแยกใน `unmappable`
+ *   รหัส 0 (ไม่ได้กดเหตุผล) ไม่อยู่ในลิสต์ — คืนแยกใน `noReason { count, sec }` ให้จอเขียนบอก
  */
 export function reasonRows(states = [], reasonMap = []) {
   const mapped = new Map((reasonMap || []).map(r => [`${r.reason_kind}|${r.reason_code}`, r]));
   const out = new Map();
   let unmappable = 0;
+  const noReason = { count: 0, sec: 0 };
   for (const s of states || []) {
     const kind = reasonKindOf(s?.state);
     if (!kind) { unmappable++; continue; }
     if (s.reason_code == null) continue;
+    // รหัส 0 = ไม่ได้กดเหตุผล / พนักงานรีเซ็ตกลับค่าปกติ (user ยืนยัน 13/11) — ไม่ใช่เหตุผล ห้ามให้จับคู่
+    if (Number(s.reason_code) === NO_REASON_CODE) { noReason.count++; noReason.sec += Number(s.duration_sec) || 0; continue; }
     const key = `${kind}|${s.reason_code}`;
     if (!out.has(key)) out.set(key, { kind, code: Number(s.reason_code), text: null, count: 0, sec: 0, map: mapped.get(key) || null });
     const r = out.get(key);
@@ -169,8 +173,11 @@ export function reasonRows(states = [], reasonMap = []) {
   // ที่เคยจับคู่ไว้แต่ช่วงนี้ไม่เห็น ยังต้องโชว์ (แก้/ลบได้)
   for (const [key, m] of mapped) if (!out.has(key)) out.set(key, { kind: m.reason_kind, code: m.reason_code, text: m.reason_text, count: 0, sec: 0, map: m });
   const rows = [...out.values()].sort((a, b) => (a.kind === b.kind ? a.code - b.code : a.kind === 'onplan' ? -1 : 1));
-  return { rows, unmappable };
+  return { rows, unmappable, noReason };
 }
+
+/** รหัสเหตุผล 0 ของต้นทาง = "ปกติ / ยังไม่กดเหตุผล" (กดรีเซ็ตแล้วกลับเป็น 0) — ไม่ใช่เหตุผลหยุด */
+export const NO_REASON_CODE = 0;
 
 /** ข้อเสนอประเภท downtime — ตรงชื่อเป๊ะ (หลังตัดช่องว่าง/ตัวพิมพ์) เท่านั้น · ไม่เจอ/เจอหลายตัว = null (ห้ามเดา) */
 export function suggestDowntimeType(text, types = []) {

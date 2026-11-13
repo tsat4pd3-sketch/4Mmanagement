@@ -139,3 +139,13 @@ test('เทียบ Daily Report: DT ของคนแยกรายเค�
   assert.equal(t.session, null); assert.equal(t.humanDtMin, null);        // ไม่มีใบผลิต ≠ คนลง 0
   assert.ok(!rows.some(r => r.line === 'Line D9'));
 });
+
+test('รหัสเหตุผล 0 = ไม่ได้กด/รีเซ็ต — ไม่อยู่ในรายการจับคู่ แต่นับแยกให้จอบอก (ไม่หายเงียบ)', () => {
+  const { rows, noReason } = reasonRows([
+    { state: 'no_plan', reason_code: 0, reason_text: 'None', duration_sec: 600 },
+    { state: 'idle', reason_code: 0, reason_text: 'None', duration_sec: 20 },
+    { state: 'planned_stop', reason_code: 2, reason_text: 'พัก 10 นาที', duration_sec: 600 },
+  ]);
+  assert.deepEqual(rows.map(r => `${r.kind}:${r.code}`), ['onplan:2']);
+  assert.deepEqual(noReason, { count: 2, sec: 620 });
+});

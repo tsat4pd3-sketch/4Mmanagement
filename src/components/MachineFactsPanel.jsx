@@ -90,7 +90,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
   const compare = useMemo(() => (data?.sessions ? compareWithSessions(facts, { machines, sessions: data.sessions, downtimes: data.downtimes }) : null),
     [facts, machines, data?.sessions, data?.downtimes]);
   const tags = useMemo(() => (data ? tagRows({ ...data, machines }) : []), [data, machines]);
-  const reasons = useMemo(() => (data ? reasonRows(data.states, data.reasonMap) : { rows: [], unmappable: 0 }), [data]);
+  const reasons = useMemo(() => (data ? reasonRows(data.states, data.reasonMap) : { rows: [], unmappable: 0, noReason: { count: 0, sec: 0 } }), [data]);
   const dtById = useMemo(() => new Map((data?.dtTypes || []).map(t => [t.id, t])), [data?.dtTypes]);
   const dtOptions = useMemo(() => (data?.dtTypes || []).filter(t => t.is_active !== false).map(t => ({
     id: t.id, label: t.name_th, group: t.category === 'planned' ? 'ในแผน' : 'นอกแผน',
@@ -182,6 +182,12 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
           เลือกเองทีละรายการ · ระบบเสนอเฉพาะชื่อที่ตรงเป๊ะ · ไม่มีตัวตรงก็กด "ไม่มีใน ESM" ได้ (บันทึกว่าตรวจแล้ว) · ตอนนี้ใช้แสดงชื่อเท่านั้น ยังไม่สร้างใบ downtime
         </div>
+        {reasons.noReason.count > 0 && (
+          <NoticeBar tone="info" style={{ marginBottom: 8 }}>
+            {reasons.noReason.count.toLocaleString()} ช่วง ({minTxt(reasons.noReason.sec)} นาที) ไม่ได้กดเหตุผลที่หน้าเครื่อง
+            (รหัส 0 = ปกติ / รีเซ็ต) — ไม่ใช่เหตุผลหยุด จึงไม่อยู่ในรายการให้จับคู่
+          </NoticeBar>
+        )}
         {reasons.unmappable > 0 && (
           <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
             {reasons.unmappable.toLocaleString()} ช่วงเป็นสถานะ ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่
