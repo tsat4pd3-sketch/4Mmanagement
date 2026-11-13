@@ -10410,3 +10410,38 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
   assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
+
+/* ═══ 🚪 nav-route-reachable — หน้าที่สร้างแล้วต้องหาเจอ (2026-11-13) ═══════════════════════
+   เจอตอนไล่เมนูซ้ำ/ไม่เข้าหมวด (คำสั่ง user) — มี route ที่ render หน้าจริง 88 ตัว แต่เมนูมี 70
+   ส่วนต่างทั้งหมดอธิบายได้ (LegacyTabRedirect ของหน้าที่ยุบเป็นแท็บ · เข้าทาง QR/เมนูโปรไฟล์)
+   แต่ "อธิบายได้" วันนี้ ไม่ได้กันหน้าใหม่ที่ session หน้าสร้างแล้วลืมใส่ NAV_ITEMS
+   ⇒ หน้าใหม่ที่เปิดด้วย URL ได้แต่ไม่มีในเมนู = **ไม่มีใครหาเจอ** (สร้างแล้วตายเงียบ)
+   กฎ: route ที่ไม่อยู่ในเมนู ต้องเป็น LegacyTabRedirect/Navigate หรืออยู่ในทะเบียนข้อยกเว้นนี้
+   📄 docs/modules/pages-routes.md §ไล่เมนู "ซ้ำ / ไม่เข้าหมวด" รอบ 13/11                      */
+test('🚪 nav-route-reachable — route ที่ render หน้าจริง ต้องมีในเมนู หรืออยู่ในทะเบียนข้อยกเว้น', () => {
+  const s = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+
+  // เข้าถึงทางอื่นโดยเจตนา — เติมได้ แต่ต้องเขียนเหตุผลว่า "หาเจอทางไหน"
+  const OFF_MENU = {
+    '/scan':      'ส่องป้าย QR หน้างาน (handheld) — ไม่ใช่เมนูจอคอม',
+    '/remote':    'เมนูโปรไฟล์ (src/utils/profileMenu.js)',
+    '/linesetup': 'ลิงก์จาก /layout-setup ตอนไม่มีสิทธิ์แก้ (ดูอย่างเดียว)',
+    '/login':     'หน้า login',
+  };
+
+  const navTo = new Set();
+  const i = s.indexOf('NAV_ITEMS'), j = s.indexOf('NAV_GROUP_ORDER');
+  for (const m of s.slice(i, j).matchAll(/\{\s*to:\s*'([^']+)'/g)) navTo.add(m[1]);
+  assert.ok(navTo.size > 50, '\n\n❌ อ่าน NAV_ITEMS ไม่ออก (เปลี่ยนรูปแบบ `to:` ?) — แก้ด่านนี้ให้ตรงของจริง\n');
+
+  const orphan = [];
+  for (const m of s.matchAll(/<Route\s+path="([^"]+)"\s+element=\{([\s\S]{0,160}?)\}\s*\/?>/g)) {
+    const [, path, el] = m;
+    if (path === '*' || path === '/*' || path.includes(':')) continue;   // catch-all + param ไม่ใช่หน้า
+    if (navTo.has(path) || OFF_MENU[path]) continue;
+    // ของที่ redirect ไปที่อื่นอยู่แล้ว = ไม่ต้องมีในเมนู
+    if (/LegacyTabRedirect|<Navigate/.test(el)) continue;
+    orphan.push(path);
+  }
+  assert.deepEqual(orphan, [], `\n\n❌ route พวกนี้เปิดด้วย URL ได้ แต่ไม่มีในเมนูและไม่ใช่ redirect\n   ⇒ สร้างแล้วไม่มีใครหาเจอ:\n   ${orphan.join('\n   ')}\n\n   แก้ทางใดทางหนึ่ง: ① เติมลง NAV_ITEMS (พร้อม group + sub)\n   ② ถ้าเข้าทางอื่นโดยเจตนา (QR / เมนูโปรไฟล์ / ลิงก์ในหน้า) เติมใน OFF_MENU ของด่านนี้พร้อมเหตุผล\n`);
+});
