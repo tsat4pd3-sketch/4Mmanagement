@@ -10660,3 +10660,55 @@ test('🏠 checkin-opens-on-own-line — ค่าตั้งต้นมาจ
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
 });
+
+/* ═══ 🔑 harness-lineid-matches-mock — harness ต้องชี้ไลน์ที่มีจริงใน mock (2026-11-13) ═══════
+   กับดักที่ทำให้ "พัง 0" เชื่อไม่ได้: `audit/main.jsx` ตั้ง `CTX.lineId` เป็นเลข แต่
+   `audit/mockSupabase.js` ให้ไลน์มี `id` เป็น `'id-N'` ⇒ ไม่ตรงกันเลยสักแถว
+   ⇒ ทุกจุดที่ถาม "ไลน์ของผู้ใช้คนนี้คือไลน์ไหน" หาไม่เจอ แล้วเดินกิ่ง fail-open ทุกครั้ง
+   ⇒ **กิ่ง "ขอบเขตรายไลน์" ไม่เคยถูกรันใน crashsweep เลย** (เจอ 13/11 ตอนแก้ /checkin)
+   🔴 ของจริง `production_lines.id` เป็น **integer** ⇒ mock ต้องเป็นเลข
+      ห้ามแก้กลับทางให้ CTX เป็นสตริง — โค้ดจริงมี `Number(lineId)` จะได้ NaN แล้วเดินผิดกิ่ง
+   📄 audit/README.md §CTX.lineId ต้องตรงกับ id ของไลน์ใน mock                                */
+test('🔑 harness-lineid-matches-mock — CTX.lineId ต้องชี้ไลน์ที่มีจริง + id ของไลน์ต้องเป็นเลข', () => {
+  const bad = [];
+  const mock = readFileSync(join(ROOT, 'audit/mockSupabase.js'), 'utf8');
+  const main = readFileSync(join(ROOT, 'audit/main.jsx'), 'utf8');
+
+  // ① ไลน์ใน mock ต้องมี id เป็นเลข (override ที่ production_lines)
+  const pl = stripComments(mock).match(/production_lines:\s*\(r, i\) => \(\{([^}]*)\}\)/);
+  if (!pl) bad.push('หา override production_lines ใน mockSupabase.js ไม่เจอ — เปลี่ยนรูปแล้วต้องแก้ด่านนี้');
+  else if (!/\bid:\s*i\b/.test(pl[1]))
+    bad.push("production_lines ของ mock ต้องตั้ง `id: i` (เลข) — ของจริง production_lines.id เป็น integer");
+
+  // ② CTX.lineId ต้องเป็นเลข และอยู่ในช่วงแถวที่ mock สร้างจริง
+  const m = stripComments(main).match(/const CTX = \{[^}]*?lineId:\s*([^,]+),/);
+  if (!m) bad.push('หา CTX.lineId ใน audit/main.jsx ไม่เจอ');
+  else {
+    const raw = m[1].trim();
+    if (!/^\d+$/.test(raw))
+      bad.push(`CTX.lineId ต้องเป็นเลข (ได้ \`${raw}\`) — สตริงจะทำให้ Number(lineId) เป็น NaN แล้วเดินผิดกิ่ง`);
+    else {
+      const n = Number(raw);
+      const rows = stripComments(mock).match(/const ROWS = \[\.\.\.Array\.from\(\{ length: (\d+) \}/);
+      const len = rows ? Number(rows[1]) : 0;
+      if (!len) bad.push('อ่านจำนวนแถว ROWS ของ mock ไม่ออก');
+      else if (n < 1 || n > len)
+        bad.push(`CTX.lineId = ${n} อยู่นอกช่วงแถวที่ mock สร้าง (1..${len}) = ชี้ไลน์ที่ไม่มีอยู่`);
+      // 🔴 ต้องเป็น "ไลน์ลูก" ไม่ใช่ไลน์แม่ ไม่งั้นสายตกทอดจากไลน์แม่ไม่เคยถูกรัน
+      const par = stripComments(mock).match(/const PARENT_OF = \{([^}]*)\}/);
+      const kids = par ? [...par[1].matchAll(/(\d+)\s*:/g)].map(x => Number(x[1])) : [];
+      if (kids.length && !kids.includes(n))
+        bad.push(`CTX.lineId = ${n} ไม่ใช่ไลน์ลูก (ลูกใน PARENT_OF = ${kids.join(',')})`
+          + ' — ตั้งเป็นไลน์แม่ = กิ่ง "ไลน์ลูกตกทอดจากไลน์แม่" ไม่เคยถูกรัน');
+    }
+  }
+
+  // ③ ห้ามเหลือจุดที่ "ชี้ไลน์" ด้วยสตริง 'id-N' (join กลับไปหาไลน์ไม่เจอ)
+  for (const key of ['line_id', 'to_line_id', 'ref_line_id']) {
+    const re = new RegExp(`${key}:\\s*(\`id-|'id-)`);
+    if (re.test(stripComments(mock)))
+      bad.push(`mockSupabase.js: \`${key}\` ยังชี้ไลน์ด้วยสตริง 'id-N' — ต้องเป็นเลขให้ตรงกับ production_lines.id`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
+});
