@@ -33,6 +33,7 @@ const PmForecast    = lazy(() => import('./PmForecast'));
 const PmCoordination = lazy(() => import('./PmCoordination'));
 const PMSetup       = lazy(() => import('./PMSetup'));
 const MaintenanceLevels = lazy(() => import('./MaintenanceLevels'));
+const PmMonthlyReport = lazy(() => import('../components/PmMonthlyReport'));
 
 /* เรียงตาม "ความถี่ที่ใช้จริง" ไม่ใช่ลำดับ workflow —
    ช่างเปิดจอมาเพื่อ *ตรวจ* ทุกวัน ส่วน *ตั้งค่า* นานๆ ครั้ง (หลักเดียวกับ DailyChecker) */
@@ -47,6 +48,9 @@ const TABS = [
      piggyback สิทธิ์ page:/pm-forecast (ทุก role เข้าได้อยู่แล้ว) ⇒ ไม่ต้อง seed สิทธิ์ใหม่ · ไม่มี route แยก */
   { key: 'levels',   label: '3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
     hint: 'แผนบอกว่าถึงเวลาไหม → ข้อมูลเสียจริงบอกว่าแย่ลงไหม → ระบบแนะนำว่าควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร' },
+  /* 📅 สรุป + ลงนามรายเดือน ③/④ ของใบ PM ช่าง (2026-11-13 · PM รอบ 2) — piggyback page:/pm-check */
+  { key: 'monthly',  label: 'สรุป/ลงนามรายเดือน', page: '/pm-check', Comp: PmMonthlyReport,
+    hint: 'สรุปผลตรวจ PM ของช่างต่อเดือน — ผจก.ส่วนของผู้ตรวจอนุมัติ (ต่อทีม) แล้ว ผจก.ส่วนที่ถูกตรวจรับทราบ (ต่อส่วนงาน)' },
   { key: 'coord',    label: 'ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
     hint: 'งาน PM ที่กินหลายวัน — นัด Production ล่วงหน้า + ช่วง Production Support' },
   { key: 'setup',    label: 'ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,

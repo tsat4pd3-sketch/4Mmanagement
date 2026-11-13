@@ -10616,3 +10616,12 @@ test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสีย�
     '\n\n❌ จอ KPI ต้องวาดถัง "ยังไม่ระบุ" เป็นช่องที่มองเห็น (unknownHr)\n'
     + '   ซ่อน = คนอ่านคิดว่าติ๊กครบแล้ว ทั้งที่ยังไม่มีใครตัดสิน\n');
 });
+
+/* ═══ 📅 PM รายเดือน ③/④ — ตัดสินผ่าน pmMonthlyVerdict ตอนกด + ด่าน stale (2026-11-13 · PM รอบ 2) ═══ */
+test('🛡️ PmMonthlyReport: ลงนามต้องคิด verdict ใหม่ตอนกด + เช็ค stale + ถามยืนยัน', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/PmMonthlyReport.jsx'), 'utf8'))
+  assert.match(src, /if \(isStale\(sign\.key, curKey\) \|\| raw\?\.month !== month\)/, '\n\n❌ doSign ต้องมีด่าน stale\n')
+  assert.match(src, /const v = verdictOf\(kind, row\)/, '\n\n❌ doSign ต้องคิด verdict ใหม่ตอนกด\n')
+  assert.match(src, /confirmSign\(\{/, '\n\n❌ ลงนามรายเดือนต้องถามยืนยันผ่าน confirmSign\n')
+  assert.match(src, /scopeOk: myTeams\.includes\(norm\(row\.team\)\)/, '\n\n❌ ③ ต้องล็อกทีมที่ตั้งในบัญชีผู้ลงนาม\n')
+})
