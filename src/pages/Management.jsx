@@ -28,7 +28,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct, stretchOverBreaks } from '../utils/heijunkaQueue';
 import { matchPlanToActual } from '../utils/planLots';
 import PlanFrameBar from '../components/PlanFrameBar';
 import PlanFrameRow from '../components/PlanFrameRow';
@@ -1800,20 +1800,11 @@ export default function Management() {
             const NIGHT_OT_IN  = gridStartMs + 12   * 3600000;  // 20:00 (เข้าแบบเปิด OT)
             const NIGHT_REG_IN = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
             const FRAME_END    = gridEndMs;                     // 08:00
-            const finishFrom = (startMs, workMs) => {
-              const breaks = allBreaksOnce(boardLine);
-              let end = startMs + workMs;
-              const consumed = new Set();
-              let ext = true;
-              while (ext) {
-                ext = false;
-                breaks.forEach(([bs, be], i) => {
-                  if (consumed.has(i)) return;
-                  if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
-                });
-              }
-              return end;
-            };
+            /* 🔴 ยืดคร่อมเวลาพัก = `stretchOverBreaks()` (utils/heijunkaQueue.js) เท่านั้น
+               คอมเมนต์ของมันเขียนไว้เองว่า "ต้องเป็นฟังก์ชันเดียว · ก๊อป 2 ที่แล้วดริฟท์แน่"
+               แต่ 13/11 เจอ **ก๊อปซ้ำ 3 ชุด**ในหน้า (MG 1 · DB 2) — ยุบแล้ว ห้าม inline กลับมา */
+            const finishFrom = (startMs, workMs) =>
+              stretchOverBreaks(startMs, startMs + workMs, allBreaksOnce(boardLine));
             const chips = [];
             ['day', 'night'].forEach(shift => {
               let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;

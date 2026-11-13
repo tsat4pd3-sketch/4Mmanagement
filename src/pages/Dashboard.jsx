@@ -29,7 +29,7 @@ import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct, stretchOverBreaks } from '../utils/heijunkaQueue';
 import PlanSlipFrame from '../components/PlanSlipFrame';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
@@ -1952,20 +1952,11 @@ export default function Dashboard({ view = 'timeline' }) {
                       const NIGHT_REG_IN  = gridStartMs + 14.5 * 3600000;  // 22:30 (เข้าปกติ)
                       const FRAME_END     = gridEndMs;                     // 08:00
                       // จำลองเวลาเสร็จ: เริ่มจาก startMs ใส่เนื้องาน workMs แล้วยืดคร่อมช่วงพักที่ทับ
-                      const finishFrom = (startMs, workMs) => {
-                        const breaks = allBreaksOnce(lineName);
-                        let end = startMs + workMs;
-                        const consumed = new Set();
-                        let ext = true;
-                        while (ext) {
-                          ext = false;
-                          breaks.forEach(([bs, be], i) => {
-                            if (consumed.has(i)) return;
-                            if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
-                          });
-                        }
-                        return end;
-                      };
+                      /* 🔴 ยืดคร่อมเวลาพัก = `stretchOverBreaks()` (utils/heijunkaQueue.js) เท่านั้น
+                         คอมเมนต์ของมันเขียนไว้เองว่า "ต้องเป็นฟังก์ชันเดียว · ก๊อป 2 ที่แล้วดริฟท์แน่"
+                         แต่ 13/11 เจอ **ก๊อปซ้ำ 3 ชุด**ในหน้า (MG 1 · DB 2) — ยุบแล้ว ห้าม inline กลับมา */
+                      const finishFrom = (startMs, workMs) =>
+                        stretchOverBreaks(startMs, startMs + workMs, allBreaksOnce(lineName));
                       const chips = [];
                       ['day', 'night'].forEach(shift => {
                         let remainCards = 0, remainQty = 0, projEndMs = null, noCt = 0, workMs = 0, started = false;
@@ -2009,20 +2000,11 @@ export default function Dashboard({ view = 'timeline' }) {
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
                             const stockNote = stockUsed > 0 ? ` · หัก stock ${stockUsed.toLocaleString()} แล้ว` : '';
-                            const finishFrom2 = (startMs, workMs) => {
-                              const breaks = allBreaksOnce(lineName);
-                              let end = startMs + workMs;
-                              const consumed = new Set();
-                              let ext = true;
-                              while (ext) {
-                                ext = false;
-                                breaks.forEach(([bs, be], i) => {
-                                  if (consumed.has(i)) return;
-                                  if (bs < end && be > startMs) { consumed.add(i); end += be - bs; ext = true; }
-                                });
-                              }
-                              return end;
-                            };
+                            /* 🔴 ยืดคร่อมเวลาพัก = `stretchOverBreaks()` (utils/heijunkaQueue.js) เท่านั้น
+                               คอมเมนต์ของมันเขียนไว้เองว่า "ต้องเป็นฟังก์ชันเดียว · ก๊อป 2 ที่แล้วดริฟท์แน่"
+                               แต่ 13/11 เจอ **ก๊อปซ้ำ 3 ชุด**ในหน้า (MG 1 · DB 2) — ยุบแล้ว ห้าม inline กลับมา */
+                            const finishFrom2 = (startMs, workMs) =>
+                              stretchOverBreaks(startMs, startMs + workMs, allBreaksOnce(lineName));
                             if (w <= 0) {
                               chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้${stockNote}` });
                             } else {

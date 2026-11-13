@@ -1149,7 +1149,7 @@ export default function ProductMaster() {
                     {archived.map(rev => (
                       <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
-                        {rev.p_no && <span style={{ fontFamily: 'monospace', color: '#475569' }}>{rev.p_no}</span>}
+                        {rev.p_no && <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>{rev.p_no}</span>}
                         <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>MAT {rev.mat_no || '—'}</span>
                         <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
                         <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 'var(--r-md)', background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>

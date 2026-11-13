@@ -10684,3 +10684,24 @@ test('🖼️ plan-slip-frame-single-entry — กรอบ "คิวตาม�
     + '\nfix: พิกัดจาก planFramePct() (utils/heijunkaQueue.js) · วาดด้วย <PlanSlipFrame> เท่านั้น'
     + '\n     📄 docs/modules/production-plan.md §กรอบคิวตามอุดมคติ');
 });
+
+test('⏱️ stretch-over-breaks-single-entry — "ยืดคร่อมเวลาพัก" ห้ามเขียนลูปเองในหน้า', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  /* ลายเซ็นของลูป: ไล่ breaks แล้ว "ใช้แล้วไม่ใช้ซ้ำ" + ยืด end ออกไป
+     13/11 เจอก๊อป 3 ชุด (Management 1 · Dashboard 2) ทั้งที่ stretchOverBreaks() มีอยู่แล้ว
+     และคอมเมนต์ของมันเขียนเองว่า "ก๊อป 2 ที่แล้วดริฟท์แน่" */
+  const RE = /consumed\.has\(\s*i\s*\)|used\.has\(\s*i\s*\)[\s\S]{0,160}?\+=\s*\(?\s*be\s*-\s*bs/;
+  for (const rel of ['src/pages/Management.jsx', 'src/pages/Dashboard.jsx', 'src/components/PlanTimeline.jsx',
+                     'src/components/ProdLotPlanner.jsx', 'src/pages/ProductionPlan.jsx']) {
+    let src; try { src = read(rel); } catch { continue; }
+    if (RE.test(src)) bad.push(`${rel} (เขียนลูปยืดคร่อมเบรคเอง — ต้องใช้ stretchOverBreaks() จาก utils/heijunkaQueue.js)`);
+  }
+  const q = read('src/utils/heijunkaQueue.js');
+  if (!/export function stretchOverBreaks/.test(q))
+    bad.push('src/utils/heijunkaQueue.js (ไม่มี stretchOverBreaks() — เจ้าของสูตรหายไป)');
+
+  assert.deepEqual(bad, [], 'ยืดคร่อมเวลาพักผิดกติกา:\n' + bad.join('\n')
+    + '\nwhy: สูตรนี้ตัดสิน "คาดเสร็จกี่โมง / ต้องเปิด OT กี่นาที" บนแถบ PLANNER — 2 จอคิดคนละชุด = ตอบคนละเลข'
+    + '\nfix: finishFrom(a, w) => stretchOverBreaks(a, a + w, breaks)');
+});
