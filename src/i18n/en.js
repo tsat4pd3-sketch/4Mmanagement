@@ -64,6 +64,8 @@ const EN = {
   'พาร์ทใหม่ APQP / PPAP': 'New Parts APQP / PPAP',
   'บอร์ด New Model (IEC)': 'New Model Board (IEC)',
   'RFQ / เสนอราคา (Marketing)': 'RFQ / Quotation (Marketing)',
+  'ใบงานออนไลน์ (e-Workflow)': 'Online forms (e-Workflow)',
+  'ออกแบบใบงาน (e-Workflow)': 'Form designer (e-Workflow)',
   'เพิ่มพนักงาน': 'Add Employee',
   'คนในไลน์อื่น': 'in other lines',
   'อยู่ในขอบเขตที่คุณดูได้ แต่เป็นไลน์อื่น — เปลี่ยนช่อง “ขอบเขต” เพื่อดู หรือยืมคนเข้าไลน์ตัวเอง': 'Within your visible scope but on another line — change the Scope filter to view them, or borrow them into your line',
