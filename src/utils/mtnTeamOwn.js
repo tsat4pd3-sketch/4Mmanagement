@@ -11,7 +11,7 @@
    กติกา (ทะเบียนของช่างทุกตัวต้องใช้กฎเดียวกัน — ของเดียวกันคนละกฎ = คนจำไม่ได้):
      · แถวของทีมตัวเอง            → แก้/ลบได้
      · แถวของทีมอื่น              → **เห็นได้ แต่แก้/ลบไม่ได้** (ไม่ใช่ซ่อน — ต้องบอกเหตุผลบนจอ)
-     · แถว 🌐 ของกลาง (ไม่มีทีม)  → เฉพาะ admin/manager (แก้ทีเดียวกระทบทุกทีม)
+     · แถว 🌐 ของกลาง (ไม่มีทีม)  → เฉพาะ admin/ผู้ถือใบผ่านข้ามหน่วย (แก้ทีเดียวกระทบทุกทีม)
 
    🔴 fallback สำคัญ: user ที่ยังไม่ได้ตั้ง `profiles.mtn_teams` = **ไม่ล็อก** (`unscoped`)
       ไม่งั้นวันที่ deploy ช่างที่ยังไม่ถูกตั้งทีมจะแก้อะไรไม่ได้ทั้งระบบ — ห้ามเปลี่ยนเป็น false
@@ -25,8 +25,10 @@
  * @param {string} rowTeamKey ทีมเจ้าของแถว (key ที่ normalize แล้ว · '' = ของกลาง)
  * @param {string[]} myTeamKeys ทีมของ user (key ที่ normalize แล้ว · [] = ยังไม่ตั้งทีม)
  * @returns {{ ok: boolean, code: 'boss'|'unscoped'|'own'|'other'|'common'|'no_team' }} */
-export function teamRowOwnerKeys(rowTeamKey, myTeamKeys, role, { strict = false } = {}) {
-  if (role === 'admin' || role === 'manager') return { ok: true, code: 'boss' }
+export function teamRowOwnerKeys(rowTeamKey, myTeamKeys, role, { strict = false, allUnits = false } = {}) {
+  /* 🔴 13/11 (audit role↔scope · คำสั่ง user "manager ไม่ได้แปลว่าแก้ข้ามแผนกได้"):
+     "บอส" = admin หรือผู้ถือใบผ่านข้ามหน่วย **รายคน** (`UserContext.allUnits`) — ไม่ใช่ชื่อ role */
+  if (role === 'admin' || allUnits === true) return { ok: true, code: 'boss' }
   const mine = (Array.isArray(myTeamKeys) ? myTeamKeys : []).filter(Boolean)
   if (!mine.length) return strict ? { ok: false, code: 'no_team' } : { ok: true, code: 'unscoped' }
   const t = String(rowTeamKey || '').trim()

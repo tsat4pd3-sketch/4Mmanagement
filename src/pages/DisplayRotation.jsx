@@ -54,7 +54,7 @@ const PAGE_OPTIONS = NAV_ITEMS
 const pageMeta = (path) => NAV_ITEMS.find(n => n.to === pathOnly(path));
 
 export default function DisplayRotation() {
-  const { role, realRole, sections: mySections } = useContext(UserContext);
+  const { role, realRole, writeUnits: mySections, allUnits } = useContext(UserContext);   // 13/11: จอที่ตั้งได้ = หน่วยที่ "แก้ได้" ไม่ใช่ที่เห็น
   const isMobile = useIsMobile(1100);
   const canEdit = canSeeded('display_rotation', 'manage', role);
   const lines = useProductionLines();
@@ -120,13 +120,13 @@ export default function DisplayRotation() {
   }, [realRole]);
 
   /* ── จอที่ "ฉัน" ดูแลได้ (ขอบเขตส่วนงาน) · จำนวนที่ซ่อนต้องเขียนบนจอ ── */
-  const mySecKey = (mySections || []).join('|');
+  const mySecKey = (mySections || []).join('|');   // deps เป็น string (กฎข้อ 9)
   const { screens, hiddenScreens } = useMemo(() => {
     const mine = mySecKey ? mySecKey.split('|') : [];
-    const ok = accounts.filter(a => canManageDisplay(mine, sectionsOfProfile(a)));
+    const ok = accounts.filter(a => canManageDisplay(mine, sectionsOfProfile(a), { allUnits }));
     ok.sort((a, b) => String(a.full_name || '').localeCompare(String(b.full_name || ''), 'th', { numeric: true }));
     return { screens: ok, hiddenScreens: accounts.length - ok.length };
-  }, [accounts, mySecKey]);
+  }, [accounts, mySecKey, allUnits]);
   const shown = useMemo(() => {
     const k = q.trim().toLowerCase();
     if (!k) return screens;
@@ -212,7 +212,7 @@ export default function DisplayRotation() {
 
   const save = async () => {
     if (!selId || !canEdit) return;
-    if (!canManageDisplay(mySections || [], tvSections)) { toast.error('จอนี้อยู่นอกส่วนงานที่คุณดูแล'); return; }
+    if (!canManageDisplay(mySections || [], tvSections, { allUnits })) { toast.error('จอนี้อยู่นอกส่วนงานที่คุณดูแล'); return; }
     const items = cleanItemsForSave(form.items);
     const bad = items.find(it => !isValidRotationPath(it.path));
     if (bad) { toast.error(`ที่อยู่หน้าไม่ถูกต้อง: "${bad.path}" — ต้องขึ้นต้นด้วย / และอยู่ในระบบนี้`); return; }

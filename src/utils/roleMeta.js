@@ -15,7 +15,7 @@ export const ORG_LEVELS = { 3: 'ฝ่าย / ผู้บริหาร', 4: 
 
 export const ROLE_META = {
   admin:            { icon: '🛡️', label: 'ผู้ดูแลระบบ',     en: 'System Admin',     color: 'var(--accent)', desc: 'ทุกอย่าง + จัดการผู้ใช้และสิทธิ์', axis: 'scope' },
-  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'เห็นกว้างทุกโมดูล — ขอบเขตส่วนงานจำกัดได้แค่ "สิ่งที่เห็น" ไม่ได้จำกัดการแก้', axis: 'scope', orgLevel: 3 },
+  manager:          { icon: '🏭', label: 'สิทธิ์ทั้งฝ่าย',   en: 'Full Access',      color: '#f59e0b', desc: 'ชุดปุ่มครบทุกโมดูล — แต่ "แก้ของหน่วยไหนได้" มาจากขอบเขตรายคน (ส่วนงาน/Cost Center/มอบหมาย/ใบผ่าน 🌐) ไม่ใช่จาก role นี้', axis: 'scope', orgLevel: 3 },
   supervisor:       { icon: '🏢', label: 'สิทธิ์ระดับส่วน',  en: 'Section Scope',    color: '#4d9fff', desc: 'จัดการข้อมูลภายใน Section ที่รับผิดชอบ', axis: 'scope', orgLevel: 4 },
   leader:           { icon: '👥', label: 'สิทธิ์ระดับไลน์',  en: 'Line/Team Scope',  color: '#22c55e', desc: 'เฉพาะไลน์ + ทีมที่รับผิดชอบ', axis: 'scope', orgLevel: 6 },
   qa:               { icon: '✅', label: 'งานคุณภาพ',        en: 'Quality',          color: '#c084fc', desc: 'อนุมัติ 4M/CQI-15 + QA Center', axis: 'unit' },

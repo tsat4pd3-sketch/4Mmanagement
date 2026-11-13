@@ -1932,11 +1932,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} teamWriteOf={teamWriteOf} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title={tr('จัดการประเภทจุดตรวจ (Category)')} extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} allUnits={allUnits} myTeams={pmUserTeams} table="pm_checkpoint_categories" title={tr('จัดการประเภทจุดตรวจ (Category)')} extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title={tr('จัดการวิธีการตรวจสอบ')} extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} allUnits={allUnits} myTeams={pmUserTeams} table="pm_checking_methods" title={tr('จัดการวิธีการตรวจสอบ')} extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

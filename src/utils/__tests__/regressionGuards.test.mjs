@@ -5652,8 +5652,13 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
 
   /* ชั้น context — ถ้า `allUnits` หลุดจาก UserContext ทุกจอจะเห็นเป็น undefined = บล็อกหมด/เปิดหมดแล้วแต่จุด */
   const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
-  if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
-    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
+  /* 13/11: ใบผ่านข้ามหน่วยเป็น **รายคน** (profiles.all_units ∪ มอบหมาย scope_depth='all') — ห้ามกลับไปอ่านจากคีย์ของ role */
+  if (!/allUnits:\s*userRole === 'admin' \|\| userAllUnits === true/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits จาก profiles.all_units)");
+  if (/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
+    bad.push("src/App.jsx (allUnits กลับไปอ่านจากคีย์ role scope:all_units — ขัดกฎ role ≠ ขอบเขต 13/11)");
+  if (!/writeUnits:\s*userWriteUnits/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง writeUnits — writeUnitsOf จะเหลือแค่บ้าน มอบหมายไม่ขยายการแก้)");
 
   /* 💰 19/10 — สลับ 20 จอมาใช้แกน Cost Center: สลับที่ `writeScope.js` ที่เดียว
      ⇒ จอที่เรียกด่านต้อง **ส่ง `respCostCenters` + `scopeIdx` มาใน ctx** ไม่งั้นจอนั้นค้างอยู่
@@ -8847,7 +8852,8 @@ test('🔄 assignment-overlay-widen-only — รักษาการทับ�
   const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
   assert.match(app, /from\('org_assignments'\)[\s\S]{0,200}\.eq\('profile_id',\s*user\.id\)/,
     '🔴 fetchProfile ต้องอ่าน org_assignments ของบัญชีนี้ (กรอง profile_id)');
-  assert.match(app, /applyAssignments\(\{\s*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /applyAssignments\(\{[^)]*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /applyAssignments\(\{\s*section:\s*ident\.section/, '13/11: overlay ต้องได้บ้านจริงไปประกอบ writeUnits (บ้าน ∪ มอบหมาย)');
   assert.match(app, /setUserSections\(finalSections\)/, 'setUserSections ต้องใช้ค่าหลังทับ');
   assert.doesNotMatch(app, /starts_on\s*<=|ends_on\s*>=/, '🔴 ห้ามเขียนกฎวันที่ของมอบหมายเองใน App.jsx — ใช้ isGranting()');
 
@@ -10569,4 +10575,45 @@ test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสีย�
   assert.ok(/unknownHr=\{mtnOwner\.unsetHr\}/.test(kpi),
     '\n\n❌ จอ KPI ต้องวาดถัง "ยังไม่ระบุ" เป็นช่องที่มองเห็น (unknownHr)\n'
     + '   ซ่อน = คนอ่านคิดว่าติ๊กครบแล้ว ทั้งที่ยังไม่มีใครตัดสิน\n');
+});
+
+/* ═══ 🔐 role-not-scope — "role ≠ ขอบเขต" (2026-11-13 · audit docs/ROLE-SCOPE-AUDIT-2026-11-13.md · คำสั่ง user) ═══
+   "manager ไม่ได้แปลว่าแก้ข้ามแผนกได้" — ความกว้างของการแก้มาจากขอบเขตรายคนเท่านั้น (บ้าน · CC · มอบหมาย · ใบผ่าน
+   profiles.all_units) · ห้ามมาจากชื่อ role หรือชื่อคีย์ · เคสจริง: scope:all_units แจก 8 role = 37 บัญชีแก้ได้ทั้งโรงงาน ·
+   role==='manager' เป็นทางลัดข้ามทีมใน 4 ไฟล์ · employees:edit_all_sections ให้ ~70 บัญชีแก้พนักงานทุกแผนก */
+test('🔐 role-not-scope — ตัวตัดสินขอบเขตห้ามอ่านชื่อ role · ใบผ่านข้ามหน่วยเป็นรายคน · คีย์ชื่อฝังขอบเขตห้ามกลับมา', () => {
+  const bad = [];
+  const rd = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  // ตัวตัดสินขอบเขต/เจ้าของแถว — ห้ามมี role === 'manager' (admin เป็นตาข่ายกันตายตัวเดียวที่อนุญาต)
+  for (const f of ['src/utils/writeScope.js', 'src/utils/ccScope.js', 'src/utils/mtnTeams.js', 'src/utils/mtnTeamOwn.js',
+                   'src/utils/displayRotation.js', 'src/components/TaxonomyManagerModal.jsx']) {
+    if (/role\s*===?\s*'manager'/.test(rd(f))) bad.push(`${f}: มี role === 'manager' ในตัวตัดสินขอบเขต`);
+  }
+  if (/isBoss\s*=\s*role === 'admin' \|\| role === 'manager'/.test(rd('src/pages/MtnRepair.jsx'))) bad.push('MtnRepair.jsx: isBoss ยังผูกกับ role manager');
+  if (/if \(role === 'manager'\) return true/.test(rd('src/pages/Report.jsx'))) bad.push('Report.jsx: อนุมัติ 4M ยังมีทางลัด manager');
+  if (!/canWriteLine\(wCtx, log\.line_name, lines, \{ unknownTarget: 'block' \}\)/.test(rd('src/pages/Report.jsx'))) bad.push('Report.jsx: อนุมัติ 4M ขั้น SV ต้องผ่าน canWriteLine');
+  // ใบผ่านข้ามหน่วย = รายคน — ห้ามมีใครอ่านจากคีย์ role อีก
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/__tests__/.test(f)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const rel = f.replace(ROOT, '').replace(/^\/+/, '');
+    if (/can\('scope',\s*'all_units'/.test(src)) bad.push(`${rel}: อ่าน scope:all_units จาก role (ต้องใช้ UserContext.allUnits / profiles.all_units)`);
+    if (/edit_all_sections/.test(src)) bad.push(`${rel}: คีย์ employees:edit_all_sections ถูกถอดแล้ว 13/11`);
+  }
+  // ตัวกลางต้องมีช่อง writeUnits (บ้าน ∪ มอบหมาย) และ overlay ต้องคืน allUnits/writeUnits
+  if (!/writeUnits/.test(rd('src/utils/writeScope.js'))) bad.push('writeScope.js: writeUnitsOf ไม่อ่าน writeUnits');
+  if (/Array\.isArray\(sections\)/.test(rd('src/utils/writeScope.js'))) bad.push('writeScope.js: writeUnitsOf กลับไปอ่าน sections (ที่เห็น) — ขัดกฎ 13/11');
+  const ov = rd('src/utils/assignmentOverlay.js');
+  if (!/writeUnits,\s*\n?\s*allUnits,/.test(ov) && !/writeUnits/.test(ov)) bad.push('assignmentOverlay.js: ไม่คืน writeUnits');
+  if (!/allUnits = true/.test(ov)) bad.push('assignmentOverlay.js: มอบหมาย scope_depth=all ต้องให้ allUnits');
+  // DB: migration ต้องมีแหล่งเดียวฝั่ง SQL
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261113_role_scope_p1_main.sql'), 'utf8');
+  for (const fn of ['app_all_units', 'app_write_units', 'app_cc_covers', 'app_can_write_unit', 'app_can_write_line']) {
+    if (!mig.includes(`function public.${fn}(`)) bad.push(`migration 20261113_role_scope_p1: ไม่มี ${fn}()`);
+  }
+  if (!/drop policy if exists "Allow authenticated full access four_m"/.test(mig)) bad.push('migration: ยังไม่ปิด policy four_m_logs เปิดโล่ง');
+  // จอวนหน้า: ใบผ่าน + หน่วยที่แก้ได้ (ไม่ใช่ที่เห็น)
+  if (!/canManageDisplay\(managerUnits, targetSections, \{ allUnits = false \} = \{\}\)/.test(rd('src/utils/displayRotation.js'))) bad.push('displayRotation.js: canManageDisplay ไม่รับ allUnits');
+  if (!/writeUnits: mySections/.test(rd('src/pages/DisplayRotation.jsx'))) bad.push('DisplayRotation.jsx: ยังใช้ sections (ที่เห็น) ตัดสินการตั้งจอ');
+  assert.deepEqual(bad, [], '\n' + bad.join('\n'));
 });

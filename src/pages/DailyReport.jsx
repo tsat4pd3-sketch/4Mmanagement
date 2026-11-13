@@ -360,7 +360,7 @@ export default function DailyReport() {
 ═══════════════════════════════════════════════════════════════ */
 function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   /* 🔐 ชั้นที่ 3 (ใช้ตอน "ปิดใบข้ามไลน์") — ขอบเขตที่ **แก้ได้** คนละตัวกับ `sections` (ขอบเขตที่เห็น) */
-  const { fullName, lineId: userLineId, sections: scopeSecs = [], section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const { fullName, lineId: userLineId, sections: scopeSecs = [], section: homeSection, allUnits, respCostCenters, scopeIdx, writeUnits } = useContext(UserContext);
   /* 🔴🔴 2026-10-06 — `scopeSecs` เป็น **array** ห้ามอยู่ใน deps ของตัวโหลด (กฎเหล็กข้อ 9)
      2 ทางที่ทำให้ได้ array ใบใหม่ "เนื้อเหมือนเดิม" ซ้ำๆ:
        ① destructure ข้างบนมี default `sections: scopeSecs = []` ⇒ ถ้า context ส่ง `undefined`
@@ -2699,8 +2699,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       + 'กด OK = ยืนยันว่าตรวจแล้วและยอดนี้ถูกต้อง · กด Cancel = กลับไปแก้');
   };
 
+  /* 🔐 ชั้น ③ ของ "ปิดกะ / อนุมัติปิดกะ" (13/11 · audit role↔scope P1-7): คีย์ close_shift/approve_close บอกแค่ "กดปุ่มเป็น"
+     กะของไลน์นอกขอบเขตรายคน (บ้าน · CC · มอบหมาย · ใบผ่าน) = ดูได้ ปิดไม่ได้ · ไลน์ไม่อยู่ในทะเบียน = ไม่ปิด */
+  const closeScopeOk = () => {
+    const w = canWriteLine({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits },
+      selSession?.line_name, lines, { unknownTarget: 'block' });
+    if (!w.ok) toast.error(writeBlockText(w, { what: `กะของไลน์ ${selSession?.line_name || ''}` }));
+    return w.ok;
+  };
   const handleCloseSession = async ({ dtConfirmed = false, recheckDone = false } = {}) => {
     if (!selSession) return;
+    if (!closeScopeOk()) return;
 
     /* 🔴 ด่านสุดท้าย — ข้อมูลกะโหลดไม่ครบ ห้ามปิดกะเด็ดขาด (audit 2026-09-02)
        ปิดกะ = stamp A/P/Q + ยอด NG ลงฐานอย่างถาวร · ข้อมูลขาด = stamp ค่าที่ไม่จริง
@@ -3079,6 +3088,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // SV approves pending_close → finalize to 'closed'
   const handleApproveClose = async () => {
     if (!selSession || selSession.status !== 'pending_close') return;
+    if (!closeScopeOk()) return;   // 🔐 ชั้น ③ (13/11)
     /* 🔴 ด่านเดียวกับตอน "ขอปิดกะ" ต้องมีที่นี่ด้วย (เจอจริง 09/11 · หัวหน้าหน้างานแจ้ง)
        ไลน์ขอปิดกะตอนยังไม่มี downtime ใบนั้น → **มีคนมาเพิ่ม downtime ทีหลังตอนใบอยู่ `pending_close`**
        → SV กดอนุมัติ = ปิดกะทั้งที่แถวยังเปิดค้าง ⇒ นาทีที่หยุดไม่ถูกหักเลย (`duration_min` null = 0 นาที)

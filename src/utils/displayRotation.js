@@ -209,9 +209,14 @@ export function sectionsOfProfile(p) {
  * · จอที่ไม่ได้ตั้งส่วนงาน (= เห็นทั้งโรงงาน) = **เฉพาะผู้ตั้งทั้งโรงงาน** (ไม่งั้นแอดมิน PD3 ตั้งจอที่เห็น PD1 ได้)
  * · จอหลายส่วนงาน = ผู้ตั้งต้องครอบ **ทุก** ส่วนงานของจอ
  */
-export function canManageDisplay(managerSections, targetSections) {
-  const mine = (Array.isArray(managerSections) ? managerSections : []).map(normSec).filter(Boolean);
-  if (!mine.length) return true;
+/* 🔴 13/11 (audit role↔scope P1-7): ตัดสินด้วย "หน่วยที่แก้ได้" (`UserContext.writeUnits` = บ้าน ∪ มอบหมาย)
+   + ใบผ่านรายคน (`allUnits`) — เดิมใช้ `sections` (ที่เห็น) และ "ไม่มีส่วนงาน = ตั้งได้ทุกจอ" (fail-open)
+   · ไม่มีหน่วยที่แก้ได้และไม่มีใบผ่าน = ตั้งจอไม่ได้เลย · จอที่ยังไม่ตั้งส่วนงาน (ทั้งโรงงาน) = เฉพาะผู้ถือใบผ่าน
+   ⚠️ ตรรกะต้องตรงกับ `fn_can_manage_display()` ฝั่ง DB (migration 20261113_role_scope_p1 §5) */
+export function canManageDisplay(managerUnits, targetSections, { allUnits = false } = {}) {
+  if (allUnits === true) return true;
+  const mine = (Array.isArray(managerUnits) ? managerUnits : []).map(normSec).filter(Boolean);
+  if (!mine.length) return false;
   const tgt = (Array.isArray(targetSections) ? targetSections : []).map(normSec).filter(Boolean);
   if (!tgt.length) return false;
   return tgt.every(s => mine.includes(s));

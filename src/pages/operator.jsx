@@ -42,7 +42,7 @@ import SkillEditHistory from '../components/SkillEditHistory';
 import { loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { uploadOpts } from '../utils/storageUpload';
-import { checkWrite } from '../utils/dbWrite';
+import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fetchByIds } from '../utils/fetchByIds';
 import SkillEvidencePanel from '../components/SkillEvidencePanel';
 import { DeleteButton } from '../components/IconButton';
@@ -93,7 +93,7 @@ const TAB_KEYS = ['employees', 'skills', 'levelup', 'add'];
 
 export default function Operator() {
   const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName,
-          allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+          allUnits, respCostCenters, scopeIdx, writeUnits } = useContext(UserContext);
   const isLeader = role === 'leader';
   const isSupervisor = role === 'supervisor';
   // ถ้าขอบเขตเหลือ section เดียว → ล็อกฟิลด์ Section ตอนแก้ไขพนักงาน (พฤติกรรม supervisor เดิม)
@@ -132,8 +132,9 @@ export default function Operator() {
   //   ไม่มี → แก้ได้เฉพาะแถวที่ section ตรงกับส่วนงานของตัวเอง
   //   ยังไม่ seed key นี้ → ทุก role แก้ได้หมดเหมือนเดิม (ดู canDelete() ใน permissions.js)
   // หมายเหตุ: เป็นการกันพลาดฝั่ง UI — RLS ระดับ DB ยังไม่รู้จัก section ของพนักงาน
-  const editAllSections = !isActionSeeded('employees', 'edit_all_sections')
-    || can('employees', 'edit_all_sections', role);
+  /* 🔴 13/11 (audit role↔scope): เลิกคีย์ `employees:edit_all_sections` (ชื่อฝังขอบเขต · leader/supervisor/mtn ~70 บัญชี
+     แก้พนักงานทุกแผนกได้) — "แก้คนของหน่วยไหนได้" ตัดสินที่ `canWriteUnit` (บ้าน · CC · มอบหมาย · ใบผ่านรายคน) ที่เดียว
+     ฝั่ง DB: policy employees UPDATE/DELETE ผ่าน `app_can_write_unit(section)` (migration 20261113_role_scope_p1) */
   const homeSection = userSection || scopeSecs[0] || null;
   /* 🔐 ชั้นที่ 3 ของ **ทะเบียนนิยามสกิล** (`skill_definitions.scope_section`) — audit §14 · 20/10
      เดิมมีแค่ชั้น ② (`skills:edit`) ⇒ หัวหน้า PD1 แก้/ลบนิยามสกิลของ PD4 ได้ และ "ลบสกิล"
@@ -143,7 +144,7 @@ export default function Operator() {
         เพราะวัดจริง 20/10: หัวหน้า/leader 4 คนที่ไม่มีใบผ่านข้ามหน่วย แก้สกิลกลางไป 63 ครั้ง
         (สกิลกลาง 23 จาก 70 ตัว = 5ส/ความปลอดภัย/งานทั่วไป) ⇒ บล็อกทันทีคือหยุดงานที่ทำกันอยู่
         **แต่จอต้องเตือนว่ากระทบทุกส่วนงาน** — จะปิดจริงให้ส่ง `{ unknownTarget: 'block' }` ทีเดียวที่ `sdWrite` */
-  const sdCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const sdCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits };
   const sdWrite = (scopeSec) => canWriteUnit(sdCtx, scopeSec);
   const sdGuard = (scopeSec, what) => {
     const w = sdWrite(scopeSec);
@@ -152,8 +153,9 @@ export default function Operator() {
     return false;
   };
   /** แก้แถวนี้ได้ไหม — ต้องมีสิทธิ์ employees:edit และอยู่ในส่วนงานที่ตัวเองดูแล */
+  /* พนักงานที่ไม่ระบุส่วนงาน (สายสนับสนุนขึ้นตรงฝ่าย) = ของกลาง ⇒ เฉพาะผู้ถือใบผ่าน (`unknownTarget:'block'`) */
   const canEditEmp = (emp) => can('employees', 'edit', role)
-    && (editAllSections || (!!homeSection && inSectionScope([homeSection], emp?.section)));
+    && canWriteUnit(sdCtx, emp?.section, { unknownTarget: 'block' }).ok;
   /** สิทธิ์แก้ "สกิล" ของแถวนี้ — แยกจากสิทธิ์แก้ประวัติพนักงาน (feedback หน้างาน 2026-08-19:
    *  ช่างเพิ่มสกิลให้ทีมตัวเองไม่ได้ ทั้งที่ RLS employee_skills เปิด skills:edit ให้แล้ว —
    *  เดิมแผงสกิลไปมัดกับ employees:edit + เทียบ section ซึ่งพนักงานสนับสนุนเป็น null ไม่ตรงกับใครเลย)
@@ -161,8 +163,7 @@ export default function Operator() {
    *  พนักงานสนับสนุนขึ้นตรงฝ่าย (section null) ให้ role หน่วยงานช่างแก้ได้ — MAINTENANCE_ROLES
    *  เห็นทั้งโรงงานตามกฎ scopedLineNames อยู่แล้ว) · RLS ฝั่ง DB ยังคุมชั้นสุดท้ายเสมอ */
   const canEditSkillsFor = (emp) => canEditSkills
-    && (editAllSections
-        || (!!homeSection && inSectionScope([homeSection], emp?.section))
+    && (canWriteUnit(sdCtx, emp?.section, { unknownTarget: 'block' }).ok
         || (!emp?.section && MAINTENANCE_ROLES.includes(role))
         /* 🤝 คนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ — คนที่เห็นเขาทำงานจริงวันนี้คือหัวหน้าไลน์ปลายทาง
            จึงเป็นคนเดียวที่ให้คะแนนทักษะได้ตรงความจริง · จำกัดเวลาในตัวอยู่แล้ว (การยืมหมดอายุเมื่อจบกะ)
@@ -795,8 +796,10 @@ export default function Operator() {
     if (e1) { toast.error('ลบคะแนนสกิลไม่สำเร็จ: ' + e1.message); return; }
     const e2 = (await supabase.from('station_requirements').delete().eq('skill_name', sd.name)).error;
     if (e2) { toast.error('ลบ requirement ไม่สำเร็จ: ' + e2.message); return; }
-    const e3 = (await supabase.from('skill_definitions').delete().eq('id', sd.id)).error;
-    if (e3) { toast.error('ลบสกิลไม่สำเร็จ: ' + e3.message); return; }
+    /* 🔴 นับแถว — RLS ปฏิเสธ DELETE = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2) · เคส 13/11: ถือ `skills:delete`
+       อย่างเดียว ลบคะแนน/requirement ไปแล้วแต่นิยามยังอยู่เงียบๆ = ลบครึ่งเดียว */
+    if (!checkWriteRows(await supabase.from('skill_definitions').delete().eq('id', sd.id).select('id'),
+      `ลบสกิล "${sd.label}" (คะแนน/requirement ถูกลบไปแล้ว — ให้ admin ลบนิยามที่เหลือ)`)) return;
     fetchSkillDefs();
     fetchEmployees();
   };

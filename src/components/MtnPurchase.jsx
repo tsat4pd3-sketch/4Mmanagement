@@ -13,7 +13,8 @@
    🔴 ยกเลิก = status 'cancelled' + เหตุผล — ไม่มีปุ่มลบ (RLS ไม่เปิด DELETE)
    สิทธิ์: เปิด/กรอกเลข/สั่ง/รับ PR = `mtn_repair:service` · ทะเบียน GL = `mtn_repair:manage_master` (ไม่มีคีย์ใหม่)
    ══════════════════════════════════════════════════════════════════════════════════════ */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { UserContext } from '../App';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
@@ -449,7 +450,8 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
      ⇒ ไม่มีด่านเจ้าของ = หัวหน้าแผนกที่ถือ `spare_master` รับของ/ยกเลิกใบของทีมช่างอื่นได้
      (เคสเดียวกับที่ PERMISSIONS-DESIGN §14 เขียนไว้) · เกณฑ์ strict เดียวกับทะเบียนอะไหล่ */
   const strictOwn = can('mtn_repair', 'spare_master', role) && !can('mtn_repair', 'manage_master', role);
-  const ownOf = useCallback((pr) => teamRowOwner(pr, { myTeams, role, strict: strictOwn }), [myTeams, role, strictOwn]);
+  const { allUnits } = useContext(UserContext);   // 🌐 ใบผ่านข้ามหน่วยรายคน (13/11 — เลิกถือว่า manager = บอส)
+  const ownOf = useCallback((pr) => teamRowOwner(pr, { myTeams, role, strict: strictOwn, allUnits }), [myTeams, role, strictOwn, allUnits]);
   const [prs, setPrs] = useState([]);
   const [glCodes, setGlCodes] = useState([]);
   const [err, setErr] = useState(null);

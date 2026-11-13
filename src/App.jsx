@@ -1810,7 +1810,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userAllUnits, userWriteUnits, userScopeIdx, userAssignOverlay, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   useEffect(() => { purgeOldDrafts(); }, []);   // 📝 ร่างฟอร์มหมดอายุ (utils/formDraft.js)
@@ -1944,7 +1944,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     /* 🔐 ชั้นที่ 3 ของสิทธิ์ — "แก้ข้ามหน่วยงานได้ไหม" (15/10 · คำสั่ง user)
        🔴 คนละแกนกับ `sections` (= ขอบเขตที่ **เห็น**) — ตัวตัดสินอยู่ที่ `utils/writeScope.js`
        ⚠️ ต้องมี `permsVersion` ใน deps ไม่งั้นแก้สิทธิ์ที่ /permissions แล้วค่านี้ค้างทั้ง session */
-    allUnits: can('scope', 'all_units', userRole),
+    allUnits: userRole === 'admin' || userAllUnits === true,
+    /* หน่วยที่แก้ได้ (บ้าน ∪ มอบหมาย) — `writeScope.writeUnitsOf()` อ่านช่องนี้ · ว่าง = ถอยไป `section` */
+    writeUnits: userWriteUnits || EMPTY_ARR,
     /* 💰 แกน Cost Center ของชั้นที่ 3 (16/10 · คำสั่ง user "response กับ cost center ไหน ตามลำดับชั้น")
        ตัวตัดสิน = `canWriteScope()` (`utils/ccScope.js`) · ตั้งค่าที่ /add-user ช่อง ④
        🔴 ว่าง = ถอยไปใช้ `section` เหมือนเดิม **ไม่ใช่** "แก้อะไรไม่ได้" */
@@ -1954,7 +1956,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     /* 🔄 ผลการทับด้วยมอบหมาย (`org_assignments`) — จอที่โชว์ "ขอบเขตของฉัน" ต้องเขียนบอกว่ามาจากรักษาการ
        และถ้า `failed` ต้องเขียนว่าอ่านทะเบียน/ผังไม่ได้ (ขอบเขตที่เห็นอยู่ = จาก profiles ล้วน) */
     assignOverlay: userAssignOverlay,
-  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userPosition,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userAllUnits, userWriteUnits, userScopeIdx, userAssignOverlay, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
        userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
@@ -2413,6 +2415,11 @@ export default function App() {
      🔴 ต้องเป็น array ตัวเดิมตราบใดที่ค่าไม่เปลี่ยน — ไม่งั้น UserContext เป็นตัวใหม่ทุก render
         แล้วทุกหน้าที่มี effect ผูกกับ context ยิง DB ซ้ำ (กฎเหล็กการเขียน DB ข้อ 9) */
   const [userRespCcs, setUserRespCcs] = useState(EMPTY_ARR);
+  /* 🌐 ใบผ่านข้ามหน่วย **รายคน** (`profiles.all_units` ∪ มอบหมาย scope_depth='all' · 13/11 คำสั่ง user)
+     — เดิมอ่านจากคีย์ `scope:all_units` ของ role ⇒ "manager = แก้ได้ทั้งโรงงาน" ซึ่งขัดกฎ role ≠ ขอบเขต
+     🔴 `writeUnits` = หน่วยที่ **แก้ได้** (บ้าน ∪ ส่วนงานที่ได้รับมอบ) คนละแกนกับ `sections` (เห็น) · array ตัวเดิมถ้าค่าไม่เปลี่ยน (กฎข้อ 9) */
+  const [userAllUnits, setUserAllUnits] = useState(false);
+  const [userWriteUnits, setUserWriteUnits] = useState(EMPTY_ARR);
   /* 💰 ดัชนีผังของแกน CC — `null` = ไม่ได้ใช้แกนนี้ · `{ failed:true }` = ตั้ง CC ไว้แต่อ่านผังไม่ได้
      🔴 `failed` ต้องแยกจาก `null` ให้ได้ — "อ่านไม่ได้" ต้อง fail-closed ไม่ใช่ถอยไปใช้ส่วนงาน
         (ถอย = คนที่ขอบเขต `sections` เคยกว้างกว่า CC จะได้สิทธิ์คืนมาเงียบๆ) */
@@ -2496,7 +2503,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const COLS = 'role, line_id, full_name, team, section, sections, resp_cost_centers, position, notify_email, signature_url, is_dept_admin, scope_depth';
+    const COLS = 'role, line_id, full_name, team, section, sections, resp_cost_centers, all_units, position, notify_email, signature_url, is_dept_admin, scope_depth';
     // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
@@ -2620,14 +2627,22 @@ export default function App() {
     }
 
     /* ทับขอบเขต — pure · ผังอ่านไม่ได้ = คืนค่าเดิม + failed (ไม่เดา) */
+    const baseAll = data?.all_units === true;
     const overlay = liveAssign.length
-      ? applyAssignments({ sections: baseSections, respCostCenters: baseCcs }, liveAssign,
+      ? applyAssignments({ section: ident.section, sections: baseSections, respCostCenters: baseCcs, allUnits: baseAll }, liveAssign,
           { nodes: nodes || [], ccIdx: nodes ? buildCcIndex(nodes) : null, today })
       : null;
     setUserAssignOverlay(assignErr ? { failed: true, reason: 'registry_unreadable', applied: [] }
       : (overlay && overlay.reason !== 'none' ? { failed: overlay.failed, reason: overlay.reason, applied: overlay.applied } : null));
     const finalSections = overlay ? overlay.sections : baseSections;
     const ccList = overlay ? overlay.respCostCenters : baseCcs;
+    const homeUnit = String(ident.section ?? '').trim();
+    const writeList = overlay ? overlay.writeUnits : (homeUnit ? [homeUnit] : []);
+    setUserAllUnits(overlay ? overlay.allUnits : baseAll);
+    setUserWriteUnits(prev => {
+      if (!writeList.length) return EMPTY_ARR;
+      return prev.length === writeList.length && prev.every((v, i) => v === writeList[i]) ? prev : writeList;
+    });
 
     setUserSections(finalSections);
     setUserRespCcs(prev => {
@@ -2685,7 +2700,7 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
         try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserAssignOverlay(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserAllUnits(false); setUserWriteUnits(EMPTY_ARR); setUserScopeIdx(null); setUserAssignOverlay(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -2767,6 +2782,8 @@ export default function App() {
                 userSection={effSection}
                 userSections={effSections}
                 userRespCcs={userRespCcs}
+                userAllUnits={impersonating ? false : userAllUnits}
+                userWriteUnits={impersonating ? EMPTY_ARR : userWriteUnits}
                 userScopeIdx={userScopeIdx}
                 userAssignOverlay={impersonating ? null : userAssignOverlay}
                 userMtnTeams={effMtnTeams}

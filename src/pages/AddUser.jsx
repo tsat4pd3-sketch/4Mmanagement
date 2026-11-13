@@ -100,7 +100,7 @@ const REF_LABEL = {
   'wip_buffer_points.updated_by':          'จุด WIP เดิม (ผู้แก้)',
 };
 
-const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], homeSection: '', respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
+const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], homeSection: '', respCcs: [], allUnits: false, mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
   // บัญชีของหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี
@@ -209,7 +209,7 @@ export default function AddUser() {
     setFetchingUsers(true);
     const { data: profiles } = await supabase
       .from('profiles')
-      .select('id, full_name, role, position, line_id, section, sections, resp_cost_centers, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src, org_node_id');   // 🪪 org_node_id ต้องมา ไม่งั้น identityDiff() เทียบช่องนั้นไม่ได้แล้วเงียบ
+      .select('id, full_name, role, position, line_id, section, sections, resp_cost_centers, all_units, team, notify_email, employee_id, account_kind, scope_depth, scope_depth_src, org_node_id');   // 🪪 org_node_id ต้องมา ไม่งั้น identityDiff() เทียบช่องนั้นไม่ได้แล้วเงียบ
     /* 🔴 get_auth_users() เป็น admin-only ฝั่ง DB (raise 'forbidden: admin only')
        ⇒ คนที่ /permissions ให้สิทธิ์เข้าหน้านี้แต่ไม่ใช่ role admin จะได้ลิสต์ที่ **ไม่มีอีเมลเลย**
        เดิมกลืน error ⇒ จอโกหกว่า "บัญชีพวกนี้ไม่มีอีเมล" · ต้องเขียนบนจอ (QC audit 08/10) */
@@ -529,6 +529,18 @@ export default function AddUser() {
     return subStepErr('Cost Center ที่รับผิดชอบ', res);
   };
 
+  /* 🌐 ใบผ่านข้ามหน่วย **รายคน** (`profiles.all_units` · 13/11 audit role↔scope · คำสั่ง user)
+     เดิมเป็นคีย์ `scope:all_units` ของ role ⇒ "manager/qa ทั้ง role แก้ได้ทั้งโรงงาน" — ถอดแล้ว ตั้งรายคนที่นี่แทน
+     · ฝั่งจอ `UserContext.allUnits` · ฝั่ง DB `app_all_units()` อ่านช่องเดียวกัน · admin ไม่ต้องตั้ง
+     🔴 trigger `protect_profile_role` กันคนตั้งให้ตัวเอง — เปลี่ยนได้เฉพาะ admin */
+  const saveAllUnits = async (id) => {
+    if (!id) return null;
+    const res = await supabase.from('profiles')
+      .update({ all_units: form.allUnits === true }).eq('id', id).select('id');
+    if (res.error?.code === '42703') return 'ใบผ่านข้ามหน่วย: ยังไม่ได้ apply migration 20261113_role_scope_p1';
+    return subStepErr('ใบผ่านข้ามหน่วย', res);
+  };
+
   // เขียน is_dept_admin แยก best-effort (คอลัมน์เพิ่งเพิ่ม 20260803 · create-user edge ยังไม่รู้จัก field นี้)
   //   role ที่ไม่เข้าเกณฑ์ (admin/display) → false เสมอ · error (ยังไม่ apply migration) = เงียบ
   const saveDeptAdmin = async (id) => {
@@ -643,6 +655,7 @@ export default function AddUser() {
       sections:    (u.sections?.length ? u.sections : (u.section ? [u.section] : [])),
       homeSection: u.section || '',      // บ้านจริงที่เก็บไว้ (บัญชีของคน: ทะเบียนพนักงานชนะตอนบันทึก)
       respCcs:     Array.isArray(u.resp_cost_centers) ? u.resp_cost_centers : [],
+      allUnits:    u.all_units === true,
       scopeDepth:  u.scope_depth || 'unit',
       mtnTeams:    Array.isArray(u.mtn_teams) ? u.mtn_teams : [],
       deptAdmin:   u.is_dept_admin === true,
@@ -705,6 +718,7 @@ export default function AddUser() {
         await saveEmpLink(data.user?.id),
         await saveScopeDepth(data.user?.id),
         await saveRespCcs(data.user?.id),
+        await saveAllUnits(data.user?.id),
       ];
       reportSubSteps(`สร้าง user "${form.email}" (${form.role}) สำเร็จ`, subErrs);
       setShowModal(false);
@@ -813,6 +827,7 @@ export default function AddUser() {
         await saveDeptAdmin(editingId),  // (migration 20260803)
         await saveEmpLink(editingId),    // (migration 20260821)
         await saveRespCcs(editingId),    // (migration 20261016)
+        await saveAllUnits(editingId),   // (migration 20261113 · ใบผ่านข้ามหน่วยรายคน)
       ];
       reportSubSteps('อัปเดตข้อมูลผู้ใช้สำเร็จ', subErrs);
       setShowModal(false);
@@ -1393,6 +1408,12 @@ export default function AddUser() {
                     {u.sections?.length ? u.sections.join(', ') : (u.section || '—')}
                     {/* 💰 ชั้นสิทธิ์ที่ 3 แกน CC — บัญชีที่ตั้งแล้ว "ชนะ" ส่วนงานข้างบน ⇒ ต้องเห็นจากลิสต์
                         ไม่งั้นแอดมินอ่านคอลัมน์นี้แล้วเข้าใจผิดว่าขอบเขตที่แก้ได้คือส่วนงานที่เขียนอยู่ */}
+                    {u.all_units === true && (
+                      <div title="ใบผ่านข้ามหน่วย (profiles.all_units) — แก้ข้อมูลได้ทั้งโรงงาน ไม่ว่าส่วนงาน/CC จะตั้งอะไรไว้"
+                        style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>
+                        🌐 ใบผ่านข้ามหน่วย
+                      </div>
+                    )}
                     {(() => {
                       const own = (u.resp_cost_centers || []).filter(Boolean);
                       if (own.length) return (
@@ -1506,12 +1527,9 @@ export default function AddUser() {
                       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>
                         {sum.all ? '✅ เข้าได้ทุกหน้า' : sum.total === 0 ? '— ยังไม่เปิดสิทธิ์หน้าไหน' : `เข้าได้ ${sum.total} หน้า: ${sum.groups.join(' · ')}`}
                       </div>
-                      {/* 🌐 ใบผ่านข้ามหน่วยงาน — อ่านสดจากตารางสิทธิ์ (ห้ามเขียนเป็นข้อความตายใน roleMeta
-                          ไม่งั้นคำอธิบายกับของจริงเพี้ยนคนละทาง) · ข้อความชุดเดียวกับในโมดัลแก้บัญชี */}
-                      <div style={{ fontSize: 11, marginTop: 1, color: can('scope', 'all_units', r.value) ? 'var(--amber)' : 'var(--muted)' }}>
-                        {can('scope', 'all_units', r.value)
-                          ? '🌐 แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
-                          : '🔒 แก้ได้เฉพาะส่วนงานของตัวเอง (ตั้งที่ช่องขอบเขตส่วนงาน)'}
+                      {/* 13/11: role ไม่มีใบผ่านข้ามหน่วยอีกแล้ว — "แก้ของหน่วยไหนได้" ตั้งรายคนที่ช่อง ④/🌐 ของแต่ละบัญชี */}
+                      <div style={{ fontSize: 11, marginTop: 1, color: 'var(--muted)' }}>
+                        🔒 role = ชุดปุ่ม · แก้ได้เฉพาะหน่วยที่บัญชีนั้นดูแล (ตั้งรายคนที่ช่องขอบเขต / ใบผ่าน 🌐)
                       </div>
                     </div>
                   </div>
@@ -1971,12 +1989,9 @@ export default function AddUser() {
                     </div>
                   );
                 })()}
-                {/* 🔐 ใบผ่านข้ามหน่วยงาน — แอดมินต้องเห็นว่า role นี้แก้ของส่วนงานอื่นได้ไหม (15/10) */}
-                <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5,
-                  color: can('scope', 'all_units', form.role) ? 'var(--amber)' : 'var(--muted)' }}>
-                  {can('scope', 'all_units', form.role)
-                    ? '🌐 role นี้ถือใบผ่าน scope:all_units — แก้ข้อมูลข้ามส่วนงานได้ทั้งโรงงาน'
-                    : '🔒 role นี้แก้ได้เฉพาะหน่วยที่ดูแล (ข้อ ③ ข้างล่าง) — ของหน่วยอื่นดูได้ แต่แก้ไม่ได้'}
+                {/* 13/11: ใบผ่านข้ามหน่วยเป็นของ "บัญชี" ไม่ใช่ของ role — ดูช่อง 🌐 ใต้ Cost Center */}
+                <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.5, color: 'var(--muted)' }}>
+                  🔒 role นี้แก้ได้เฉพาะหน่วยที่บัญชีดูแล (ช่อง ④ ข้างล่าง) — ของหน่วยอื่นดูได้ แต่แก้ไม่ได้ · ยกเว้นติ๊กใบผ่าน 🌐
                 </div>
               </div>
 
@@ -2193,10 +2208,21 @@ export default function AddUser() {
                   {form.respCcs.length === 0
                     ? <>{tr('ยังไม่ติ๊ก —')} {form.sections.length ? <>{tr('ใช้ค่าเดิม:')} <b>{form.sections.join(' · ')}</b></> : <>{tr('เห็นทุกส่วนงาน · แก้ได้แค่ส่วนงานที่สังกัด')}</>}</>
                     : <>{tr('ติ๊กไว้')} <b style={{ color: 'var(--green)' }}>{form.respCcs.length} {tr('หน่วย')}</b> {tr('— เห็น')} {effSections.length} {tr('ส่วนงาน · แก้ได้ตามลำดับชั้นของหน่วยที่ติ๊ก')}</>}
-                  {can('scope', 'all_units', form.role) && (
-                    <><br />{tr('🌐 role นี้ถือ')} <code>scope:all_units</code> {tr('อยู่แล้ว — แก้ได้ทั้งโรงงานไม่ว่าติ๊กอะไรไว้ (ค่าที่ติ๊กยังถูกเก็บไว้ เผื่อถอดใบผ่านทีหลัง)')}</>
-                  )}
                 </div>
+                {/* 🌐 ใบผ่านข้ามหน่วย รายคน (13/11) — แทนคีย์ scope:all_units ของ role ที่ถอดไปแล้ว */}
+                {form.role !== 'admin' && (
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', marginTop: 8, padding: '10px 12px', borderRadius: 8,
+                    background: form.allUnits ? 'var(--amber-dim)' : 'var(--bg3)', border: `1px solid ${form.allUnits ? 'var(--amber-line)' : 'var(--border2)'}` }}>
+                    <input type="checkbox" checked={!!form.allUnits} onChange={e => setF('allUnits', e.target.checked)} style={{ margin: '3px 0 0', width: 'auto' }} />
+                    <div style={{ fontSize: 12, lineHeight: 1.55 }}>
+                      <b style={{ color: form.allUnits ? 'var(--amber)' : 'var(--text)' }}>🌐 ใบผ่านข้ามหน่วย — แก้ข้อมูลได้ทั้งโรงงาน</b>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                        ให้เฉพาะคนที่งานเป็นงานทั้งโรงงานจริง (คลัง/จัดส่ง · วางแผน · วิศวกรรม) · ไม่ติ๊ก = แก้ได้ตาม Cost Center ที่ติ๊ก / ส่วนงานที่สังกัด
+                        · <b>role ไม่ได้ให้สิทธิ์นี้อีกแล้ว</b> (manager ≠ แก้ข้ามแผนก) · ค่าที่ติ๊กข้างบนยังเก็บไว้ เผื่อถอดใบผ่านทีหลัง
+                      </div>
+                    </div>
+                  </label>
+                )}
                 {ccUnknown.length > 0 && (
                   <div style={{ fontSize: 11, marginTop: 4, padding: '6px 9px', borderRadius: 'var(--r-md)', lineHeight: 1.6,
                     background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>

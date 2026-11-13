@@ -7,6 +7,7 @@ import { supabase } from '../supabaseClient';
    ซึ่งเป็นบั๊กคลาสเดียวกับที่เพิ่งแก้ไป 13/10 (ไลน์ลูกไม่ตกทอดกะจากไลน์แม่) */
 import { staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '../utils/staffKind';
 import { UserContext } from '../App';
+import { canWriteLine } from '../utils/writeScope';   // 🔐 ชั้น ③ ตอนบันทึกกะ (13/11)
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
@@ -43,7 +44,7 @@ function toDateStr(d) {
 }
 
 export default function ShiftOrganize() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection, scopeIdx } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection, scopeIdx, allUnits, respCostCenters, writeUnits } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
   // 🏢 แก้ตารางกะ "หน่วยงานสนับสนุน" แยกคีย์ได้ — หัวหน้าทีมช่างตั้งกะแผนกตัวเองได้
   // โดยไม่ได้สิทธิ์แตะกะไลน์ผลิต/override รายคน/ยุบกะ (migration 20260820_shift_schedule_edit_dept)
@@ -296,6 +297,17 @@ export default function ShiftOrganize() {
       const pid = parentIdOf(l.id);
       if (pid != null && !manualOf(l.id) && pending[pid] !== undefined) affected.add(l.id);
     });
+    /* 🔐 ชั้น ③ (13/11 · audit P1-5): "เห็นไลน์" ≠ "ตั้งกะไลน์นั้นได้" — เขียนเฉพาะไลน์ในขอบเขตรายคน
+       (บ้าน · CC · มอบหมาย · ใบผ่าน) · ไลน์ที่ถูกตัดต้องเขียนบนจอ ห้ามเงียบ (ฝั่ง DB ยังเป็น has_perm อย่างเดียว = known gap) */
+    const wCtx = { role, section: mySection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits };
+    const blockedLines = [];
+    [...affected].forEach(id => {
+      const l = lines.find(x => Number(x.id) === Number(id));
+      if (!canWriteLine(wCtx, l?.name, lines).ok) { affected.delete(id); blockedLines.push(l?.name || `#${id}`); }
+    });
+    if (blockedLines.length) {
+      toast.error(`ไม่บันทึกกะของ ${blockedLines.length} ไลน์ที่อยู่นอกส่วนงานที่คุณดูแล: ${blockedLines.slice(0, 4).join(' · ')}${blockedLines.length > 4 ? ' …' : ''} (ดูได้ แต่ตั้งกะไม่ได้)`);
+    }
     // Apply the same team to every day of the selected week
     const rows = [];
     affected.forEach(id => {

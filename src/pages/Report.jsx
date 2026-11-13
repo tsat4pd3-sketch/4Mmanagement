@@ -7,6 +7,7 @@ import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับค�
 import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';   // 👨‍🔧 หัวหน้างานของไลน์ (หลายคน/หลายกะ)
 import { buildScheduleMaps } from '../utils/shiftAssign';
 import { UserContext } from '../App';
+import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้น ③ ของใบ 4M (13/11)
 import { confirmSign } from '../utils/signConfirm';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
@@ -1500,7 +1501,10 @@ const STATUS_META = {
 /* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
    ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
 function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '', scopeIdx } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '', section: homeSection, allUnits, respCostCenters, scopeIdx, writeUnits } = useContext(UserContext);
+  /* 🔐 ชั้น ③ ของใบ 4M (13/11 · audit role↔scope): ขอบเขตการ "อนุมัติ/reset" มาจากขอบเขตรายคน
+     (บ้าน · CC · มอบหมาย · ใบผ่าน) ผ่าน `canWriteLine` — เดิมใช้ `sections` (ที่เห็น) + ทางลัด role==='manager' */
+  const wCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits };
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
@@ -1509,23 +1513,17 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     // QA step — action gate ผ่านตาราง permission (admin/manager/qa ไม่ scope เหมือนเดิม)
     if (log.status === 'pending_qa') return can('four_m', 'approve_qa', role);
     if (log.status !== 'pending') return false;
-    // SV step — สิทธิ์ action มาจาก can() ส่วน scoping ยังเป็นตาม role เดิมทุกประการ
+    // SV step — สิทธิ์ action มาจาก can() · ขอบเขต = ชั้น ③ รายคน (canWriteLine) ไม่ใช่ role/sections
     if (!can('four_m', 'approve_sv', role)) return false;
-    if (role === 'admin') return true;
     if (role === 'leader') {
       const myLine = lines.find(l => l.id === userLineId);
       if (!myLine) return false;
       // ครอบครัวไลน์ (ตัวเอง + ไลน์หลัก + ไลน์ย่อย) — leader ไลน์ย่อยต้องอนุมัติ log ที่เกิดจาก
-      // การจัดคนลงจุดของไลน์หลัก (พื้นที่เดียวกัน) ได้ด้วย ไม่ใช่แค่สายลงอย่างเดียว
+      // การจัดคนลงจุดของไลน์หลัก (พื้นที่เดียวกัน) ได้ด้วย · ไลน์ที่ผูก = ขอบเขตรายคนของหัวหน้ากลุ่ม
       return lineFamilyOf(myLine.name).includes(log.line_name);
     }
-    // role ที่ถูกจำกัดขอบเขตส่วนงาน (supervisor เดิม + manager/qa ที่กำหนด sections) — อนุมัติได้เฉพาะใน scope
-    if (scopeSecs.length) {
-      const logLine = lines.find(l => l.name === log.line_name);
-      return inSectionScope(scopeSecs, logLine?.section);
-    }
-    if (role === 'manager') return true; // manager ไม่กำหนด scope = ไม่จำกัด เหมือนเดิม
-    return false; // supervisor ที่ไม่มี section = fail-closed เหมือนเดิม
+    // 🔴 ไม่รู้ไลน์ของใบ = ไม่ให้อนุมัติ (ใบ 4M ทุกใบผูกไลน์) · ของหน่วยอื่น = เห็นได้ แต่กดไม่ได้
+    return canWriteLine(wCtx, log.line_name, lines, { unknownTarget: 'block' }).ok;
   };
 
   const today = getWorkDate();
@@ -2190,6 +2188,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                       ) : (
                         can('four_m', 'reset', role) && (
                           <button onClick={async () => {
+                            /* 🔐 ชั้น ③ (13/11): reset ใบของไลน์นอกขอบเขตไม่ได้ — คีย์ reset บอกแค่ "กดปุ่มเป็น" */
+                            const wr = canWriteLine(wCtx, l.line_name, lines, { unknownTarget: 'block' });
+                            if (!wr.ok) { toast.error(writeBlockText(wr, { what: `ใบ 4M ของไลน์ ${l.line_name}` })); return; }
                             // Reset = status change → ต้องเคลียร์รูป QA เดิม (ลบไฟล์ด้วย) + แจ้ง Telegram + เช็ค error
                             const oldQaUrl = l.qa_image_url;
                             /* 🔴 นับแถว ไม่ใช่ดูแค่ error — RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error

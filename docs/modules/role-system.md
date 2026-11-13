@@ -168,7 +168,7 @@ manager 3 · doc_control 2 · display 1 · planner_store 1 — ที่เห�
 >
 > #### ⚠️ กฎเหล็ก — "เห็นได้ทั้งโรงงาน แต่แก้ได้เฉพาะส่วนงานตัวเอง" ห้ามใช้ `profiles.sections` ทำ (2026-08-17)
 > **`sections` เป็น scope ระดับทั้งระบบ ไม่ใช่ตัวกรองเฉพาะหน้าพนักงาน** — หน่วยงานสนับสนุน (คลัง/สโตร์ = section `Planning&Store`) **ไม่มีไลน์ผลิตสังกัดอยู่เลย** → ตั้ง `sections=['Planning&Store']` เมื่อไหร่ หน้าที่กรองด้วย section (**StoreMonitor · Dashboard · Report** — ตรวจโค้ดซ้ำ 2026-08-24: `PlannerSales`/`RundownStock` **ไม่ได้อ่าน `sections` เลย** จึงไม่กระทบ ที่เคยเขียนไว้ว่ากระทบด้วยคือผิด) เหลือ **0 แถวทันที** = พังงานประจำวันของเขาเอง แลกกับการซ่อนรายชื่อพนักงานฝ่ายผลิต
-> - **กลไกที่ถูก: คีย์ `employees:edit_all_sections`** (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
+> - ~~**กลไกที่ถูก: คีย์ `employees:edit_all_sections`**~~ **13/11: คีย์นี้ถูกถอดแล้ว** — "แก้คนของหน่วยไหนได้" ตัดสินที่ `canWriteUnit()` (บ้าน · CC · มอบหมาย · ใบผ่านรายคน) + DB `app_can_write_unit(section)` (📄 `permission-scope-audit.md` §16) · ประวัติ: (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
 > - **ใช้ `profiles.section` เดี่ยว ไม่ใช่ `sections[]` โดยตั้งใจ** — `effectiveSections()` ข้อ 5 บอกว่า "role อื่นที่มีแค่ section เดี่ยว → ไม่จำกัด" → **scope ทั้งระบบคงเดิมเป๊ะ** ได้ค่า "ส่วนงานของฉัน" มาใช้ฟรีๆ · **ห้ามเผลอย้ายค่านี้ไปใส่ `sections[]`**
 > - seed = ทุก role ที่เคยแก้ได้ `true` → **พฤติกรรมเดิมไม่เปลี่ยนสำหรับใครเลย** · UI เช็คผ่าน `isActionSeeded()` → ก่อน apply migration ทุก role แก้ได้หมดเหมือนเดิม (pattern เดียวกับ `canDelete()`)
 > - **role ใหม่ที่ยังไม่มีแถว = ถูกจำกัดตามส่วนงาน (fail-safe ฝั่งแคบกว่า)** — ถ้า role ใหม่ต้องแก้ข้ามส่วนงาน ต้องติ๊กที่ `/permissions`
@@ -874,7 +874,7 @@ migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว
 | ตาราง | cmd | predicate | ปุ่มเจ้าของ |
 |---|---|---|---|
 | `employees` | INSERT | `employees:register` **or** `page:/add-user` | Register.jsx · AddUser.jsx |
-| `employees` | UPDATE | OR 7 คีย์ (`employees:edit`/`:deactivate`/`:edit_all_sections` · `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
+| `employees` | UPDATE | (`employees:edit` ∨ `:deactivate`) **∧ `app_can_write_unit(section)`** · หรือ `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run` (13/11 · เลิก `edit_all_sections`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
 | `employees` | DELETE | `employees:deactivate` | **ไม่มีจอไหนลบ** — ของจริงคือ soft-delete `is_active=false` |
 | `workstations` | ALL | `line_setup:edit` | LineSetup.jsx |
 | `station_requirements` | ALL | `line_setup:edit` **or** `skills:delete` | LineSetup · operator.jsx:748 |

@@ -8,7 +8,8 @@
      ไม่กรอก Rank เอง (แต่ override ได้พร้อมเหตุผล)
    - ตำแหน่งชั้นวาง (shelf) ใช้ "รหัสเดียวกันทั้งคลัง" — เลือกช่องจากผังคลัง mtn_rack_cells ผ่าน <SearchSelect> (2026-09-07)
      — เป็นกุญแจที่แผนผังคลัง (rack map) จะใช้จับคู่ในเฟสถัดไป */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
+import { UserContext } from '../App';
 import ReadOnlyNote from './ReadOnlyNote';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
@@ -117,7 +118,8 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
             user: *"ให้เพิ่มได้ แต่จะลบมั่วไม่ได้ … เห็นข้ามกันหมด แต่ลบข้ามกันไม่ได้"*
      ⇒ **เห็นทุกทีมเหมือนเดิม** (ตั้งใจ — ช่างต้องค้นของข้ามทีมได้) แต่ ✏️/🗑 เฉพาะของทีมตัวเอง
      กฎเดียวกับทะเบียนข้อมูลหลักใน `/mtn-repair?tab=master` เป๊ะ (`utils/mtnTeamOwn.js`) */
-  const ownOf = useCallback((p) => teamRowOwner(p, { myTeams, role, strict: strictOwn }), [myTeams, role, strictOwn]);
+  const { allUnits } = useContext(UserContext);   // 🌐 ใบผ่านข้ามหน่วยรายคน (13/11 — เลิกถือว่า manager = บอส)
+  const ownOf = useCallback((p) => teamRowOwner(p, { myTeams, role, strict: strictOwn, allUnits }), [myTeams, role, strictOwn, allUnits]);
   /* ทีมตั้งต้นตอน "เพิ่มอะไหล่" = ทีมของ user ถ้าสังกัดทีมเดียว · ไม่งั้นใช้ทีมที่กรองอยู่
      (เดิม default เป็น 'maintenance' เสมอ ⇒ หัวหน้าผลิตเพิ่มของแล้วไปโผล่คลัง MTN เงียบๆ) */
   const defTeam = (myTeams.length === 1 ? teamKeyOf(myTeams[0]) : '') || fTeam || 'maintenance';

@@ -23,7 +23,7 @@ const EMOJI_SUGGESTIONS = ['👁', '👂', '✋', '📏', '📐', '🔧', '🔩'
 // เพิ่มชนิดใหม่ที่ master แล้ว modal นี้ตกหล่น) · l ใช้ label ไทยตาม master
 const EQUIP_TYPE_OPTS = EQUIPMENT_KINDS.map(k => ({ k: k.key, l: `${k.icon} ${k.label}` }))
 
-export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, role = null, myTeams = [], onClose, onChanged }) {
+export default function TaxonomyManagerModal({ table, title, extraField = 'color', withEquipTypes = false, teams = null, role = null, myTeams = [], allUnits = false, onClose, onChanged }) {
   const [rows, setRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(null) // row object or 'new'
@@ -34,9 +34,9 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
   /* ล็อกตามเจ้าของ — กติกาเดียวกับ SimpleList ใน /mtn-repair (ดู CLAUDE.md
      "master ของทีมช่าง ใครเป็นเจ้าของ คนนั้นแก้") · แถวของทีมอื่น = ดูอย่างเดียว
-     · แถว 🌐 ของกลาง = admin/manager เท่านั้น (แก้ทีเดียวกระทบทุกทีม)
+     · แถว 🌐 ของกลาง = admin/ผู้ถือใบผ่านข้ามหน่วยเท่านั้น (แก้ทีเดียวกระทบทุกทีม)
      ⚠️ ยังไม่ได้ตั้งทีมให้ user (myTeams ว่าง) = ไม่ล็อก ไม่งั้นช่างทำงานไม่ได้ */
-  const isBoss = role === 'admin' || role === 'manager'
+  const isBoss = role === 'admin' || allUnits === true   // 13/11: บอส = ใบผ่านข้ามหน่วยรายคน ไม่ใช่ชื่อ role (manager ≠ แก้ข้ามทีม)
   const myKeys = (myTeams || []).map(teamKeyOf).filter(Boolean)
   const unscoped = !withTeam || myKeys.length === 0
   const canEditRow = (r) => {

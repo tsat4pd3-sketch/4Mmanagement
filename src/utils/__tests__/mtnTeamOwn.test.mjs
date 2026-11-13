@@ -18,11 +18,12 @@ test('🔴 dept_admin (หัวหน้าแผนกผลิต) ลบข�
   assert.equal(teamRowOwnerKeys('production', PD, 'dept_admin').ok, true);
 });
 
-test('แถว 🌐 ของกลาง (ไม่มีทีม) = เฉพาะ admin/manager', () => {
+test('แถว 🌐 ของกลาง (ไม่มีทีม) = เฉพาะ admin / ผู้ถือใบผ่านข้ามหน่วยรายคน — manager ไม่ใช่บอสอีกแล้ว (13/11)', () => {
   assert.deepEqual(teamRowOwnerKeys('', PD, 'supervisor'), { ok: false, code: 'common' });
   assert.deepEqual(teamRowOwnerKeys(null, PD, 'mtn'), { ok: false, code: 'common' });
   assert.deepEqual(teamRowOwnerKeys('', PD, 'admin'), { ok: true, code: 'boss' });
-  assert.deepEqual(teamRowOwnerKeys('', PD, 'manager'), { ok: true, code: 'boss' });
+  assert.deepEqual(teamRowOwnerKeys('', PD, 'manager'), { ok: false, code: 'common' }, 'role manager ไม่ใช่ทางลัดข้ามทีม');
+  assert.deepEqual(teamRowOwnerKeys('', PD, 'manager', { allUnits: true }), { ok: true, code: 'boss' }, 'ใบผ่านรายคนเท่านั้น');
 });
 
 test('🔴 fallback: ยังไม่ตั้ง mtn_teams = ไม่ล็อก (ห้ามเปลี่ยนเป็น false — ช่างจะทำอะไรไม่ได้ทั้งระบบ)', () => {
@@ -47,8 +48,9 @@ test('strict — ไม่มีทีม = แก้/ลบของเดิ�
   // ตั้งทีมแล้วกลับมาทำงานตามกฎปกติ
   assert.equal(teamRowOwnerKeys('production', PD, 'supervisor', { strict: true }).ok, true);
   assert.equal(teamRowOwnerKeys('maintenance', PD, 'supervisor', { strict: true }).ok, false);
-  // หัวหน้ายังผ่านเหมือนเดิม
-  assert.equal(teamRowOwnerKeys('maintenance', [], 'manager', { strict: true }).ok, true);
+  // ผู้ถือใบผ่านข้ามหน่วยยังผ่าน · manager เปล่าๆ ไม่ผ่าน (13/11)
+  assert.equal(teamRowOwnerKeys('maintenance', [], 'manager', { strict: true, allUnits: true }).ok, true);
+  assert.equal(teamRowOwnerKeys('maintenance', [], 'manager', { strict: true }).ok, false);
 });
 
 test('🔴 strict ต้องไม่เปลี่ยนพฤติกรรมเดิม — ไม่ส่ง strict = unscoped เหมือนก่อน', () => {

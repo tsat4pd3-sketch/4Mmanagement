@@ -4,6 +4,7 @@ import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้น ③ ตอนลบไลน์ (13/11)
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
@@ -68,7 +69,7 @@ const POINT_H = 46;
 export default function LineSetup({ embedded = false } = {}) {
   // embedded=true เมื่อฝังในแท็บ "ผลิต" ของ /layout-setup — ปรับ height/padding ให้พอดีในกรอบแท็บ (ไม่ใช้ 100vh)
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx, section: homeSection, allUnits, respCostCenters, writeUnits } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
@@ -454,6 +455,11 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleDeleteLine = async (line) => {
+    /* 🔐 ชั้น ③ (13/11 · audit P1-7): `line_setup:delete` บอกแค่ "กดปุ่มเป็น" — ลบไลน์ของส่วนงานอื่นไม่ได้
+       ไลน์ที่ยังไม่ระบุส่วนงาน = ของกลาง ⇒ เฉพาะผู้ถือใบผ่าน (block) */
+    const wDel = canWriteUnit({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits },
+      line.section, { unknownTarget: 'block' });
+    if (!wDel.ok) { toast.error(writeBlockText(wDel, { what: `ไลน์ ${line.name}`, unit: line.section || '' })); return; }
     const childCount = lines.filter(l => l.parent_line_name === line.name).length;
     const warn = childCount > 0 ? `\n\nไลน์นี้เป็นไลน์หลักของ ${childCount} ไลน์ลูก — ลูกจะถูกเปลี่ยนเป็น standalone อัตโนมัติ` : '';
     if (!window.confirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย${warn}`)) return;

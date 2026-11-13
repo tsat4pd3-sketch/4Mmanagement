@@ -95,9 +95,11 @@ test('resolveIndex — รอบที่มีหน้าซ้ำ (A,B,A) ต
 
 import { canManageDisplay, sectionsOfProfile, parseDisplayCmd, queryParamsOf, withQueryParams, paramSummary, DISPLAY_PAGE_PARAMS } from '../displayRotation.js';
 
-test('canManageDisplay — แอดมินส่วนงานตั้งได้เฉพาะจอของส่วนงานตัวเอง', () => {
-  assert.equal(canManageDisplay([], ['PD1']), true);            // ทั้งโรงงาน
-  assert.equal(canManageDisplay([], []), true);
+test('canManageDisplay — ตั้งได้เฉพาะจอของหน่วยที่ "แก้ได้" · ไม่มีหน่วย = ตั้งไม่ได้ · ใบผ่านรายคน = ทุกจอ (13/11)', () => {
+  assert.equal(canManageDisplay([], ['PD1']), false);           // ไม่มีหน่วยที่แก้ได้และไม่มีใบผ่าน = ตั้งไม่ได้ (เดิม fail-open)
+  assert.equal(canManageDisplay([], []), false);
+  assert.equal(canManageDisplay([], ['PD1'], { allUnits: true }), true);   // ใบผ่านข้ามหน่วย = ทุกจอ
+  assert.equal(canManageDisplay(['PD3'], [], { allUnits: true }), true);
   assert.equal(canManageDisplay(['PD3'], ['PD3']), true);
   assert.equal(canManageDisplay(['pd3 '], ['PD3']), true);      // ตัวพิมพ์/ช่องว่าง
   assert.equal(canManageDisplay(['PD3'], ['PD1']), false);      // ข้ามส่วนงาน

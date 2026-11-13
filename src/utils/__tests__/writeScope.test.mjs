@@ -21,11 +21,19 @@ test('🔴 เคสที่ user แจ้ง — ช่างที่ sectio
   assert.equal(canWriteUnit(MTN, 'PD3').code, 'other_unit');
 });
 
-test('sections ชนะ section เมื่อมีค่า (คนที่ถูกตั้งขอบเขตหลายส่วนงาน)', () => {
+test('🔴 13/11 — `sections` (ขอบเขตที่เห็น) ห้ามตัดสินการแก้ · แก้ได้ = บ้าน ∪ writeUnits จากมอบหมาย', () => {
   const m = { role: 'manager', section: 'PD1', sections: ['PD1', 'PD2'] };
-  assert.deepEqual(writeUnitsOf(m), ['PD1', 'PD2']);
-  assert.equal(canWriteUnit(m, 'PD2').ok, true);
-  assert.equal(canWriteUnit(m, 'PD4').ok, false);
+  assert.deepEqual(writeUnitsOf(m), ['PD1'], 'มี sections กว้างกว่าบ้าน ก็ยังแก้ได้แค่บ้าน');
+  assert.equal(canWriteUnit(m, 'PD2').ok, false, 'เห็น PD2 ≠ แก้ PD2 ได้');
+  assert.equal(canWriteUnit(m, 'PD1').ok, true);
+  // รักษาการ/รับผิดชอบเพิ่ม (org_assignments) ส่งมาเป็น writeUnits — ตัวเดียวที่ขยายการแก้นอกบ้าน
+  const acting = { role: 'supervisor', section: 'PD1', sections: ['PD1', 'PD2', 'PD3'], writeUnits: ['PD1', 'PD2'] };
+  assert.deepEqual(writeUnitsOf(acting), ['PD1', 'PD2']);
+  assert.equal(canWriteUnit(acting, 'PD2').ok, true);
+  assert.equal(canWriteUnit(acting, 'PD3').ok, false, 'เห็น PD3 แต่ไม่ได้รับมอบ = แก้ไม่ได้');
+  // manager ไม่ได้แปลว่าแก้ข้ามแผนกได้ — ไม่มีทางลัดจากชื่อ role
+  assert.equal(hasAllUnits({ role: 'manager' }), false);
+  assert.equal(hasAllUnits({ role: 'manager', allUnits: true }).valueOf(), true, 'ใบผ่านรายคนเท่านั้นที่เปิด');
 });
 
 test('คีย์ scope:all_units = ผ่านทุกหน่วย · admin เป็นตาข่ายกันตาย', () => {
