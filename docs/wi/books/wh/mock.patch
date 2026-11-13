@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -466,6 +466,8 @@
+@@ -501,6 +501,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -9,7 +9,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -966,6 +968,77 @@
+@@ -1023,6 +1025,77 @@
      { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
    ],
  }

@@ -129,6 +129,7 @@
   "p": "LineStock",
   "q": "tab=count",
   "marks": [
+   "ติดตาม / กระทบยอด",
    "ตรวจนับ/เฟิร์มยอด",
    "ส่งลูกค้าแล้ว แต่ยังไม่ถูกหัก"
   ]
@@ -261,6 +262,7 @@
   "p": "ProductMaster",
   "q": "tab=packaging",
   "marks": [
+   "Product",
    "Packaging",
    "จัดการภาชนะ (Container Types)"
   ]
