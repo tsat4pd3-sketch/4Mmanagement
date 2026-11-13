@@ -29,7 +29,8 @@ import { SKILL_LEVELS, getLevel } from '../utils/skillLevels';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { visibleInterval } from '../utils/usePolling';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct } from '../utils/heijunkaQueue';
+import PlanSlipFrame from '../components/PlanSlipFrame';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
@@ -1772,14 +1773,7 @@ export default function Dashboard({ view = 'timeline' }) {
                          🔴 **วาดทุกใบ** — กรอบคือเส้นอ้างอิงที่ต้องอยู่เสมอ คนถึงจะเทียบได้ว่าแท่งจริง
                             "ล้นออกขวาเท่าไหร่ = หลุดเท่านั้น" (ใบที่ตรงแผน กรอบจะทับแท่งพอดี = เหมือนเส้นขอบ ไม่รก)
                          · `slipped` ใช้เน้นเฉพาะใบที่หลุดจริง (กรอบเข้ม + เส้นปิดท้ายกรอบให้เห็นจุดที่แผนจบ) */
-                      let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
-                      if (item.planStartMs != null && item.plannedEndMs != null) {
-                        const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
-                        const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
-                        if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
-                        planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
-                          || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
-                      }
+                      const { planLeftPct, planWidthPct, planSlipped } = planFramePct(item, hs, pctPerMs);
                       return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
                     };
 
@@ -1921,20 +1915,10 @@ export default function Dashboard({ view = 'timeline' }) {
                               </div>
                               )}
                             </div>
-                            {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (เส้นประเทา ไม่ทึบ ไม่แย่งสายตากับสถานะ)
-                                วาดเฉพาะใบที่หลุดกรอบ ⇒ ระยะห่างระหว่างกรอบกับแถบจริง = ขนาดที่หลุด เห็นด้วยตาเปล่า */}
-                            {planWidthPct > 0 && (
-                              <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
-                                style={{
-                                  position: 'absolute', top: 1, bottom: 1,
-                                  left: `${planLeftPct}%`, width: `${planWidthPct}%`,
-                                  /* 🔴 ใบที่หลุดกรอบ วาดกรอบ **ทับแท่ง** (z=2) ให้เห็นเป็นกล่องชัดๆ ว่า "แผนจบตรงนี้"
-                                     แล้วส่วนที่ยื่นพ้นกล่อง = ที่หลุด (ตรงกับภาพร่าง user)
-                                     · ใบที่ตรงแผน วาดไว้ข้างหลัง (z=0) จางๆ ไม่งั้นทุกใบมีเส้นประล้อม = จอรก */
-                                  border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? 'var(--text)' : 'var(--muted)'}`, borderRadius: 'var(--r-xs)',
-                                  opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none',
-                                }} />
-                            )}
+                            {/* 🖼️ กรอบคิวตามอุดมคติของใบนี้ — ตัววาดตัวเดียวทั้งระบบ (ห้ามวาดเองในหน้า) */}
+                            <PlanSlipFrame planLeftPct={planLeftPct} planWidthPct={planWidthPct} planSlipped={planSlipped}
+                              planStartMs={planStartMs} plannedEndMs={plannedEndMs}
+                              startMs={startMs} realEndMs={realEndMs} occupiedEndMs={occupiedEndMs} fmtMs={fmtMs} />
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                             {tailWidthPct > 0 && (
                               <div title={tr('ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่')}

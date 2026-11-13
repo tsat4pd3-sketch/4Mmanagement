@@ -10645,3 +10645,42 @@ test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสีย�
     '\n\n❌ จอ KPI ต้องวาดถัง "ยังไม่ระบุ" เป็นช่องที่มองเห็น (unknownHr)\n'
     + '   ซ่อน = คนอ่านคิดว่าติ๊กครบแล้ว ทั้งที่ยังไม่มีใครตัดสิน\n');
 });
+
+test('🖼️ plan-slip-frame-single-entry — กรอบ "คิวตามอุดมคติ" ต้องมีสูตร/ตัววาดชุดเดียว', () => {
+  const bad = [];
+  const read = (rel) => stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  const pages = ['src/pages/Management.jsx', 'src/pages/Dashboard.jsx'];
+
+  for (const rel of pages) {
+    const src = read(rel);
+    /* 🔴 ห้ามคิดพิกัดกรอบเองในหน้า — เดิมก๊อปไว้ 2 หน้าแล้ว "สีเพี้ยนกัน" โดยไม่มีใครรู้ */
+    if (/planSlipped\s*=\s*\(item\.startMs - item\.planStartMs\)/.test(src))
+      bad.push(`${rel} (คิด planSlipped เองในหน้า — ต้องใช้ planFramePct() จาก utils/heijunkaQueue.js)`);
+    /* 🔴 ห้ามวาดกรอบเอง — ต้องผ่าน <PlanSlipFrame> ตัวเดียว */
+    if (/planSlipped \? 2 : 1/.test(src))
+      bad.push(`${rel} (วาดกรอบเองในหน้า — ต้องใช้ <PlanSlipFrame>)`);
+    if (/planFramePct\(/.test(src) && !/<PlanSlipFrame\b/.test(src))
+      bad.push(`${rel} (คิดพิกัดแล้วแต่ไม่ได้วาดด้วย <PlanSlipFrame>)`);
+  }
+
+  const frame = read('src/components/PlanSlipFrame.jsx');
+  /* 🔴 สีต้องมาจาก token — ฮาร์ดโค้ดสีธีมมืด (#e5e7eb) ทำให้ใบที่ "หลุดแผน" หายไปบนธีมสว่าง
+     = สัญญาณกับสิ่งรบกวนสลับที่กัน (เจอจากภาพหน้าจอ user 13/11) */
+  if (/#[0-9a-fA-F]{3,8}\b/.test(frame))
+    bad.push('src/components/PlanSlipFrame.jsx (มีสีดิบ — ต้องใช้ var(--text)/var(--muted) เท่านั้น)');
+  if (!/var\(--text\)/.test(frame) || !/var\(--muted\)/.test(frame))
+    bad.push('src/components/PlanSlipFrame.jsx (ไม่ได้ใช้ token สีของธีม)');
+  /* 🔴 ไม่รู้กรอบ = ไม่วาด (ห้ามวาดกล่องกว้าง 0 ทิ้งไว้) */
+  if (!/planWidthPct > 0/.test(frame))
+    bad.push('src/components/PlanSlipFrame.jsx (ไม่ได้กันกรณีไม่มีกรอบให้วาด)');
+
+  const q = read('src/utils/heijunkaQueue.js');
+  if (!/export function planFramePct/.test(q))
+    bad.push('src/utils/heijunkaQueue.js (ไม่มี planFramePct() — เจ้าของสูตรหายไป)');
+
+  assert.deepEqual(bad, [], 'กรอบคิวตามอุดมคติผิดกติกา:\n' + bad.join('\n')
+    + '\nwhy: 13/11 สูตรถูกก๊อปไว้ 2 หน้า แล้ว Management ฮาร์ดโค้ด #e5e7eb (สีธีมมืด)'
+    + ' ⇒ บนจอธีมสว่างที่หน้างานใช้ กรอบของใบที่หลุดแผนแทบมองไม่เห็น แต่ใบที่ตรงแผนเห็นชัด'
+    + '\nfix: พิกัดจาก planFramePct() (utils/heijunkaQueue.js) · วาดด้วย <PlanSlipFrame> เท่านั้น'
+    + '\n     📄 docs/modules/production-plan.md §กรอบคิวตามอุดมคติ');
+});

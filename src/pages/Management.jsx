@@ -28,10 +28,11 @@ import useIsMobile from '../utils/useIsMobile';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
-import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
+import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf, planFramePct } from '../utils/heijunkaQueue';
 import { matchPlanToActual } from '../utils/planLots';
 import PlanFrameBar from '../components/PlanFrameBar';
 import PlanFrameRow from '../components/PlanFrameRow';
+import PlanSlipFrame from '../components/PlanSlipFrame';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
 import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
@@ -1693,15 +1694,9 @@ export default function Management() {
               tailLeftPct = tLeft;
               tailWidthPct = Math.max(0, tRight - tLeft);
             }
-            /* 🖼️ กรอบแผน — **วาดทุกใบ** (ภาพร่าง user 30/09) · ดูเหตุผลเต็มใน Dashboard.jsx */
-            let planLeftPct = 0, planWidthPct = 0, planSlipped = false;
-            if (item.planStartMs != null && item.plannedEndMs != null) {
-              const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
-              const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
-              if (pr > pl) { planLeftPct = pl; planWidthPct = pr - pl; }
-              planSlipped = (item.startMs - item.planStartMs) > 2 * 60000
-                || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > 2 * 60000;
-            }
+            /* 🖼️ กรอบคิวตามอุดมคติ — สูตรเดียวทั้งระบบ (`planFramePct`) **ห้ามคิดพิกัดเองในหน้า**
+               เดิมก๊อปไว้ 2 หน้าแล้วสีเพี้ยนกัน (13/11) ⇒ ย้ายมาที่เดียว · ดู heijunkaQueue.js */
+            const { planLeftPct, planWidthPct, planSlipped } = planFramePct(item, hs, pctPerMs);
             return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
           };
 
@@ -2101,14 +2096,10 @@ export default function Management() {
                                 </div>
                                 )}
                               </div>
-                              {/* 🖼️ กรอบแผน — "ใบนี้ควรอยู่ตรงนี้" (ดู Dashboard.jsx · วาดเฉพาะใบที่หลุดกรอบ) */}
-                              {planWidthPct > 0 && (
-                                <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
-                                  style={{ position: 'absolute', top: 1, bottom: 1, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
-                                    /* ใบที่หลุดกรอบ วาดทับแท่ง (z=2) ให้เห็นกล่อง "แผนจบตรงนี้" · ดู Dashboard.jsx */
-                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 'var(--r-xs)',
-                                    opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none' }} />
-                              )}
+                              {/* 🖼️ กรอบคิวตามอุดมคติของใบนี้ — ตัววาดตัวเดียวทั้งระบบ (ห้ามวาดเองในหน้า) */}
+                              <PlanSlipFrame planLeftPct={planLeftPct} planWidthPct={planWidthPct} planSlipped={planSlipped}
+                                planStartMs={planStartMs} plannedEndMs={plannedEndMs}
+                                startMs={startMs} realEndMs={realEndMs} occupiedEndMs={occupiedEndMs} fmtMs={fmtMs} />
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
                                 <div title={tr('ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่')}

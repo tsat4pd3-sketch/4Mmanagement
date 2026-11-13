@@ -457,3 +457,42 @@ export function dayDelaySummaryOf(positioned, { frameEndMs = null, nowMs = null 
     totalJobs: items.length,
   };
 }
+
+/* ═══ 🖼️ กรอบ "คิวตามอุดมคติ" ของใบ — พิกัดบนราง (2026-11-13) ═══════════════════════
+ *
+ * 🔴 **ชื่อ "กรอบแผน" บนจอหมายถึงของ 2 อย่าง — ตัวนี้คือตัวที่ระบบคิดเอง ไม่ใช่แผนของแพลนนิ่ง**
+ *   · แผนของแพลนนิ่ง = `production_plan_lots` → วาดที่แถว `<PlanFrameRow>` (เส้นประ**ม่วง**)
+ *   · ตัวนี้ = `planStartMs`/`plannedEndMs` จาก `computeQueuedPositionsFull` =
+ *     "ถ้าไล่ใบที่**เปิดไว้แล้ว**ชนกันรวดเดียวไม่มีสะดุด ใบนี้ควรตกช่วงไหน"
+ *     ⇒ **ไม่มีข้อมูลใหม่** นอกจากใบที่ถูกเปิดไปแล้ว · ตอบ "ช้ากว่าที่ควรกี่นาที" ได้
+ *       ตอบ "ต้องผลิตอีกเท่าไหร่" **ไม่ได้**
+ *
+ * เดิมสูตรนี้ถูกก๊อปไว้ 2 หน้า (`Management.jsx` · `Dashboard.jsx`) แล้ว**สีเพี้ยนกัน** —
+ * Management ฮาร์ดโค้ด `#e5e7eb` (= สีตัวหนังสือของธีม**มืด**) ⇒ บนจอธีมสว่างที่หน้างานใช้
+ * กรอบของใบที่ **หลุดแผน** แทบมองไม่เห็น ส่วนใบที่ตรงแผน (เทา) กลับเห็นชัด = **กลับหัวกัน**
+ * ⇒ ย้ายมาที่เดียว + วาดด้วย `<PlanSlipFrame>` ตัวเดียว (มีด่าน `plan-slip-frame-single-entry`)
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/** เผื่อให้ ±2 นาที ถึงจะนับว่า "หลุดกรอบ" (กันเศษวินาทีจากการปัดเวลา) */
+export const PLAN_SLIP_TOLERANCE_MS = 2 * 60000;
+
+/**
+ * พิกัดกรอบคิวตามอุดมคติของใบนี้บนราง
+ * @param item   หนึ่งรายการจาก `computeQueuedPositionsFull`
+ * @param hs     เวลาเริ่มราง (ms)
+ * @param pctPerMs  % ต่อ 1 ms ของราง
+ * @returns {{planLeftPct:number, planWidthPct:number, planSlipped:boolean}}
+ *          `planWidthPct = 0` = ไม่มีอะไรให้วาด (ไม่รู้กรอบ หรือกรอบอยู่นอกราง)
+ */
+export function planFramePct(item, hs, pctPerMs) {
+  const none = { planLeftPct: 0, planWidthPct: 0, planSlipped: false };
+  if (!item || item.planStartMs == null || item.plannedEndMs == null) return none;
+  const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
+  const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
+  /* หลุดกรอบ = เริ่มช้ากว่าที่ควร **หรือ** กินรางยาวกว่าที่ควร (ครองไลน์ถึง occupiedEndMs) */
+  const planSlipped = (item.startMs - item.planStartMs) > PLAN_SLIP_TOLERANCE_MS
+    || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > PLAN_SLIP_TOLERANCE_MS;
+  return pr > pl
+    ? { planLeftPct: pl, planWidthPct: pr - pl, planSlipped }
+    : { ...none, planSlipped };
+}
