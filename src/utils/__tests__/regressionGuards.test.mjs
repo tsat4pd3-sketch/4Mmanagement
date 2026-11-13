@@ -10422,6 +10422,94 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
 
+/* ═══ 🚪 nav-route-reachable — หน้าที่สร้างแล้วต้องหาเจอ (2026-11-13) ═══════════════════════
+   เจอตอนไล่เมนูซ้ำ/ไม่เข้าหมวด (คำสั่ง user) — มี route ที่ render หน้าจริง 88 ตัว แต่เมนูมี 70
+   ส่วนต่างทั้งหมดอธิบายได้ (LegacyTabRedirect ของหน้าที่ยุบเป็นแท็บ · เข้าทาง QR/เมนูโปรไฟล์)
+   แต่ "อธิบายได้" วันนี้ ไม่ได้กันหน้าใหม่ที่ session หน้าสร้างแล้วลืมใส่ NAV_ITEMS
+   ⇒ หน้าใหม่ที่เปิดด้วย URL ได้แต่ไม่มีในเมนู = **ไม่มีใครหาเจอ** (สร้างแล้วตายเงียบ)
+   กฎ: route ที่ไม่อยู่ในเมนู ต้องเป็น LegacyTabRedirect/Navigate หรืออยู่ในทะเบียนข้อยกเว้นนี้
+   📄 docs/modules/pages-routes.md §ไล่เมนู "ซ้ำ / ไม่เข้าหมวด" รอบ 13/11                      */
+test('🚪 nav-route-reachable — route ที่ render หน้าจริง ต้องมีในเมนู หรืออยู่ในทะเบียนข้อยกเว้น', () => {
+  const s = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+
+  // เข้าถึงทางอื่นโดยเจตนา — เติมได้ แต่ต้องเขียนเหตุผลว่า "หาเจอทางไหน"
+  const OFF_MENU = {
+    '/scan':      'ส่องป้าย QR หน้างาน (handheld) — ไม่ใช่เมนูจอคอม',
+    '/remote':    'เมนูโปรไฟล์ (src/utils/profileMenu.js)',
+    '/linesetup': 'ลิงก์จาก /layout-setup ตอนไม่มีสิทธิ์แก้ (ดูอย่างเดียว)',
+    '/login':     'หน้า login',
+  };
+
+  const navTo = new Set();
+  const i = s.indexOf('NAV_ITEMS'), j = s.indexOf('NAV_GROUP_ORDER');
+  for (const m of s.slice(i, j).matchAll(/\{\s*to:\s*'([^']+)'/g)) navTo.add(m[1]);
+  assert.ok(navTo.size > 50, '\n\n❌ อ่าน NAV_ITEMS ไม่ออก (เปลี่ยนรูปแบบ `to:` ?) — แก้ด่านนี้ให้ตรงของจริง\n');
+
+  const orphan = [];
+  for (const m of s.matchAll(/<Route\s+path="([^"]+)"\s+element=\{([\s\S]{0,160}?)\}\s*\/?>/g)) {
+    const [, path, el] = m;
+    if (path === '*' || path === '/*' || path.includes(':')) continue;   // catch-all + param ไม่ใช่หน้า
+    if (navTo.has(path) || OFF_MENU[path]) continue;
+    // ของที่ redirect ไปที่อื่นอยู่แล้ว = ไม่ต้องมีในเมนู
+    if (/LegacyTabRedirect|<Navigate/.test(el)) continue;
+    orphan.push(path);
+  }
+  assert.deepEqual(orphan, [], `\n\n❌ route พวกนี้เปิดด้วย URL ได้ แต่ไม่มีในเมนูและไม่ใช่ redirect\n   ⇒ สร้างแล้วไม่มีใครหาเจอ:\n   ${orphan.join('\n   ')}\n\n   แก้ทางใดทางหนึ่ง: ① เติมลง NAV_ITEMS (พร้อม group + sub)\n   ② ถ้าเข้าทางอื่นโดยเจตนา (QR / เมนูโปรไฟล์ / ลิงก์ในหน้า) เติมใน OFF_MENU ของด่านนี้พร้อมเหตุผล\n`);
+});
+
+/* ═══ ➕ register-folded-into-operator — 2026-11-13 · คำสั่ง user ═══════════════════════════
+   *"ยุบละย้ายเพิ่มพนักงานเข้าไปในหน้าฐานข้อมูล"* — /operator ไม่มีทางเพิ่มคนเลย ส่วน /register
+   เป็นฟอร์มเดียว ⇒ "เพิ่มพนักงาน" คือปุ่มของ "ฐานข้อมูลพนักงาน" ไม่ใช่เมนูพี่น้อง
+   3 อย่างที่พังง่ายและพังเงียบ ถ้า session หน้าแก้โดยไม่รู้:
+     ① เติม `/register` กลับเข้าเมนู = เมนูซ้ำกลับมา
+     ② แทรก 'add' กลางๆ `TAB_KEYS` = เนื้อหาอ้าง `tab === n` ⇒ สลับแท็บทั้งหน้าเงียบๆ
+     ③ ถอด piggyback `page:/register` ออกจาก canAccessPage('/operator') = คนที่ตั้งสิทธิ์ไว้แค่
+        หน้าเดิม เข้าไม่ได้ทั้งหน้า
+   📄 docs/modules/pages-routes.md §/register ยุบเข้าเป็นแท็บใน /operator                      */
+test('➕ register-folded-into-operator — เมนูเดียว · แท็บต่อท้าย · piggyback สิทธิ์หน้าเดิม', () => {
+  const bad = [];
+  const app = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const appNc = stripComments(app);
+
+  // ① ห้ามกลับมาเป็นเมนู · route ต้องเป็น redirect เข้าแท็บ
+  if (/\{\s*to:\s*'\/register'/.test(appNc))
+    bad.push("`/register` กลับมาอยู่ใน NAV_ITEMS — ยุบเข้าแท็บ ?tab=add ของ /operator แล้ว (ถามผู้ใช้ก่อนเติมกลับ)");
+  if (!/path="\/register"\s+element=\{<LegacyTabRedirect to="\/operator" tab="add" \/>\}/.test(appNc))
+    bad.push('route /register ต้องเป็น <LegacyTabRedirect to="/operator" tab="add" /> (ลิงก์เก่าต้องไม่ตาย)');
+
+  // ② 'add' ต้องอยู่ "ท้าย" TAB_KEYS — index ของ 3 ตัวแรกถูกอ้างด้วย tab === n
+  const op = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  const keys = op.match(/const TAB_KEYS = \[([^\]]+)\]/);
+  if (!keys) bad.push('หา TAB_KEYS ใน operator.jsx ไม่เจอ');
+  else {
+    const arr = keys[1].split(',').map(x => x.trim().replace(/^'|'$/g, ''));
+    if (arr.slice(0, 3).join() !== 'employees,skills,levelup')
+      bad.push(`TAB_KEYS 3 ตัวแรกต้องคงลำดับเดิม (employees,skills,levelup) — ได้ ${arr.slice(0, 3).join()}`);
+    if (arr[arr.length - 1] !== 'add') bad.push("'add' ต้องเป็นตัวท้ายสุดของ TAB_KEYS");
+  }
+  // แท็บต้องกรองด้วยสิทธิ์หน้าเดิม + สิทธิ์กดบันทึกจริง (เห็นแท็บ ≠ เขียนได้)
+  if (!/hasPermission\('page:\/register', role\) && can\('employees', 'register', role\)/.test(op))
+    bad.push("แท็บ ➕ ต้องโผล่เมื่อ hasPermission('page:/register') && can('employees','register') เท่านั้น");
+  // ฝังหน้าลูกต้องครอบ <Hub> (หัวซ้อน 2 ชั้น)
+  if (!/<Hub><RegisterEmployeeForm embedded onSaved=\{fetchEmployees\} \/><\/Hub>/.test(op))
+    bad.push('แท็บ ➕ ต้องเป็น <Hub><RegisterEmployeeForm embedded onSaved={fetchEmployees} /></Hub>');
+  // 🔗 เพิ่มคนเสร็จต้องโหลดรายชื่อใหม่ ไม่งั้นสลับไปแท็บ 👥 แล้วไม่เห็นคนที่เพิ่งเพิ่ม = จอโกหก
+  if (!/onSaved\?\.\(\)/.test(stripComments(readFileSync(join(ROOT, 'src/pages/Register.jsx'), 'utf8'))))
+    bad.push('Register.jsx ต้องเรียก onSaved?.() หลังเพิ่มสำเร็จ (ให้หน้าแม่โหลดรายชื่อใหม่)');
+
+  // ③ piggyback สิทธิ์ — ไม่มี = คนที่ตั้งไว้แค่ page:/register เข้าหน้าไม่ได้เลย
+  const perm = stripComments(readFileSync(join(ROOT, 'src/utils/permissions.js'), 'utf8'));
+  if (!/path === '\/operator'[\s\S]{0,200}hasPermission\('page:\/register', role\)/.test(perm))
+    bad.push("canAccessPage('/operator') ต้อง piggyback `page:/register` ด้วย");
+
+  // ฟอร์มต้องตรึงความกว้างเอง — .page-content .page-content ล้าง max-width ของชั้นใน
+  const reg = stripComments(readFileSync(join(ROOT, 'src/pages/Register.jsx'), 'utf8'));
+  if (!/maxWidth: 960/.test(reg))
+    bad.push('การ์ดฟอร์มต้องตรึง maxWidth 960 เอง (ฝังในหน้าแม่แล้ว <Page width="form"> ไม่คุมความกว้างให้)');
+
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
+});
+
 test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสียของช่าง" ต้องมี 3 สถานะ และห้ามแตะเลขที่ส่งกลุ่ม', () => {
   /* 🔴 13/11 คำสั่ง user *"ทำข้อ 2 ติดธงในทะเบียนประเภท downtime"*
      ที่มา: KPI ทางการนับทุกแถวที่ไม่ใช่ planned เข้า Machine Break Down/MTTR/MTBF ของช่าง

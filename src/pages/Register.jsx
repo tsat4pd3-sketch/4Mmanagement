@@ -25,7 +25,11 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 
 import { tr } from '../utils/i18n';
-export default function Register() {
+/* 📸 ฟอร์มเพิ่มพนักงาน — บ้านจริงคือ **แท็บ ➕ ในหน้า /operator** (13/11 · คำสั่ง user
+   "ยุบละย้ายเพิ่มพนักงานเข้าไปในหน้าฐานข้อมูล") · `/register` เหลือเป็น redirect เข้าแท็บนั้น
+   `embedded` = วาดแค่การ์ดฟอร์ม ไม่วาด <Page>/<PageHeader> (หน้าแม่วาดให้แล้ว)
+   สาขาไม่ embed คงไว้ให้ route กลับมาได้ถ้า user สั่ง — ห้ามลบทิ้งเงียบ */
+export default function Register({ embedded = false, onSaved }) {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canRegister = can('employees', 'register', role);
   const isLeader     = role === 'leader';
@@ -147,6 +151,9 @@ export default function Register() {
       setGroupName(''); setLineId(null); setBusRouteId('');
       setTeam(''); setStartDate(''); setPhoto(null); setStaffKind(STAFF_SHOPFLOOR);
       document.getElementById('photo-upload').value = '';
+      /* 🔗 บอกหน้าแม่ให้โหลดรายชื่อใหม่ (13/11) — ฟอร์มนี้เป็นแท็บใน /operator แล้ว
+         ไม่บอก = เพิ่มคนเสร็จ สลับไปแท็บ 👥 แล้วไม่เห็นคนที่เพิ่ง เพิ่ม จนกดรีเฟรชหน้า = จอโกหก */
+      onSaved?.();
     } catch (err) {
       toast.error('เกิดข้อผิดพลาด: ' + err.message);
     } finally {
@@ -154,18 +161,12 @@ export default function Register() {
     }
   };
 
-  return (
-    /* ชิดซ้าย-บนเหมือนหน้าอื่น (เดิมจัดกลางจอ ⇒ ชื่อหน้าเริ่มคนละตำแหน่ง — UI-STANDARD §1)
-       🔴 `form` (960px) ไม่ใช่ `narrow` (640px) — 26/10: ฟอร์มนี้มี 10 ช่อง + 3 แถวสองคอลัมน์
-       พอตรึง 640 แล้วชิดซ้าย กลายเป็นเสาผอมเกาะขอบ เหลือที่ว่างขวาค่อนจอ (feedback user)
-       `narrow` มีไว้สำหรับกล่องสั้นจริงๆ (login/ยืนยัน) ไม่ใช่ฟอร์มกรอกข้อมูล */
-    <Page width="form">
-      <PageHeader title={tr('เพิ่มพนักงานใหม่')} icon="📸" sub={tr('บันทึกข้อมูลพนักงานเข้าระบบ')} />
-      {/* 🔴 การ์ดต้องเต็มคอลัมน์ของ <Page width="form"> (960px) — ห้ามตั้ง maxWidth ซ้อนอีกชั้น (14/10)
-          เดิมตรึง 440px ไว้ตั้งแต่ยุคที่หน้านี้จัดกลางจอ ⇒ พอเปลี่ยนเป็นชิดซ้าย กลายเป็น
-          ฟอร์มผอมเกาะขอบซ้าย เหลือที่ว่างขวาค่อนจอ · ช่อง 2 คอลัมน์แคบจนป้ายล้น
-          · กล่อง = `.card` ของกลาง (เงา `--shadow-sm` · UI §6.20 — `--shadow-lg` เป็นของ modal) */}
-      <div className="card" style={{ width: '100%', padding: '28px 26px' }}>
+  /* 🔴 ความกว้างฟอร์ม 960px — 26/10: ตรึง 640 แล้วชิดซ้าย กลายเป็นเสาผอมเกาะขอบ (feedback user)
+        ฟอร์มนี้มี 10 ช่อง + 3 แถวสองคอลัมน์ · เดิมได้ 960 จาก <Page width="form"> ของตัวเอง
+        พอมาเป็นแท็บในหน้าที่ <Page> กว้างเต็มจอ ต้องตรึงที่การ์ดเอง ไม่งั้นช่องยืดจนอ่านยาก (13/11)
+        · กล่อง = `.card` ของกลาง (เงา `--shadow-sm` · UI §6.20 — `--shadow-lg` เป็นของ modal) */
+  const formCard = (
+      <div className="card" style={{ width: '100%', maxWidth: 960, padding: '28px 26px' }}>
 
 
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -382,6 +383,25 @@ export default function Register() {
           </button>
         </form>
       </div>
+  );
+
+  /* ฝังเป็นแท็บ: หัวเพจเป็นของหน้าแม่ (<Hub> กันหัวซ้อน 2 ชั้น) — เหลือคำอธิบายบรรทัดเดียวไว้
+     ไม่ให้ข้อความที่เคยอยู่ใต้ชื่อหน้าหายไป (ฟอนต์ 12 = พื้นขั้นต่ำของระบบ) */
+  if (embedded) return (
+    <>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+        {tr('บันทึกข้อมูลพนักงานเข้าระบบ')}
+      </div>
+      {formCard}
+    </>
+  );
+
+  /* สาขาเดิม (route /register ตรงๆ) — ตอนนี้ไม่มีใครเข้าทางนี้ เพราะ route redirect เข้าแท็บแล้ว
+     คงไว้ให้กลับมาได้ถ้า user สั่ง · ชิดซ้าย-บนเหมือนหน้าอื่น (UI-STANDARD §1) */
+  return (
+    <Page width="form">
+      <PageHeader title={tr('เพิ่มพนักงานใหม่')} icon="📸" sub={tr('บันทึกข้อมูลพนักงานเข้าระบบ')} />
+      {formCard}
     </Page>
   );
 }
