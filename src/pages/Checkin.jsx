@@ -22,7 +22,7 @@ import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
-import { inSectionScope, scopeAnchorless, lineScope } from '../utils/sectionScope';
+import { inSectionScope, scopeAnchorless, lineScope, defaultLineFilter } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -140,7 +140,14 @@ export default function Checkin() {
   const [noSchedule,     setNoSchedule]     = useState(false);
   const [orgSections,    setOrgSections]    = useState([]);
   const [selSection,     setSelSection]     = useState('');
-  const [selLine,        setSelLine]        = useState('');
+  /* 🏠 หัวหน้าไลน์เปิดจอมา ต้องเห็น "ไลน์ตัวเอง" ก่อน (13/11 · หัวหน้ากลุ่ม PD4 แจ้งว่า
+       หัวหน้าไลน์เห็นพนักงานไลน์อื่นด้วย) — วัดจริง: หัวหน้า GOR ควรเห็น 24 คน แต่เห็น 52 คน
+       (ติดคนของครอบครัว LWR BAR 21 + Office PD4 7 มาด้วย) · เป็นทุกส่วนงาน ไม่ใช่แค่ PD4
+     🔴 นี่คือการเปลี่ยน **ค่าตั้งต้นของช่องขอบเขต** ไม่ใช่การบีบสิทธิ์ —
+        `lineScope()` ยังคืนเท่าเดิมเป๊ะ (ไลน์ตัวเอง ∪ ไลน์ในส่วนงาน) ⇒ สลับไปดู/ยืมคนไลน์อื่นได้เหมือนเดิม
+     🔴 ห้ามแก้เป็นการบีบ scope ใน `lineScope` — 26/10 เคยล็อก "ไลน์ตัวเองไลน์เดียว"
+        แล้วทั้งโรงงานเปิดกะไม่ได้เช้าวันจันทร์ · และปุ่ม "ยืมคน" ต้องเห็นคนไลน์อื่นก่อนจึงยืมได้ */
+  const [selLine,        setSelLine]        = useState(() => defaultLineFilter({ role, lineId }));
   const [showExport,     setShowExport]     = useState(false);
   const [exportMonth,    setExportMonth]    = useState(() => toLocalDateStr(new Date()).slice(0, 7));
   const [exportHalf,     setExportHalf]     = useState('1-15');
@@ -1221,6 +1228,15 @@ export default function Checkin() {
   // 🤝 คนที่ถูกยืมตัวมา ให้ตัวกรองไลน์/section มองเป็น "ไลน์ปลายทาง" ไม่ใช่ไลน์เดิม
   const effLineIdOf = (emp) => emp._helperToLineId || emp.line_id;
 
+  /* 🛡️ ไลน์ตัวเองไม่อยู่ในทะเบียนแล้ว (ถูกลบ/เปลี่ยนชื่อ) ⇒ ค่าตั้งต้นจะทำให้จอว่างทั้งที่มีคน
+     = "ลิสต์ว่าง 2 ความหมาย" ⇒ ล้างค่าตั้งต้น ถอยไปเห็นทั้งขอบเขต (fail-open เหมือนที่หน้านี้ใช้อยู่)
+     ⚠️ เช็คหลังทะเบียนโหลดเท่านั้น — เช็คตอน lines ว่างจะล้างทิ้งทุกครั้งที่เปิดจอ */
+  useEffect(() => {
+    if (!lines.length || !selLine) return;
+    if (String(selLine) !== String(lineId)) return;               // ผู้ใช้เลือกเอง = ไม่แตะ
+    if (defaultLineFilter({ role, lineId, lines }) === '') setSelLine('');
+  }, [role, lineId, lines.length, selLine]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   const displayed = employees.filter(emp => {
     if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
     const el = effLineIdOf(emp);
@@ -1236,6 +1252,22 @@ export default function Checkin() {
     if (selSection) return sectionFamilyIds.has(el) || (!el && emp.section === selSection);
     return true;
   });
+
+  /* 🔢 คนที่ "ดูได้แต่ถูกตัวกรองไลน์ซ่อนไว้" — กฎจอซื่อสัตย์: กรองแถวออกแล้วต้องบอกว่ากี่คน
+     (ไม่บอก = หัวหน้าคิดว่าส่วนงานมีแค่นี้ แล้วหา "ยืมคน" ไม่เจอ) */
+  const hiddenOtherLines = (selLine && selLineFamilyIds?.size)
+    ? employees.filter(emp => {
+        if (filterShift && emp.assignedShift && emp.assignedShift !== shiftInfo.shift) return false;
+        return !selLineFamilyIds.has(effLineIdOf(emp));
+      }).length
+    : 0;
+
+  /* 🧭 แถบกรองขอบเขต — เดิมซ่อนจาก leader ด้วยเหตุผล "หัวหน้าไลน์มีไลน์เดียว ไม่ต้องกรอง"
+     13/11: สมมติฐานนั้นผิด — ขอบเขตของหัวหน้าไลน์คือ **ไลน์ตัวเอง ∪ ไลน์ในส่วนงาน** (lineScope)
+     ⇒ พอตั้งค่าตั้งต้นให้เปิดมาที่ไลน์ตัวเอง ถ้าไม่มีช่องกรอง เขาจะ**สลับไปดู/ยืมคนไลน์อื่นไม่ได้เลย**
+        (ปุ่ม "ยืมคน" ต้องเห็นคนไลน์อื่นก่อนจึงยืมเข้าไลน์ตัวเองได้)
+     🔴 ขอบเขตมีไลน์เดียวจริง = ซ่อนเหมือนเดิม ไม่เพิ่มของรกจอให้คนที่ไม่ได้ใช้ */
+  const showScopeFilter = lines.length > 0 && (role !== 'leader' || scopedLines.length > 1);
 
   // 🪪 ผลการสแกนบัตร 1 ใบ → ติ๊กมางานบนจอ (กติกาอยู่ใน utils/badgeCheckin.js) · คืน string = ข้อความ error ให้ ScanModal/toast
   const onBadgeScan = async (parsed) => {
@@ -1829,8 +1861,8 @@ export default function Checkin() {
         </NoticeBar>
       )}
 
-      {/* Section & Line filter bar — supervisor only */}
-      {role !== 'leader' && lines.length > 0 && (
+      {/* Section & Line filter bar — ทุก role ที่ขอบเขตมีมากกว่า 1 ไลน์ (ดู showScopeFilter) */}
+      {showScopeFilter && (
         <FilterBar style={{ marginBottom: 14 }}>
           {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02 · เดิมปุ่มส่วนงาน 14 ปุ่ม + ช่องไลน์
               ที่โผล่หลังเลือกส่วนงาน = หน้าตาไม่เหมือนหน้าอื่น) · ส่วนงานที่ไม่มีไลน์ (คลัง/QA) ยังเลือกได้เพราะเช็คชื่อ "คน" */}
@@ -1848,6 +1880,12 @@ export default function Checkin() {
                 ⚠ {noLineCount} คนยังไม่ผูกไลน์
               </span>
             )}
+            {hiddenOtherLines > 0 && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }}
+                title={tr('อยู่ในขอบเขตที่คุณดูได้ แต่เป็นไลน์อื่น — เปลี่ยนช่อง “ขอบเขต” เพื่อดู หรือยืมคนเข้าไลน์ตัวเอง')}>
+                +{hiddenOtherLines} {tr('คนในไลน์อื่น')}
+              </span>
+            )}
           </span>
         </FilterBar>
       )}
@@ -1862,7 +1900,7 @@ export default function Checkin() {
             {tr(m.label)} {counts[key]}
           </span>
         ) : null)}
-        {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>{tr('รวม')} {displayed.length} {tr('คน')}</span>}
+        {role === 'leader' && !showScopeFilter && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>{tr('รวม')} {displayed.length} {tr('คน')}</span>}
       </div>
 
       <DraftRestoreBar draft={ckPending} what="การเช็คชื่อกะนี้" onRestore={restoreCkDraft}
