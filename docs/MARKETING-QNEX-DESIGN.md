@@ -205,3 +205,20 @@
 
 📄 เกี่ยวข้อง: `docs/IEC-NEW-MODEL-OBEYA-DESIGN.md` §7.12 (รอยต่อ NM→โรงงาน) · `docs/modules/nm-frontend-split.md` §4 (edition) ·
 `docs/modules/npi-apqp.md` · `docs/modules/doc-forms.md` · `docs/FINANCIAL-GAP-ANALYSIS.md` (ไม่มีสะพาน SAP)
+
+---
+
+## 10. Feedback จาก Marketing หลังทดลองใช้ `/rfq` (12/11 · โน้ตมือของ user — ถอดความ)
+
+| # | คอมเมนต์ (ถอดจากโน้ต) | สถานะวันนี้ | ไปอยู่เฟสไหน |
+|---|---|---|---|
+| 1 | ยังไม่มีที่แนบเอกสาร RFQ (แบบ/CAD/สเปค/จดหมายลูกค้า) | ❌ ไม่มี (ตั้งใจยกไปเฟส 2 ตั้งแต่ §8) | **2a** — bucket `mkt-files` + `mkt_rfq_files` (ชนิดเอกสาร × access matrix §6.4) |
+| 2 | ยังไม่มีระบบอัพโหลดเอกสารแล้วแปลงเป็นราคา (auto-cal) | ❌ | **3** — `mktCost.js` ①–⑤ จาก `TS Cost Breakdown.xlsx` (OCR/auto-OEM ยังนอกกรอบ) |
+| 3 | Model life (อายุรุ่น กี่ปี) | ❌ ไม่มีช่อง — มีแค่ volume/ปี + ที่มา | **2a** — `mkt_rfqs.model_life_years` · ยอดรวมตลอดอายุ = volume × model life (ตัวเลขที่ใช้คิดค่าแม่พิมพ์ต่อชิ้น) |
+| 4 | volume ต้องอ่านจากใบงานลูกค้า | ✅ มี `volume_source` (rfq/sales_estimate/model_report) — ต้องให้ Marketing เลือก `rfq` | — |
+| 5 | ราคาเป้าหมายลูกค้าเป็นไปได้ไหม (feasibility เทียบต้นทุน) | ⚠️ เก็บ `customer_target_price` แต่ไม่มีการเทียบ | **3** — ธง "ต่ำกว่าต้นทุน" หลังมี cost model · ระหว่างนี้ **2a** ให้ IEC/CSC ตอบในขั้นประเมิน (feasible / ไม่ / มีเงื่อนไข) |
+| 6 | สายงาน: Input (MKT) ✓ → **ประเมิน (IEC) ✗** → AutoCal (MKT) ? → Gen Quotation → APQP/PPAP (IEC) ✓ | ขั้น "ประเมิน" ยังเป็นแค่สถานะ `assessing` ไม่มีใบให้ IEC กรอก | **2a** — ใบประเมินความเป็นไปได้ (IEC/CSC): ผลิตได้ไหม · กระบวนการ · เครื่อง/ไลน์ · ความเสี่ยง · ราคาเป้าหมายเป็นไปได้ไหม · ส่งกลับ MKT = สถานะขยับเอง |
+| 7 | Flow setup ของแต่ละ product (ขั้นตอนผลิตต่อพาร์ท) | ❌ ใน RFQ — แต่ PE มี PFC อยู่แล้วหลังได้งาน | **2a/3** — ร่าง process flow ตอนประเมิน (ลำดับ OP + เครื่อง) = input ของ auto-cal · ได้งานแล้วส่งต่อเป็น PFC จริง (`/pe-docs`) ไม่ทำซ้ำ |
+| 8 | Make-to-print / Co-design | ❌ ไม่มีช่องชนิดงาน (Q-neX โมดูล 1 "job type") | **2a** — `mkt_rfqs.job_type` (`make_to_print` / `co_design`) — ตัวนี้ตัดสินว่า IEC ต้องออกแบบก่อนประเมินราคาไหม |
+
+ข้อ 6 คือ gap ใหญ่สุด: ตอนนี้ "ประเมิน" เป็นขั้นที่ Marketing กดเปลี่ยนสถานะเอง ไม่มีของที่ IEC ต้องส่งกลับ ⇒ ข้ามจาก received ไป quoted ได้โดยไม่มีใครประเมิน
