@@ -33,7 +33,8 @@
   --amber-dim: rgba(227, 162, 58, 0.12); --amber-line: rgba(227, 162, 58, 0.40);
   --red-dim:   rgba(226, 87, 75, 0.12);  --red-line:   rgba(226, 87, 75, 0.40);
   --blue-dim:  rgba(79, 143, 232, 0.12); --blue-line:  rgba(79, 143, 232, 0.40);
-  --scrim: rgba(0, 0, 0, 0.55);   /* พื้นหลังมืดหลัง modal (04/11) */
+  --scrim: rgba(0, 0, 0, 0.7);    /* ม่านหลัง modal — ค่าเดียวทั้งระบบ (13/11 · วัดจริง 0.55/0.6 เหลือ contrast หน้าหลัง 3.1–3.6:1 ยังแย่งสายตา · 0.7 เหลือ 2.2:1) */
+  --scrim-blur: blur(4px);        /* เบลอหน้าหลังคู่กับ --scrim เสมอ (Chromium 76+ · Safari ต้อง -webkit-) */
 
   --text:   #e6e9ef;
   --text2:  #a3abb8;
@@ -505,10 +506,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .overlay > *, .modal-scroll > * { margin: auto; }
 .overlay {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.78);
+  background: var(--scrim);
   display: flex; align-items: center; justify-content: center;
   z-index: 2000;
-  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: var(--scrim-blur);
+  backdrop-filter: var(--scrim-blur);
   padding: 12px;
 }
 .modal {

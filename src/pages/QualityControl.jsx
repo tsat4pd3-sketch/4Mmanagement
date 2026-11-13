@@ -251,8 +251,7 @@ function Modal({ title, onClose, children, width = 560 }) {
   return (
     <div
       style={{
-        position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)',
-        backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+        position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '5vh 12px', overflowY: 'auto',
       }}
       /* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — กันเผลอกดแล้วข้อมูลในฟอร์มหาย ปิดได้จากปุ่ม ✕/ยกเลิกเท่านั้น */

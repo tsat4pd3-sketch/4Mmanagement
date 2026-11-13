@@ -294,7 +294,7 @@ export default function QaPieceStepper({
 
       {/* ── modal disposition ของชิ้นที่ตก — ฟอร์ม: ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) ── */}
       {dispo && (
-        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+        <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }}>
             <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>{tr('✕ ชิ้นที่')} {seq?.nextPiece} {tr('ตก')} {dispo.payload.failedItems.length} {tr('จุด — จะทำอะไรกับชิ้นนี้')}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>

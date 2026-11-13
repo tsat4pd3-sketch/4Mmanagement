@@ -122,7 +122,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
 
   return (
     /* ห้ามปิดจากคลิกพื้นหลัง — มีฟอร์มที่คนกำลังเลือกแถว (ด่าน modal-closes-on-backdrop) */
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', width: 'min(1180px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <b style={{ fontSize: 14, color: 'var(--text)' }}>{tr('นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี')} {year + 543}</b>

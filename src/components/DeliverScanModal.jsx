@@ -80,7 +80,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   return (
     <>
       {/* ไม่ปิดจาก backdrop — โมดัลมีช่องกรอกเหตุผล (UI-CONVENTIONS §5) */}
-      <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
           style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

@@ -1075,7 +1075,7 @@ export default function PEDocs() {
 
       {/* ══ lightbox ดูรูปเต็ม (viewer ไม่ใช่ฟอร์ม — คลิกที่ไหนก็ปิดได้) ══ */}
       {imgView && (
-        <div onClick={() => setImgView(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', padding: 16 }}>
+        <div onClick={() => setImgView(null)} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out', padding: 16 }}>
           <img src={imgView} alt="" style={{ maxWidth: '94vw', maxHeight: '90vh', borderRadius: 8 }} />
         </div>
       )}

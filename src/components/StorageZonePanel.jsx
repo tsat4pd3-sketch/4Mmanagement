@@ -297,7 +297,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       {/* ⚠️ ห้ามเติม onClick={onClose} ที่ backdrop — ฟอร์มมีข้อมูลค้าง เผลอแตะแล้วหาย (UI-CONVENTIONS §5) */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(680px, 96vw)', maxHeight: '92vh', overflowY: 'auto', padding: 18, display: 'grid', gap: 10, alignContent: 'start' }}>
         <b style={{ fontSize: 15 }}>{zone ? `✏️ แก้โซน: ${zone.name}` : '➕ เพิ่มโซนจัดเก็บ'}</b>

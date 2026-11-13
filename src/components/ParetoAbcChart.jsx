@@ -447,7 +447,7 @@ export default function ParetoAbcChart({
 }
 
 /* ── styles ── */
-const ovl = (z) => ({ position: 'fixed', inset: 0, zIndex: z, background: 'rgba(0,0,0,0.68)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 });
+const ovl = (z) => ({ position: 'fixed', inset: 0, zIndex: z, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 });
 /* 🔴 `overflow: hidden` บังคับให้ลูกอยู่ในกรอบ 92vh — ขาดตัวนี้ ลูกที่ `flex: 0 0 auto`
    (เช่นบล็อกกราฟ) จะดันตารางทะลุขอบล่างจอ แล้วตัวเลื่อนด้านในไม่ทำงานเลย
    (เจอจริง 23/09 ตอนแยกกราฟ/ตารางเป็น 2 ชั้นใน popup ขยาย) */

@@ -615,7 +615,7 @@ const F = ({ label, children, full }) => (
    ส่วน popup เลือกของ (picker) ไม่มีอะไรให้เสีย จึงส่ง dismissable ได้ */
 function Modal({ title, onClose, children, width = 620, dismissable = false }) {
   return (
-    <div className="modal-scroll" onClick={dismissable ? onClose : undefined} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '3vh 12px', overflowY: 'auto' }}>
+    <div className="modal-scroll" onClick={dismissable ? onClose : undefined} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '3vh 12px', overflowY: 'auto' }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 97vw)`, maxHeight: '94vh', overflowY: 'auto', padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>

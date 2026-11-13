@@ -42,7 +42,7 @@ export default function PartThumb({ url, alt = '', size = 46, radius = 8, zoomab
       {zoom && (
         <div onClick={(e) => { e.stopPropagation(); setZoom(false); }}
           style={{
-            position: 'fixed', inset: 0, zIndex: 900, background: 'rgba(0,0,0,0.78)',
+            position: 'fixed', inset: 0, zIndex: 900, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, cursor: 'zoom-out',
           }}>
           <div style={{ maxWidth: '90vw', maxHeight: '90vh', textAlign: 'center' }}>

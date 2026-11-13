@@ -477,6 +477,16 @@ const RULES = [
     allow: { 'src/pages/Report.jsx': 'ใบพิมพ์ OT เป็น HTML string ใน template literal (กระดาษไทย ไม่แปล · {tr()} ในสตริงพิมพ์ออกมาตรงตัว — บั๊กรอบ 2 แก้ 13/11)' },
   },
   {
+    id: 'scrim-token-only',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ม่านหลัง modal (fixed เต็มจอ) ที่เขียนสีดำโปร่งเอง — วัดจริง 13/11: 225 modal มีความมืด 8 ค่า (0.5→1.0) ใน 14 หน้ามืดไม่เท่ากันในหน้าเดียว */
+    re: /position:\s*'fixed'[^{}\n]{0,300}(?:background(?:Color)?):\s*'rgba\(0,\s*0,\s*0,\s*(?:0?\.\d+|1)\)'|(?:background(?:Color)?):\s*'rgba\(0,\s*0,\s*0,\s*(?:0?\.\d+|1)\)'[^{}\n]{0,300}position:\s*'fixed'/g,
+    why: 'user สั่ง 13/11 "แก้ backdrop ให้เป็น token เดียว 0.7 + blur ทั้งระบบ" — ก่อนหน้ามี 3 ก๊อก (--scrim 0.55 · .overlay 0.78 · เขียนมือ 0.6 อีก 99 จุด) '
+       + 'modal เดียวกันคนละหน้ามืดไม่เท่ากัน · 0.55/0.6 เหลือ contrast หน้าหลัง 3.1–3.6:1 ยังแย่งสายตา',
+    fix: "background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)' (หรือ className=\"overlay\") · ค่าแก้ที่ index.css ที่เดียว (UI-CONVENTIONS §5)",
+    allow: {},
+  },
+  {
     id: 'i18n-map-label-at-declaration',
     scan: ['src/pages', 'src/components', 'src/utils', 'src/lib'], ext: ['.jsx', '.js'],
     /* label: tr('…') ที่จุดประกาศ map ค่าคงที่ — แปลตอน import ครั้งเดียว · สลับภาษาแล้ว App remount (ไม่ reload) ⇒ ป้ายค้างภาษาเดิม */

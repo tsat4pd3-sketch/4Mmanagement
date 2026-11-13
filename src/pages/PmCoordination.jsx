@@ -531,7 +531,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
   return (
     // ฟอร์มยาว — ไม่ปิดจาก backdrop (กันเผลอแตะแล้วข้อมูลหายทั้งใบ · UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับปุ่มปิด (§7)
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 'clamp(8px,3vh,40px) 12px', overflow: 'auto' }}>
       {/* data-align-ok: ฟอร์มกรอก — ช่องกว้างตามชนิดข้อมูล + มีกล่องย่อย (แผนรายวัน) ที่มี padding ของตัวเอง
           ไม่ใช่ลิสต์ทะเบียนที่ต้องอ่านลงมาเป็นคอลัมน์ ⇒ บอก audit/alignsweep.mjs ให้ข้าม (UI §6.28) */}
       <div onClick={e => e.stopPropagation()} data-align-ok="ฟอร์มกรอก — ช่องกว้างตามชนิดข้อมูล ไม่ใช่ลิสต์ทะเบียน"

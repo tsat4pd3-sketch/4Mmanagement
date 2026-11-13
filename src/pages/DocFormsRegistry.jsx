@@ -262,7 +262,7 @@ export default function DocFormsRegistry() {
 
       {/* modal แก้ไข (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {editing && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('✏️ แก้ไขทะเบียน —')} <span style={{ color: 'var(--accent)' }}>{editing.doc_key}</span></div>
@@ -422,7 +422,7 @@ export default function DocFormsRegistry() {
 
       {/* modal ชุดช่องเซ็นของส่วนงานเดียว (ซ้อนบน modal ทะเบียน) */}
       {scopeEdit && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text)' }}>{tr('✍️ ชุดช่องลายเซ็นของส่วนงาน')}</div>
