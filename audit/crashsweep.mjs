@@ -108,27 +108,44 @@ for (const name of PAGES) {
    เฉพาะกับบัญชีที่ **ไม่ใช่ leader และมีขอบเขต** — crashsweep รายงาน "พัง 0" อยู่ 2 วัน
    ⇒ รอบนี้โหลดหน้าแรกอย่างเดียว (ไม่กดปุ่ม) ให้เร็ว แต่ครอบกิ่งที่คนส่วนใหญ่ในโรงงานเดินจริง
    🔴 ห้ามถอดรอบนี้ออกเพื่อให้สวีปเร็วขึ้น */
-const SCOPED = { role: 'supervisor', sections: 'PD1' }
+/* ═══ 🔭 รอบที่ 3 — "หัวหน้าไลน์" (2026-11-13 · คำสั่ง user "เลเวลนั้นคือคนใช้งานบ่อยที่สุด") ═══
+   ทำไมต้องมีแยกจากรอบ supervisor: ขอบเขตมี **2 แกน** — ส่วนงาน (supervisor) กับ **รายไลน์** (leader)
+   รอบ supervisor+PD1 เดินแกนส่วนงาน แต่ `lineScope()` ของ leader เดินสาย `own_family`
+   (ไลน์ตัวเอง + แม่ + ลูก) ซึ่งเป็นสายที่ **แคบที่สุด** ⇒ เป็นสายที่ทำจอว่างทั้งที่มีข้อมูล
+   🔴 `sections: ''` โดยเจตนา — ใส่ PD1 แล้ว `lineScope` จะคืน own ∪ ทุกไลน์ใน PD1
+      (mock ทุกไลน์เป็น PD1) = กลายเป็นรอบ supervisor ซ้ำ **สายครอบครัวไลน์จะไม่ถูกเดินเลย**
+   🔴 ต้องคู่กับ `CTX.lineId` ที่ชี้ไลน์**ลูก**ที่มีอยู่จริงใน mock (ดู audit/README.md
+      §CTX.lineId ต้องตรงกับ id ของไลน์ใน mock) — ไม่ตรง = รอบนี้เดิน fail-open เปล่าๆ
+   🔴 ห้ามถอดรอบไหนออกเพื่อให้สวีปเร็วขึ้น */
+const SCOPES = [
+  { role: 'supervisor', sections: 'PD1' },
+  { role: 'leader',     sections: ''    },
+]
 const badScoped = []
 const b2 = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
-for (const name of PAGES) {
-  const p = await b2.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
-  const errs = []
-  p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 150)))
-  try {
-    await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=${SCOPED.role}&sections=${SCOPED.sections}`,
-      { waitUntil: 'domcontentloaded', timeout: 20000 })
-    await p.waitForTimeout(1100)
-    if (await p.evaluate(() => window.__crash)) badScoped.push({ name, errs: [...errs] })
-  } catch (e) { badScoped.push({ name, errs: [String(e).slice(0, 120)] }) }
-  await p.close()
+for (const SCOPED of SCOPES) {
+  for (const name of PAGES) {
+    const p = await b2.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
+    const errs = []
+    p.on('pageerror', e => errs.push(String(e).split('\n')[0].slice(0, 150)))
+    try {
+      await p.goto(`http://localhost:5199/audit/index.html?p=${name}&role=${SCOPED.role}&sections=${SCOPED.sections}`,
+        { waitUntil: 'domcontentloaded', timeout: 20000 })
+      await p.waitForTimeout(1100)
+      if (await p.evaluate(() => window.__crash)) badScoped.push({ name, errs: [...errs], scope: SCOPED })
+    } catch (e) { badScoped.push({ name, errs: [String(e).slice(0, 120)], scope: SCOPED }) }
+    await p.close()
+  }
 }
 await b2.close()
 
 await b.close()
 console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length} · คีย์ซ้ำ ${dupKeys.length} หน้า`)
-console.log(`รอบขอบเขต (role=${SCOPED.role} · sections=${SCOPED.sections}) — พัง ${badScoped.length} หน้า`)
-badScoped.forEach(x => console.log(`🔭 ${x.name} ${x.errs[0] || ''}`))
+for (const SC of SCOPES) {
+  const n = badScoped.filter(x => x.scope === SC).length
+  console.log(`รอบขอบเขต (role=${SC.role} · sections=${SC.sections || '(ไม่จำกัดส่วนงาน — แกนไลน์ล้วน)'}) — พัง ${n} หน้า`)
+}
+badScoped.forEach(x => console.log(`🔭 [${x.scope.role}] ${x.name} ${x.errs[0] || ''}`))
 bad.forEach(x => console.log(`🔴 ${x.name} [${x.where}] ${x.errs[0] || ''}`))
 /* ห้ามปิดด่านนี้ด้วยการเลิกพิมพ์ — แก้ที่หน้า (ยุบด้วย mergeById / ตั้งคีย์ให้ไม่ซ้ำ) */
 dupKeys.forEach(x => console.log(`🔑 ${x.name}: คีย์ซ้ำในลิสต์ ${x.n} ตัว — ยุบแถวด้วย mergeById (src/utils/mergeRows.js) หรือ prefix คีย์ตามแหล่ง`))
