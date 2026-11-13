@@ -149,3 +149,33 @@ test('รหัสเหตุผล 0 = ไม่ได้กด/รีเซ�
   assert.deepEqual(rows.map(r => `${r.kind}:${r.code}`), ['onplan:2']);
   assert.deepEqual(noReason, { count: 2, sec: 620 });
 });
+
+test('เครื่องเสียแต่ยังไม่ลง DT: FAULT > 5 นาที · เฉพาะจิ๊กที่มีใบในกะ · ทับ DT แล้ว = ไม่เตือน · รหัส 0 ไม่เสนอประเภท', async () => {
+  const { faultGaps } = await import('../machineFacts.js');
+  const session = { work_date: '2026-11-13', shift: 'day' };
+  const base = {
+    tagMap: [{ tag: 'T3', machine_id: 'm3' }, { tag: 'T4', machine_id: 'm4' }, { tag: 'T9', machine_id: null }],
+    machines: [{ id: 'm3', machine_no: 'JTSRA03-03' }, { id: 'm4', machine_no: 'JTSRA03-04' }],
+    orders: [{ machine_no: 'jtsra 03-03' }],                       // มีใบเฉพาะ 03-03
+    reasonMap: [{ reason_kind: 'unplan', reason_code: 7, downtime_type_id: 'dtRobot' }],
+    session, nowMs: Date.parse(bkk('2026-11-13T15:00:00')),
+  };
+  const st = (tag, a, b, extra = {}) => ({ machine_tag: tag, started_at: bkk(`2026-11-13T${a}:00`), ended_at: bkk(`2026-11-13T${b}:00`), state: 'fault', reason_code: 7, ...extra });
+  const r = faultGaps({ ...base, downtimes: [
+    { machine_no: 'JTSRA03-03', started_at: bkk('2026-11-13T11:02:00'), ended_at: bkk('2026-11-13T11:05:00') },
+  ], states: [
+    st('T3', '09:00', '09:05'),                                   // = 5 นาที ไม่เกิน → ไม่เตือน
+    st('T3', '09:10', '09:16'),                                   // 6 นาที → เตือน + เสนอประเภท
+    st('T3', '10:00', '10:20', { reason_code: 0 }),               // รหัส 0 → เตือน แต่ไม่เสนอประเภท
+    st('T3', '11:00', '11:10'),                                   // ทับ DT ที่ลงแล้ว → ไม่เตือน
+    st('T3', '12:00', '12:30', { state: 'idle' }),                // ไม่ใช่ fault → ไม่เตือน
+    st('T4', '09:00', '09:30'),                                   // 03-04 ไม่มีใบในกะ → ไม่เตือน
+    st('T9', '09:00', '09:30'),                                   // tag ยังไม่ผูก → ไม่เตือน
+    { machine_tag: 'T3', started_at: bkk('2026-11-13T21:00:00'), ended_at: bkk('2026-11-13T21:30:00'), state: 'fault' },   // คนละกะ
+  ] });
+  assert.deepEqual(r.map(x => `${x.machineNo}@${Math.round(x.min)}:${x.suggestTypeId}`), ['JTSRA03-03@6:dtRobot', 'JTSRA03-03@20:null']);
+  // downtime ระดับไลน์ (ไม่ระบุเครื่อง) ครอบไว้ = นับว่าลงแล้ว
+  const r2 = faultGaps({ ...base, downtimes: [{ machine_no: null, started_at: bkk('2026-11-13T09:00:00'), duration_min: 30 }], states: [st('T3', '09:10', '09:16')] });
+  assert.equal(r2.length, 0);
+  assert.deepEqual(faultGaps({ ...base, session: null, states: [st('T3', '09:10', '09:16')] }), []);
+});

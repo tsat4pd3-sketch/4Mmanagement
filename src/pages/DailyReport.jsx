@@ -99,6 +99,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fixThaiLayout, hasThai, thaiLayoutNote } from '../utils/kbLayout';
 import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
+import MachineFaultGaps from '../components/MachineFaultGaps';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -4502,6 +4503,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </button>
                 )}
               </div>
+              {/* 🏭 แสดงแม้การ์ดหุบอยู่ (ไลน์ที่ไม่เคยลง DT การ์ดหุบเอง = คำเตือนต้องไม่ถูกซ่อน) · ไลน์ที่ไม่ต่อ Node-RED = ไม่วาดอะไรเลย · เครื่องเสีย (Node-RED) ที่ยังไม่ลง downtime — เสนอเท่านั้น คนเลือกสาเหตุ+บันทึกเอง (ทางที่ 2 · 13/11) */}
+              <MachineFaultGaps session={selSession} orders={prodOrders} downtimes={dtLogs} machines={machines}
+                canEdit={canEditRecords} style={{ marginTop: dtOpen ? 0 : 10, marginBottom: dtOpen ? 10 : 0 }}
+                onUse={(g) => {
+                  setDtForm({ id: null, downtime_type_id: g.downtime_type_id || '', mode: 'start_end', start_time: g.start_time,
+                    end_time: g.end_time, duration_min: '', machine_no: g.machine_no, mat_no: '', description: '' });
+                  setShowDT(true);
+                }} />
               {dtOpen && (<>
               {dtLogs.length === 0 && <div style={{ textAlign: 'center', padding: '20px', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มี Downtime ในกะนี้</div>}
               <div style={DT_GRID}>

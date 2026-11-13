@@ -268,3 +268,66 @@ export function compareWithSessions(factRows = [], { machines = [], sessions = [
     || (a.shift === b.shift ? 0 : a.shift === 'night' ? -1 : 1)
     || a.line.localeCompare(b.line));
 }
+
+/* ═══ ⚠️ เครื่องเสียแต่ยังไม่ลง downtime (ทางที่ 2 · user เลือก 13/11) ═══════════════════
+   user: "เรื่องที่ 1 = ทางที่ 2" · เกณฑ์ "> 5 นาที" · สถานะ "fault" เท่านั้น
+   🔴 ระบบ **เสนอ** — ไม่บันทึกเอง · คนกด "ลงจากช่วงนี้" แล้วเลือกสาเหตุเอง (เวลา/เครื่องเติมให้)
+   🔴 เครื่องที่เข้าข่าย = จิ๊ก/เซลล์ที่ **มีใบผลิตในกะนั้น** (`prod_orders.machine_no` ที่เลือกตอนเปิดใบ)
+      ⇒ ไม่ต้องมีทะเบียนพาร์ท↔เครื่องเพิ่ม · เครื่องไม่มีใบในกะ = ไม่เตือน (เครื่องว่างไม่ใช่ downtime ของไลน์)
+   🔴 "ลงแล้ว" = มี downtime ของเครื่องเดียวกัน (machineKey ตรง) หรือระดับไลน์ (ไม่ระบุเครื่อง) ที่ **ทับเวลา** กับช่วงนั้น
+      ทับบางส่วนก็นับว่าลงแล้ว (ไม่ตามจี้คนที่ลงแล้วแต่เวลาไม่เป๊ะ) */
+export const FAULT_GAP_MIN = 5;          // เตือนเมื่อ "นานกว่า" ค่านี้ (นาที)
+export const FAULT_GAP_STATES = ['fault'];
+
+const tOf = (v) => ms(v);
+/** ช่วงเวลาของ downtime ที่คนลง — มีเวลาจบใช้เลย · ไม่มีใช้ duration · ไม่มีทั้งคู่ (ยังเปิดค้าง) = ถึง nowMs */
+function dtInterval(d, nowMs) {
+  const s = tOf(d?.started_at);
+  if (s == null) return null;
+  const e = tOf(d?.ended_at) ?? (Number(d?.duration_min) > 0 ? s + Number(d.duration_min) * 60000 : nowMs);
+  return e != null && e > s ? [s, e] : [s, s + 1];
+}
+
+/**
+ * @param {{ states, tagMap, machines, orders, downtimes, reasonMap, session:{work_date,shift}, nowMs?, minMin?, statesWanted? }} p
+ *   states = machine_state_events · tagMap = machine_tag_map (ผูกแล้ว) · machines = ทะเบียน (id, machine_no)
+ *   orders = prod_orders ของกะ (machine_no) · downtimes = downtime_logs ของกะ · reasonMap = machine_reason_map
+ * @returns `[{ key, tag, machineNo, startMs, endMs, min, reasonCode, reasonText, suggestTypeId }]` เรียงตามเวลา
+ */
+export function faultGaps({
+  states = [], tagMap = [], machines = [], orders = [], downtimes = [], reasonMap = [], session,
+  nowMs = Date.now(), minMin = FAULT_GAP_MIN, statesWanted = FAULT_GAP_STATES,
+} = {}) {
+  if (!session?.work_date || !session?.shift) return [];
+  const noById = new Map((machines || []).map(m => [m.id, m.machine_no]));
+  const tagNo = new Map();
+  for (const t of tagMap || []) if (t?.tag && t?.machine_id && noById.get(t.machine_id)) tagNo.set(t.tag, noById.get(t.machine_id));
+  const withOrders = new Set((orders || []).map(o => (o?.machine_no ? machineKey(o.machine_no) : '')).filter(Boolean));
+  const dts = (downtimes || []).map(d => ({ mk: d?.machine_no ? machineKey(d.machine_no) : '', iv: dtInterval(d, nowMs) })).filter(d => d.iv);
+  const rmap = new Map((reasonMap || []).filter(r => r.reason_kind === 'unplan').map(r => [Number(r.reason_code), r.downtime_type_id || null]));
+
+  const out = [];
+  for (const s of states || []) {
+    if (!statesWanted.includes(s?.state)) continue;
+    const machineNo = tagNo.get(s.machine_tag);
+    if (!machineNo) continue;                                  // ยังไม่ผูก tag = ไม่รู้ว่าเครื่องไหน ห้ามเดา
+    const mk = machineKey(machineNo);
+    if (!withOrders.has(mk)) continue;
+    const st = tOf(s.started_at);
+    const en = tOf(s.ended_at) ?? (s.duration_sec != null && Number.isFinite(Number(s.duration_sec)) ? st + Number(s.duration_sec) * 1000 : null);
+    if (st == null || en == null || !(en > st)) continue;
+    const min = (en - st) / 60000;
+    if (!(min > minMin)) continue;
+    const f = factShiftOf(st);
+    if (!f || f.workDate !== session.work_date || f.shift !== session.shift) continue;
+    const covered = dts.some(d => (!d.mk || d.mk === mk) && d.iv[0] < en && d.iv[1] > st);
+    if (covered) continue;
+    const code = s.reason_code == null ? null : Number(s.reason_code);
+    out.push({
+      key: `${s.machine_tag}|${s.started_at}`, tag: s.machine_tag, machineNo, startMs: st, endMs: en, min,
+      reasonCode: code, reasonText: code === NO_REASON_CODE ? null : (s.reason_text || null),
+      suggestTypeId: code != null && code !== NO_REASON_CODE ? (rmap.get(code) ?? null) : null,
+    });
+  }
+  return out.sort((a, b) => a.startMs - b.startMs);
+}
