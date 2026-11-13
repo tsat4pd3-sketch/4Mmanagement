@@ -195,7 +195,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
         <div style={{ ...card, padding: '8px 12px', flex: '2 1 260px' }}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>PPAP / PSW</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 3, fontSize: 12.5 }}>
-            <Pill label={PPAP_STATUS[part.ppap_status]?.label || part.ppap_status} color={PPAP_STATUS[part.ppap_status]?.color} />
+            <Pill label={tr(PPAP_STATUS[part.ppap_status]?.label) || part.ppap_status} color={PPAP_STATUS[part.ppap_status]?.color} />
             <span>Level {part.ppap_level}</span>
             <span>PSW {part.psw_no || '—'}</span>
             <span>{tr('ส่ง')} {part.psw_submitted_at ? fmtDate(part.psw_submitted_at) : '—'}</span>
@@ -222,7 +222,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จริง')} {ph.actual_start ? fmtDate(ph.actual_start) : '—'} → {ph.actual_end ? fmtDate(ph.actual_end) : '—'}</div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11.5 }}>
-                    <Pill label={PHASE_STATUS[ph.status]?.label} color={PHASE_STATUS[ph.status]?.color} small />
+                    <Pill label={tr(PHASE_STATUS[ph.status]?.label)} color={PHASE_STATUS[ph.status]?.color} small />
                     <span>{r.done}/{r.total}</span>
                   </div>
                 </div>
@@ -272,14 +272,14 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                           <tr key={d.id} style={{ opacity: d.status === 'not_required' ? 0.55 : 1 }}>
                             <td style={tdSt}><LightDot light={lt} /></td>
                             <td style={{ ...tdSt, minWidth: 200 }}>
-                              <span title={kind.label}>{kind.icon}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{tr(d.label)}</span>
+                              <span title={tr(kind.label)}>{kind.icon}</span> <span style={{ color: 'var(--text)', fontWeight: 700 }}>{tr(d.label)}</span>
                               {d.ppap_element && <Pill label="PPAP" color="#a855f7" small />}{' '}
                               {d.required === false && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('(ไม่บังคับ)')}</span>}
                             </td>
                             <td style={{ ...tdSt, minWidth: 130 }}>
                               {mayEdit ? (
                                 <MetaSelect value={d.status} onChange={v => setStatus(d, v)} meta={DELIV_STATUS} style={{ padding: '3px 6px', fontSize: 11.5, borderColor: DELIV_STATUS[d.status]?.color }} />
-                              ) : <Pill label={DELIV_STATUS[d.status]?.label} color={DELIV_STATUS[d.status]?.color} />}
+                              ) : <Pill label={tr(DELIV_STATUS[d.status]?.label)} color={DELIV_STATUS[d.status]?.color} />}
                               {d.status === 'approved' && d.approved_by && <div style={{ fontSize: 11, color: '#22c55e' }}>✓ {d.approved_by}</div>}
                             </td>
                             <td style={tdSt}>{mayEdit ? <input type="date" value={d.due_date || ''} onChange={e => patchDeliv(d, { due_date: e.target.value || null })} style={{ ...inp, width: 128, padding: '3px 6px', fontSize: 11.5, color: lt === 'red' ? '#ef4444' : undefined }} /> : (d.due_date ? fmtDate(d.due_date) : '—')}</td>
@@ -334,7 +334,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label={tr('ชื่อรายการ *')} span={2}><input style={inp} value={dvModal.label} onChange={e => setDvModal({ ...dvModal, label: e.target.value })} /></Field>
             <Field label={tr('เฟส')}><select style={inp} value={dvModal.phase_code} onChange={e => setDvModal({ ...dvModal, phase_code: e.target.value })}>{[...phases].sort((a, b) => a.seq - b.seq).map(p => <option key={p.phase_code} value={p.phase_code}>{tr(p.label)}</option>)}</select></Field>
-            <Field label={tr('ชนิดเอกสาร')}><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
+            <Field label={tr('ชนิดเอกสาร')}><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}</select></Field>
             <Field label={tr('กำหนดส่ง')}><input type="date" style={inp} value={dvModal.due_date || ''} onChange={e => setDvModal({ ...dvModal, due_date: e.target.value })} /></Field>
             <Field label={tr('เสร็จเมื่อ')}><input type="date" style={inp} value={dvModal.done_at || ''} onChange={e => setDvModal({ ...dvModal, done_at: e.target.value })} /></Field>
             <Field label={tr('ผู้รับผิดชอบ')}><PersonSelect value={dvModal.owner_name || ''} history={dvOwnerHist} onChange={r => setDvModal({ ...dvModal, owner_name: r.name })} /></Field>

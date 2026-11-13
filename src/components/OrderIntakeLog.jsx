@@ -159,7 +159,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
           <button onClick={() => setKind('all')} style={chip(kind === 'all', 'var(--accent)')}>{ALL.type}</button>
           {Object.entries(INTAKE_KINDS).map(([k, m]) => (
-            <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{m.label} ({sum[k] || 0})</button>
+            <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{trI18n(m.label)} ({sum[k] || 0})</button>
           ))}
           <span className="filter-count">{trI18n('รวม')} {sum.total} {trI18n('รายการ')}</span>
         </div>
@@ -194,7 +194,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         {dayGroups.map(g => (
           <CollapseCard key={g.day} id={`intake_${g.day}`} storePrefix="oil"
             defaultOpen={g.day === todayKey}
-            title={<>{g.label}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> {trI18n('· วันนี้')}</span>}
+            title={<>{trI18n(g.label)}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> {trI18n('· วันนี้')}</span>}
               <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 12 }}> — {g.summary}</span></>}
             count={g.items.length}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

@@ -103,7 +103,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
               title={isCol ? tr('คลิกเพื่อขยาย') : tr('คลิกเพื่อย่อ')}
               style={{ width: leftW, flexShrink: 0, padding: '4px 10px', fontSize: 11, fontWeight: 700, color: 'var(--text2)', borderRight: '1px solid var(--border2)', overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center', cursor: 'pointer', userSelect: 'none', ...stickyLabel('var(--card)') }}>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{g.label}
+                <span style={{ color: 'var(--muted)', marginRight: 4 }}>{isCol ? '▸' : '▾'}</span>{tr(g.label)}
               </span>
               {g.sub && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{g.sub}</span>}
             </div>

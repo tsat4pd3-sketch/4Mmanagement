@@ -643,7 +643,7 @@ export default function OrgSetup() {
                   <select value={formDivision} disabled={!canDivisions}
                     onChange={e => setFormDivision(e.target.value)}>
                     <option value="">{tr('— ตกทอดจากตัวแม่ / ยังไม่ระบุ —')}</option>
-                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {tr(d.label)}</option>)}
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
@@ -739,7 +739,7 @@ function DivBadge({ node, nodes }) {
         border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
         color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
       }}>
-      {m?.icon} {m?.label || eff}{own ? '' : ' (ตกทอด)'}
+      {m?.icon} {tr(m?.label) || eff}{own ? '' : ' (ตกทอด)'}
     </span>
   );
 }
@@ -749,7 +749,7 @@ function LaborBadge({ type }) {
   const m = laborMeta(type);
   return (
     <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-xs)', background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
-      {m.icon}{m.short}
+      {m.icon}{tr(m.short)}
     </span>
   );
 }

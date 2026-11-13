@@ -301,9 +301,9 @@ export default function MaintenanceLevels() {
           question="ควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร"
           foot="กฎที่อ่านออกได้ ไม่ใช่ AI — ทุกข้อบอกเหตุผลเป็นตัวเลข · ระบบไม่เลื่อนแผนให้เอง ช่างเป็นคนตัดสิน">
           <Stat label={trI18n('คำแนะนำทั้งหมด')} value={sum.prescriptive.total} sub={`(${sum.prescriptive.equip} อุปกรณ์)`} />
-          <Stat label={PRIORITY[1].label} value={sum.prescriptive.p1} color={sum.prescriptive.p1 ? PRIORITY[1].color : undefined} />
-          <Stat label={PRIORITY[2].label} value={sum.prescriptive.p2} color={sum.prescriptive.p2 ? PRIORITY[2].color : undefined} />
-          <Stat label={PRIORITY[3].label} value={sum.prescriptive.p3} color={sum.prescriptive.p3 ? PRIORITY[3].color : undefined} />
+          <Stat label={trI18n(PRIORITY[1].label)} value={sum.prescriptive.p1} color={sum.prescriptive.p1 ? PRIORITY[1].color : undefined} />
+          <Stat label={trI18n(PRIORITY[2].label)} value={sum.prescriptive.p2} color={sum.prescriptive.p2 ? PRIORITY[2].color : undefined} />
+          <Stat label={trI18n(PRIORITY[3].label)} value={sum.prescriptive.p3} color={sum.prescriptive.p3 ? PRIORITY[3].color : undefined} />
         </LevelCard>
       </div>
 
@@ -328,7 +328,7 @@ export default function MaintenanceLevels() {
             <tbody>
               {acts.slice(0, limit).map(a => (
                 <tr key={a.key}>
-                  <td style={td}><Chip color={PRIORITY[a.priority].color} title={PRIORITY[a.priority].hint}>{PRIORITY[a.priority].label}</Chip></td>
+                  <td style={td}><Chip color={PRIORITY[a.priority].color} title={trI18n(PRIORITY[a.priority].hint)}>{trI18n(PRIORITY[a.priority].label)}</Chip></td>
                   <td style={td}><EquipCell it={a.item} /></td>
                   <td style={{ ...td, fontWeight: 800, color: 'var(--text)', minWidth: 160 }}>{a.action}</td>
                   <td style={{ ...td, color: 'var(--text2)', lineHeight: 1.55, minWidth: 280 }}>{a.why}</td>
@@ -358,7 +358,7 @@ export default function MaintenanceLevels() {
                   <tr key={it.key}>
                     <td style={td}><EquipCell it={it} /></td>
                     <td style={td}>
-                      <Chip color={pm.color}>{pm.label}</Chip>
+                      <Chip color={pm.color}>{trI18n(pm.label)}</Chip>
                       {it.pv.dueYmd && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{trI18n('ครบ')} {fmtYmd(it.pv.dueYmd)}</div>}
                     </td>
                     <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
@@ -369,7 +369,7 @@ export default function MaintenanceLevels() {
                       {n1(it.pd.rateR)}
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('ก่อน')} {n1(it.pd.rateB)}</div>
                     </td>
-                    <td style={td}><Chip color={tr.color}>{tr.icon} {tr.label}{it.pd.ratio != null && (it.pd.trend === 'worse' || it.pd.trend === 'better') ? ` ×${n1(it.pd.ratio)}` : ''}</Chip></td>
+                    <td style={td}><Chip color={tr.color}>{tr.icon} {trI18n(tr.label)}{it.pd.ratio != null && (it.pd.trend === 'worse' || it.pd.trend === 'better') ? ` ×${n1(it.pd.ratio)}` : ''}</Chip></td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {fmtDur(it.pd.mtbfMin)}
                       {it.pd.mtbfDays != null && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>≈ {n1(it.pd.mtbfDays)} {trI18n('วันปฏิทิน')}</div>}
@@ -383,7 +383,7 @@ export default function MaintenanceLevels() {
                       {it.pd.riskBaht30 != null ? `฿${fmtBaht(it.pd.riskBaht30)}` : <span style={{ color: 'var(--muted)' }} title={it.pd.riskMin30 ? trI18n('ไลน์นี้ยังไม่มี cost center / rate — ตั้งที่ /org-setup') : ''}>—</span>}
                     </td>
                     <td style={td}>
-                      {top ? <Chip color={PRIORITY[top].color}>{it.actions.length} {trI18n('ข้อ ·')} {PRIORITY[top].label}</Chip> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
+                      {top ? <Chip color={PRIORITY[top].color}>{it.actions.length} {trI18n('ข้อ ·')} {trI18n(PRIORITY[top].label)}</Chip> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
                     </td>
                   </tr>
                 );

@@ -116,9 +116,9 @@ const PR_FILTERS = [
   { v: 'waiting', label: 'รอแอดมินช่าง (เปิด PR + กรอกเลข)', hidden: true },
   /* 🔴 **3 ขั้นเท่านั้น** (02/11 ทีม MTN: "จริงๆควรมีแค่ 3 Filter") — ห้ามเพิ่มถังที่ 4
      ขั้น ② จบที่ **เลข PO** ไม่ใช่เลข PR (04/11 · ดู prQueueStateOf) */
-  { v: 'need',  label: PR_QUEUE_META.need.label },
-  { v: 'no_no', label: PR_QUEUE_META.no_no.label },
-  { v: 'open',  label: PR_QUEUE_META.open.label },
+  { v: 'need',  label: trI18n(PR_QUEUE_META.need.label) },
+  { v: 'no_no', label: trI18n(PR_QUEUE_META.no_no.label) },
+  { v: 'open',  label: trI18n(PR_QUEUE_META.open.label) },
 ];
 /* ── helpers ─────────────────────────────────────────────── */
 // แปลง URL โลโก้ (รวมโลโก้ที่ admin อัปโหลดใน /doc-forms) เป็น dataURL เพื่อฝังในหน้าพิมพ์
@@ -1087,7 +1087,7 @@ const HANDOFF_CAP = 2000;
           <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder={ALL.line} />
           <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
             <option value="all">{trI18n(ALL.status)}</option><option value="open">{trI18n('ยังไม่ปิด')}</option>
-            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{stripIcon(m.label)}</option>)}
+            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{stripIcon(trI18n(m.label))}</option>)}
           </select>
           {/* กะ = 3 ตัวเลือก ⇒ <Segmented> ไม่ใช่ dropdown (UI-STANDARD §3) */}
           <Segmented value={fShift} onChange={setFShift} label={trI18n('กะที่แจ้ง')} options={SHIFT_OPTIONS} />
@@ -1108,7 +1108,7 @@ const HANDOFF_CAP = 2000;
             style={prCounts.waiting && !fPr ? { borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700 } : undefined}>
             <option value="">{allOf('งาน PR')}</option>
             {/* ตัวรวมไม่โชว์ในลิสต์ — ยกเว้นตอนที่ถูกเลือกอยู่จริง (มาจากลิงก์กระดิ่ง) ไม่งั้นช่องจะว่างทั้งที่กรองอยู่ */}
-            {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
+            {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{trI18n(x.label)} ({prCounts[x.v] ?? 0})</option>)}
           </select>
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง / ช่างที่รับงาน" />
           <span className="spacer" />
@@ -1191,7 +1191,7 @@ const HANDOFF_CAP = 2000;
               {ladderSteps(emptyWhy.ladder).map((r, i) => (
                 <span key={r.key || `all-${i}`} style={{ color: r.n === 0 ? 'var(--red)' : 'var(--text2)', fontWeight: r.n === 0 ? 800 : 400 }}>
                   {i > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>→ </span>}
-                  {r.label}{r.value ? ` "${r.value}"` : ''} <b>{r.n.toLocaleString()}</b> ใบ
+                  {trI18n(r.label)}{r.value ? ` "${r.value}"` : ''} <b>{r.n.toLocaleString()}</b> ใบ
                 </span>
               ))}
             </div>
@@ -1203,7 +1203,7 @@ const HANDOFF_CAP = 2000;
                     title={`ปลดตัวกรอง "${c.label}" แล้วจะเห็น ${c.n} ใบ`}
                     style={{ height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)',
                       fontWeight: 700, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                    {c.label}{c.value ? `: ${c.value}` : ''} → {c.n.toLocaleString()} {trI18n('ใบ')}
+                    {trI18n(c.label)}{c.value ? `: ${c.value}` : ''} → {c.n.toLocaleString()} {trI18n('ใบ')}
                   </button>
                 ) : (
                   <span key={c.key} style={{ color: 'var(--muted)' }}>
@@ -1275,7 +1275,7 @@ function MoCard({ o, onOpen }) {
     <button type="button" onClick={onOpen} className={`mo-card${o.status === 'pending' ? ' mo-card-alert-rail' : ''}`}>
       <div className="mo-card-top">
         <b>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{trI18n('(ยังไม่ออกเลข)')}</span>}</b>
-        <span style={statusChipStyle(o)}>{stripIcon(m.label)}</span>
+        <span style={statusChipStyle(o)}>{stripIcon(trI18n(m.label))}</span>
       </div>
       <div className="mo-card-where"><b>{o.line_name || '—'}</b>{(o.item_type || o.machine_no) && <> · {o.item_type || ''}{o.machine_no ? <> <b>{o.machine_no}</b></> : ''}</>}</div>
       <div className="mo-card-what">{o.problem_characteristic || '—'}{o.report_note ? <span> — {o.report_note}</span> : null}</div>
@@ -1304,7 +1304,7 @@ function MoRow({ o, onOpen }) {
     <tr onClick={onOpen} tabIndex={0} role="button" className={pending ? 'mo-row-alert' : ''}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
       <td style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{trI18n('(ยังไม่ออกเลข)')}</span>}</td>
-      <td><span style={statusChipStyle(o)}>{stripIcon(m.label)}</span></td>
+      <td><span style={statusChipStyle(o)}>{stripIcon(trI18n(m.label))}</span></td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
           <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
@@ -1915,7 +1915,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                   <button key={pp.key} type="button" onClick={() => set('purpose', pp.key)} style={{
                     padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{pp.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{trI18n(pp.label)}</button>
                 ); })}
               </div>
               {/* จุดประสงค์ไม่ใช่แค่ช่องติ๊กบนใบ — มันเปลี่ยนเส้นทางของใบจริง ต้องบอกผลตั้งแต่ตอนเลือก */}
@@ -3145,7 +3145,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
                 {SAT_DIMS.filter(d => o.satisfaction?.[d.key]).map(d => { const lv = SAT_LEVELS.find(l => l.v === Number(o.satisfaction[d.key])); return (
-                  <span key={d.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
+                  <span key={d.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{trI18n(d.label)}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
                 ); })}
               </div>
             </div>}
@@ -3228,7 +3228,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
              เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
       {next && !canEditStep(next.step) && (
         <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
-          🔒 <b>{trI18n('บัญชีนี้ทำขั้นถัดไปไม่ได้')}</b> — {next.label}
+          🔒 <b>{trI18n('บัญชีนี้ทำขั้นถัดไปไม่ได้')}</b> — {trI18n(next.label)}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
               wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
@@ -3299,7 +3299,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               title: removal.why, hidden: !canDelete('mtn_repair', 'manage_master', role) || removal.mode === MO_REMOVE_BLOCKED },
           ]} />
           <button type="button" className="pg-btn" onClick={onClose}>{trI18n('ปิด')}</button>
-          {!isMobile && next && canEditStep(next.step) && <button type="button" className="pg-btn primary" onClick={() => onStep(next.step, false)}>{stripIcon(next.label)}</button>}
+          {!isMobile && next && canEditStep(next.step) && <button type="button" className="pg-btn primary" onClick={() => onStep(next.step, false)}>{stripIcon(trI18n(next.label))}</button>}
         </div>
       </div>
       {/* 📱 มือถือ: ปุ่ม "ขั้นถัดไป" เกาะล่างของใบ (15/10 · MOBILE-UX-STANDARD §2 ข้อ 2)
@@ -4071,7 +4071,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <button key={c.key} type="button" onClick={() => set('cause_category', on ? '' : c.key)} style={{
                     padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.label}</button>
+                    background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{trI18n(c.label)}</button>
                 ); })}
               </div>
               {f.cause_category === 'other' && (
@@ -4567,7 +4567,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <span className="filter-label">{trI18n('ทีมช่าง')}</span>
             <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
               <option value="">{trI18n(ALL.team)}</option>
-              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || trI18n(t.label)}</option>)}
             </select>
             {!!hiddenN && <span className="filter-count">{trI18n('ซ่อน')} {hiddenN} {trI18n('รายการของทีมอื่น')}</span>}
             <span className="spacer" />
@@ -4600,7 +4600,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: '100%', minWidth: 0 }}>
               {(isBoss || unscoped) && <option value="">{trI18n('ใช้ร่วมทุกทีม')}</option>}
               {teamOpts.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
-                .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || trI18n(t.label)}</option>)}
             </select>
           )}
           {shared && teamed ? <div /> : null}
@@ -4636,7 +4636,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               <select value={it.team || ''} disabled={!ok} onChange={e => changeTeam(it, e.target.value)}
                 title={ok ? trI18n('ทีมที่ใช้รายการนี้') : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: '100%', minWidth: 0 }}>
                 <option value="">{trI18n('ใช้ร่วมทุกทีม')}</option>
-                {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || trI18n(t.label)}</option>)}
               </select>
             )}
             {/* 👁 ทีมอื่นที่ "เห็น" รายการนี้ด้วย — คนละเรื่องกับเจ้าของ (ที่แก้ได้)
@@ -4655,7 +4655,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                         style={{ padding: '3px 7px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
                           border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
                           color: on ? 'var(--accent)' : 'var(--muted)', opacity: ok ? 1 : 0.6 }}>
-                        {t.icon || ''}{(t.dept_name || t.label || '').replace(' MTN', '')}
+                        {t.icon || ''}{(t.dept_name || trI18n(t.label) || '').replace(' MTN', '')}
                       </button>);
                   })}
                 </div>);
@@ -4746,7 +4746,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
               <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                 <b style={{ fontSize: 13 }}>{t.dept_name}</b>
                 {/* รูปแบบของทีมนี้มาจาก moFormatHint() — ห้ามพิมพ์รูปแบบซ้ำในหน้า */}
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t.hint?.title} · {t.hint?.detail}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n(t.hint)?.title} · {trI18n(t.hint)?.detail}</div>
               </div>
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('รหัส')} <input defaultValue={t.mo_code || ''} onBlur={e => saveMoCode(t, e.target.value)} style={{ ...inp, width: 74, marginLeft: 4, textTransform: 'uppercase', fontWeight: 700 }} /></label>
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('เลขล่าสุด')} <input type="number" min="0" defaultValue={t.last_seq} onBlur={e => Number(e.target.value) !== t.last_seq && saveMoSeq(t, e.target.value)} style={{ ...inp, width: 96, marginLeft: 4 }} /></label>

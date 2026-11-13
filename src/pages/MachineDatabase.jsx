@@ -386,7 +386,7 @@ export default function MachineDatabase() {
           title={tr('ชนิดอุปกรณ์ — แม่พิมพ์กับจิ๊กไม่ใช่เครื่องจักร จึงแยกกันคนละลิสต์')}
           style={{ borderColor: filterKind === 'machine' ? undefined : 'var(--accent2)' }}>
           <option value="">{tr(ALL.kind)}</option>
-          {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+          {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
         </select>
         {/* หมวดอุปกรณ์ — เปลี่ยนหมวดแล้วล้างไลน์ที่เลือกค้าง (§5.3 cascade) */}
         <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setFilterLine(''); }}>
@@ -406,7 +406,7 @@ export default function MachineDatabase() {
         )}
         <select value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="">{tr(ALL.type)}</option>
-          {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
+          {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {tr(t.label)}</option>)}
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
@@ -471,7 +471,7 @@ export default function MachineDatabase() {
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: `${tint(item.machine_types.color, 'dim')}`, color: item.machine_types.color, fontWeight: 700 }}>
-                        {item.machine_types.icon || ''} {item.machine_types.label}
+                        {item.machine_types.icon || ''} {tr(item.machine_types.label)}
                       </span>
                     )}
                     {item.automation_level && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
@@ -511,11 +511,11 @@ export default function MachineDatabase() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {EQUIPMENT_KINDS.map(k => {
                     const on = kindOf(editing.equipment_kind) === k.key;
-                    return <button key={k.key} type="button" title={k.desc}
+                    return <button key={k.key} type="button" title={tr(k.desc)}
                       onClick={() => setEditing(f => ({ ...f, equipment_kind: k.key }))}
                       style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
-                      {k.icon} {k.label}</button>;
+                      {k.icon} {tr(k.label)}</button>;
                   })}
                 </div>
                 {kindOf(editing.equipment_kind) === 'die' && (
@@ -609,7 +609,7 @@ export default function MachineDatabase() {
                 <div style={{ display: 'flex', gap: 8 }}>
                   <select value={editing.machine_type_id} onChange={e => setEditing(f => ({ ...f, machine_type_id: e.target.value }))} style={inputStyle}>
                     <option value="">{tr('— ไม่ระบุ —')}</option>
-                    {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {t.label}</option>)}
+                    {types.map(t => <option key={t.id} value={t.id}>{t.icon || ''} {tr(t.label)}</option>)}
                   </select>
                   <button type="button" onClick={() => setShowTypeManager(true)}
                     style={{ ...cancelBtnStyle, padding: '8px 12px', whiteSpace: 'nowrap' }}>
@@ -627,13 +627,13 @@ export default function MachineDatabase() {
                     <Field label="Automation level">
                       <select value={editing.automation_level} onChange={e => setEditing(f => ({ ...f, automation_level: e.target.value }))} style={inputStyle}>
                         <option value="">— not set —</option>
-                        {activeAutomationLevels().map(a => <option key={a.key} value={a.key}>{a.icon || ''} {a.label}</option>)}
+                        {activeAutomationLevels().map(a => <option key={a.key} value={a.key}>{a.icon || ''} {tr(a.label)}</option>)}
                       </select>
                     </Field>
                     <Field label="Operation mode">
                       <select value={editing.operation_mode} onChange={e => setEditing(f => ({ ...f, operation_mode: e.target.value, gang_count: e.target.value === 'gang' ? f.gang_count : '' }))} style={inputStyle}>
                         <option value="">— not set —</option>
-                        {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {o.label}</option>)}
+                        {activeOperationModes().map(o => <option key={o.key} value={o.key}>{o.icon || ''} {tr(o.label)}</option>)}
                       </select>
                     </Field>
                     {/* ⏱️ ช่วง shut height — ตัวแปรเวลาเปลี่ยนรุ่นงานปั๊ม (user 2026-09-24)
@@ -884,7 +884,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
           {types.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
               <span style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: t.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {t.label}
+              <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {tr(t.label)}
                 {hasMoCol && <span style={{ fontSize: 11, color: t.mo_item_type ? 'var(--text2)' : 'var(--muted)', marginLeft: 6 }}>{t.mo_item_type ? `→ ใบ MO: ${t.mo_item_type}` : '· ยังไม่ผูกชนิดในใบ MO'}</span>}</span>
               {canEdit && (
                 <>

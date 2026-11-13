@@ -355,7 +355,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                               border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {DUP_DECISIONS.map(d => (
-                              <button key={d.value} type="button" disabled={busy} title={d.hint}
+                              <button key={d.value} type="button" disabled={busy} title={tr(d.hint)}
                                 onClick={() => saveReview(p, d.value, noteText)}
                                 style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>{tr(d.label)}</button>
                             ))}

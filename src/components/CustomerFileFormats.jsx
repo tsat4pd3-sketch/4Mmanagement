@@ -190,7 +190,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
             {FIELDS.map(f => (
               <label key={f.key} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                {f.label}{f.required && <span style={{ color: '#ef4444' }}> *</span>}
+                {tr(f.label)}{f.required && <span style={{ color: '#ef4444' }}> *</span>}
                 <input value={D.col_map?.[f.key] || ''} placeholder={(FALLBACK_EDI_DICT[f.key] || []).slice(0, 2).join(', ')}
                   onChange={e => setDraft({ ...D, col_map: { ...D.col_map, [f.key]: e.target.value } })} style={inp} />
                 {f.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.hint)}</div>}

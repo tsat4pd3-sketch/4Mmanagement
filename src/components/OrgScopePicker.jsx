@@ -161,9 +161,9 @@ export default function OrgScopePicker({
       style={{ width: 210, fontSize: 13, ...inputStyle, ...(isCc ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : null) }}>
       <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
-      {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {ccGroups.map(g => (
-        <optgroup key={g.label} label={g.label}>
+        <optgroup key={g.label} label={tr(g.label)}>
           {g.items.map(o => (
             <option key={o.key} value={o.key}>
               {`${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
@@ -275,10 +275,10 @@ export default function OrgScopePicker({
       /* เลือกหน่วยเจ้าของซ้ำตอนกรองด้วย cc = เลิกกรองด้วยรหัส (select ไม่ยิง change ถ้าค่าเท่าเดิม ⇒ จับที่ click ของ option ไม่ได้ · ใช้ชิป ↑ แทน) */
       onChange={e => emit(e.target.value)}
       style={{ width, fontSize: 13, ...style, ...inputStyle }}>
-      {ghost && !isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && !isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {groups.map((g, i) => (g.label
         ? (
-          <optgroup key={i} label={g.label}>
+          <optgroup key={i} label={tr(g.label)}>
             {g.div && (!kinds || kinds.includes('division')) && (
               <option value={g.div.key} disabled={!canPick(g.div)}>{`${g.div.icon || '🏢'} ${g.div.label} (ทั้งฝ่าย)`}</option>
             )}

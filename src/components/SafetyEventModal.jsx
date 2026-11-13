@@ -155,7 +155,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           <div style={{ gridColumn: '1 / -1' }}>
             <div style={lbl}>{tr('ระดับเหตุการณ์ *')}</div>
             <select style={inp} value={f.kind} onChange={e => set('kind', e.target.value)}>
-              {kindList.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+              {kindList.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
             </select>
             <div style={{ fontSize: 11, color: kindMeta.resetsStreak ? '#ef4444' : 'var(--muted)', marginTop: 3 }}>
               {kindMeta.resetsStreak

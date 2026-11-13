@@ -264,7 +264,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                     <th style={th}>{tr('วัน · กะ')}</th><th style={th}>{tr('ไลน์')}</th>
                     <th style={th}>{tr('Daily Report: ยอดผลิต')}</th><th style={th}>{tr('DT คนลง (นาที)')}</th>
                     <th style={th}>{tr('เครื่อง')}</th><th style={th}>{tr('ชิ้นจากเครื่อง')}</th><th style={th}>{tr('NG กดหน้าเครื่อง')}</th>
-                    {STATE_ORDER.map(s => <th key={s} style={th} title={STATE_META[s].label}>{STATE_META[s].label} {tr('(นาที)')}</th>)}
+                    {STATE_ORDER.map(s => <th key={s} style={th} title={tr(STATE_META[s].label)}>{tr(STATE_META[s].label)} {tr('(นาที)')}</th>)}
                     <th style={th}>{tr('หยุดสั้น (นาที)')}</th><th style={th}>{tr('DT คนลงเครื่องนี้')}</th>
                   </tr>
                 </thead>

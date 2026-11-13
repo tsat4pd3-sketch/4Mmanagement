@@ -660,7 +660,7 @@ export default function VSM() {
                         {g.actions.map((a, j) => a.to ? (
                           <Link key={j} to={a.to}
                             style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 10px', textDecoration: 'none', whiteSpace: 'nowrap' }}>
-                            {a.label} →
+                            {tr(a.label)} →
                           </Link>
                         ) : (
                           <span key={j} style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr(a.label)}</span>
@@ -862,7 +862,7 @@ export default function VSM() {
                     // dt-alarm-blink ทาพื้นแดง — ตัวอักษรต้องขาว ไม่งั้นแดงบนแดงอ่านไม่ออก
                     color: k === 'down' && nn > 0 ? '#fff' : nn > 0 ? LIVE_STATUS[k].color : 'var(--muted)',
                   }}>
-                  {LIVE_STATUS[k].label} · {nn} ไลน์
+                  {tr(LIVE_STATUS[k].label)} · {nn} ไลน์
                 </span>
               ))}
               {(liveData?.summary?.plannedOpen || 0) > 0 && (

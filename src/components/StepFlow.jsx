@@ -46,7 +46,7 @@ export default function StepFlow({ steps = [], waiting = null, unknown = false, 
                 <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.2, padding: '0 3px',
                   color: s.state === 'current' ? 'var(--text)' : s.state === 'done' ? (s.tone ? statusColor(s.tone) : 'var(--text2)') : s.state === 'skipped' ? statusColor('warn') : 'var(--muted)',
                   fontWeight: s.state === 'current' ? 800 : 600 }}>
-                  {s.label}{s.state === 'skipped' ? ' (ข้าม)' : ''}
+                  {tr(s.label)}{s.state === 'skipped' ? ' (ข้าม)' : ''}
                   {s.who && s.state === 'current' && <div style={{ fontWeight: 600, color: 'var(--muted)' }}>{s.who}</div>}
                 </div>
               )}

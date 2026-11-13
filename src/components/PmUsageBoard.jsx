@@ -216,7 +216,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                                 return (
                                   <tr key={e.id} style={{ borderTop: '1px solid var(--border)' }}>
                                     <td style={{ padding: '5px 8px', color: 'var(--text)' }}>{e.machine_no} <span style={{ color: 'var(--muted)' }}>{e.machine_name}</span></td>
-                                    <td style={{ padding: '5px 8px', color: 'var(--text2)' }}>{kind.icon} {kind.label}</td>
+                                    <td style={{ padding: '5px 8px', color: 'var(--text2)' }}>{kind.icon} {tr(kind.label)}</td>
                                     <td style={{ padding: '5px 8px', fontFamily: 'monospace' }}>
                                       {accum == null ? (
                                         <span style={{ color: 'var(--accent2)', fontFamily: 'inherit', fontSize: 12 }}>

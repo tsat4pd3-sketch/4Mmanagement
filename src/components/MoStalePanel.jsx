@@ -211,7 +211,7 @@ export default function MoStalePanel({
                 if (!sel) return null;
                 return (<>
                   <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4, lineHeight: 1.5 }}>
-                    {sel.meta.icon} <b>{tr(sel.meta.label)}</b> — {sel.meta.hint}
+                    {sel.meta.icon} <b>{tr(sel.meta.label)}</b> — {tr(sel.meta.hint)}
                   </div>
                   <div style={{ display: 'grid', gap: 3, alignContent: 'start' }}>
                     {sel.targets.map(t => {
@@ -315,7 +315,7 @@ export default function MoStalePanel({
             {gaps.groups.map(g => (
               <div key={g.key}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: statusColor(g.tone) }}>
-                  {g.icon} {g.label} · {g.n} ใบ
+                  {g.icon} {tr(g.label)} · {g.n} ใบ
                 </div>
                 <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 4 }}>{tr(g.hint)}</div>
                 <div style={{ display: 'grid', gap: 4, alignContent: 'start' }}>

@@ -195,7 +195,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
                       <td style={{ ...td, textAlign: 'left' }}>
                         <select style={{ ...inp, maxWidth: 260 }} value={row ?? ''} onChange={e => setVarRows(p => ({ ...p, [v.key]: e.target.value === '' ? null : Number(e.target.value) }))}>
                           <option value="">{tr('— ไม่นำเข้า —')}</option>
-                          {labels.map(x => <option key={x.row} value={x.row}>{tr('แถว')} {x.row + 1}: {x.label.slice(0, 50)}</option>)}
+                          {labels.map(x => <option key={x.row} value={x.row}>{tr('แถว')} {x.row + 1}: {tr(x.label).slice(0, 50)}</option>)}
                         </select>
                       </td>
                       {months.map((m) => {

@@ -694,7 +694,7 @@ export default function FixtureRegistry() {
               <Field label={tr('ชนิดจุด')}>
                 <select value={tpl.kind} style={inp}
                         onChange={e => setTpl(t => ({ ...t, kind: e.target.value, prefix: e.target.value === 'locator_pin' ? 'L' : 'P' }))}>
-                  {kinds.map(k => <option key={k.code} value={k.code}>{k.icon} {k.label}</option>)}
+                  {kinds.map(k => <option key={k.code} value={k.code}>{k.icon} {tr(k.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('สร้างกี่จุด')} hint="1–60">
@@ -737,7 +737,7 @@ export default function FixtureRegistry() {
                     expected_life_cycles: p.id || p.expected_life_cycles !== '' ? p.expected_life_cycles : (k?.default_life_cycles ?? ''),
                   }));
                 }} style={inp}>
-                  {kinds.map(k => <option key={k.code} value={k.code}>{k.icon} {k.label}</option>)}
+                  {kinds.map(k => <option key={k.code} value={k.code}>{k.icon} {tr(k.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('คำอธิบายจุด')} hint={tr('ถ้ามี')}>

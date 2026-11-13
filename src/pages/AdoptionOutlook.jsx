@@ -860,7 +860,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
       {dims.map(dim => (
         <div key={dim.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 2 }}>{dim.icon} {dim.label}</div>
+          <div style={{ fontSize: 15.5, fontWeight: 800, marginTop: 2 }}>{dim.icon} {tr(dim.label)}</div>
           {dim.qs.map((q, qi) => {
             const missing = q.chain.filter(s => !s.have(c)).length;
             const gained = q.full > q.now;
@@ -1076,7 +1076,7 @@ function DeptTab({ c, navigate, isMobile }) {
                 textAlign: 'left', cursor: 'pointer', background: 'var(--bg3)',
                 border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 'var(--r-md)', padding: '9px 11px', color: 'var(--text)',
               }}>
-                <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {r.label}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {tr(r.label)}</div>
                 <div style={{ fontSize: 25, fontWeight: 800, color: col, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                   {r.ready == null ? '—' : `${r.ready.toFixed(0)}%`}
                 </div>
@@ -1094,7 +1094,7 @@ function DeptTab({ c, navigate, isMobile }) {
       {rows.map(r => (
         <div key={r.key} style={cardSt}>
           <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
-            <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {r.label}</span>
+            <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {tr(r.label)}</span>
             <button onClick={() => navigate(r.to)} style={{
               fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
@@ -1440,7 +1440,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         <StepHead n="1" icon="📉" title={tr('กะนี้เสียหายไปเท่าไหร่')}
           sub={tr('OEE ตัวเดียวบอกแค่ว่าแย่ — ต้องแตกเป็น A/P/Q ก่อนถึงจะรู้ว่าไปแก้ฝั่งไหน')} />
         <div style={gcol(3)}>
-          {apq.map(x => <ApqBar key={x.k} label={x.label} val={x.v} hint={x.hint} worst={x.k === worstK} />)}
+          {apq.map(x => <ApqBar key={x.k} label={tr(x.label)} val={x.v} hint={tr(x.hint)} worst={x.k === worstK} />)}
         </div>
         <div style={{ ...gcol(3), marginTop: 10 }}>
           {[
@@ -1480,7 +1480,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
           {known.map(g => (
             <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {g.meta.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {tr(g.meta.label)}</span>
                 <span style={{ fontSize: 15, fontWeight: 800, color: g.meta.color }}>
                   {g.min > 0 ? `${fmtNum(g.min)} นาที` : `${fmtNum(g.qty)} ชิ้น`}
                 </span>
@@ -1700,7 +1700,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         <div style={{ display: 'grid', gap: 7, fontSize: 12.5, lineHeight: 1.65 }}>
           <div>
             <b>{tr('ตัวฉุดหลัก:')}</b> {worstK ? `${worstK} (${(+apq.find(a => a.k === worstK).v).toFixed(0)}%)` : '—'}
-            {known[0] ? <> {tr('· ความสูญเสียหลักคือ')} <b>{known[0].meta.icon} {known[0].meta.label}</b> ({fmtNum(known[0].min)} นาที)</> : null}
+            {known[0] ? <> {tr('· ความสูญเสียหลักคือ')} <b>{known[0].meta.icon} {tr(known[0].meta.label)}</b> ({fmtNum(known[0].min)} นาที)</> : null}
           </div>
           {ngTotal > 0 && <div><b>{tr('ฝั่งคุณภาพ:')}</b> {tr('ของเสีย')} {fmtNum(ngTotal)} {tr('ชิ้น —')} {dd.def.map(f => f.def_type).join(' · ')}</div>}
           <div style={{ color: 'var(--muted)' }}>

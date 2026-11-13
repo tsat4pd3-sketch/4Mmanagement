@@ -117,7 +117,7 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
         <div style={{ position: 'absolute', right: 2, top: `${y(c.cl)}%`, transform: 'translateY(-100%)', fontSize: 11, color: '#22c55e', fontWeight: 700 }}>CL {fmt(c.cl, 1)}</div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-        <span>{c.rows[0]?.label}</span><span>{c.rows[c.rows.length - 1]?.label}</span>
+        <span>{tr(c.rows[0]?.label)}</span><span>{tr(c.rows[c.rows.length - 1]?.label)}</span>
       </div>
       <div style={{ fontSize: 11.5, marginTop: 8, lineHeight: 1.8 }}>
         {c.inControl
@@ -191,7 +191,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
                 background: on ? 'var(--bg3)' : 'var(--bg2)', color: 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
               }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {b.label}</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {tr(b.label)}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
                 <div style={{ flex: 1, height: 8, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                   <div style={{ width: `${(b.count / max) * 100}%`, height: '100%', background: b.key === 'unknown' ? '#6b7280' : 'var(--accent)' }} />
@@ -210,7 +210,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
         <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 220, overflow: 'auto' }}>
           {cur.items.slice(0, 60).map((it, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 9px', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 11.5 }}>
-              <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{it.label || '—'}</span>
+              <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{tr(it.label) || '—'}</span>
               <span style={{ color: 'var(--text2)', flex: 1, minWidth: 0 }}>{it.text || tr('(ไม่ได้ระบุสาเหตุ)')}</span>
               {it.guessed && <span style={{ fontSize: 11, color: '#f59e0b', flexShrink: 0 }}>{tr('เดา')}</span>}
             </div>
@@ -312,7 +312,7 @@ export function RunChart({ records, keyOf, valOf, keys, unit = 'ครั้ง'
         ))}
       </div>
       <div style={{ display: 'flex', gap: 3, marginTop: 3 }}>
-        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{p.label.slice(-5)}</div>)}
+        {rc.points.map(p => <div key={p.label} style={{ flex: 1, minWidth: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap' }}>{tr(p.label).slice(-5)}</div>)}
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6 }}>
         รวม <b>{fmt(rc.total, 1)}</b> {unit} {tr('· เฉลี่ยช่วงละ')} <b>{fmt(rc.mean, 1)}</b>

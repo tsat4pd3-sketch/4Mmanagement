@@ -242,7 +242,7 @@ export default function ParetoAbcChart({
             background: '#f59e0b14', border: '1px solid #f59e0b55', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 11.5, color: 'var(--text2)' }}>
           <b style={{ color: '#f59e0b' }}>“{d.name}” = {d._pct.toFixed(0)}{tr('% แต่ยังไม่บอกสาเหตุ')}</b>
           <span>{tr('— กดดูหมายเหตุที่พนักงานเขียนจริง แยกเป็นกลุ่มสาเหตุให้แล้ว')}</span>
-          <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontWeight: 800, whiteSpace: 'nowrap' }}>{noteDim.label} →</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontWeight: 800, whiteSpace: 'nowrap' }}>{tr(noteDim.label)} →</span>
         </div>
       ))}
       {chartCompact()}
@@ -368,7 +368,7 @@ export default function ParetoAbcChart({
                     style={{ padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${dimKey === dm.key ? 'var(--accent)' : 'var(--border2)'}`,
                       background: dimKey === dm.key ? 'var(--accent-dim)' : 'var(--bg3)',
-                      color: dimKey === dm.key ? 'var(--accent)' : 'var(--text2)' }}>{dm.label}</button>
+                      color: dimKey === dm.key ? 'var(--accent)' : 'var(--text2)' }}>{tr(dm.label)}</button>
                 ))}
               </div>
 

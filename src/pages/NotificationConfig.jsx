@@ -496,7 +496,7 @@ export default function NotificationConfig() {
                               background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                               color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '3px 9px', userSelect: 'none' }}>
                             <input type="checkbox" checked={on} onChange={() => toggleRuleRole(rule, r.value)} style={{ flexShrink: 0 }} />
-                            {r.icon ? `${r.icon} ` : ''}{r.label}
+                            {r.icon ? `${r.icon} ` : ''}{tr(r.label)}
                           </label>
                         )
                       })}

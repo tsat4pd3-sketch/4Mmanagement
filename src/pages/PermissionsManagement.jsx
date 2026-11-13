@@ -353,7 +353,7 @@ export default function PermissionsManagement() {
             <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{tr(firstColLabel)}</th>
             {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
+                <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {tr(r.label)}</span>
                 <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{r.en}</div>
               </th>
             ))}
@@ -545,7 +545,7 @@ export default function PermissionsManagement() {
                     const n = accounts ? (accounts[r.value] || 0) : null;
                     return (
                       <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 82 }} title={`${r.value}${r.desc ? ' — ' + r.desc : ''}`}>
-                        <div style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</div>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {tr(r.label)}</div>
                         <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
                           {r.bucket ? 'ธงเสริม' : n == null ? '—' : n > 0 ? `${n} คน` : 'ยังไม่มีใครถือ'}
                         </div>
@@ -566,7 +566,7 @@ export default function PermissionsManagement() {
                       <tr key={it.key} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '6px 10px', color: 'var(--text)', fontWeight: 600, position: 'sticky', left: 0, background: 'var(--bg)', maxWidth: 420 }}>
                           <span style={{ opacity: 0.65, marginRight: 5 }}>{it.type === 'page' ? '📄' : '🛠️'}</span>
-                          {it.label}
+                          {tr(it.label)}
                         </td>
                         {matrixCols.map(r => {
                           const raw = r.value === 'admin' ? true : map[it.key]?.[r.value];

@@ -104,7 +104,7 @@ export default function EquipmentHub() {
     <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) — เดิมวาดเอง ทำให้ 3 แท็บหน้าตาคนละแบบ (ภาพ user 22/09) */}
         <PageHeader title={tr('ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)')} icon="🧰"
-          sub={cur?.hint || tr('เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว')}
+          sub={tr(cur?.hint) || tr('เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว')}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
         {/* ไม่มีสิทธิ์สักแท็บ = ต้องบอกว่าทำไม ห้ามปล่อยจอว่าง (UI-CONVENTIONS §6.9) */}
         {!available.length && (

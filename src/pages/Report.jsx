@@ -483,7 +483,7 @@ table{border-collapse:collapse;width:100%}
             background: isHoliday ? 'var(--amber-dim)' : 'var(--bg3)',
             border: `1px solid ${isHoliday ? 'var(--amber-line)' : 'var(--border)'}`,
           }}>
-            {isHoliday ? '🔶 ' : ''}{DAY_TYPE_META[dayType].label}
+            {isHoliday ? '🔶 ' : ''}{trI18n(DAY_TYPE_META[dayType].label)}
           </span>
         )}
         <Segmented value={shiftFilter} onChange={setShiftFilter} options={SHIFT_SEG_ALL} label={trI18n('กะ')} />
@@ -2600,7 +2600,7 @@ ${catHeaderCells}
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
           <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
-            {lv.label} ≥{lv.min}
+            {trI18n(lv.label)} ≥{lv.min}
           </span>
         ))}
         <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>{trI18n('— ยังไม่ประเมิน')}</span>
@@ -2651,7 +2651,7 @@ ${catHeaderCells}
                         const lv = getLevel(score);
                         return (
                           <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
-                            {s.label} {score}
+                            {trI18n(s.label)} {score}
                           </span>
                         );
                       })}
@@ -2675,7 +2675,7 @@ ${catHeaderCells}
                       style={{ textAlign: 'center', color: g.color,
                         background: `${tint(g.color, 'dim')}`, borderBottom: `2px solid ${tint(g.color, 'line')}`,
                         padding: '5px 4px', borderLeft: `2px solid ${tint(g.color, 'dim')}` }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {g.label}</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.06em' }}>{g.icon} {trI18n(g.label)}</div>
                       {g.desc && <div style={{ fontSize: 11, fontWeight: 400, opacity: 0.75, marginTop: 1 }}>{trI18n(g.desc)}</div>}
                     </th>
                   ))}
@@ -3253,7 +3253,7 @@ function MultiSkillFormTab() {
                 <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
                   <span style={{ fontSize: 11, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
-                    {lv.pct} · {lv.label}
+                    {lv.pct} · {trI18n(lv.label)}
                   </span>
                 </div>
               ))}
@@ -3281,7 +3281,7 @@ function MultiSkillFormTab() {
                           const m = msStyle(lv);
                           return (
                             <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
-                              {s.label} L{lv}
+                              {trI18n(s.label)} L{lv}
                             </span>
                           );
                         })}
@@ -3300,7 +3300,7 @@ function MultiSkillFormTab() {
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>{trI18n('ตำแหน่ง')}</th>
                   {msVisibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center' }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {trI18n(g.label)}</div>
                       {g.desc && <div style={{ fontSize: 11, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{trI18n(g.desc)}</div>}
                     </th>
                   ))}
@@ -3364,7 +3364,7 @@ function MultiSkillFormTab() {
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>{trI18n('ความหมาย')}</th>
                     {msVisibleGroups.map(g => (
                       <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center', fontSize: 11, fontWeight: 800 }}>
-                        {g.icon} {g.label}
+                        {g.icon} {trI18n(g.label)}
                       </th>
                     ))}
                     <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 68, textAlign: 'center', fontSize: 11 }}>{trI18n('รวม')}</th>

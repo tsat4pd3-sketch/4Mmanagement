@@ -552,7 +552,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         {SIGS.map(s => (
           <div key={s.k} style={{ flex: '1 1 180px', minWidth: 170, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
-              {s.label} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? tr('ผู้เบิก/คืน') : tr('ผู้จ่ายสินค้า')})</span>
+              {tr(s.label)} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? tr('ผู้เบิก/คืน') : tr('ผู้จ่ายสินค้า')})</span>
             </div>
             <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder={tr('— เลือก (พิมพ์ค้นหาชื่อ) —')}
               inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(s.k, id)} />

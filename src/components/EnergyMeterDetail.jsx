@@ -119,7 +119,7 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{m.name} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>{tr('· ตู้')} {m.panel}</span></div>
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{m.subtitle}</div>
         </div>
-        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: st.color, border: `1px solid ${st.color}`, borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>● {st.label}</span>
+        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: st.color, border: `1px solid ${st.color}`, borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>● {tr(st.label)}</span>
       </div>
 
       {err && <NoticeBar tone="bad">{tr('โหลดข้อมูลตู้ไม่สำเร็จ:')} {err} {tr('— กราฟเป็นของรอบก่อนหน้า')}</NoticeBar>}

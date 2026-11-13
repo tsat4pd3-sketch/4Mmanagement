@@ -609,7 +609,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                       background: pattern === o.key ? 'var(--accent)' : 'var(--bg2)',
                       color: pattern === o.key ? '#08130a' : 'var(--text2)',
                     }}>
-                    {o.label} {tr('· รับ')} {String(o.round.pickup_time).slice(0, 5)}
+                    {tr(o.label)} {tr('· รับ')} {String(o.round.pickup_time).slice(0, 5)}
                   </button>
                 ))}
                 {patOpts.length > 1 && (
@@ -694,7 +694,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                           )}
                           {legs.length > 1 && <div style={{ fontSize: 11, color: '#0ea5e9', fontWeight: 800 }}>Dock {x.leg?.dock || '—'}</div>}
                         </td>
-                        <td style={{ ...td, color: m.color, fontWeight: 700 }}>{m.label}
+                        <td style={{ ...td, color: m.color, fontWeight: 700 }}>{tr(m.label)}
                           {x.reason && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500 }}>{x.reason}</div>}
                           {/* ใบอื่นในช่วงเดียวกันที่ระบบไม่แตะ — ต้องเห็น ไม่ใช่หายเงียบ */}
                           {x.merge?.length > 0 && (

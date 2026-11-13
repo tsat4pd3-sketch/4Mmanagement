@@ -1584,7 +1584,7 @@ export default function OEEAnalytics() {
                 </div>
                 {tdLiveSession && (() => { const b = STATUS_BADGE[tdLiveSession.status] || STATUS_BADGE.closed; return (
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: b.bg, color: b.color, whiteSpace: 'nowrap' }}>
-                    {b.label}{isLiveCalc ? ' · สด' : ''}
+                    {trI18n(b.label)}{isLiveCalc ? ' · สด' : ''}
                   </span>
                 ); })()}
               </div>
@@ -1869,7 +1869,7 @@ export default function OEEAnalytics() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, padding: '13px 18px', borderBottom: '1px solid var(--border)' }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {tdDtDrill.kind === 'cause' ? '⏱ ' : '📦 '}{tdDtDrill.label}
+                        {tdDtDrill.kind === 'cause' ? '⏱ ' : '📦 '}{trI18n(tdDtDrill.label)}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                         {tdDate} · {tdDrillRows.length} {trI18n('รายการ · รวม')} <b style={{ color: 'var(--blue)' }}>{Math.round(totMin).toLocaleString()}</b> นาทีที่ไลน์หยุด
@@ -2365,7 +2365,7 @@ export default function OEEAnalytics() {
               {/* ตารางโชว์เฉพาะวันที่มีข้อมูลจริง — วันตอว่างที่เติมให้แกนกราฟต่อเนื่อง (empty) ไม่ต้องขึ้นเป็นแถว */}
               {grouped.filter(g => !g.empty).map((g, i) => (
                 <tr key={g.key} style={{ borderBottom: '1px solid var(--border)', background: i % 2 ? 'var(--bg2)' : 'transparent' }}>
-                  <td style={{ padding: '5px 8px', fontWeight: 700, color: 'var(--text)' }}>{period === 'day' ? g.key : g.label}</td>
+                  <td style={{ padding: '5px 8px', fontWeight: 700, color: 'var(--text)' }}>{period === 'day' ? g.key : trI18n(g.label)}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: 'var(--muted)' }}>{g.count}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right' }}>{g.totalQty.toLocaleString()}</td>
                   <td style={{ padding: '5px 8px', textAlign: 'right', color: g.unplannedMin > 60 ? 'var(--red)' : 'var(--text)' }}>{g.unplannedMin.toLocaleString()}</td>
@@ -2521,7 +2521,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
                 <thead>
                   <tr style={{ fontSize: 11, color: 'var(--muted)' }}>
                     <th style={{ textAlign: 'left', padding: '6px 4px' }}>{trI18n('กรุ๊ป / ไลน์หลัก')}</th>
-                    {METRICS.map(m => <th key={m.key} style={{ textAlign: 'right', padding: '6px 4px', width: 76 }}>{m.label} ≥ %</th>)}
+                    {METRICS.map(m => <th key={m.key} style={{ textAlign: 'right', padding: '6px 4px', width: 76 }}>{trI18n(m.label)} ≥ %</th>)}
                     <th style={{ textAlign: 'right', padding: '6px 4px', width: 90 }} title={trI18n('คำนวณจาก A×P×Q อัตโนมัติ — ไม่ต้องกรอก')}>OEE = A×P×Q</th>
                   </tr>
                 </thead>

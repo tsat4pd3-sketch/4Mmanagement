@@ -203,7 +203,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                           <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>{tr('⚠ มีหลายปลายทาง — เลือกเอง')}</div>
                         )}
                         {sel && hint?.note && (
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{hint.label} — {hint.note}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr(hint.label)} — {hint.note}</div>
                         )}
                       </td>
                       <td style={{ ...td, textAlign: 'right' }}>

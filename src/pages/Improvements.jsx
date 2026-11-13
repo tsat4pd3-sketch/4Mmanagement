@@ -1071,7 +1071,7 @@ export default function Improvements() {
                 {/* title + status */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{imp.title}</div>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: st.color, background: st.bg, border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-md)', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>{st.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: st.color, background: st.bg, border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-md)', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>{tr(st.label)}</span>
                 </div>
                 {/* problem chips */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
@@ -1225,7 +1225,7 @@ export default function Improvements() {
                                   border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                                   background: on ? 'var(--accent-dim)' : 'transparent',
                                   color: on ? 'var(--accent)' : 'var(--muted)', textDecoration: on ? 'none' : 'line-through' }}>
-                                {c.label}
+                                {tr(c.label)}
                               </button>
                             );
                           })}
@@ -1252,7 +1252,7 @@ export default function Improvements() {
                           <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                             {RATE_COMPONENTS.map(c => (
                               <span key={c.key} style={{ textDecoration: costComps.includes(c.key) ? 'none' : 'line-through', opacity: costComps.includes(c.key) ? 1 : 0.5 }}>
-                                {c.label} {fmtBaht(cs.comp[c.key])}
+                                {tr(c.label)} {fmtBaht(cs.comp[c.key])}
                               </span>
                             ))}
                             {imp.problem_source === 'defect' && <span>{tr('วัสดุ/Std')} {fmtBaht(cs.matPerDay)}</span>}
@@ -1342,7 +1342,7 @@ export default function Improvements() {
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? 'var(--red)' : meta.c}` }} />
                                   {/* ป้ายเฟส PDCA — จากคอลัมน์ phase (null = ขั้นที่ยังไม่ระบุเฟส โชว์ "–" ไม่เดาให้) */}
                                   {PHASES[m.phase]
-                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 'var(--r-xs)', flexShrink: 0, fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tint(PHASES[m.phase].c, 'dim')}`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
+                                    ? <span title={tr(PHASES[m.phase].label)} style={{ width: 14, height: 14, borderRadius: 'var(--r-xs)', flexShrink: 0, fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tint(PHASES[m.phase].c, 'dim')}`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
                                     : <span title={tr('ยังไม่ระบุเฟส PDCA')} style={{ width: 14, flexShrink: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>–</span>}
                                   <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}${m.phase === 'check' ? '\n🤖 ขั้นนี้ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ด)' : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.phase === 'check' ? ' ' : ''}{m.title}</span>
                                 </button>
@@ -1379,7 +1379,7 @@ export default function Improvements() {
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], phase: e.target.value } }))}
                                 style={{ width: 92, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                                 <option value="">{tr('เฟส —')}</option>
-                                {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
+                                {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {tr(p.label).split(' — ')[0]}</option>)}
                               </select>
                               {/* 2026-09-07 เลือกคนผ่าน <PersonSelect> (profiles+employees · คนของไลน์นี้ขึ้นก่อน) — milestones อยู่ DR เก็บชื่อ snapshot */}
                               <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder={tr('ผู้รับผิดชอบ')}
@@ -1738,7 +1738,7 @@ export default function Improvements() {
                     style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
                       border: `1px solid ${fw === f.key ? 'var(--accent)' : 'var(--border)'}`,
                       background: fw === f.key ? 'var(--accent-dim)' : 'var(--bg3)',
-                      color: fw === f.key ? 'var(--accent)' : 'var(--muted)' }}>{f.label}</button>
+                      color: fw === f.key ? 'var(--accent)' : 'var(--muted)' }}>{tr(f.label)}</button>
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>

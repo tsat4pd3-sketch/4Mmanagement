@@ -317,7 +317,7 @@ function PanelFlow({ panel, onOpen }) {
               <text x={boxX + 42} y={y - 2} fill="var(--text)" fontSize="19" fontWeight="800">
                 <title>{m.name}</title>{m.name.length > 20 ? `${m.name.slice(0, 19)}…` : m.name}
               </text>
-              <text x={boxX + 42} y={y + 17} fill={sm.color} fontSize="13" fontWeight="700">{sm.label}</text>
+              <text x={boxX + 42} y={y + 17} fill={sm.color} fontSize="13" fontWeight="700">{tr(sm.label)}</text>
             </g>
           );
         })}

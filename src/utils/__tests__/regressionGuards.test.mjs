@@ -477,6 +477,17 @@ const RULES = [
     allow: { 'src/pages/Report.jsx': 'ใบพิมพ์ OT เป็น HTML string ใน template literal (กระดาษไทย ไม่แปล · {tr()} ในสตริงพิมพ์ออกมาตรงตัว — บั๊กรอบ 2 แก้ 13/11)' },
   },
   {
+    id: 'i18n-map-label-at-declaration',
+    scan: ['src/pages', 'src/components', 'src/utils', 'src/lib'], ext: ['.jsx', '.js'],
+    /* label: tr('…') ที่จุดประกาศ map ค่าคงที่ — แปลตอน import ครั้งเดียว · สลับภาษาแล้ว App remount (ไม่ reload) ⇒ ป้ายค้างภาษาเดิม */
+    /* จับเฉพาะบรรทัดที่เป็น "แถวของ map" (เริ่มด้วย key: { … หรือ { … หรือ property ตรงๆ) — tr() ใน props ของ call ตอน render ไม่เข้าข่าย */
+    re: /^\s*(?:[\w$'"]+\s*:\s*\{\s*|\{\s*)?(?:[\w$]+\s*:\s*[^,\n{}]*,\s*)*(?:label|desc|hint|short|title|sub)\s*:\s*(?:tr|trI18n)\(\s*'/gm,
+    why: 'รอบ 3c (13/11): สลับภาษาทำงานด้วยการ remount ต้นไม้ React ไม่ใช่ reload ⇒ ค่าคงที่ระดับโมดูลที่เรียก tr() ตอน import '
+       + 'จะแปลครั้งเดียวแล้วค้าง — จอโชว์ภาษาเก่าทั้งที่สลับแล้ว',
+    fix: "เก็บไทยไว้ที่ map · แปลที่จุดวาด {tr(meta.label)} (📄 docs/modules/i18n.md §รอบ 3c)",
+    allow: {},
+  },
+  {
     id: 'i18n-import-path-depth',
     scan: ['src/components/inspect'], ext: ['.jsx'],   // เฉพาะโฟลเดอร์ย่อย — ไฟล์ตรงใต้ pages/components ใช้ '../utils/i18n' ถูกแล้ว
     /* ไฟล์ในโฟลเดอร์ย่อย (src/components/inspect/…) เขียน import '../utils/i18n' = ชี้ผิดชั้น — lint ไม่จับ (resolve ตอน bundle)

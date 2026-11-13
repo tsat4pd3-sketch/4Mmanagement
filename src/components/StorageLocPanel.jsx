@@ -322,7 +322,7 @@ export default function StorageLocPanel() {
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
-                    {meta.icon} {meta.label}
+                    {meta.icon} {tr(meta.label)}
                     {!r.kind && <span style={{ color: '#f59e0b' }}> {tr('· ⚠ ยังไม่ระบุชนิด')}</span>}
                     {r.note && <span> · {r.note}</span>}
                     {!r.is_active && <span style={{ color: '#f59e0b' }}> {tr('· ปิดใช้งาน')}</span>}
@@ -409,7 +409,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชนิดพื้นที่')}</label>
             <select style={inputSt} value={f.kind || ''} onChange={e => setF(v => ({ ...v, kind: e.target.value }))}>
               <option value="">{tr('— ยังไม่ระบุ —')}</option>
-              {Object.entries(SLOC_KINDS).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
+              {Object.entries(SLOC_KINDS).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}
             </select>
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
             {guess && guess !== f.kind && (

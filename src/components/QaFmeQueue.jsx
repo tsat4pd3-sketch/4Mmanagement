@@ -242,7 +242,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                     style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                       background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)' }}>
-                    {m.label}
+                    {tr(m.label)}
                   </button>
                 );
               })}
@@ -302,7 +302,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 border: `1px solid ${isLate ? 'rgba(239,68,68,0.45)' : 'var(--border2)'}`,
                 borderLeft: `3px solid ${sm.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px',
               }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {tr(sm.label)}</span>
                 {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
                 <span className="fme-txt" style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
@@ -361,7 +361,7 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
         const color = c.ok === true ? '#22c55e' : c.ok === null || c.hard ? '#ef4444' : '#f59e0b';
         return (
           <div key={c.key} style={{ display: 'flex', gap: 7, alignItems: 'baseline', fontSize: 12, lineHeight: 1.55, flexWrap: 'wrap' }}>
-            <span style={{ color, fontWeight: 700, whiteSpace: 'nowrap' }}>{icon} {c.label}</span>
+            <span style={{ color, fontWeight: 700, whiteSpace: 'nowrap' }}>{icon} {tr(c.label)}</span>
             <span style={{ color: c.ok === true ? 'var(--muted)' : color }}>{c.detail}</span>
             {c.ok !== true && <span style={{ color: 'var(--muted)' }}>{tr('→ แก้ที่')} <b>{c.fixAt}</b></span>}
           </div>

@@ -166,7 +166,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
             options={nodes.map(n => ({ id: n.id, label: n.name,
               group: NODE_KIND_TH[n.kind] || n.kind }))} />
           <select value={form.kind} onChange={e => setForm(f => ({ ...f, kind: e.target.value }))}>
-            {Object.entries(ASSIGNMENT_KINDS).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
+            {Object.entries(ASSIGNMENT_KINDS).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}
           </select>
           <div>
             <input type="date" value={form.ends_on} style={{ width: '100%' }}

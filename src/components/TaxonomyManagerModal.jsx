@@ -174,7 +174,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   <select value={form.team || ''} onChange={e => setForm(f => ({ ...f, team: e.target.value }))} style={inp}>
                     {(isBoss || unscoped) && <option value="">{tr('🌐 ใช้ร่วมทุกทีม')}</option>}
                     {teams.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
-                      .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+                      .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
                   </select>
                 </div>
               )}

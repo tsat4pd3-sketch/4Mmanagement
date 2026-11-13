@@ -656,7 +656,7 @@ function StockTab({ role, scope }) {
             sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'var(--red-line)' : 'var(--border)' }}>
-            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {c.label}</div>
+            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {tr(c.label)}</div>
             <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? 'var(--red)' : 'var(--text)', marginTop:2 }}>
               {c.value}<span style={{ fontSize:12, fontWeight:600, color:'var(--text2)', marginLeft:3 }}>{c.unit}</span>
             </div>
@@ -1719,10 +1719,10 @@ function InflowRulesTab({ canEdit }) {
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('รับงานเข้า stock เมื่อปิดออเดอร์')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
-          <br />{tr('แต่ละกฎเลือกได้:')} <b>{tr(INFLOW_MODES.auto.label)}</b> = {INFLOW_MODES.auto.hint} ·
-          {' '}<b>{tr(INFLOW_MODES.confirm.label)}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
-          {' '}<b style={{ color: 'var(--red)' }}>{tr(INFLOW_MODES.off.label)}</b> = {INFLOW_MODES.off.hint}
-          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{tr(INFLOW_MODES.lot.label)}</b> (เฉพาะกฎ MAT ตรงตัว) = {INFLOW_MODES.lot.hint}
+          <br />{tr('แต่ละกฎเลือกได้:')} <b>{tr(INFLOW_MODES.auto.label)}</b> = {tr(INFLOW_MODES.auto.hint)} ·
+          {' '}<b>{tr(INFLOW_MODES.confirm.label)}</b> = {tr(INFLOW_MODES.confirm.hint)} (แท็บ 📥 รอรับเข้า) ·
+          {' '}<b style={{ color: 'var(--red)' }}>{tr(INFLOW_MODES.off.label)}</b> = {tr(INFLOW_MODES.off.hint)}
+          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{tr(INFLOW_MODES.lot.label)}</b> (เฉพาะกฎ MAT ตรงตัว) = {tr(INFLOW_MODES.lot.hint)}
           · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
           <br />{tr('กฎแบบ')} <strong>{tr('MAT ตรงตัว')}</strong> {tr('ชนะแบบ')} <strong>{tr('ขึ้นต้นด้วย')}</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>

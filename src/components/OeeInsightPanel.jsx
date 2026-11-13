@@ -476,7 +476,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{it.title}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: sv.c, background: `${sv.c}18`, borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>{sv.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: sv.c, background: `${sv.c}18`, borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>{trI18n(sv.label)}</span>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.55 }}>{it.detail}</div>
                 </div>

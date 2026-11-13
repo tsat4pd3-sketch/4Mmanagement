@@ -196,7 +196,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
                     <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--accent)' }}>{x.sim ? fmt(x.sim.cumProd) : fmt(Object.values(x.pbd).reduce((a, b) => a + b, 0))}</td>
                     <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 800, color: x.sim ? (x.sim.endStock < 0 ? '#ef4444' : 'var(--accent)') : 'var(--muted)' }}>{x.sim ? fmt(x.sim.endStock) : '—'}</td>
                     <td style={{ padding: '7px 8px', color: x.adv.color, fontWeight: 700 }}>
-                      {x.sim ? <>{x.adv.icon} {x.adv.label}</> : <span style={{ color: 'var(--muted)' }}>{tr('❔ ไม่มีออเดอร์ผูกกับเลขนี้')}</span>}
+                      {x.sim ? <>{x.adv.icon} {tr(x.adv.label)}</> : <span style={{ color: 'var(--muted)' }}>{tr('❔ ไม่มีออเดอร์ผูกกับเลขนี้')}</span>}
                     </td>
                   </tr>
                 ))}
@@ -221,7 +221,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
         </>
       ) : (
         <div style={{ padding: '11px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${focus.adv.color}66`, background: `${focus.adv.color}14` }}>
-          <div style={{ fontSize: 13.5, fontWeight: 900, color: focus.adv.color }}>{focus.adv.icon} {focus.adv.label}</div>
+          <div style={{ fontSize: 13.5, fontWeight: 900, color: focus.adv.color }}>{focus.adv.icon} {tr(focus.adv.label)}</div>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.6 }}>{focus.adv.text}</div>
         </div>
       )}

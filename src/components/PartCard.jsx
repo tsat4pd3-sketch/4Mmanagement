@@ -141,7 +141,7 @@ export default function PartCard({
                 fontSize: 12.5, fontWeight: 800, padding: '3px 9px', borderRadius: 'var(--radius)',
                 whiteSpace: 'nowrap', background: st.color || st.bg, border: `1px solid ${st.color || st.border}`,
                 color: st.color ? textOn(st.color) : 'var(--text)',
-              }}>{st.label}</span>
+              }}>{tr(st.label)}</span>
             )}
           </div>
           {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}

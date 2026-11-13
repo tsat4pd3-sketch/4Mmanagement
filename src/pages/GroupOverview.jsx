@@ -844,7 +844,7 @@ export default function GroupOverview() {
                   const lp = +(l.actual / l.target * 100).toFixed(1);
                   return (
                     <tr key={`${l.comp?.key}-${l.line}-${i}`}>
-                      {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {l.comp?.groupMeta?.short}</td>}
+                      {!compNode && <td style={TD}>{l.comp?.groupMeta?.icon} {tr(l.comp?.groupMeta?.short)}</td>}
                       {!compNode && (
                         <td style={TD}>
                           <button onClick={() => setPickComp(l.comp)} style={{
@@ -891,7 +891,7 @@ export default function GroupOverview() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 19, fontWeight: 800 }}>{pickComp.code}</div>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-                  {pickComp.groupMeta.icon} {pickComp.groupMeta.short} · {pickComp.region}
+                  {pickComp.groupMeta.icon} {tr(pickComp.groupMeta.short)} · {pickComp.region}
                 </div>
               </div>
               {pickComp.real

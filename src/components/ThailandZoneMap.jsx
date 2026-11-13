@@ -108,7 +108,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
-                {g.icon} {g.short}
+                {g.icon} {tr(g.short)}
                 {g.key && <span style={{ marginLeft: 5, opacity: 0.75 }}>
                   {zones.reduce((a, z) => a + z.companies.filter(c => c.groupMeta?.key === g.key).length, 0)}
                 </span>}

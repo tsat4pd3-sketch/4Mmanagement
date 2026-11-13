@@ -391,7 +391,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                         transition: live?.id === c.id ? 'none' : 'opacity .15s',
                       }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', textAlign: 'center', lineHeight: 1.25, padding: 2, overflow: 'hidden' }}>
-                        {c.label || c.shelf_code}
+                        {tr(c.label) || c.shelf_code}
                         {!!ps.length && <div style={{ fontSize: 11, fontWeight: 700, opacity: 0.95 }}>{ps.length} {tr('รายการ')}</div>}
                       </div>
                       {/* มือจับปรับขนาด (มุมขวาล่าง) — โผล่เฉพาะโหมดแก้ผัง */}
@@ -621,7 +621,7 @@ function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = 
             <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น ชั้นวาง A (ห้องอะไหล่ JIG)')} style={inp} /></div>
           <div><label style={lbl}>{tr('ทีมที่ดูแล')}</label>
             <select value={team} onChange={e => setTeam(e.target.value)} style={inp}>
-              {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
+              {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || tr(t.label)}</option>)}
             </select></div>
           <div><label style={lbl}>{tr('หน่วยงานเจ้าของ')}</label>
             <select value={sectionKeyOf(section)} onChange={e => setSection(e.target.value)} style={inp}>

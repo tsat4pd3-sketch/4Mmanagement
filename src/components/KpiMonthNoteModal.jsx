@@ -72,10 +72,10 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
             const m = noteKindMeta(n.kind);
             return (
               <div key={n.id} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `3px solid ${n.kind === 'action' ? '#f59e0b' : n.kind === 'note' ? '#38bdf8' : '#a78bfa'}` }}>
-                <div style={{ fontSize: 16, lineHeight: 1 }} title={m.label}>{m.icon}</div>
+                <div style={{ fontSize: 16, lineHeight: 1 }} title={tr(m.label)}>{m.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.text}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{m.label} · {n.created_by_name || 'ไม่ระบุผู้บันทึก'} · {fmtWhen(n.created_at)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr(m.label)} · {n.created_by_name || 'ไม่ระบุผู้บันทึก'} · {fmtWhen(n.created_at)}</div>
                 </div>
                 {canEdit && <DeleteButton onClick={() => remove(n)} title={tr('ลบ')} />}
               </div>
@@ -86,8 +86,8 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
           <div style={{ padding: 12, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {NOTE_KINDS.map(k => (
-                <button key={k.key} onClick={() => setKind(k.key)} title={k.hint}
-                  style={chip(kind === k.key, k.key === 'action' ? '#f59e0b' : k.key === 'note' ? '#38bdf8' : '#a78bfa')}>{k.icon} {k.label}</button>
+                <button key={k.key} onClick={() => setKind(k.key)} title={tr(k.hint)}
+                  style={chip(kind === k.key, k.key === 'action' ? '#f59e0b' : k.key === 'note' ? '#38bdf8' : '#a78bfa')}>{k.icon} {tr(k.label)}</button>
               ))}
             </div>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder={noteKindMeta(kind).hint}

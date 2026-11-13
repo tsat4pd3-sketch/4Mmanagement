@@ -585,7 +585,7 @@ export default function StoreTimeChart({
             background: cardFilter === f.k ? 'var(--accent)' : 'var(--bg2)',
             color: cardFilter === f.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${cardFilter === f.k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{f.label}</button>
+          }}>{tr(f.label)}</button>
         ))}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{tr('เรียง:')}</span>
         {[{ k: 'urgent', label: '⚡ ใกล้ดิวก่อน' }, { k: 'time', label: 'ตามเวลาส่ง' }].map(s => (
@@ -594,7 +594,7 @@ export default function StoreTimeChart({
             background: sortMode === s.k ? 'var(--accent)' : 'var(--bg2)',
             color: sortMode === s.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${sortMode === s.k ? 'var(--accent)' : 'var(--border)'}`,
-          }}>{s.label}</button>
+          }}>{tr(s.label)}</button>
         ))}
       </div>}
 
@@ -960,7 +960,7 @@ export default function StoreTimeChart({
                           color: p.missed ? '#ef4444' : p.done ? '#22c55e' : 'var(--muted)',
                           border: `1px solid ${p.missed ? 'rgba(239,68,68,0.35)' : p.done ? 'rgba(34,197,94,0.25)' : 'var(--border)'}`,
                         }}>
-                          {p.missed ? '🔴' : p.done ? '✓' : p.icon} {p.label} {fmtMin(p.at)}
+                          {p.missed ? '🔴' : p.done ? '✓' : p.icon} {tr(p.label)} {fmtMin(p.at)}
                         </span>
                       ))}
                     </div>

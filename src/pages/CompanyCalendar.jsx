@@ -136,7 +136,7 @@ export default function CompanyCalendar() {
         {DAY_TYPES.map(t => (
           <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
             <div style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: DAY_TYPE_META[t].color, flexShrink: 0 }} />
-            {DAY_TYPE_META[t].label} <strong style={{ color: 'var(--text)' }}>{counts[t]} {tr('วัน')}</strong>
+            {tr(DAY_TYPE_META[t].label)} <strong style={{ color: 'var(--text)' }}>{counts[t]} {tr('วัน')}</strong>
           </div>
         ))}
         {!canEdit && (

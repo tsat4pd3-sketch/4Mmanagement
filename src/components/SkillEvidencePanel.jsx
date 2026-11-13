@@ -40,7 +40,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>● {st.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>● {tr(st.label)}</span>
         {/* 🔴 ประเมินไม่ได้ ≠ คะแนน 0 — ต้องเขียนบนจอตรงๆ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ) */}
         {ev.shadow_score == null ? (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>

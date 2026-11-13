@@ -963,7 +963,7 @@ export default function QualityBins({ mode = 'full' }) {
         )}
         <span className="spacer" />
         {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{trI18n('+ บันทึกรายการ')}</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{trI18n('พิมพ์ใบ')} {B.short}</button>
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{trI18n('พิมพ์ใบ')} {trI18n(B.short)}</button>
         <button onClick={() => setShowWiReg(v => !v)}
           title={trI18n('ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน')}
           style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
@@ -1053,8 +1053,8 @@ export default function QualityBins({ mode = 'full' }) {
                   const d = decisionOf(r.qa_decision);
                   if (!d) return <span style={{ fontSize: 11.5, color: '#f59e0b' }}>{trI18n('⏳ รอ QA พิจารณา')}</span>;
                   return (
-                    <span style={{ fontSize: 11.5, fontWeight: 700, color: d.color }} title={d.hint}>
-                      {d.label}
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: d.color }} title={trI18n(d.hint)}>
+                      {trI18n(d.label)}
                       {r.qa_decision === 'use_as_is' && (
                         r.special_use_doc_no
                           ? <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{SPECIAL_USE_FORM} {r.special_use_doc_no}</span>
@@ -1146,7 +1146,7 @@ export default function QualityBins({ mode = 'full' }) {
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 720px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
-              {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {B.short}
+              {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {trI18n(B.short)}
             </h3>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
               <div><label style={lbl}>{trI18n('วันที่ลงถัง *')}</label>
@@ -1201,14 +1201,14 @@ export default function QualityBins({ mode = 'full' }) {
                   {QA_DECISIONS.map(d => {
                     const on = form.qa_decision === d.value;
                     return (
-                      <button key={d.value} type="button" title={canDecide ? d.hint : trI18n('ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)')}
+                      <button key={d.value} type="button" title={canDecide ? trI18n(d.hint) : trI18n('ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)')}
                         disabled={!canDecide}
                         onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
                         style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800,
                           cursor: canDecide ? 'pointer' : 'not-allowed', opacity: canDecide || on ? 1 : 0.5,
                           border: `1px solid ${on ? d.color : 'var(--border2)'}`,
                           background: on ? `${d.color}22` : 'transparent', color: on ? d.color : 'var(--text2)' }}>
-                        {d.label}
+                        {trI18n(d.label)}
                       </button>
                     );
                   })}

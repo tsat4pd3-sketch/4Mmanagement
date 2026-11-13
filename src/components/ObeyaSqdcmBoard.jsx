@@ -1184,7 +1184,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <select value={modal.kpi_key} onChange={e => setModal({ ...modal, kpi_key: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }}>
                   <option value="">{tr('— ไม่ระบุแกน —')}</option>
-                  {OBEYA_AXES.map(a => <option key={a.key} value={a.key}>{a.icon} {a.key} · {a.label}</option>)}
+                  {OBEYA_AXES.map(a => <option key={a.key} value={a.key}>{a.icon} {a.key} · {tr(a.label)}</option>)}
                   <option value="OEE">⚙️ OEE</option>
                 </select>
               </label>

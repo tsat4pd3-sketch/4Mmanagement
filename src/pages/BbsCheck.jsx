@@ -553,12 +553,12 @@ export default function BbsCheck() {
           {MARKS.map(m => {
             const on = brush === m.key;
             return (
-              <button key={m.key} onClick={() => setBrush(m.key)} title={m.label} style={{
+              <button key={m.key} onClick={() => setBrush(m.key)} title={tr(m.label)} style={{
                 padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${on ? m.color : 'var(--border2)'}`,
                 background: on ? m.color : 'var(--bg3)', color: on ? '#fff' : 'var(--text2)',
               }}>
-                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {m.label.split(' (')[0]}
+                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {tr(m.label).split(' (')[0]}
               </button>
             );
           })}
@@ -712,7 +712,7 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, fontSize: 12, alignItems: 'center' }}>
         {MARKS.map(m => (
           <span key={m.key} style={{ color: 'var(--text2)' }}>
-            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {m.label}
+            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {tr(m.label)}
           </span>
         ))}
         <span style={{ flex: 1 }} />

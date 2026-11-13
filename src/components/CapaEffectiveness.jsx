@@ -227,7 +227,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล')}</span>
         {V && !loading && (
           <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>
-            {V.short}
+            {tr(V.short)}
           </span>
         )}
         {stamped && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('· ค่าที่บันทึกไว้ตอนปิดใบ')}</span>}
@@ -290,7 +290,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
           <>
             <Bars m={m} />
             <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', background: `${V.color}14`, border: `1px solid ${V.color}55`, fontSize: 12, color: V.color, fontWeight: 700, lineHeight: 1.6 }}>
-              {V.label}{judged.reason ? ` — ${judged.reason}` : ''}
+              {tr(V.label)}{judged.reason ? ` — ${judged.reason}` : ''}
               {judged.verdict === 'worse' || judged.verdict === 'not_effective' ? (
                 <div style={{ fontWeight: 600, marginTop: 3 }}>
                   ต้องกลับไปทบทวน D4 (สาเหตุราก) — สาเหตุที่ระบุอาจไม่ใช่ตัวจริง หรือมาตรการยังไม่ถูกทำจริงหน้างาน
