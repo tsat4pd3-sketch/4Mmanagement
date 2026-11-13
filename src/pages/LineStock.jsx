@@ -1861,7 +1861,7 @@ export default function LineStock() {
   return (
     <Page>
       <PageHeader
-        title={tr('Line Stock — สต๊อกหน้าไลน์')} icon="📦"
+        title={tr('Stock Management')} icon="📦"
         sub={tr('ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต')}
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
