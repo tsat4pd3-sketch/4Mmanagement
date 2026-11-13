@@ -10317,6 +10317,19 @@ const EN = {
   'ตั้งค่าคลัง': 'Store setup',
   'BOM': 'BOM',
   'Product': 'Product',
+
+  /* ── ⏳ ใบ MO ที่เปิดให้ตอนกดเรียกช่าง แล้วยังรอรายละเอียด (13/11) ── */
+  'เอกสารใบ MO': 'MO paperwork',
+  'รอเพิ่มรายละเอียด': 'Details pending',
+  '⏳ รอเพิ่มรายละเอียด': '⏳ Details pending',
+  '➕ เพิ่มรายละเอียด': '➕ Add details',
+  'เพิ่มรายละเอียด': 'Add details',
+  'ใบนี้เปิดให้อัตโนมัติตอนกดเรียกช่าง': 'This MO was opened automatically when maintenance was called',
+  'ยังไม่มีใครใส่รายละเอียด': 'nobody has filled in the details yet',
+  'เปิดใบให้อัตโนมัติตอนกดเรียกช่าง — เปิดใบนี้แล้วกดเพิ่มรายละเอียดได้':
+    'Opened automatically when maintenance was called — open it and add the details',
+  'เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)':
+    'Maintenance was called — an MO was opened automatically · tap to add the details (equipment kind · problem · before photo)',
 };
 
 export default EN;
