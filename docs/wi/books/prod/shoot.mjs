@@ -31,8 +31,10 @@ for (const s of SPEC){
     // "⋯" = ปุ่มเมนูคำสั่งอื่นๆ (OverflowMenu · aria-label เพิ่มเติม) · "⋯2" = ตัวที่ 2 บนจอ · "=ป้าย" = ตรงตัว
     let c; const mm = /^⋯(\d*)$/.exec(ck);
     if (mm) c=pg.getByRole('button',{name:'เพิ่มเติม',exact:true}).nth(mm[1]?Number(mm[1])-1:0);
-    else { const EX=ck.startsWith('='); const nm=EX?ck.slice(1):ck;
-      c=pg.getByRole('menuitem',{name:nm,exact:EX}).first(); if(!(await c.count())) c=pg.getByRole('button',{name:nm,exact:EX}).first(); if(!(await c.count())) c=pg.getByText(nm,{exact:EX}).first(); } if(await c.count()){ await c.scrollIntoViewIfNeeded(); await c.click().catch(()=>{}); await pg.waitForTimeout(1200);} else console.log('  click-miss',s.id,ck); }
+    else { const EX=ck.startsWith('='); let nm=EX?ck.slice(1):ck;
+      // "ป้าย#2" = ตัวที่ 2 (ปุ่มชื่อซ้ำกันหลายแถว เช่น ตัวเลือกต่อรายการ Downtime เปิดค้าง)
+      let NTH=0; const kn=/#(\d+)$/.exec(nm); if (kn){ NTH=Number(kn[1])-1; nm=nm.slice(0,-kn[0].length); }
+      c=pg.getByRole('menuitem',{name:nm,exact:EX}).nth(NTH); if(!(await c.count())) c=pg.getByRole('button',{name:nm,exact:EX}).nth(NTH); if(!(await c.count())) c=pg.getByText(nm,{exact:EX}).nth(NTH); } if(await c.count()){ await c.scrollIntoViewIfNeeded(); await c.click().catch(()=>{}); await pg.waitForTimeout(1200);} else console.log('  click-miss',s.id,ck); }
   if (s.top){ const t=pg.getByText(s.top,{exact:false}).first(); if(await t.count()){ await t.evaluate(el=>{ el.scrollIntoView({block:'start'}); let p=el.parentElement; while(p){ if(p.scrollHeight>p.clientHeight+5 && getComputedStyle(p).overflowY!=='visible'){ p.scrollBy(0,-70); break;} p=p.parentElement;} if(!p) window.scrollBy(0,-70); }); await pg.waitForTimeout(400);} else console.log('  top-miss',s.id); }
   if (s.scroll2){ const t=pg.getByText(s.scroll2,{exact:false}).first(); if(await t.count()){ await t.scrollIntoViewIfNeeded(); await pg.waitForTimeout(300);} }
   LOOSE=!!s.loose; const boxes=[];

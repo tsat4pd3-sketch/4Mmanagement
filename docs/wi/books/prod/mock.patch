@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -457,6 +457,8 @@
+@@ -501,6 +501,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -9,7 +9,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -563,9 +565,13 @@
+@@ -607,10 +609,19 @@
    production_sessions: (r, i) => ({
      ...r,
      line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
@@ -21,5 +21,11 @@
 +    /* WI patch: แถว 6 = ส่งขอปิดกะแล้ว รอ SV อนุมัติ (สไลด์อนุมัติปิดกะ) */
 +    ...(i === 6 ? { status: 'pending_close', close_requested_by_name: 'หัวหน้ากลุ่ม ทดสอบ', close_requested_at: '2026-08-04T17:40:00+07:00' } : {}),
    }),
++  /* WI patch: แถว 1 = Downtime เปิดค้าง (ปุ่ม เรียกช่าง + ป๊อปอัพทวน DT ก่อนปิดกะ) · แถว 2 = เรียกช่างแล้ว (ปุ่ม เพิ่มรายละเอียด) */
++  downtime_logs: (r, i) => i === 1 ? { ...r, duration_min: null, ended_at: null, end_time: null }
++    : i === 2 ? { ...r, call_mtn: true, call_mtn_by: 'หัวหน้ากลุ่ม ทดสอบ' } : r,
++  /* WI patch: ใบถังเหลืองแถว 11 = ซ่อมแล้ว รอ QA ตรวจรับ (ขั้น 4) ให้คิวมีครบทุกขั้น */
++  quality_bin_records: (r, i) => i === 11 ? { ...r, repair_date: '2026-08-05', qty_ok: 120, qty_ng: 11, repair_detail: 'เจียรครีบตาม WI ซ่อม' } : r,
    /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
       `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
+      **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
