@@ -2,7 +2,7 @@ import { createRequire } from 'module'; const require = createRequire(import.met
 import fs from 'fs';
 const OUT=process.argv[2]; const SPEC=JSON.parse(fs.readFileSync(process.argv[3]));
 const only = process.argv[4] ? process.argv[4].split(',') : null;
-const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSync(EXE) ? { executablePath: EXE } : {}); const pg=await b.newPage({viewport:{width:1600,height:1000}});
+const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSync(EXE) ? { executablePath: EXE } : {}); const pg=await b.newPage({viewport:{width:1600,height:1000}, timezoneId:'Asia/Bangkok'});
 const res = fs.existsSync(OUT+'/boxes.json') ? JSON.parse(fs.readFileSync(OUT+'/boxes.json')) : {};
 async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
 let LOOSE=false;
