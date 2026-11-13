@@ -18,5 +18,12 @@ export function storeOfMat(mat) {
   const c = String(mat ?? '').trim().charAt(0);
   return MAT_STORE[c] || 'other';
 }
+/* 🚫 ไม่มี FG เข้าไลน์ (2026-11-13 · คำสั่ง user) — *"FG มันป้อนไลน์ประกอบไม่ได้ … คลังสินค้าเก็บแค่งานสำเร็จรูปพร้อมขาย
+   หรืองานก่อนแพ็ค … ไม่มี FG เข้าไลน์"* ⇒ ใบเบิก-ส่งเข้าไลน์ (`wip_replenish_requests`) ห้ามเป็นเลข 1xx
+   🔴 ทุกจุดที่ insert ใบเบิกเข้าไลน์ต้องถามตัวนี้ (ขอเอง · สโตร์ออกตามแผน · แตก BOM ตอนเปิดใบผลิต) — มีด่าน regressionGuards
+   · ใบ 1xx เก่าที่มีอยู่แล้วไม่แตะ (ด่านนี้กันแค่ใบใหม่) */
+export const isFgMat = (mat) => storeOfMat(mat) === 'fg';
+export const FG_NO_LINE_REQUEST = 'เลข 1xx คือ FG (งานสำเร็จรูป) เก็บที่คลังสินค้ารอขาย — ไม่มีการเบิกเข้าไลน์ · ถ้าเป็นชิ้นส่วนให้ตรวจเลข MAT';
+
 /** ตู้ที่ "ใบเบิก-ส่งเข้าไลน์" ไปลงได้ (ใช้แทนแท็บ 'wip' เดิม) */
 export const WIP_STORES = ['fg', 'child', 'ext', 'raw', 'other'];

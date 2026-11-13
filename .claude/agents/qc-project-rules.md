@@ -535,3 +535,7 @@ model: inherit
 > `writeScope.js` (`canWriteUnit`/`canWriteLine`/`writableRows`) · `ccScope.js` (`canWriteScope`) ·
 > `mtnTeams.js` (`canWriteTeam`) — **จอที่เขียน DB ต้องเช็คซ้ำในฟังก์ชันที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม** ·
 > `sections` = ขอบเขต "ที่เห็น" **ห้ามเอามาตัดสินการแก้** · หน้าแม่ต้องส่งกฎลงแผงลูก (ส่งแค่ `canEdit` ไม่พอ)
+
+### ด่านที่เพิ่ม 2026-11-13
+> 🚫 **ไม่มี FG เข้าไลน์** — ทุกจุดที่ insert `wip_replenish_requests` ต้องกันเลข 1xx ผ่าน `isFgMat()` (`src/utils/storeOps.js`) ·
+> ห้ามเทียบ `charAt(0) === '1'` เองในหน้า (ด่าน `no-fg-line-request`)
