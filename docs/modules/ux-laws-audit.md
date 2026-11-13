@@ -390,3 +390,9 @@ PANEL ASSY-COWL SIDE INNER R |
 | operator | EXP v2: โหมดทดลอง | เปิดสูตร EXP v2 กับคะแนนจริง?
 
 คะแนนจะถูกคำนวณใหม่ |
+
+## ✅ แก้แล้ว — กฎ 02 ม่านหลัง modal (2026-11-13 · คำสั่ง user "แก้ backdrop ให้เป็น token เดียว 0.7 + blur ทั้งระบบ")
+- `index.css`: `--scrim` 0.55 → **0.7** · เพิ่ม `--scrim-blur: blur(4px)` · `.overlay` ใช้ token (+ `-webkit-backdrop-filter`)
+- โค้ดที่เขียน `rgba(0,0,0,0.x)` เอง **127 จุด / 75 ไฟล์** → `var(--scrim)` + blur · ด่าน `scrim-token-only`
+- **วัดซ้ำหลังแก้** (12 หน้าที่มี modal มากสุด · กดทุกปุ่ม): overlay 100 ตัว → **97 ตัว = 0.7 + blur(4px)** · 3 ตัวที่เหลือ = โหมดเต็มจอ TV/ประชุม (ทึบตั้งใจ `var(--bg)`)
+- contrast ที่เหลือของหน้าหลังฉาก (ธีมมืด) ทุก modal = **2.2:1** (เดิมกระจาย 1.6–3.6:1)
