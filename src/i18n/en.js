@@ -65,6 +65,8 @@ const EN = {
   'บอร์ด New Model (IEC)': 'New Model Board (IEC)',
   'RFQ / เสนอราคา (Marketing)': 'RFQ / Quotation (Marketing)',
   'เพิ่มพนักงาน': 'Add Employee',
+  'คนในไลน์อื่น': 'in other lines',
+  'อยู่ในขอบเขตที่คุณดูได้ แต่เป็นไลน์อื่น — เปลี่ยนช่อง “ขอบเขต” เพื่อดู หรือยืมคนเข้าไลน์ตัวเอง': 'Within your visible scope but on another line — change the Scope filter to view them, or borrow them into your line',
   '➕ เพิ่มพนักงาน': '➕ Add Employee',
   'เพิ่มพนักงาน (แท็บ ➕ ใน ฐานข้อมูลพนักงาน — ต้องมี employees:register ด้วยจึงเห็นแท็บ)': 'Add Employee (➕ tab in Employee Database — the tab also needs employees:register)',
   'ฐานข้อมูลพนักงาน': 'Employee Database',
