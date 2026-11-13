@@ -21,6 +21,7 @@ import { layoutLots, reorderTo, UNKNOWN_BOX_MIN_PCT } from '../utils/planTimelin
 import { sliceBySegments, visibleRows, rowTicks, SHIFT_LABEL } from '../utils/planHorizon';
 import { qtyText, isTrialLot, lotKeyText } from '../utils/planLots';
 
+import { tr } from '../utils/i18n';
 const fmtHm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 /* ข้ามวัน = บอกเวลาเปล่าๆ ไม่พอ ("22:34" ของวันไหน?) */
 const fmtDayHm = (ms) => { const d = new Date(ms); return `${d.getDate()}/${d.getMonth() + 1} ${fmtHm(ms)}`; };
@@ -76,7 +77,7 @@ export default function PlanTimeline({
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {dm(row.seg.workDate)}
                   {/* 🔴 กะที่ยังว่างต้องบอกว่าว่าง — บรรทัดเปล่าเฉยๆ อ่านเป็น "โหลดไม่ขึ้น" */}
-                  {!row.hasWork && <span style={{ marginLeft: 4 }}>· ว่าง</span>}
+                  {!row.hasWork && <span style={{ marginLeft: 4 }}>{tr('· ว่าง')}</span>}
                 </div>
               </div>
             )}
@@ -87,7 +88,7 @@ export default function PlanTimeline({
                 {ticks.map(t => (
                   <span key={t.ms} style={{ position: 'absolute', left: `${t.pct}%`,
                     transform: t.pct === 0 ? 'none' : t.pct >= 100 ? 'translateX(-100%)' : 'translateX(-50%)',
-                    fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{t.label}</span>
+                    fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr(t.label)}</span>
                 ))}
               </div>
 
@@ -101,7 +102,7 @@ export default function PlanTimeline({
                 ))}
                 {/* เวลาพัก — พื้นที่ที่เครื่องไม่เดิน (กล่องถูกยืดข้ามไปแล้วโดย layoutLots) */}
                 {row.breaks.map((b, i) => (
-                  <div key={i} title="เวลาพักตามนโยบาย" style={{ position: 'absolute', left: `${b.leftPct}%`,
+                  <div key={i} title={tr('เวลาพักตามนโยบาย')} style={{ position: 'absolute', left: `${b.leftPct}%`,
                     width: `${b.widthPct}%`, top: 0, bottom: 0, background: 'rgba(148,163,184,0.18)' }} />
                 ))}
 
@@ -124,7 +125,7 @@ export default function PlanTimeline({
                       )}
                       {/* 🔴 ไม่รู้เวลาเปลี่ยนรุ่น = ขีดประบางๆ ให้เห็นว่ามีช่วงที่ยังตอบไม่ได้ (ไม่ใช่ 0) */}
                       {run && !b.setupKnown && boxIndex > 0 && !run.cutLeft && (
-                        <div title="ยังตอบไม่ได้ว่าเปลี่ยนรุ่นใช้เวลาเท่าไหร่ — เวลาที่เห็นจึงเร็วกว่าจริง"
+                        <div title={tr('ยังตอบไม่ได้ว่าเปลี่ยนรุ่นใช้เวลาเท่าไหร่ — เวลาที่เห็นจึงเร็วกว่าจริง')}
                           style={{ position: 'absolute', left: `${run.leftPct}%`, top: 2, height: ROW_H + 4,
                             borderLeft: '2px dashed #f59e0b', pointerEvents: 'none' }} />
                       )}
@@ -205,7 +206,7 @@ export default function PlanTimeline({
       {/* 🔴 วันหยุดที่ขอบเขตข้ามไป ต้องเขียนบนจอ — ข้ามเงียบ = คนอ่านวันจบผิดโดยไม่รู้ตัว */}
       {skipped.length > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: multi ? LABEL_W + 8 : 0 }}
-          title="โรงงานไม่เดินเครื่องวันนี้ — คิวหยุดนับเวลาแล้วไปต่อวันเปิดถัดไป">
+          title={tr('โรงงานไม่เดินเครื่องวันนี้ — คิวหยุดนับเวลาแล้วไปต่อวันเปิดถัดไป')}>
           ⏸ ข้ามวันหยุด {skipped.slice(0, 3).map(d => `${dm(d.workDate)} (${d.reason})`).join(' · ')}
           {skipped.length > 3 ? ` …อีก ${skipped.length - 3} วัน` : ''}
         </div>
@@ -217,7 +218,7 @@ export default function PlanTimeline({
           คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
             {lay.unknownCount > 0 ? '—' : (spansDays || multi ? fmtDayHm(lay.endMs) : fmtHm(lay.endMs))}</b>
           {/* 🔴 "ล้น" ที่นี่ = ล้นเลย**ขอบเขตทั้งหมด** ไม่ใช่ล้นกะ — งานที่ล้นกะไหลไปกะถัดไปแล้ว */}
-          {lay.overflowMin > 0 && <b style={{ color: '#ef4444' }}> · ล้นเลยขอบเขต {fmtMin(lay.overflowMin)}</b>}
+          {lay.overflowMin > 0 && <b style={{ color: '#ef4444' }}> {tr('· ล้นเลยขอบเขต')} {fmtMin(lay.overflowMin)}</b>}
         </span>
         {lay.unknownCount > 0 && (
           <span style={{ color: '#f59e0b', fontWeight: 700 }}>
@@ -226,10 +227,10 @@ export default function PlanTimeline({
         )}
         {lay.setupUnknownCount > 0 && (
           <span style={{ color: '#f59e0b' }}>
-            ⚠️ {lay.setupUnknownCount} ช่วงยังไม่รู้เวลาเปลี่ยนรุ่น (เส้นประส้ม) — เวลาที่เห็น<b>เร็วกว่าจริง</b>
+            ⚠️ {lay.setupUnknownCount} {tr('ช่วงยังไม่รู้เวลาเปลี่ยนรุ่น (เส้นประส้ม) — เวลาที่เห็น')}<b>{tr('เร็วกว่าจริง')}</b>
           </span>
         )}
-        {editable && <span style={{ color: 'var(--muted)' }}>ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)</span>}
+        {editable && <span style={{ color: 'var(--muted)' }}>{tr('ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)')}</span>}
       </div>
     </div>
   );

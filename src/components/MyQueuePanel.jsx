@@ -34,6 +34,7 @@ import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
 
+import { tr } from '../utils/i18n';
 /** ข้อมูลเก่ากว่านี้ = โหลดใหม่ตอนเปิดแผง (นาที) */
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
@@ -179,7 +180,7 @@ function Row({ it, onGo }) {
           flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-pill)',
           color: old ? '#ef4444' : 'var(--muted)',
           background: old ? '#ef444418' : 'transparent',
-        }}>{it.age}ว</span>
+        }}>{it.age}{tr('ว')}</span>
       )}
       {it.count != null && (
         <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>
@@ -312,18 +313,18 @@ export default function MyQueuePanel({ q, busy, onGo }) {
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 6, marginBottom: 6 }}>
       {q?.partial && (
         <div style={{ fontSize: 11, color: '#f59e0b', padding: '4px 8px', lineHeight: 1.4 }}>
-          ⚠️ โหลดข้อมูลไม่ครบ — รายการด้านล่าง<b>ไม่ใช่ทั้งหมด</b> อย่าเพิ่งสรุปว่าไม่มีงานค้าง
+          ⚠️ โหลดข้อมูลไม่ครบ — รายการด้านล่าง<b>{tr('ไม่ใช่ทั้งหมด')}</b> อย่าเพิ่งสรุปว่าไม่มีงานค้าง
         </div>
       )}
       {/* 🔴 แถวที่ระบุส่วนงานไม่ได้ = ตกจากคิวของ**ทุกคน** ⇒ ต้องเขียนบอก ไม่ใช่ `partial` (คิวรีไม่ได้ล่ม
           ข้อมูลไม่ครบที่ต้นทาง) · วัดจริง 06/10: ใบรอ QA 36 จาก 188 ใบ `dept_section` ว่าง */}
       {q && q.unattributed > 0 && (
         <div style={{ fontSize: 11, color: '#f59e0b', padding: '4px 8px', lineHeight: 1.4 }}>
-          ⚠️ อีก <b>{q.unattributed}</b> รายการ<b>ระบุส่วนงานไม่ได้</b> จึงไม่เข้าคิวของใครเลย —
+          ⚠️ อีก <b>{q.unattributed}</b> {tr('รายการ')}<b>{tr('ระบุส่วนงานไม่ได้')}</b> จึงไม่เข้าคิวของใครเลย —
           ต้องเติมส่วนงานในใบก่อน ถึงจะโผล่ในคิวของหน่วยงานที่รับผิดชอบ
         </div>
       )}
-      {!q && busy && <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '6px 8px' }}>กำลังดูคิวงาน…</div>}
+      {!q && busy && <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '6px 8px' }}>{tr('กำลังดูคิวงาน…')}</div>}
       {q && (<>
         <Group tier={TIER.MINE} items={q.mine} onGo={onGo} />
         <Group tier={TIER.UNIT} items={q.unit} onGo={onGo} />

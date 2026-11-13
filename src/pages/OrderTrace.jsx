@@ -55,7 +55,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 /* ผลตรวจ PM/AM — นิยาม/กฎ "ห้ามเทียบด้วย regex" อยู่ที่ `src/utils/inspectionStatus.js` ที่เดียว */
 const inspVerdict = raw => {
   const m = inspMeta(raw);
-  return <span style={{ color: m.color }}>{m.label}</span>;
+  return <span style={{ color: m.color }}>{trI18n(m.label)}</span>;
 };
 /* เกณฑ์ "สแกนรวบ" = ช่องว่างระหว่างสแกน < BATCH_FRAC × เวลาที่ต้องใช้ผลิตของใบนั้น (qty × CT)
    0.5 = ต้องผลิตเร็วกว่ามาตรฐาน "2 เท่า" ถึงจะทันในช่วงนั้น → เป็นไปไม่ได้ = สแกนรวบแน่นอน
@@ -991,7 +991,7 @@ export default function OrderTrace() {
   return (
     <Page>
       <PageHeader
-        title="สอบกลับ Order (Order Traceability)" icon="🔎"
+        title={trI18n('สอบกลับ Order (Order Traceability)')} icon="🔎"
         sub={tab === 'symptom'
           ? 'มีแต่อาการที่ลูกค้าแจ้ง → ค้นหาของเสีย/เครื่องหยุดที่เกี่ยวข้อง แล้วเจาะเข้าใบผลิต'
           : 'สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น'}
@@ -1022,7 +1022,7 @@ export default function OrderTrace() {
       )}
 
       {scanOpen && (
-        <ScanModal title="สแกนใบผลิต / คัมบัง" hint="ส่องบาร์โค้ด PROD.NO หรือ MAT · ป้ายเครื่องจะพาไปหน้าเลือกงานของเครื่องนั้น"
+        <ScanModal title={trI18n('สแกนใบผลิต / คัมบัง')} hint={trI18n('ส่องบาร์โค้ด PROD.NO หรือ MAT · ป้ายเครื่องจะพาไปหน้าเลือกงานของเครื่องนั้น')}
           onScan={onScanCode} onClose={() => setScanOpen(false)} />
       )}
 
@@ -1033,7 +1033,7 @@ export default function OrderTrace() {
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
-          title="สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย">
+          title={trI18n('สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย')}>
           <input type="checkbox" checked={includeOpen} style={{ width: 'auto' }}
             onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
           {trI18n('รวมใบที่กำลังผลิต')}
@@ -1041,7 +1041,7 @@ export default function OrderTrace() {
         {/* ช่องค้นหา + ปุ่มค้นหา = กลุ่มเดียวกัน (UX audit 05/10) — เดิมช่อง grow ยืดเต็มแถวแล้วปุ่มไปอยู่สุดขอบ
             + placeholder ยาวจนถูกตัด ("…เลข Julian เช่น 24726A" ไม่เคยโชว์ครบ) ⇒ ป้ายสั้น · รายละเอียดอยู่ใน title */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 360px', minWidth: 0, maxWidth: 640 }}
-          title="สแกนบาร์โค้ด PROD.NO หรือพิมพ์ MAT.NO / ชื่อชิ้นงาน / เลข Julian บนชิ้นงาน (เช่น 24726A)">
+          title={trI18n('สแกนบาร์โค้ด PROD.NO หรือพิมพ์ MAT.NO / ชื่อชิ้นงาน / เลข Julian บนชิ้นงาน (เช่น 24726A)')}>
           <SearchInput value={search} onChange={v => { setSearch(v); setJulYear(null); }}
             onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
             fields="PROD.NO / MAT / ชื่อชิ้นงาน / Julian" autoFocus />
@@ -1049,7 +1049,7 @@ export default function OrderTrace() {
             style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
             {searching ? '⏳' : trI18n('ค้นหา')}
           </button>
-          <button onClick={() => setScanOpen(true)} title="สแกนคัมบัง / ใบผลิต / ป้ายเครื่องด้วยกล้อง"
+          <button onClick={() => setScanOpen(true)} title={trI18n('สแกนคัมบัง / ใบผลิต / ป้ายเครื่องด้วยกล้อง')}
             style={{ height: 'var(--ctl-h)', padding: '0 12px', flexShrink: 0, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>
             📷
           </button>
@@ -1066,17 +1066,17 @@ export default function OrderTrace() {
         <div style={{ ...card, marginBottom: 16, borderColor: 'var(--amber)', background: 'var(--amber-dim)', fontSize: 12.5, lineHeight: 1.7 }}>
           <div style={{ fontWeight: 800, color: 'var(--amber)' }}>
             {julianLabel(jul)} → <span style={{ color: 'var(--text)' }}>{fmtDate(jul.date)}</span>
-            {julHits != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · เจอใบผลิตของวันนั้น {julHits.toLocaleString()} ใบ</span>}
+            {julHits != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> {trI18n('· เจอใบผลิตของวันนั้น')} {julHits.toLocaleString()} {trI18n('ใบ')}</span>}
           </div>
           <div style={{ color: 'var(--text2)' }}>
-            ขา Julian ค้น<b>ทั้งฐาน ไม่สนช่วงวันงานด้านบน</b> (เลขบนชิ้นงานมักเก่ากว่าช่วง 30 วัน) — ใบของวันนั้นถูกยกขึ้นก่อนในตารางผลค้นหา
+            ขา Julian ค้น<b>{trI18n('ทั้งฐาน ไม่สนช่วงวันงานด้านบน')}</b> (เลขบนชิ้นงานมักเก่ากว่าช่วง 30 วัน) — ใบของวันนั้นถูกยกขึ้นก่อนในตารางผลค้นหา
             {jul.shift
-              ? <> · แคบเฉพาะ<b>{jul.shiftLetter === 'A' ? 'กะกลางวัน' : 'กะกลางคืน'}</b>ตามตัวอักษร <code>{jul.shiftLetter}</code> ท้ายเลข</>
-              : <> · พิมพ์ <code>A</code>/<code>B</code> ต่อท้าย (เช่น <code>{`${String(jul.doy).padStart(3, '0')}${String(jul.year % 100).padStart(2, '0')}A`}</code>) เพื่อแคบเฉพาะกะกลางวัน/กลางคืน</>}
+              ? <> {trI18n('· แคบเฉพาะ')}<b>{jul.shiftLetter === 'A' ? trI18n('กะกลางวัน') : trI18n('กะกลางคืน')}</b>{trI18n('ตามตัวอักษร')} <code>{jul.shiftLetter}</code> {trI18n('ท้ายเลข')}</>
+              : <> {trI18n('· พิมพ์')} <code>A</code>/<code>B</code> {trI18n('ต่อท้าย (เช่น')} <code>{`${String(jul.doy).padStart(3, '0')}${String(jul.year % 100).padStart(2, '0')}A`}</code>) เพื่อแคบเฉพาะกะกลางวัน/กลางคืน</>}
           </div>
           {jul.guessedYear && jul.candidates.length > 1 && (
             <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-              <span style={{ color: 'var(--muted)' }}>⚠️ เลขนี้มีแต่วัน (ไม่มี 2 หลักปีต่อท้าย) ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:</span>
+              <span style={{ color: 'var(--muted)' }}>{trI18n('⚠️ เลขนี้มีแต่วัน (ไม่มี 2 หลักปีต่อท้าย) ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:')}</span>
               {jul.candidates.map(c => (
                 <button key={c.year} onClick={() => { setJulYear(c.year); doSearch(undefined, {}); }}
                   style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
@@ -1093,7 +1093,7 @@ export default function OrderTrace() {
 
       {searchErr && !sel && (
         <div style={{ ...card, marginBottom: 12, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 12.5, fontWeight: 700 }}>
-          ⚠️ {searchErr} — ผลว่างด้านล่าง <u>ไม่ได้แปลว่าไม่มีใบนี้</u> ลองค้นใหม่อีกครั้ง
+          ⚠️ {searchErr} {trI18n('— ผลว่างด้านล่าง')} <u>{trI18n('ไม่ได้แปลว่าไม่มีใบนี้')}</u> ลองค้นใหม่อีกครั้ง
         </div>
       )}
 
@@ -1118,7 +1118,7 @@ export default function OrderTrace() {
                 </div>
               ))}
               <div style={{ marginLeft: 'auto', fontSize: 11.5, color: 'var(--muted)', textAlign: 'right' }}>
-                รวมจาก {sum.count} ใบที่แสดง<br />👆 คลิกแถวเพื่อดูสอบกลับเต็ม
+                รวมจาก {sum.count} {trI18n('ใบที่แสดง')}<br />👆 คลิกแถวเพื่อดูสอบกลับเต็ม
               </div>
             </div>
             {sum.capped && (
@@ -1148,10 +1148,10 @@ export default function OrderTrace() {
                       <td style={{ padding: '7px 6px', fontWeight: 700, whiteSpace: 'nowrap' }}>
                         {o.prod_no}
                         <span style={{ fontSize: 11 }}>
-                          {o.is_backfill && <span title="ยิงย้อนหลัง"> ⏪</span>}
+                          {o.is_backfill && <span title={trI18n('ยิงย้อนหลัง')}> ⏪</span>}
                           {o.reopen_count > 0 && <span title={`เคยถอยใบ ${o.reopen_count} ครั้ง`}> ↩️</span>}
-                          {o.paired_order_id && <span title="งานคู่ RH/LH"> 🔗</span>}
-                          {o.carry_over_from_session_id && <span title="ยกยอดมาจากกะก่อน"> ⏬</span>}
+                          {o.paired_order_id && <span title={trI18n('งานคู่ RH/LH')}> 🔗</span>}
+                          {o.carry_over_from_session_id && <span title={trI18n('ยกยอดมาจากกะก่อน')}> ⏬</span>}
                         </span>
                       </td>
                       <td>
@@ -1167,7 +1167,7 @@ export default function OrderTrace() {
                         {fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}
                         {/* Julian ของวันผลิต — หน้างานเอาไปเทียบกับเลขที่ปั๊มบนชิ้นงานได้ทันที (ไม่ได้เก็บใน DB · คำนวณสด) */}
                         {s.work_date && <div style={{ fontSize: 11, color: jul && s.work_date === jul.date ? 'var(--amber)' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
-                          title="เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)">
+                          title={trI18n('เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)')}>
                           {toJulian(s.work_date, s.shift)}
                         </div>}
                       </td>
@@ -1190,7 +1190,7 @@ export default function OrderTrace() {
         </>
       )}
       {!sel && !results.length && !searching && (
-        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>สแกนบาร์โค้ด kanban (PROD.NO) หรือพิมพ์เลข MAT/ชื่อชิ้นงาน แล้วกดค้นหา — เว้นว่างเพื่อดูใบทั้งหมดในช่วงวัน</div>
+        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{trI18n('สแกนบาร์โค้ด kanban (PROD.NO) หรือพิมพ์เลข MAT/ชื่อชิ้นงาน แล้วกดค้นหา — เว้นว่างเพื่อดูใบทั้งหมดในช่วงวัน')}</div>
       )}
 
       {/* ── รายละเอียดใบ ── */}
@@ -1199,41 +1199,41 @@ export default function OrderTrace() {
           <div style={{ ...card, marginBottom: 16, borderColor: stMeta.color }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'baseline' }}>
               <span style={{ fontSize: 19, fontWeight: 900 }}>{sel.prod_no}</span>
-              <span style={{ ...chip('var(--bg3)', stMeta.color) }}>{stMeta.label}</span>
-              {sel.is_backfill && <span style={chip('var(--amber-dim)', 'var(--amber)')}>⏪ ยิงย้อนหลัง</span>}
-              {(sel.reopen_count || 0) > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>↩️ เคยถอยใบ {sel.reopen_count} ครั้ง</span>}
-              {sel.paired_order_id && <span style={chip('var(--bg3)', 'var(--text2)')}>มีใบคู่ RH/LH</span>}
+              <span style={{ ...chip('var(--bg3)', stMeta.color) }}>{trI18n(stMeta.label)}</span>
+              {sel.is_backfill && <span style={chip('var(--amber-dim)', 'var(--amber)')}>{trI18n('⏪ ยิงย้อนหลัง')}</span>}
+              {(sel.reopen_count || 0) > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>{trI18n('↩️ เคยถอยใบ')} {sel.reopen_count} {trI18n('ครั้ง')}</span>}
+              {sel.paired_order_id && <span style={chip('var(--bg3)', 'var(--text2)')}>{trI18n('มีใบคู่ RH/LH')}</span>}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 18px', marginTop: 10, fontSize: 13 }}>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้นงาน</span><br /><b>{sel.part_name || '—'}</b> <span style={{ color: 'var(--muted)' }}>{sel.mat_no}</span>{sel.customer ? <span style={{ color: 'var(--muted)' }}> · {sel.customer}</span> : ''}</div>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ไลน์ / วันงาน / กะ</span><br /><b>{sess.line_name}</b> · {fmtDate(sess.work_date)} · {sess.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}</div>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เป้า → ผลิตจริง (OK/NG/สงสัย/ซ่อม)</span><br /><b>{(sel.qty_target ?? sel.qty)?.toLocaleString()}</b> → <b>{(sel.qty_ok ?? sel.qty_actual ?? '—')?.toLocaleString?.() ?? '—'}</b> <span style={{ color: 'var(--muted)', fontSize: 12 }}>({sel.qty_ok ?? '—'}/{sel.qty_ng ?? 0}/{sel.qty_suspect ?? 0}/{sel.qty_repair ?? 0})</span></div>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิดใบ</span><br />{fmtDT(sel.opened_at)} · {sel.opened_by || '—'}</div>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ปิดใบ</span><br />{fmtDT(sel.confirmed_at)} · {sel.confirmed_by || '—'}</div>
-              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>OEE กะนี้ (A/P/Q)</span><br />{sess.oee != null ? <b>{Number(sess.oee).toFixed(1)}%</b> : '—'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({sess.oee_a ?? '—'}/{sess.oee_p ?? '—'}/{sess.oee_q ?? '—'})</span></div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ชิ้นงาน')}</span><br /><b>{sel.part_name || '—'}</b> <span style={{ color: 'var(--muted)' }}>{sel.mat_no}</span>{sel.customer ? <span style={{ color: 'var(--muted)' }}> · {sel.customer}</span> : ''}</div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ไลน์ / วันงาน / กะ')}</span><br /><b>{sess.line_name}</b> · {fmtDate(sess.work_date)} · {sess.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}</div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('เป้า → ผลิตจริง (OK/NG/สงสัย/ซ่อม)')}</span><br /><b>{(sel.qty_target ?? sel.qty)?.toLocaleString()}</b> → <b>{(sel.qty_ok ?? sel.qty_actual ?? '—')?.toLocaleString?.() ?? '—'}</b> <span style={{ color: 'var(--muted)', fontSize: 12 }}>({sel.qty_ok ?? '—'}/{sel.qty_ng ?? 0}/{sel.qty_suspect ?? 0}/{sel.qty_repair ?? 0})</span></div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('เปิดใบ')}</span><br />{fmtDT(sel.opened_at)} · {sel.opened_by || '—'}</div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ปิดใบ')}</span><br />{fmtDT(sel.confirmed_at)} · {sel.confirmed_by || '—'}</div>
+              <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('OEE กะนี้ (A/P/Q)')}</span><br />{sess.oee != null ? <b>{Number(sess.oee).toFixed(1)}%</b> : '—'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({sess.oee_a ?? '—'}/{sess.oee_p ?? '—'}/{sess.oee_q ?? '—'})</span></div>
             </div>
             {sel.carry_over_note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--amber)' }}>➡ {sel.carry_over_note}</div>}
-            {sess.close_approve_note && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>หมายเหตุผู้อนุมัติปิดกะ: {sess.close_approve_note}</div>}
+            {sess.close_approve_note && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>{trI18n('หมายเหตุผู้อนุมัติปิดกะ:')} {sess.close_approve_note}</div>}
           </div>
 
-          {loading && <div style={{ ...card, marginBottom: 16, color: 'var(--muted)' }}>⏳ กำลังรวบรวมข้อมูลสอบกลับ…</div>}
+          {loading && <div style={{ ...card, marginBottom: 16, color: 'var(--muted)' }}>{trI18n('⏳ กำลังรวบรวมข้อมูลสอบกลับ…')}</div>}
 
           {trace && !loading && (
             <>
               {/* ── Timeline ── */}
               {/* ── 🔍 อาการที่ลูกค้าแจ้ง → โฟกัสหลักฐานเป็น 3 ขาแบบ 8D ── */}
-              <CollapseCard id="claim" storePrefix="ot" title="ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)"
+              <CollapseCard id="claim" storePrefix="ot" title={trI18n('ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)')}
                 count={claim ? claim.related.length : null} defaultOpen={!!trace.pe?.set}>
                 {!trace.pe?.set ? (
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
-                    พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ</b> —
+                    พาร์ทนี้ <b style={{ color: 'var(--text2)' }}>{trI18n('ยังไม่มีเอกสาร PFMEA / Control Plan ในระบบ')}</b> —
                     จึงยังโฟกัสตามอาการไม่ได้ (ทั้งระบบลงไปแล้ว {trace.pe?.totalSets ?? 0} พาร์ท)
-                    <div style={{ marginTop: 5 }}>ลงเอกสารได้ที่หน้า <b>คุณภาพ & วิศวกรรม → Flow / PFMEA / Control Plan</b></div>
+                    <div style={{ marginTop: 5 }}>{trI18n('ลงเอกสารได้ที่หน้า')} <b>คุณภาพ & วิศวกรรม → Flow / PFMEA / Control Plan</b></div>
                   </div>
                 ) : (
                   <>
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-                      เลือกอาการจาก <b style={{ color: 'var(--text2)' }}>PFMEA ของพาร์ทนี้</b> ({trace.pe.set.part_no}) —
+                      เลือกอาการจาก <b style={{ color: 'var(--text2)' }}>{trI18n('PFMEA ของพาร์ทนี้')}</b> ({trace.pe.set.part_no}) —
                       ระบบจะกรองเฉพาะจุด/เครื่อง/ด่านตรวจที่เกี่ยวข้อง แล้วจัดเป็น 3 ขาให้พร้อมลอกใส่ 8D
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
@@ -1256,11 +1256,11 @@ export default function OrderTrace() {
                     </div>
 
                     {!claim ? (
-                      <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกอาการ หรือพิมพ์รายละเอียด แล้วระบบจะไล่หลักฐานให้</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{trI18n('เลือกอาการ หรือพิมพ์รายละเอียด แล้วระบบจะไล่หลักฐานให้')}</div>
                     ) : claim.notInFmea ? (
                       <div style={{ ...card, borderLeft: '4px solid var(--amber)', fontSize: 12.5, lineHeight: 1.7 }}>
-                        <b style={{ color: 'var(--amber)' }}>อาการนี้ไม่มีใน PFMEA ของพาร์ทนี้เลย</b> —
-                        แปลว่า<b>ไม่เคยถูกคาดไว้ตอนออกแบบกระบวนการ</b>
+                        <b style={{ color: 'var(--amber)' }}>{trI18n('อาการนี้ไม่มีใน PFMEA ของพาร์ทนี้เลย')}</b> —
+                        แปลว่า<b>{trI18n('ไม่เคยถูกคาดไว้ตอนออกแบบกระบวนการ')}</b>
                         <div style={{ color: 'var(--muted)', marginTop: 4 }}>
                           นี่คือข้อสรุปที่ต้องเขียนใน 8D ขา Systemic (D7) อยู่แล้ว — และต้อง revise PFMEA เพิ่ม failure mode ใหม่
                         </div>
@@ -1277,12 +1277,12 @@ export default function OrderTrace() {
                               PFMEA <b>OP{claim.srcProc?.op_no}</b> — “{(claim.fm.failure_mode || '').replace(/^[-\s]+/, '')}”
                               {claim.rpn && <> · <b style={{ color: claim.rpn >= 100 ? 'var(--red)' : 'var(--text)' }}>RPN {claim.rpn}</b>
                                 <span style={{ color: 'var(--muted)' }}> (S{claim.fm.severity} × O{claim.fm.occurrence} × D{claim.fm.detection})</span></>}
-                              {claim.fm.causes && <div style={{ color: 'var(--text2)', marginTop: 3 }}>สาเหตุที่เคยระบุไว้: {claim.fm.causes.replace(/\n/g, ' · ').slice(0, 220)}</div>}
+                              {claim.fm.causes && <div style={{ color: 'var(--text2)', marginTop: 3 }}>{trI18n('สาเหตุที่เคยระบุไว้:')} {claim.fm.causes.replace(/\n/g, ' · ').slice(0, 220)}</div>}
                             </div>
                           )}
                           <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
-                            <b>จุดที่ต้องสงสัย {claim.related.length} จุด</b>
-                            {claim.relMachines.length > 0 && <> · เครื่อง: <b>{claim.relMachines.join(' · ')}</b></>}
+                            <b>{trI18n('จุดที่ต้องสงสัย')} {claim.related.length} {trI18n('จุด')}</b>
+                            {claim.relMachines.length > 0 && <> {trI18n('· เครื่อง:')} <b>{claim.relMachines.join(' · ')}</b></>}
                             <div style={{ color: 'var(--text2)', marginTop: 3 }}>
                               {claim.related.slice(0, 12).map(p => `OP${p.op_no}`).join(' · ')}
                               {claim.related.length > 12 ? ` … +${claim.related.length - 12}` : ''}
@@ -1290,7 +1290,7 @@ export default function OrderTrace() {
                           </div>
                           {claim.dtHits.length > 0 ? (
                             <div style={{ marginTop: 7, fontSize: 12.5, lineHeight: 1.65 }}>
-                              <b style={{ color: 'var(--red)' }}>⚠ เจอ Downtime ที่เกี่ยวข้องในกะนี้ {claim.dtHits.length} รายการ</b>
+                              <b style={{ color: 'var(--red)' }}>{trI18n('⚠ เจอ Downtime ที่เกี่ยวข้องในกะนี้')} {claim.dtHits.length} {trI18n('รายการ')}</b>
                               {claim.dtHits.slice(0, 5).map((d, i) => (
                                 <div key={i} style={{ color: 'var(--text2)' }}>
                                   · {d.duration_min ? `${d.duration_min} น.` : '—'} {d.machine_no ? `[${d.machine_no}] ` : ''}
@@ -1299,11 +1299,11 @@ export default function OrderTrace() {
                               ))}
                             </div>
                           ) : (
-                            <div style={{ marginTop: 7, fontSize: 12.5, color: 'var(--muted)' }}>ไม่พบ Downtime ที่เกี่ยวข้องในกะนี้ — ดูกะข้างเคียงเพิ่มที่ Daily Report</div>
+                            <div style={{ marginTop: 7, fontSize: 12.5, color: 'var(--muted)' }}>{trI18n('ไม่พบ Downtime ที่เกี่ยวข้องในกะนี้ — ดูกะข้างเคียงเพิ่มที่ Daily Report')}</div>
                           )}
                           {claim.noPmMachines > 0 && (
                             <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--amber)' }}>
-                              เครื่องที่เกี่ยวข้อง <b>{claim.noPmMachines} ตัวยังไม่มีแผน PM</b> — ไม่มีการบำรุงรักษาเชิงป้องกันรองรับ
+                              เครื่องที่เกี่ยวข้อง <b>{claim.noPmMachines} {trI18n('ตัวยังไม่มีแผน PM')}</b> — ไม่มีการบำรุงรักษาเชิงป้องกันรองรับ
                             </div>
                           )}
                         </div>
@@ -1316,25 +1316,25 @@ export default function OrderTrace() {
                           {claim.fm?.detection_ctrl && (
                             <div style={{ fontSize: 12.5, lineHeight: 1.7, marginBottom: 5 }}>
                               ด่านที่ PFMEA อ้างไว้: <b>{claim.fm.detection_ctrl.replace(/\n/g, ' · ').slice(0, 200)}</b>
-                              {claim.fm.detection >= 7 && <span style={{ color: 'var(--red)' }}> · D={claim.fm.detection} (ตรวจจับยาก)</span>}
+                              {claim.fm.detection >= 7 && <span style={{ color: 'var(--red)' }}> · D={claim.fm.detection} {trI18n('(ตรวจจับยาก)')}</span>}
                             </div>
                           )}
                           {claim.cpRows.length > 0 ? (
                             <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-                              <b>Control Plan ของจุดเหล่านี้ {claim.cpRows.length} รายการ</b>
+                              <b>{trI18n('Control Plan ของจุดเหล่านี้')} {claim.cpRows.length} {trI18n('รายการ')}</b>
                               {claim.cpRows.slice(0, 6).map((c, i) => {
                                 const p = trace.pe.procs.find(x => x.id === c.process_id);
                                 return (
                                   <div key={i} style={{ color: 'var(--text2)', marginTop: 2 }}>
                                     · OP{p?.op_no} {c.product_char || c.process_char || ''} —
-                                    <b> {(c.frequency || 'ไม่ระบุความถี่').replace(/\n/g, ' / ')}</b>
+                                    <b> {(c.frequency || trI18n('ไม่ระบุความถี่')).replace(/\n/g, ' / ')}</b>
                                     {c.sample_size ? ` · ตัวอย่าง ${c.sample_size.replace(/\n/g, '/')}` : ''}
                                     {c.special_class ? <span style={{ color: 'var(--amber)' }}> · {c.special_class}</span> : ''}
                                   </div>
                                 );
                               })}
                             </div>
-                          ) : <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีจุดควบคุมใน Control Plan สำหรับจุดเหล่านี้</div>}
+                          ) : <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{trI18n('ไม่มีจุดควบคุมใน Control Plan สำหรับจุดเหล่านี้')}</div>}
                           <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5 }}>
                             <span style={chip(claim.ngLogged ? 'rgba(61,214,92,.15)' : 'var(--red-dim)', claim.ngLogged ? 'var(--accent)' : 'var(--red)')}>
                               {claim.ngLogged ? `✅ บันทึกของเสียในกะ ${claim.ngLogged} รายการ` : '🔴 กะนี้ไม่มีบันทึกของเสียเลย'}
@@ -1352,30 +1352,30 @@ export default function OrderTrace() {
                           </div>
                           <div style={{ display: 'grid', gap: 4, fontSize: 12.5, lineHeight: 1.65 }}>
                             {claim.rpn >= 100 && (
-                              <div>⚠ ความเสี่ยงนี้ถูกประเมินไว้สูง (<b>RPN {claim.rpn}</b>) — ตรวจดูว่าความถี่ใน Control Plan แรงพอกับความเสี่ยงมั้ย</div>
+                              <div>{trI18n('⚠ ความเสี่ยงนี้ถูกประเมินไว้สูง (')}<b>RPN {claim.rpn}</b>) — ตรวจดูว่าความถี่ใน Control Plan แรงพอกับความเสี่ยงมั้ย</div>
                             )}
                             {claim.fm && !claim.fm.action_taken && (
-                              <div>⚠ PFMEA ข้อนี้<b>ยังไม่มีการบันทึก action ที่ทำจริง</b>{claim.fm.recommended_action ? ' (มีแต่ข้อเสนอ)' : ''} — ความเสี่ยงถูกยอมรับไว้เฉยๆ</div>
+                              <div>{trI18n('⚠ PFMEA ข้อนี้')}<b>{trI18n('ยังไม่มีการบันทึก action ที่ทำจริง')}</b>{claim.fm.recommended_action ? ' (มีแต่ข้อเสนอ)' : ''} {trI18n('— ความเสี่ยงถูกยอมรับไว้เฉยๆ')}</div>
                             )}
                             <div>
                               {claim.lpaOnRelStation > 0
-                                ? <>✅ LPA เคยตรวจสถานีที่เกี่ยวข้อง {claim.lpaOnRelStation} ครั้งในวันนั้น</>
-                                : <>⚠ LPA วันนั้น <b>ไม่เคยสุ่มโดนสถานีที่เกี่ยวข้อง</b>{claim.lpaLogged ? ` (ตรวจ ${claim.lpaLogged} ครั้ง แต่คนละจุด)` : ''} — การสุ่มไม่ได้ผูกกับความเสี่ยง</>}
+                                ? <>{trI18n('✅ LPA เคยตรวจสถานีที่เกี่ยวข้อง')} {claim.lpaOnRelStation} {trI18n('ครั้งในวันนั้น')}</>
+                                : <>{trI18n('⚠ LPA วันนั้น')} <b>{trI18n('ไม่เคยสุ่มโดนสถานีที่เกี่ยวข้อง')}</b>{claim.lpaLogged ? ` (ตรวจ ${claim.lpaLogged} ครั้ง แต่คนละจุด)` : ''} {trI18n('— การสุ่มไม่ได้ผูกกับความเสี่ยง')}</>}
                             </div>
                             <div>
                               {claim.shipTraceable
-                                ? <>✅ มีข้อมูลรอบส่ง — ย้อนกลับหาลูกค้าได้</>
-                                : <>⚠ <b>ไม่มีข้อมูลการตัดส่ง</b> — ย้อนจากกล่องที่ลูกค้าเคลมกลับมาหากะที่ผลิตไม่ได้ ทำให้ขอบเขตการกันของกว้างเกินจำเป็น</>}
+                                ? <>{trI18n('✅ มีข้อมูลรอบส่ง — ย้อนกลับหาลูกค้าได้')}</>
+                                : <>⚠ <b>{trI18n('ไม่มีข้อมูลการตัดส่ง')}</b> {trI18n('— ย้อนจากกล่องที่ลูกค้าเคลมกลับมาหากะที่ผลิตไม่ได้ ทำให้ขอบเขตการกันของกว้างเกินจำเป็น')}</>}
                             </div>
                             {claim.sameMode.length > 0 && (
-                              <div>อาการเดียวกันนี้ถูกระบุไว้ที่ <b>OP อื่นอีก {claim.sameMode.length} จุด</b> — ถ้าแก้จุดเดียวอาจไม่ครอบคลุม</div>
+                              <div>{trI18n('อาการเดียวกันนี้ถูกระบุไว้ที่')} <b>{trI18n('OP อื่นอีก')} {claim.sameMode.length} {trI18n('จุด')}</b> {trI18n('— ถ้าแก้จุดเดียวอาจไม่ครอบคลุม')}</div>
                             )}
                           </div>
                         </div>
 
                         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-                          ⚠️ ระบบ<b>เสนอจุดที่ต้องสงสัย</b>จากการจับคู่ชิ้นส่วน/คำในอาการ —
-                          <b>ไม่ใช่การยืนยันสาเหตุ</b> คนยังต้องเป็นผู้ตัดสิน · หน้านี้ไม่บันทึกอะไรลงฐานข้อมูล
+                          ⚠️ ระบบ<b>{trI18n('เสนอจุดที่ต้องสงสัย')}</b>จากการจับคู่ชิ้นส่วน/คำในอาการ —
+                          <b>{trI18n('ไม่ใช่การยืนยันสาเหตุ')}</b> คนยังต้องเป็นผู้ตัดสิน · หน้านี้ไม่บันทึกอะไรลงฐานข้อมูล
                         </div>
                       </div>
                     )}
@@ -1383,7 +1383,7 @@ export default function OrderTrace() {
                 )}
               </CollapseCard>
 
-              <CollapseCard id="timeline" storePrefix="ot" title="Timeline เหตุการณ์" count={timeline.length}>
+              <CollapseCard id="timeline" storePrefix="ot" title={trI18n('Timeline เหตุการณ์')} count={timeline.length}>
                 <div style={{ display: 'grid', gap: 0 }}>
                   {timeline.map((e, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, padding: '5px 0', borderLeft: `3px solid ${e.warn ? 'var(--red)' : 'var(--border2)'}`, paddingLeft: 12, marginLeft: 6, opacity: e.dim ? 0.6 : 1 }}>
@@ -1391,7 +1391,7 @@ export default function OrderTrace() {
                       <span style={{ fontSize: 12.5, color: e.warn ? 'var(--red)' : 'var(--text)' }}>{e.icon} {e.text}</span>
                     </div>
                   ))}
-                  {!timeline.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีเหตุการณ์</div>}
+                  {!timeline.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มีเหตุการณ์')}</div>}
                 </div>
               </CollapseCard>
 
@@ -1416,11 +1416,11 @@ export default function OrderTrace() {
                   return (
                     <>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                        <span style={chip('var(--bg3)', present.length < std ? 'var(--red)' : 'var(--green)')}>มาทำงาน {present.length}{std ? `/${std} คน (มาตรฐานกะ)` : ' คน'}</span>
-                        {absent.length > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>ขาด/ลา {absent.length}</span>}
-                        {movedN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>ย้ายจุด {movedN}</span>}
-                        {lowFitN > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>⚠️ ทักษะไม่ถึงจุด {lowFitN}</span>}
-                        {ppeN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>⚠️ PPE ไม่ครบ {ppeN}</span>}
+                        <span style={chip('var(--bg3)', present.length < std ? 'var(--red)' : 'var(--green)')}>{trI18n('มาทำงาน')} {present.length}{std ? `/${std} คน (มาตรฐานกะ)` : ' คน'}</span>
+                        {absent.length > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>{trI18n('ขาด/ลา')} {absent.length}</span>}
+                        {movedN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>{trI18n('ย้ายจุด')} {movedN}</span>}
+                        {lowFitN > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>{trI18n('⚠️ ทักษะไม่ถึงจุด')} {lowFitN}</span>}
+                        {ppeN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>{trI18n('⚠️ PPE ไม่ครบ')} {ppeN}</span>}
                       </div>
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -1436,14 +1436,14 @@ export default function OrderTrace() {
                                 </td>
                                 <td style={{ whiteSpace: 'nowrap' }}>
                                   {p.aId && trace.stations[p.aId] ? <b>{trace.stations[p.aId]}</b> : <span style={{ color: 'var(--muted)' }}>—</span>}
-                                  {p.moved && <span style={{ marginLeft: 6, ...chip('var(--amber-dim)', 'var(--amber)') }}>ย้ายจุด</span>}
+                                  {p.moved && <span style={{ marginLeft: 6, ...chip('var(--amber-dim)', 'var(--amber)') }}>{trI18n('ย้ายจุด')}</span>}
                                 </td>
                                 <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{p.hId && trace.stations[p.hId] ? trace.stations[p.hId] : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                                 <td>{p.fit != null ? <b style={{ color: fitColor(p.fit) }}>{p.fit}%</b> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                                 <td style={{ whiteSpace: 'nowrap' }}>
                                   {!p.is_present ? '—' : ppeBad(p)
                                     ? <span style={{ color: 'var(--amber)' }}>⚠️ {[!p.has_helmet && 'หมวก', !p.has_boots && 'รองเท้า', !p.has_gloves && 'ถุงมือ'].filter(Boolean).join('/')}</span>
-                                    : <span style={{ color: 'var(--green)' }}>ครบ</span>}
+                                    : <span style={{ color: 'var(--green)' }}>{trI18n('ครบ')}</span>}
                                 </td>
                                 <td style={{ fontSize: 11.5, color: 'var(--text2)' }}>
                                   {[!p.is_present && (p.leave_type || 'ขาด'), p.has_ot && 'OT', p.man4m && '📋 มี 4M Man', trace.ojtByEmp[p.employee_id] && `🎓 อบรม: ${trace.ojtByEmp[p.employee_id]}`, p.remark].filter(Boolean).join(' · ') || '—'}
@@ -1453,7 +1453,7 @@ export default function OrderTrace() {
                           </tbody>
                         </table>
                       </div>
-                      {!trace.people.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่พบข้อมูลเช็คชื่อของวันนั้น</div>}
+                      {!trace.people.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่พบข้อมูลเช็คชื่อของวันนั้น')}</div>}
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
                         ⚠️ Skill fit คิดจากคะแนนสกิล "ปัจจุบัน" เทียบเกณฑ์จุดงาน (ระบบไม่เก็บ history คะแนน ณ วันผลิต) · จุดที่เข้า = จากเช็คชื่อ/จัดกำลังคนวันนั้น
                       </div>
@@ -1464,19 +1464,19 @@ export default function OrderTrace() {
 
               {/* ── วิเคราะห์การวิ่งของใบ ── */}
               {orderAnalysis && (
-                <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
+                <CollapseCard id="analysis" storePrefix="ot" title={trI18n('⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)')} count={null} defaultOpen>
                   {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
                   {orderAnalysis.batchScan && (
                     <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
-                      <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
-                      {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
-                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
+                      <b>{trI18n('ใบนี้ถูกสแกนรวบกับใบอื่น')}</b>
+                      {orderAnalysis.openBatchN > 1 && <> {trI18n('— เปิดรวบ')} {orderAnalysis.openBatchN} {trI18n('ใบ')}</>}
+                      {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}{trI18n('ปิดรวบ')} {orderAnalysis.closeBatchN} {trI18n('ใบ')}</>}
                       {orderAnalysis.batchNeedSec > 0 && (
-                        <> — สแกนห่างกันสูงสุด <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> แต่ของที่ทำอยู่ช่วงนั้นต้องใช้เวลาผลิต ~<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
-                          {' '}({orderAnalysis.batchNeedFrom === 'ct' ? 'จาก CT มาตรฐาน' : 'จากอัตราจริงของกะ'}) → <b>ผลิตไม่ทันในช่วงนั้น</b></>
+                        <> {trI18n('— สแกนห่างกันสูงสุด')} <b>{fmtDur(orderAnalysis.batchMaxGapSec)}</b> {trI18n('แต่ของที่ทำอยู่ช่วงนั้นต้องใช้เวลาผลิต ~')}<b>{fmtDur(orderAnalysis.batchNeedSec)}</b>
+                          {' '}({orderAnalysis.batchNeedFrom === 'ct' ? trI18n('จาก CT มาตรฐาน') : trI18n('จากอัตราจริงของกะ')}) → <b>{trI18n('ผลิตไม่ทันในช่วงนั้น')}</b></>
                       )}
-                      {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
-                      {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
+                      {!orderAnalysis.batchNeedSec && <> {trI18n('(ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง')} {FALLBACK_BATCH_SEC / 60} นาที)</>}
+                      {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> {trI18n('จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข')} <b>{trI18n('ระดับกลุ่ม')}</b> ด้านล่างแทน
                     </NoticeBar>
                   )}
 
@@ -1488,26 +1488,26 @@ export default function OrderTrace() {
                         {orderAnalysis.group.mats.length > 1 ? ` · ${orderAnalysis.group.mats.length} ชิ้นงาน` : ''}) — ตัวเลขที่เชื่อถือได้
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
-                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ช่วงเวลารวมของกลุ่ม</span><br />
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ช่วงเวลารวมของกลุ่ม')}</span><br />
                           <b>{fmtTime(orderAnalysis.group.gStart)} → {fmtTime(orderAnalysis.group.gEnd)}</b>
                           <span style={{ color: 'var(--muted)' }}> ({fmtMin(orderAnalysis.group.durMin)})</span>
                         </div>
-                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ผลิตรวมทั้งกลุ่ม</span><br /><b>{orderAnalysis.group.qty.toLocaleString()} ชิ้น</b></div>
-                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br />
-                          <b>{fmtMin(orderAnalysis.group.netMin)}</b>{orderAnalysis.group.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.group.ratePerHr} ชิ้น/ชม.</span> : ''}
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ผลิตรวมทั้งกลุ่ม')}</span><br /><b>{orderAnalysis.group.qty.toLocaleString()} {trI18n('ชิ้น')}</b></div>
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('เวลาเดินสุทธิ → อัตราผลิต')}</span><br />
+                          <b>{fmtMin(orderAnalysis.group.netMin)}</b>{orderAnalysis.group.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.group.ratePerHr} {trI18n('ชิ้น/ชม.')}</span> : ''}
                         </div>
-                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นเฉลี่ย (กลุ่ม){orderAnalysis.group.sameMat && orderAnalysis.stdCt ? ' vs CT' : ''}</span><br />
-                          {orderAnalysis.group.sec ? <b>{orderAnalysis.group.sec.toFixed(1)} วิ</b> : '—'}
-                          {orderAnalysis.group.sameMat && orderAnalysis.stdCt && <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span>}
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('วิ/ชิ้นเฉลี่ย (กลุ่ม)')}{orderAnalysis.group.sameMat && orderAnalysis.stdCt ? ' vs CT' : ''}</span><br />
+                          {orderAnalysis.group.sec ? <b>{orderAnalysis.group.sec.toFixed(1)} {trI18n('วิ')}</b> : '—'}
+                          {orderAnalysis.group.sameMat && orderAnalysis.stdCt && <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} {trI18n('วิ')}</span>}
                         </div>
-                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน{orderAnalysis.group.mats.length > 1 ? ' (ถ่วงน้ำหนัก)' : ''}</span><br />
+                        <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ความเร็วเทียบมาตรฐาน')}{orderAnalysis.group.mats.length > 1 ? ' (ถ่วงน้ำหนัก)' : ''}</span><br />
                           {orderAnalysis.group.speedPct != null
                             ? <b style={{ fontSize: 17, color: orderAnalysis.group.speedPct >= 95 ? '#22c55e' : orderAnalysis.group.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.group.speedPct}%</b>
                             : <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ({orderAnalysis.group.missCtN} ชิ้นงานในกลุ่มยังไม่ตั้ง CT)</span>}
                         </div>
                       </div>
                       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                        เทียบมาตรฐาน = Σ(จำนวน × CT ของชิ้นงานนั้น) ÷ เวลาเดินสุทธิ (สูตรเดียวกับ %P ของ OEE) · หัก DT ในช่วง {Math.round(orderAnalysis.group.dtUnpl)} นาทีนอกแผน / {Math.round(orderAnalysis.group.dtPlan)} นาทีตามแผน
+                        เทียบมาตรฐาน = Σ(จำนวน × CT ของชิ้นงานนั้น) ÷ เวลาเดินสุทธิ (สูตรเดียวกับ %P ของ OEE) · หัก DT ในช่วง {Math.round(orderAnalysis.group.dtUnpl)} {trI18n('นาทีนอกแผน /')} {Math.round(orderAnalysis.group.dtPlan)} นาทีตามแผน
                       </div>
                     </div>
                   )}
@@ -1517,33 +1517,33 @@ export default function OrderTrace() {
                     {orderAnalysis.groupMode ? '📄 ตัวเลขรายใบ (อ้างอิงเวลาสแกน — ใช้ตัดสินความเร็วไม่ได้)' : '📄 ตัวเลขรายใบ'}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '10px 18px', fontSize: 13, opacity: orderAnalysis.groupMode ? 0.62 : 1 }}>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เปิด→ปิดใบ (เวลาสแกน)</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>DT ทับช่วงใบ (นอกแผน/ตามแผน)</span><br />
-                      <b style={{ color: orderAnalysis.dtUnpl > 0 ? 'var(--red)' : 'var(--text)' }}>{Math.round(orderAnalysis.dtUnpl)} นาที</b>
-                      <span style={{ color: 'var(--muted)' }}> / {Math.round(orderAnalysis.dtPlan)} นาที</span>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('เปิด→ปิดใบ (เวลาสแกน)')}</span><br /><b>{fmtMin(orderAnalysis.durMin)}</b></div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('DT ทับช่วงใบ (นอกแผน/ตามแผน)')}</span><br />
+                      <b style={{ color: orderAnalysis.dtUnpl > 0 ? 'var(--red)' : 'var(--text)' }}>{Math.round(orderAnalysis.dtUnpl)} {trI18n('นาที')}</b>
+                      <span style={{ color: 'var(--muted)' }}> / {Math.round(orderAnalysis.dtPlan)} {trI18n('นาที')}</span>
                       {orderAnalysis.dtUntimed > 0 && <span style={{ color: 'var(--amber)', fontSize: 11 }}> (+{Math.round(orderAnalysis.dtUntimed)} นาทีไม่ระบุเวลา)</span>}
                     </div>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>เวลาเดินสุทธิ → อัตราผลิต</span><br /><b>{fmtMin(orderAnalysis.netMin)}</b>{orderAnalysis.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.ratePerHr} ชิ้น/ชม.</span> : ''}</div>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>วิ/ชิ้นจริง vs CT มาตรฐาน</span><br />
-                      {orderAnalysis.groupMode ? <span style={{ color: 'var(--muted)' }}>— ใช้ไม่ได้</span> : (orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} วิ</b> : '—')}
-                      {orderAnalysis.stdCt ? <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} วิ</span> : <span style={{ color: 'var(--muted)' }}> / ไม่ตั้ง CT</span>}
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('เวลาเดินสุทธิ → อัตราผลิต')}</span><br /><b>{fmtMin(orderAnalysis.netMin)}</b>{orderAnalysis.ratePerHr ? <span style={{ color: 'var(--text2)' }}> · {orderAnalysis.ratePerHr} {trI18n('ชิ้น/ชม.')}</span> : ''}</div>
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('วิ/ชิ้นจริง vs CT มาตรฐาน')}</span><br />
+                      {orderAnalysis.groupMode ? <span style={{ color: 'var(--muted)' }}>{trI18n('— ใช้ไม่ได้')}</span> : (orderAnalysis.netSec ? <b>{orderAnalysis.netSec.toFixed(1)} {trI18n('วิ')}</b> : '—')}
+                      {orderAnalysis.stdCt ? <span style={{ color: 'var(--muted)' }}> / {orderAnalysis.stdCt} {trI18n('วิ')}</span> : <span style={{ color: 'var(--muted)' }}> {trI18n('/ ไม่ตั้ง CT')}</span>}
                     </div>
-                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ความเร็วเทียบมาตรฐาน</span><br />
+                    <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>{trI18n('ความเร็วเทียบมาตรฐาน')}</span><br />
                       {orderAnalysis.groupMode
-                        ? <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>— ดูค่าระดับกลุ่มด้านบน</span>
+                        ? <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>{trI18n('— ดูค่าระดับกลุ่มด้านบน')}</span>
                         : orderAnalysis.speedPct != null
                           ? <b style={{ fontSize: 16, color: orderAnalysis.speedPct >= 95 ? '#22c55e' : orderAnalysis.speedPct >= 80 ? '#f59e0b' : '#ef4444' }}>{orderAnalysis.speedPct}%</b>
-                          : <span style={{ color: 'var(--muted)' }}>— (ตั้ง CT ที่ Product Master ก่อน)</span>}
+                          : <span style={{ color: 'var(--muted)' }}>{trI18n('— (ตั้ง CT ที่ Product Master ก่อน)')}</span>}
                     </div>
                   </div>
-                  {!orderAnalysis.groupMode && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>✅ ไม่มีใบอื่นวิ่งทับช่วงนี้ และไม่ได้สแกนเป็นชุด — ตัวเลขรายใบใช้ได้</div>}
+                  {!orderAnalysis.groupMode && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>{trI18n('✅ ไม่มีใบอื่นวิ่งทับช่วงนี้ และไม่ได้สแกนเป็นชุด — ตัวเลขรายใบใช้ได้')}</div>}
                 </CollapseCard>
               )}
 
               {/* ── เครื่องจักร/ใบซ่อม ── */}
               {/* 🏭 อุปกรณ์ที่ใช้ผลิต — ตอบโจทย์ "ของเสีย → เครื่อง/แม่พิมพ์ตัวไหน · ขาด PM ไหม · ใครแตะล่าสุด" */}
               {trace.equip && (
-                <CollapseCard id="equip" storePrefix="ot" title="อุปกรณ์ที่ใช้ผลิต — สภาพบำรุงรักษา ณ เวลาผลิต"
+                <CollapseCard id="equip" storePrefix="ot" title={trI18n('อุปกรณ์ที่ใช้ผลิต — สภาพบำรุงรักษา ณ เวลาผลิต')}
                   count={trace.equip.rows.length}
                   defaultOpen={trace.equip.overdueCount > 0 || trace.equip.freshFixCount > 0 || !!trace.equip.confirmedNo}>
 
@@ -1555,7 +1555,7 @@ export default function OrderTrace() {
                   ) : !trace.equip.isParallel ? (
                     /* ไลน์ไหลทีละชิ้น = งานผ่านทุกเครื่องตามลำดับ → ทุกตัว "ถูกใช้จริง" ไม่ใช่ผู้ต้องสงสัย */
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
-                      ไลน์ <b>{sess.line_name}</b> เป็นแบบ <b>ไหลทีละชิ้น (one-piece flow)</b> — ใบนี้ <b>ผ่านเครื่องทั้ง {trace.equip.machineCount} ตัวตามลำดับ</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
+                      ไลน์ <b>{sess.line_name}</b> {trI18n('เป็นแบบ')} <b>{trI18n('ไหลทีละชิ้น (one-piece flow)')}</b> {trI18n('— ใบนี้')} <b>{trI18n('ผ่านเครื่องทั้ง')} {trace.equip.machineCount} {trI18n('ตัวตามลำดับ')}</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                         {trace.equip.hasStepOrder
                           ? 'เลข "ขั้นที่" มาจากลำดับเครื่องในทะเบียน · เรียงรายการตามตัวที่ควรสงสัยก่อน'
@@ -1564,7 +1564,7 @@ export default function OrderTrace() {
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
-                      ⚠️ ไลน์นี้เป็น <b>เครื่องขนาน</b> (แต่ละใบวิ่งเครื่องเดียว) และ <b>ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน</b> — รายการล่างจึงเป็น <b>ผู้ต้องสงสัย</b> ไม่ใช่ข้อสรุป
+                      ⚠️ ไลน์นี้เป็น <b>{trI18n('เครื่องขนาน')}</b> {trI18n('(แต่ละใบวิ่งเครื่องเดียว) และ')} <b>{trI18n('ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน')}</b> {trI18n('— รายการล่างจึงเป็น')} <b>{trI18n('ผู้ต้องสงสัย')}</b> ไม่ใช่ข้อสรุป
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                         อยากสอบถึงตัวเครื่อง: เลือกเครื่องตอนเปิด Order — ใบที่เปิดหลังจากนั้นจะระบุเครื่องให้เอง
                       </div>
@@ -1573,19 +1573,19 @@ export default function OrderTrace() {
 
                   {/* ชี้เป้าก่อน ไม่ใช่กองข้อมูลให้อ่านเอง */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 11.5 }}>
-                    {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
-                    {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
+                    {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>{trI18n('🔴 PM เกินกำหนด ณ วันผลิต')} {trace.equip.overdueCount} {trI18n('รายการ')}</span>}
+                    {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>{trI18n('🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต')} {trace.equip.freshFixCount} {trI18n('รายการ')}</span>}
                     <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                       {trace.equip.isParallel ? 'เครื่องในไลน์' : 'ผ่านเครื่อง'} {trace.equip.machineCount}</span>
-                    <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text2)' }}>จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
-                    {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
+                    <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text2)' }}>{trI18n('จิ๊ก/แม่พิมพ์ลงทะเบียน')} {trace.equip.dieCount}</span>
+                    {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)' }}>{trI18n('ยังไม่มีแผน PM')} {trace.equip.noPlanCount}</span>}
                   </div>
 
                   {/* ไม่มีแผน PM สักตัว = ตอบคำถาม "ขาดบำรุงรักษาไหม" ไม่ได้เลย — ต้องบอกตรงๆ ไม่ใช่โชว์ค่าว่าง */}
                   {trace.equip.rows.length > 0 && trace.equip.noPlanCount === trace.equip.rows.length && (
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
-                      🔎 <b>ยังตอบไม่ได้ว่าอุปกรณ์ขาดบำรุงรักษาหรือไม่</b> — อุปกรณ์ทั้ง {trace.equip.rows.length} รายการของไลน์นี้ <b>ยังไม่มีแผน PM สักตัว</b> ระบบจึงไม่มีเกณฑ์ให้เทียบ
-                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>ตั้งจุดตรวจ + รอบ PM ที่ PM Setup แล้วใบที่ผลิตหลังจากนั้นจะสอบย้อนได้ว่าตอนผลิตค้าง PM ไหม</div>
+                      🔎 <b>{trI18n('ยังตอบไม่ได้ว่าอุปกรณ์ขาดบำรุงรักษาหรือไม่')}</b> {trI18n('— อุปกรณ์ทั้ง')} {trace.equip.rows.length} {trI18n('รายการของไลน์นี้')} <b>{trI18n('ยังไม่มีแผน PM สักตัว')}</b> ระบบจึงไม่มีเกณฑ์ให้เทียบ
+                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>{trI18n('ตั้งจุดตรวจ + รอบ PM ที่ PM Setup แล้วใบที่ผลิตหลังจากนั้นจะสอบย้อนได้ว่าตอนผลิตค้าง PM ไหม')}</div>
                     </div>
                   )}
 
@@ -1602,36 +1602,36 @@ export default function OrderTrace() {
                   )}
 
                   {trace.equip.rows.length === 0
-                    ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบเครื่องจักร/อุปกรณ์ที่ลงทะเบียนกับไลน์นี้</div>
+                    ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ไม่พบเครื่องจักร/อุปกรณ์ที่ลงทะเบียนกับไลน์นี้')}</div>
                     : (() => {
                       const Row = ({ r }) => (
                         <div style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', marginBottom: 6,
                           border: `1px solid ${r.confirmed ? 'var(--green-line)' : r.overdue > 0 ? 'var(--red-line)' : 'var(--border)'}`,
                           background: r.confirmed ? 'var(--green-dim)' : 'var(--bg3)' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                            {r.sortOrder != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ขั้นที่ {r.sortOrder}</span>}
-                            <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {r.label}</b>
+                            {r.sortOrder != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ขั้นที่')} {r.sortOrder}</span>}
+                            <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {trI18n(r.label)}</b>
                             {r.name && <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{r.name}</span>}
-                            {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>ใบนี้ระบุ</span>}
-                            {r.usage === 'suspect' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ต้องสงสัย</span>}
-                            {r.overdue > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>🔴 PM เกินกำหนด {r.overdue} วัน ณ วันผลิต</span>}
-                            {r.daysSinceFix != null && r.daysSinceFix <= 7 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>🟠 ซ่อมเสร็จ {r.daysSinceFix} วันก่อนผลิต</span>}
-                            {r.dts.length > 0 && <span style={{ fontSize: 11, color: 'var(--amber)' }}>⏱ มี Downtime ในกะนี้ {r.dts.length} รายการ</span>}
-                            {r.amTarget && !r.amDone && <span style={{ fontSize: 11, color: 'var(--amber)' }}>⚠ วันนั้นยังไม่ได้ตรวจ AM</span>}
+                            {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>{trI18n('ใบนี้ระบุ')}</span>}
+                            {r.usage === 'suspect' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('ผู้ต้องสงสัย')}</span>}
+                            {r.overdue > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>{trI18n('🔴 PM เกินกำหนด')} {r.overdue} {trI18n('วัน ณ วันผลิต')}</span>}
+                            {r.daysSinceFix != null && r.daysSinceFix <= 7 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{trI18n('🟠 ซ่อมเสร็จ')} {r.daysSinceFix} {trI18n('วันก่อนผลิต')}</span>}
+                            {r.dts.length > 0 && <span style={{ fontSize: 11, color: 'var(--amber)' }}>{trI18n('⏱ มี Downtime ในกะนี้')} {r.dts.length} {trI18n('รายการ')}</span>}
+                            {r.amTarget && !r.amDone && <span style={{ fontSize: 11, color: 'var(--amber)' }}>{trI18n('⚠ วันนั้นยังไม่ได้ตรวจ AM')}</span>}
                           </div>
                           <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, display: 'grid', gap: 2 }}>
-                            <div>แผน PM: {r.hasPmPlan
+                            <div>{trI18n('แผน PM:')} {r.hasPmPlan
                               ? <>{r.overdue > 0
-                                  ? <b style={{ color: 'var(--red)' }}>ณ วันผลิต เลยกำหนดมาแล้ว {r.overdue} วัน (ควรตรวจ {fmtDate(r.dueAtProd)})</b>
-                                  : r.neverInspected ? <b style={{ color: 'var(--amber)' }}>มีแผน PM แต่ไม่พบประวัติการตรวจก่อนวันผลิตเลย</b>
-                                  : r.usageOnly ? <span>แผนอิงยอดผลิต — ย้อนสถานะ ณ วันผลิตไม่ได้</span>
-                                  : <span style={{ color: 'var(--green)' }}>ณ วันผลิต ยังอยู่ในรอบ</span>}
+                                  ? <b style={{ color: 'var(--red)' }}>{trI18n('ณ วันผลิต เลยกำหนดมาแล้ว')} {r.overdue} {trI18n('วัน (ควรตรวจ')} {fmtDate(r.dueAtProd)})</b>
+                                  : r.neverInspected ? <b style={{ color: 'var(--amber)' }}>{trI18n('มีแผน PM แต่ไม่พบประวัติการตรวจก่อนวันผลิตเลย')}</b>
+                                  : r.usageOnly ? <span>{trI18n('แผนอิงยอดผลิต — ย้อนสถานะ ณ วันผลิตไม่ได้')}</span>
+                                  : <span style={{ color: 'var(--green)' }}>{trI18n('ณ วันผลิต ยังอยู่ในรอบ')}</span>}
                                 {r.planDept ? ` · ทีม ${deptNameOf(r.planDept)}` : ''}
-                                {r.nextDue ? <span style={{ color: 'var(--muted)' }}> · รอบถัดไป {fmtDate(r.nextDue)} (ค่าปัจจุบัน)</span> : ''}
-                                {r.lastPlanDone ? <span style={{ color: 'var(--muted)' }}> · ทำล่าสุด {fmtDT(r.lastPlanDone)}</span> : ''}</>
-                              : <span style={{ color: 'var(--muted)' }}>ยังไม่ได้ตั้งแผน PM ให้อุปกรณ์ตัวนี้</span>}</div>
+                                {r.nextDue ? <span style={{ color: 'var(--muted)' }}> {trI18n('· รอบถัดไป')} {fmtDate(r.nextDue)} {trI18n('(ค่าปัจจุบัน)')}</span> : ''}
+                                {r.lastPlanDone ? <span style={{ color: 'var(--muted)' }}> {trI18n('· ทำล่าสุด')} {fmtDT(r.lastPlanDone)}</span> : ''}</>
+                              : <span style={{ color: 'var(--muted)' }}>{trI18n('ยังไม่ได้ตั้งแผน PM ให้อุปกรณ์ตัวนี้')}</span>}</div>
                             {r.lastInsp && (
-                              <div>ตรวจล่าสุดก่อนผลิต: {fmtDT(r.lastInsp.inspected_at)} · <b>{r.inspName}</b>
+                              <div>{trI18n('ตรวจล่าสุดก่อนผลิต:')} {fmtDT(r.lastInsp.inspected_at)} · <b>{r.inspName}</b>
                                 {' · '}{inspVerdict(r.lastInsp.status)}
                                 {r.lastInsp.notes ? ` — ${r.lastInsp.notes}` : ''}</div>
                             )}
@@ -1643,9 +1643,9 @@ export default function OrderTrace() {
                                 {m.assigned_to ? ` · ช่าง ${m.assigned_to}` : ''}
                                 {m.reported_by_name ? ` · แจ้งโดย ${m.reported_by_name}` : ''}</div>
                             ))}
-                            {r.mos.length > 3 && <div style={{ color: 'var(--muted)' }}>· มีใบซ่อมอีก {r.mos.length - 3} ใบใน 90 วันก่อนผลิต</div>}
+                            {r.mos.length > 3 && <div style={{ color: 'var(--muted)' }}>{trI18n('· มีใบซ่อมอีก')} {r.mos.length - 3} {trI18n('ใบใน 90 วันก่อนผลิต')}</div>}
                             {r.audits.slice(0, 2).map((a, i) => (
-                              <div key={`a${i}`} style={{ color: 'var(--muted)' }}>✏️ แก้ทะเบียน{Array.isArray(a.changed_fields) && a.changed_fields.length ? ` (${a.changed_fields.join(', ')})` : ''} โดย {a.actor || 'ไม่ทราบ'} · {fmtDT(a.changed_at)}</div>
+                              <div key={`a${i}`} style={{ color: 'var(--muted)' }}>{trI18n('✏️ แก้ทะเบียน')}{Array.isArray(a.changed_fields) && a.changed_fields.length ? ` (${a.changed_fields.join(', ')})` : ''} {trI18n('โดย')} {a.actor || 'ไม่ทราบ'} · {fmtDT(a.changed_at)}</div>
                             ))}
                             {!r.hasPmPlan && !r.lastInsp && !r.mos.length && (
                               <div style={{ color: 'var(--muted)' }}>
@@ -1671,13 +1671,13 @@ export default function OrderTrace() {
                 </CollapseCard>
               )}
 
-              <CollapseCard id="machine" storePrefix="ot" title="Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
+              <CollapseCard id="machine" storePrefix="ot" title={trI18n('Downtime & ใบซ่อม MO ในกะ')} count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
                 {sel.machine_no && (
                   <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
                     ใบนี้ผลิตที่เครื่อง <b>{sel.machine_no}</b>
                     {trace.machineMos.length
-                      ? <span style={{ color: 'var(--amber)' }}> · มีใบซ่อม {trace.machineMos.length} ใบใน 30 วันก่อนเปิดใบ</span>
-                      : <span style={{ color: 'var(--green)' }}> · ไม่มีใบซ่อมใน 30 วันก่อนหน้า</span>}
+                      ? <span style={{ color: 'var(--amber)' }}> {trI18n('· มีใบซ่อม')} {trace.machineMos.length} {trI18n('ใบใน 30 วันก่อนเปิดใบ')}</span>
+                      : <span style={{ color: 'var(--green)' }}> {trI18n('· ไม่มีใบซ่อมใน 30 วันก่อนหน้า')}</span>}
                     {trace.machineMos.map((m, i) => (
                       <div key={i} style={{ color: 'var(--text2)', paddingLeft: 14, fontSize: 12 }}>
                         ↳ {fmtDate((m.created_at || '').slice(0, 10))} MO {m.mo_no || '(รอเลข)'} — {m.problem_detail || ''}{m.solution ? ` · แก้: ${m.solution}` : ` (${m.status})`}
@@ -1691,95 +1691,95 @@ export default function OrderTrace() {
                   return (
                     <div key={i} style={{ padding: '7px 0', borderTop: i ? '1px solid var(--border2)' : 'none', fontSize: 12.5, opacity: planned ? 0.65 : 1 }}>
                       <b style={{ color: planned ? 'var(--muted)' : 'var(--red)' }}>{d.dr_downtime_types?.name_th || '—'}</b>
-                      {d.machine_no && <span> · เครื่อง <b>{d.machine_no}</b></span>} · {Math.round(d.duration_min || 0)} นาที
+                      {d.machine_no && <span> {trI18n('· เครื่อง')} <b>{d.machine_no}</b></span>} · {Math.round(d.duration_min || 0)} นาที
                       <span style={{ color: 'var(--muted)' }}> · {fmtTime(d.started_at)}{d.ended_at ? `–${fmtTime(d.ended_at)}` : ' (เปิดค้าง)'}</span>
                       {d.description && <div style={{ color: 'var(--text2)' }}>{d.description}</div>}
-                      {mo && <div style={{ color: 'var(--text2)' }}>MO <b>{mo.mo_no || '(รอเลข)'}</b> → {deptNameOf(mo.mtn_dept)} · {mo.root_cause ? `สาเหตุ: ${mo.root_cause} · ` : ''}{mo.solution ? `แก้: ${mo.solution}` : `สถานะ ${mo.status}`}{mo.assigned_to ? ` · ช่าง ${mo.assigned_to}` : ''}</div>}
+                      {mo && <div style={{ color: 'var(--text2)' }}>MO <b>{mo.mo_no || trI18n('(รอเลข)')}</b> → {deptNameOf(mo.mtn_dept)} · {mo.root_cause ? `สาเหตุ: ${mo.root_cause} · ` : ''}{mo.solution ? `แก้: ${mo.solution}` : `สถานะ ${mo.status}`}{mo.assigned_to ? ` · ช่าง ${mo.assigned_to}` : ''}</div>}
                     </div>
                   );
                 })}
-                {!trace.downtimes.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มี Downtime ในกะนี้</div>}
+                {!trace.downtimes.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มี Downtime ในกะนี้')}</div>}
               </CollapseCard>
 
               {/* ── 4M ── */}
-              <CollapseCard id="fourm" storePrefix="ot" title="การเปลี่ยนแปลง 4M วันนั้น" count={trace.fourM.length} defaultOpen={trace.fourM.length > 0}>
+              <CollapseCard id="fourm" storePrefix="ot" title={trI18n('การเปลี่ยนแปลง 4M วันนั้น')} count={trace.fourM.length} defaultOpen={trace.fourM.length > 0}>
                 {trace.fourM.map((f, i) => (
                   <div key={i} style={{ padding: '5px 0', fontSize: 12.5, borderTop: i ? '1px solid var(--border2)' : 'none' }}>
                     <b>{f.category}</b>{f.change_subtype ? ` / ${f.change_subtype}` : ''} · {f.description || '—'}
                     <span style={{ marginLeft: 8, ...chip('var(--bg3)', f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b') }}>{f.status}</span>
                   </div>
                 ))}
-                {!trace.fourM.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการเปลี่ยนแปลง 4M ของไลน์นี้ในวันนั้น</div>}
+                {!trace.fourM.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มีการเปลี่ยนแปลง 4M ของไลน์นี้ในวันนั้น')}</div>}
               </CollapseCard>
 
               {/* ── การตรวจประจำวัน ── */}
-              <CollapseCard id="checks" storePrefix="ot" title="✅ การตรวจประจำวัน (Daily PM / Poka-Yoke / LPA)"
+              <CollapseCard id="checks" storePrefix="ot" title={trI18n('✅ การตรวจประจำวัน (Daily PM / Poka-Yoke / LPA)')}
                 count={(trace.dailyPm ? 1 : 0) + trace.poka.length + trace.lpa.length}
                 defaultOpen={Boolean(trace.dailyPm || trace.poka.length || trace.lpa.length)}>
                 <div style={{ display: 'grid', gap: 6, fontSize: 12.5 }}>
                   {trace.dailyPm && (
                     <div>Daily PM (AM): {trace.dailyPm.unknown
-                      ? <span style={{ color: 'var(--amber)' }}>⚠ ดึงผลตรวจไม่สำเร็จ — ไม่ทราบว่าตรวจแล้ว {trace.dailyPm.total} เครื่องหรือยัง</span>
-                      : <>เช็คแล้ว <b>{trace.dailyPm.done}/{trace.dailyPm.total}</b> เครื่อง{trace.dailyPm.fail ? <span style={{ color: 'var(--red)' }}> · พบ NG {trace.dailyPm.fail} รายการ</span> : ''}</>}</div>
+                      ? <span style={{ color: 'var(--amber)' }}>{trI18n('⚠ ดึงผลตรวจไม่สำเร็จ — ไม่ทราบว่าตรวจแล้ว')} {trace.dailyPm.total} {trI18n('เครื่องหรือยัง')}</span>
+                      : <>{trI18n('เช็คแล้ว')} <b>{trace.dailyPm.done}/{trace.dailyPm.total}</b> {trI18n('เครื่อง')}{trace.dailyPm.fail ? <span style={{ color: 'var(--red)' }}> {trI18n('· พบ NG')} {trace.dailyPm.fail} {trI18n('รายการ')}</span> : ''}</>}</div>
                   )}
                   {trace.poka.map((c, i) => (
-                    <div key={`p${i}`}>Poka-Yoke {c.dev?.name || ''}{c.dev?.station ? ` (${c.dev.station})` : ''} — {c.result === 'pass' ? <span style={{ color: 'var(--green)' }}>ผ่าน</span> : <span style={{ color: 'var(--red)' }}>ไม่ผ่าน</span>} · {c.checker_name || '—'}</div>
+                    <div key={`p${i}`}>Poka-Yoke {c.dev?.name || ''}{c.dev?.station ? ` (${c.dev.station})` : ''} — {c.result === 'pass' ? <span style={{ color: 'var(--green)' }}>{trI18n('ผ่าน')}</span> : <span style={{ color: 'var(--red)' }}>{trI18n('ไม่ผ่าน')}</span>} · {c.checker_name || '—'}</div>
                   ))}
                   {trace.lpa.map((a, i) => (
-                    <div key={`l${i}`}>LPA ชั้น <b>{a.layer}</b>{a.station ? ` @${a.station}` : ''} · ผู้ตรวจ {a.auditor_name || '—'}</div>
+                    <div key={`l${i}`}>{trI18n('LPA ชั้น')} <b>{a.layer}</b>{a.station ? ` @${a.station}` : ''} {trI18n('· ผู้ตรวจ')} {a.auditor_name || '—'}</div>
                   ))}
-                  {!trace.dailyPm && !trace.poka.length && !trace.lpa.length && <div style={{ color: 'var(--muted)' }}>ไม่พบบันทึกการตรวจของวันนั้น</div>}
+                  {!trace.dailyPm && !trace.poka.length && !trace.lpa.length && <div style={{ color: 'var(--muted)' }}>{trI18n('ไม่พบบันทึกการตรวจของวันนั้น')}</div>}
                 </div>
               </CollapseCard>
 
               {/* ── วัสดุ ── */}
-              <CollapseCard id="material" storePrefix="ot" title="วัสดุ / ล็อตพาร์ทย่อย (child → raw)" count={trace.childLots.length} defaultOpen={trace.childLots.length > 0}>
+              <CollapseCard id="material" storePrefix="ot" title={trI18n('วัสดุ / ล็อตพาร์ทย่อย (child → raw)')} count={trace.childLots.length} defaultOpen={trace.childLots.length > 0}>
                 {trace.childLots.map((c, i) => (
                   <div key={i} style={{ padding: '6px 0', fontSize: 12.5, borderTop: i ? '1px solid var(--border2)' : 'none' }}>
-                    <b>{c.child_mat_no}</b> {c.part_name || ''} · ล็อต {Number(c.lot_qty).toLocaleString()} ชิ้น · ผลิตที่ {c.source_line || '(ของซื้อ)'} · {c.status}
+                    <b>{c.child_mat_no}</b> {c.part_name || ''} {trI18n('· ล็อต')} {Number(c.lot_qty).toLocaleString()} {trI18n('ชิ้น · ผลิตที่')} {c.source_line || '(ของซื้อ)'} · {c.status}
                     {trace.rawReqs.filter(r => r.lot_request_id === c.id).map((r, j) => (
-                      <div key={j} style={{ color: 'var(--text2)', paddingLeft: 14 }}>↳ เบิกวัตถุดิบ {r.raw_mat_no} × {Number(r.qty).toLocaleString()} ({r.status})</div>
+                      <div key={j} style={{ color: 'var(--text2)', paddingLeft: 14 }}>{trI18n('↳ เบิกวัตถุดิบ')} {r.raw_mat_no} × {Number(r.qty).toLocaleString()} ({r.status})</div>
                     ))}
                   </div>
                 ))}
-                {!trace.childLots.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีล็อตพาร์ทย่อยที่ trigger จากใบนี้</div>}
+                {!trace.childLots.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ไม่มีล็อตพาร์ทย่อยที่ trigger จากใบนี้')}</div>}
                 <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
                   ⚠️ ขอบเขต: ล็อต child = ใบที่ "trigger" การผลิตพาร์ทย่อย (เชื่อมเชิงเวลา ไม่ใช่ identity รายชิ้น) · การเบิกวัตถุดิบสุดทางที่เลข MAT — ระบบยังไม่เก็บ lot no. ของ supplier
                 </div>
               </CollapseCard>
 
               {/* ── stock ── */}
-              <CollapseCard id="stock" storePrefix="ot" title="เส้นทาง Stock (เข้าคลัง → ส่งลูกค้า)" count={trace.stockIn.length + trace.stockOut.length} defaultOpen={trace.stockIn.length > 0}>
+              <CollapseCard id="stock" storePrefix="ot" title={trI18n('เส้นทาง Stock (เข้าคลัง → ส่งลูกค้า)')} count={trace.stockIn.length + trace.stockOut.length} defaultOpen={trace.stockIn.length > 0}>
                 {trace.stockIn.map((x, i) => (
-                  <div key={`i${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>{fmtDT(x.created_at)} เข้าคลัง <b>{x.line_name}</b> +{Number(x.qty).toLocaleString()} <span style={{ color: 'var(--muted)' }}>(ผูกใบนี้โดยตรง)</span></div>
+                  <div key={`i${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>{fmtDT(x.created_at)} {trI18n('เข้าคลัง')} <b>{x.line_name}</b> +{Number(x.qty).toLocaleString()} <span style={{ color: 'var(--muted)' }}>{trI18n('(ผูกใบนี้โดยตรง)')}</span></div>
                 ))}
                 {trace.stockOut.map((x, i) => {
                   const sh = x.customer_shipping_orders;
                   return (
                     <div key={`o${i}`} style={{ fontSize: 12.5, padding: '4px 0', opacity: 0.75 }}>
-                      {fmtDT(x.created_at)} ตัดส่ง −{Number(x.qty).toLocaleString()} · {sh
-                        ? <>รอบส่ง <b>{sh.due_date} {(sh.ship_time || '').slice(0, 5)}</b> · {sh.customer || '—'}{sh.order_no ? ` · PO ${sh.order_no}` : ''}{sh.shipped_by ? ` · ${sh.shipped_by}` : ''} <span style={{ color: 'var(--green)' }}>(ผูกรอบส่งแล้ว)</span></>
+                      {fmtDT(x.created_at)} {trI18n('ตัดส่ง −')}{Number(x.qty).toLocaleString()} · {sh
+                        ? <>{trI18n('รอบส่ง')} <b>{sh.due_date} {(sh.ship_time || '').slice(0, 5)}</b> · {sh.customer || '—'}{sh.order_no ? ` · PO ${sh.order_no}` : ''}{sh.shipped_by ? ` · ${sh.shipped_by}` : ''} <span style={{ color: 'var(--green)' }}>{trI18n('(ผูกรอบส่งแล้ว)')}</span></>
                         : x.note}
                     </div>
                   );
                 })}
-                {!trace.stockIn.length && !trace.stockOut.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีการเคลื่อนไหว stock ที่ผูกใบนี้ (ใบยังไม่ปิด / MAT ไม่เข้าคลังอัตโนมัติ)</div>}
+                {!trace.stockIn.length && !trace.stockOut.length && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('ยังไม่มีการเคลื่อนไหว stock ที่ผูกใบนี้ (ใบยังไม่ปิด / MAT ไม่เข้าคลังอัตโนมัติ)')}</div>}
                 {trace.stockOut.length > 0 && (
                   <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
-                    ⚠️ ขาตัดส่งยังจับคู่กับใบผลิตนี้แบบ <b>เชิงเวลา</b> (MAT เดียวกัน + หลังปิดใบ) — บอกได้ว่าของไปออกรอบส่งไหน แต่ยังไม่ยืนยันว่าเป็นชิ้นที่ผลิตจากใบนี้
-                    {trace.stockOutNoLink && <> · <span style={{ color: 'var(--amber)' }}>ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment จึงยังไม่รู้ว่ารอบส่งใบไหน</span></>}
+                    ⚠️ ขาตัดส่งยังจับคู่กับใบผลิตนี้แบบ <b>{trI18n('เชิงเวลา')}</b> (MAT เดียวกัน + หลังปิดใบ) — บอกได้ว่าของไปออกรอบส่งไหน แต่ยังไม่ยืนยันว่าเป็นชิ้นที่ผลิตจากใบนี้
+                    {trace.stockOutNoLink && <> · <span style={{ color: 'var(--amber)' }}>{trI18n('ยังไม่ได้ apply migration 20260811_stock_txn_ref_shipment จึงยังไม่รู้ว่ารอบส่งใบไหน')}</span></>}
                   </div>
                 )}
               </CollapseCard>
 
               {/* ── ใบอื่นในกะ ── */}
-              <CollapseCard id="sessorders" storePrefix="ot" title="บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
+              <CollapseCard id="sessorders" storePrefix="ot" title={trI18n('บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)')} count={trace.sessionOrders.length - 1} defaultOpen={false}>
                 {trace.prevSession && (
                   <div style={{ marginBottom: 8, padding: '7px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
                     ⏮ กะก่อนหน้าของไลน์: {fmtDate(trace.prevSession.work_date)} {trace.prevSession.shift === 'night' ? '🌙' : '☀️'}
                     {trace.prevSession.oee != null
                       ? <span> · OEE <b style={{ color: trace.prevSession.oee >= 70 ? 'var(--green)' : 'var(--amber)' }}>{Number(trace.prevSession.oee).toFixed(1)}%</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>(A {trace.prevSession.oee_a ?? '—'} / P {trace.prevSession.oee_p ?? '—'} / Q {trace.prevSession.oee_q ?? '—'})</span></span>
-                      : <span style={{ color: 'var(--muted)' }}> · ยังไม่ stamp OEE</span>}
+                      : <span style={{ color: 'var(--muted)' }}> {trI18n('· ยังไม่ stamp OEE')}</span>}
                   </div>
                 )}
                 {trace.sessionOrders.filter(o => o.id !== sel.id).map((o, i) => (
@@ -1789,7 +1789,7 @@ export default function OrderTrace() {
                     <span style={{ color: 'var(--muted)' }}>{fmtTime(o.opened_at)}{o.confirmed_at ? `–${fmtTime(o.confirmed_at)}` : ''} · {(STATUS_META[o.status] || {}).label || o.status}</span>
                   </div>
                 ))}
-                {trace.sessionOrders.length <= 1 && <div style={{ color: 'var(--muted)', fontSize: 12 }}>กะนี้มีใบเดียว</div>}
+                {trace.sessionOrders.length <= 1 && <div style={{ color: 'var(--muted)', fontSize: 12 }}>{trI18n('กะนี้มีใบเดียว')}</div>}
               </CollapseCard>
             </>
           )}

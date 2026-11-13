@@ -44,7 +44,7 @@ function FieldInput({ f, value, onChange, disabled }) {
   if (f.type === 'select') return (
     <select value={value ?? ''} disabled={disabled} onChange={e => onChange(e.target.value)} style={st}>
       {!f.required && <option value="">—</option>}
-      {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label ?? o.value}</option>)}
+      {(f.options || []).map(o => <option key={o.value} value={o.value}>{tr(o.label) ?? o.value}</option>)}
     </select>
   );
   if (f.type === 'textarea') return <textarea rows={2} value={value ?? ''} disabled={disabled} placeholder={f.placeholder} onChange={e => onChange(e.target.value)} style={st} />;
@@ -142,7 +142,7 @@ export default function SimpleMasterPanel({
       {title && <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{title} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({rows.length})</span></div>}
       {help && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{help}</div>}
       {missing ? (
-        <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ ยังไม่ได้ apply migration ของตาราง {table} (แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน</div>
+        <div style={{ fontSize: 12, color: '#f59e0b' }}>{tr('⚠ ยังไม่ได้ apply migration ของตาราง')} {table} {tr('(แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน')}</div>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
@@ -155,7 +155,7 @@ export default function SimpleMasterPanel({
           {adding && (
             <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
               {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
-              {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
+              {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.label)}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>
                 <button onClick={add} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>{tr('บันทึก')}</button>
                 <button onClick={() => setAdding(null)} style={btn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>

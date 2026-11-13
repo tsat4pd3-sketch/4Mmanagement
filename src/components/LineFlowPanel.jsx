@@ -102,22 +102,22 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
         </span>
         {l.buffer_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{l.buffer_label}</span>}
         {l.buffer_qty != null
-          ? <span style={{ fontSize: 11, color: 'var(--text2)' }}>buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น</span>
-          : <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ยังไม่ระบุ buffer</span>}
+          ? <span style={{ fontSize: 11, color: 'var(--text2)' }}>buffer {Number(l.buffer_qty).toLocaleString()} {tr('ชิ้น')}</span>
+          : <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('⚠ ยังไม่ระบุ buffer')}</span>}
         {cover != null && (
-          <span title="ต้นน้ำหยุดได้ประมาณเท่านี้ก่อนปลายน้ำเริ่มรอของ (คิดจาก CT เฉลี่ยของไลน์ปลายน้ำ)"
-            style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>≈ กันได้ {fmtMin(cover)}</span>
+          <span title={tr('ต้นน้ำหยุดได้ประมาณเท่านี้ก่อนปลายน้ำเริ่มรอของ (คิดจาก CT เฉลี่ยของไลน์ปลายน้ำ)')}
+            style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>{tr('≈ กันได้')} {fmtMin(cover)}</span>
         )}
         {ctMissing && (
           <span title={`${consumer} ยังไม่มีสินค้าที่ตั้ง Cycle Time — ประเมิน "กันได้กี่นาที" ไม่ได้`}
-            style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ไม่มี CT ของ {consumer} — ประเมินเวลาไม่ได้</span>
+            style={{ fontSize: 11, color: '#f59e0b' }}>{tr('⚠ ไม่มี CT ของ')} {consumer} {tr('— ประเมินเวลาไม่ได้')}</span>
         )}
         {otherKids.length > 0 && (
           <span title={`${other} เป็นระดับแผนก (มีไลน์ย่อย ${otherKids.join(', ')}) — งานจริงเกิดที่ไลน์ย่อย ตั้งเส้นที่ไลน์ย่อยแทน`}
-            style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ {other} เป็นแผนก ไม่ใช่ไลน์</span>
+            style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>⚠ {other} {tr('เป็นแผนก ไม่ใช่ไลน์')}</span>
         )}
         {canEdit && (
-          <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => remove(l)} title="ลบ" />
+          <DeleteButton style={{ marginLeft: 'auto' }} onClick={() => remove(l)} title={tr('ลบ')} />
         )}
       </div>
     );
@@ -126,7 +126,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
   return (
     /* พับด้วย CollapseCard ของกลาง — แผงขวาของ /layout-setup เคยมีปุ่มพับ 3 แบบในคอลัมน์เดียว (05/10) */
     <CollapseCard id="lineFlow" storePrefix="ls" defaultOpen={false} onOpenChange={setOpen}
-      title={<>🔗 สายการไหลระหว่างไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· ไลน์นี้ป้อนให้ใคร / รับของจากใคร</span></>}>
+      title={<>{tr('🔗 สายการไหลระหว่างไลน์')} <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>{tr('· ไลน์นี้ป้อนให้ใคร / รับของจากใคร')}</span></>}>
       <>
         <div>
           {missing ? (
@@ -136,17 +136,17 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
           ) : (
             <>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
-                ใช้ตอบว่า <b>“หยุดที่ไลน์นี้ กระทบไลน์ไหนบ้าง”</b> — ระบบไม่เดาให้ ต้องตั้งเอง
+                ใช้ตอบว่า <b>{tr('“หยุดที่ไลน์นี้ กระทบไลน์ไหนบ้าง”')}</b> — ระบบไม่เดาให้ ต้องตั้งเอง
                 · <b>buffer</b> คือจุดพักระหว่างกลาง ยิ่งมีมาก ปลายน้ำยิ่งทนต้นน้ำหยุดได้นาน
                 (ไม่กรอก = ระบบบอกแค่ว่าเชื่อมกัน ไม่ประเมินเวลา)
               </div>
 
-              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>➡️ ไลน์นี้ป้อนงานให้ ({down.length})</div>
-              {down.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>— ยังไม่ได้ตั้ง —</div>}
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>{tr('➡️ ไลน์นี้ป้อนงานให้ (')}{down.length})</div>
+              {down.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>{tr('— ยังไม่ได้ตั้ง —')}</div>}
               {down.map(l => renderRow(l, 'down'))}
 
-              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', margin: '12px 0 2px' }}>⬅️ รับของมาจาก ({up.length})</div>
-              {up.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>— ยังไม่ได้ตั้ง —</div>}
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', margin: '12px 0 2px' }}>{tr('⬅️ รับของมาจาก (')}{up.length})</div>
+              {up.length === 0 && <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>{tr('— ยังไม่ได้ตั้ง —')}</div>}
               {up.map(l => renderRow(l, 'up'))}
 
               {canEdit && !form && (
@@ -180,10 +180,10 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                   {(childrenOf[form.other] || []).length > 0 && (
                     /* เตือน ไม่บล็อก — แต่ต้องบอกผลที่ตามมา + เสนอไลน์ย่อยให้กดได้เลย (ห้ามเป็นทางตัน) */
                     <div style={{ fontSize: 11, color: '#f59e0b', lineHeight: 1.7, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
-                      <b>⚠ {form.other} เป็นระดับแผนก ไม่ใช่ไลน์ผลิต</b> — งานจริงเกิดที่ไลน์ย่อย
-                      และไลน์แม่ไม่มีสินค้า/CT ของตัวเอง ⇒ ระบบจะประเมิน <b>“กันได้กี่นาที”</b> ให้เส้นนี้ไม่ได้เลย
+                      <b>⚠ {form.other} {tr('เป็นระดับแผนก ไม่ใช่ไลน์ผลิต')}</b> — งานจริงเกิดที่ไลน์ย่อย
+                      และไลน์แม่ไม่มีสินค้า/CT ของตัวเอง ⇒ ระบบจะประเมิน <b>{tr('“กันได้กี่นาที”')}</b> ให้เส้นนี้ไม่ได้เลย
                       <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-                        <span style={{ color: 'var(--muted)' }}>เลือกไลน์ย่อยแทน:</span>
+                        <span style={{ color: 'var(--muted)' }}>{tr('เลือกไลน์ย่อยแทน:')}</span>
                         {(childrenOf[form.other] || []).map(k => (
                           <button key={k} type="button" onClick={() => setForm({ ...form, other: k })}
                             style={{ ...btnSt, padding: '3px 9px', fontSize: 11 }}>{k}</button>

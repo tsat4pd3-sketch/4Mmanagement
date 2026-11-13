@@ -174,22 +174,22 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
           <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-display)' }}>
             {tr('สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)')}
           </h3>
-          <button type="button" onClick={onClose} aria-label="ปิด"
+          <button type="button" onClick={onClose} aria-label={tr('ปิด')}
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
 
         {err ? <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: FS + 1 }}>🔴 {err}</div> : null}
 
         {busy && !preview ? (
-          <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังอ่านออเดอร์ลูกค้า…</div>
+          <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังอ่านออเดอร์ลูกค้า…')}</div>
         ) : null}
 
         {preview ? (
           <>
             <div style={{ ...card, fontSize: FS + 0.5, lineHeight: 1.8, marginBottom: 10 }}>
-              อ่านออเดอร์ที่มีวันส่งตั้งแต่ <b>{preview.from}</b> ถึงปัจจุบันขึ้นไป ({BACK_DAYS} วันย้อนหลัง)
-              — เจอ FG <b>{fmt(totMats)}</b> พาร์ท / <b>{preview.groups.length}</b> ลูกค้า
-              {' · '}จะเพิ่มขึ้นบอร์ดใหม่ <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> พาร์ท
+              อ่านออเดอร์ที่มีวันส่งตั้งแต่ <b>{preview.from}</b> {tr('ถึงปัจจุบันขึ้นไป (')}{BACK_DAYS} วันย้อนหลัง)
+              — เจอ FG <b>{fmt(totMats)}</b> {tr('พาร์ท /')} <b>{preview.groups.length}</b> ลูกค้า
+              {' · '}{tr('จะเพิ่มขึ้นบอร์ดใหม่')} <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> พาร์ท
               <div style={{ color: 'var(--muted)', fontSize: FS }}>
                 เพิ่มอย่างเดียว ไม่ลบของเดิม · ยอดลูกค้าสั่ง/ผลิตเข้า ระบบอ่านสดทุกครั้ง ไม่ได้ก๊อปมาเก็บ
               </div>
@@ -208,7 +208,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
                 <div key={g.customer} style={{ ...card, padding: '9px 12px', fontSize: FS + 0.5 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                     <b>{g.customer}</b>
-                    <span style={{ color: 'var(--muted)' }}>{fmt(g.mats.length)} พาร์ท · ออเดอร์ {fmt(g.orderRows)} แถว</span>
+                    <span style={{ color: 'var(--muted)' }}>{fmt(g.mats.length)} {tr('พาร์ท · ออเดอร์')} {fmt(g.orderRows)} {tr('แถว')}</span>
                     <span style={{ marginLeft: 'auto', fontWeight: 800, color: g.fresh.length ? 'var(--accent)' : 'var(--muted)' }}>
                       {g.board ? (g.fresh.length ? `+${fmt(g.fresh.length)} พาร์ทใหม่` : 'ครบแล้ว') : '🆕 บอร์ดใหม่'}
                     </span>

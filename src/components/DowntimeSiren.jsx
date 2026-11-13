@@ -185,7 +185,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
       )
     }
     return (
-      <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
+      <div onClick={unlockNow} title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่')}
         style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
                  border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)', padding: '7px 11px',
@@ -203,7 +203,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
         <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 'var(--r-lg)', padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
           <span style={{ fontSize: 22 }}>{m.icon}</span>
           <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{tr(m.label)}</div>
             <div style={{ fontSize: 12, color: '#f0c9c2' }}>
               <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || 'ไม่ระบุเครื่อง'} · {a.dr_downtime_types?.name_th || 'Downtime'}
               {a.description ? ` — ${a.description}` : ''}
@@ -211,7 +211,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
           </div>
           {muted && (
             <span onClick={unlockNow}
-              title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
+              title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ')} style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
               แตะเพื่อเปิดเสียง
             </span>
           )}

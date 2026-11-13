@@ -110,7 +110,7 @@ export default function TimeRangeBar({
   const rows = (kids) => (<>
       <div className="trb-row">
         {periodList.length > 0 && (
-          <div style={{ display: 'flex', gap: 4 }} role="group" aria-label="ช่วงที่ดู">
+          <div style={{ display: 'flex', gap: 4 }} role="group" aria-label={tr('ช่วงที่ดู')}>
             {periodList.map(p => {
               const locked = p.heavy && !multiYear;
               return (
@@ -129,7 +129,7 @@ export default function TimeRangeBar({
         )}
 
         {presets?.length > 0 && (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} role="group" aria-label="ช่วงย้อนหลัง">
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }} role="group" aria-label={tr('ช่วงย้อนหลัง')}>
             <span className="filter-label">{tr('ย้อนหลัง')}</span>
             {presets.map(d => (
               <button key={d}
@@ -149,10 +149,10 @@ export default function TimeRangeBar({
         {/* flexWrap: วันที่ 2 ช่อง (150px) + ป้าย + "(30 วัน)" ≈ 388px > จอ handheld 360px ⇒ ตัวนับวันโดนตัดขอบ (15/10) */}
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="date" value={from || ''} max={to || undefined}
-            onChange={e => applyRange(e.target.value, to)} aria-label="ตั้งแต่วันที่" />
+            onChange={e => applyRange(e.target.value, to)} aria-label={tr('ตั้งแต่วันที่')} />
           <span className="filter-label">{tr('ถึง')}</span>
           <input type="date" value={to || ''} min={from || undefined}
-            onChange={e => applyRange(from, e.target.value)} aria-label="ถึงวันที่" />
+            onChange={e => applyRange(from, e.target.value)} aria-label={tr('ถึงวันที่')} />
           {days != null && (
             <span className="filter-count">
               ({days.toLocaleString()} {unitDays(days)})
@@ -176,14 +176,14 @@ export default function TimeRangeBar({
           <button onClick={() => setBucket(-1)} disabled={scale === finest}
             style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === finest ? 0.4 : 1 }}
-            title="ละเอียดขึ้น 1 ขั้น">− {tr('ละเอียดขึ้น')}</button>
+            title={tr('ละเอียดขึ้น 1 ขั้น')}>− {tr('ละเอียดขึ้น')}</button>
           <span style={{
             fontSize: 12.5, fontWeight: 700, color: 'var(--accent)', minWidth: 74, textAlign: 'center',
           }}>1 {tr(scaleOf(scale)?.short) || '—'}</span>
           <button onClick={() => setBucket(1)} disabled={scale === coarsest}
             style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === coarsest ? 0.4 : 1 }}
-            title="หยาบลง 1 ขั้น">{tr('หยาบลง +')}</button>
+            title={tr('หยาบลง 1 ขั้น')}>{tr('หยาบลง +')}</button>
           {/* กฎความซื่อสัตย์: ละเอียดกว่านี้ไม่ได้ ต้องบอกว่าทำไม ห้ามให้คนกดแล้วงงว่าปุ่มเสีย */}
           {capped && finest !== 'hour' && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>

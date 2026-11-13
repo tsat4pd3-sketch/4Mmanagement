@@ -237,7 +237,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || '✍️ จัดการลายเซ็น'}</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || tr('✍️ จัดการลายเซ็น')}</div>
           <button onClick={onClose} style={{
             background: 'none', border: 'none', cursor: 'pointer',
             color: 'var(--muted)', fontSize: 18, lineHeight: 1, padding: '2px 6px',
@@ -248,7 +248,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Current signature preview */}
           {currentSignatureUrl && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ลายเซ็นปัจจุบัน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('ลายเซ็นปัจจุบัน')}</div>
               <div style={{
                 border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: 8, background: 'var(--bg2)', textAlign: 'center',
@@ -270,14 +270,14 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 background: tab === t.key ? 'var(--accent)' : 'var(--bg2)',
                 color: tab === t.key ? '#fff' : 'var(--text2)',
                 transition: 'all 0.15s',
-              }}>{t.label}</button>
+              }}>{tr(t.label)}</button>
             ))}
           </div>
 
           {/* Draw tab */}
           {tab === 'draw' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>วาดลายเซ็นในกรอบด้านล่าง</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('วาดลายเซ็นในกรอบด้านล่าง')}</div>
               <div style={{ border: '2px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
                 <canvas
                   ref={canvasRef}
@@ -304,7 +304,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Upload tab */}
           {tab === 'upload' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>เลือกไฟล์รูปภาพลายเซ็น</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{tr('เลือกไฟล์รูปภาพลายเซ็น')}</div>
               <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 13 }} />
               {uploadPreview && (
                 <div style={{

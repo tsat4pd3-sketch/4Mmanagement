@@ -114,17 +114,17 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>ประวัติการซ่อม — <span style={{ fontFamily: 'monospace' }}>{machineNo}</span></div>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('ประวัติการซ่อม —')} <span style={{ fontFamily: 'monospace' }}>{machineNo}</span></div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
               นับจากใบแจ้งซ่อม (MO) ของเครื่องนี้ · ⬇️ Excel = ฟอร์ม FM-MTN-005 (ใบตีกลับไม่ลงประวัติ)
-              {sum.spellings.length > 1 && <> · ⚠ เลขเครื่องถูกพิมพ์ {sum.spellings.length} แบบ: {sum.spellings.join(' / ')} (รวมให้แล้ว)</>}
+              {sum.spellings.length > 1 && <> {tr('· ⚠ เลขเครื่องถูกพิมพ์')} {sum.spellings.length} {tr('แบบ:')} {sum.spellings.join(' / ')} {tr('(รวมให้แล้ว)')}</>}
             </div>
             {/* 🔧 ตัวเลือกทีมช่าง — ค่าเริ่มต้น "ทีม MTN" เพราะฟอร์มนี้คือ FM-MTN-005 ของทีม MTN
                    🔴 ซ่อนแล้วต้องเขียนบนจอว่าซ่อนไปกี่ใบ + สลับดูได้ ห้ามกรองเงียบ */}
             {state.orders.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>ทีมช่าง:</span>
-                <select value={team} onChange={e => setTeam(e.target.value)} aria-label="กรองตามทีมช่าง"
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ทีมช่าง:')}</span>
+                <select value={team} onChange={e => setTeam(e.target.value)} aria-label={tr('กรองตามทีมช่าง')}
                   style={{ height: 26, fontSize: 11.5, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
                   <option value="all">{tr('ทุกทีม (')}{state.orders.length} {tr('ใบ)')}</option>
                   {teamsSeen.map(([k, n]) => (
@@ -153,22 +153,22 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
               if (state.subErr) toast.info(`⚠ โหลด ${state.subErr} ไม่ครบ — ช่องนั้นในไฟล์อาจไม่ครบ`);
             } catch (e) { toast.error(`Export ไม่สำเร็จ: ${e?.message || e}`); }
             finally { setExporting(false); }
-          }} title="ใบบันทึกประวัติการซ่อมและการทำ PM MACHINE (FM-MTN-005) — A4 แนวนอน หน้าละ 15 แถว"
+          }} title={tr('ใบบันทึกประวัติการซ่อมและการทำ PM MACHINE (FM-MTN-005) — A4 แนวนอน หน้าละ 15 แถว')}
             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: state.loading || state.err || exporting ? 0.6 : 1 }}>
             {exporting ? 'กำลังสร้าง…' : '⬇️ Excel (FM-MTN-005)'}</button>
           <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>{tr('✕ ปิด')}</button>
         </div>
         <div style={{ overflow: 'auto', padding: 14 }}>
-          {state.loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดประวัติ…</div>}
-          {state.err && <div style={{ color: '#ef4444', fontSize: 13 }}>⚠ โหลดประวัติไม่สำเร็จ: {state.err}</div>}
+          {state.loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('⏳ กำลังโหลดประวัติ…')}</div>}
+          {state.err && <div style={{ color: '#ef4444', fontSize: 13 }}>{tr('⚠ โหลดประวัติไม่สำเร็จ:')} {state.err}</div>}
           {!state.loading && !state.err && (<>
-            {state.subErr && <div style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8 }}>⚠ โหลด {state.subErr} ไม่ครบ — ช่องนั้นอาจไม่ครบ (ค่าใช้จ่ายถอยไปใช้ยอดรวมในใบ)</div>}
+            {state.subErr && <div style={{ color: '#f59e0b', fontSize: 12, marginBottom: 8 }}>{tr('⚠ โหลด')} {state.subErr} {tr('ไม่ครบ — ช่องนั้นอาจไม่ครบ (ค่าใช้จ่ายถอยไปใช้ยอดรวมในใบ)')}</div>}
             {/* 🔴 ถูกตัดที่เพดาน = ตัวเลขสรุปทุกการ์ดต่ำกว่าจริง ห้ามเงียบ */}
             {state.cut && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 8, fontWeight: 700 }}>
-              ⚠ เครื่องนี้มีใบแจ้งซ่อมเกิน 500 ใบ — แสดง/สรุปจาก <b>500 ใบล่าสุด</b> เท่านั้น
+              ⚠ เครื่องนี้มีใบแจ้งซ่อมเกิน 500 ใบ — แสดง/สรุปจาก <b>{tr('500 ใบล่าสุด')}</b> เท่านั้น
               (เวลาซ่อมเฉลี่ย · ค่าใช้จ่ายรวม · ปัญหาที่เจอบ่อย ยังไม่ครบทั้งหมด)
             </div>}
-            {!sum.total && !sum.rejected && <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบแจ้งซ่อมของเครื่องนี้</div>}
+            {!sum.total && !sum.rejected && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('ยังไม่มีใบแจ้งซ่อมของเครื่องนี้')}</div>}
             {(sum.total > 0 || sum.rejected > 0) && (<>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 10, alignContent: 'start' }}>
                 <Card t="ใบแจ้งซ่อมทั้งหมด" v={`${sum.total} ใบ`} h={`${sum.open ? `ยังเปิด ${sum.open} · ` : ''}Breakdown ${sum.bm}${sum.rejected ? ` · ตีกลับ ${sum.rejected} (ไม่นับ)` : ''}`} />
@@ -177,8 +177,8 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                 <Card t="ส่งซ่อมภายนอก" v={`${sum.vendor} ใบ`} h={sum.lastAt ? `แจ้งล่าสุด ${fmtDateTime(sum.lastAt)}` : null} />
               </div>
               <div style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.7 }}>
-                <b>ปัญหาที่เจอบ่อย:</b> {sum.topProblems.slice(0, 6).map(p => `${p.k} (${p.n})`).join(' · ')}
-                <br /><b>ประเภทงาน:</b> {sum.byType.map(p => `${p.k} (${p.n})`).join(' · ')}
+                <b>{tr('ปัญหาที่เจอบ่อย:')}</b> {sum.topProblems.slice(0, 6).map(p => `${p.k} (${p.n})`).join(' · ')}
+                <br /><b>{tr('ประเภทงาน:')}</b> {sum.byType.map(p => `${p.k} (${p.n})`).join(' · ')}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
                 ⏱ เวลาซ่อมของช่าง ≠ เวลาเครื่องหยุด (downtime ของไลน์อยู่ที่ /mtn-analysis — นับเต็มแม้ส่งภายนอก)
@@ -201,8 +201,8 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                               ? <button onClick={() => onOpenOrder(r.o)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'monospace', fontSize: 12, padding: 0, textAlign: 'left' }}>{r.o.mo_no || tr('(ยังไม่ออกเลข)')}</button>
                               : <span style={{ fontFamily: 'monospace' }}>{r.o.mo_no || '—'}</span>}
                           </td>
-                          <td style={{ ...td, color: st.color, fontWeight: 700 }}>{st.label}</td>
-                          <td style={td}>{r.o.repair_type || '—'}{r.path ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.path.label}</div> : null}</td>
+                          <td style={{ ...td, color: st.color, fontWeight: 700 }}>{tr(st.label)}</td>
+                          <td style={td}>{r.o.repair_type || '—'}{r.path ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(r.path.label)}</div> : null}</td>
                           <td style={td}>
                             <div>{r.problem}</div>
                             {(r.o.root_cause || r.o.solution) && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{[r.o.root_cause && `สาเหตุ: ${r.o.root_cause}`, r.o.solution && `แก้: ${r.o.solution}`].filter(Boolean).join(' · ')}</div>}

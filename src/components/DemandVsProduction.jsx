@@ -117,7 +117,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
     return { qty: hit.reduce((a, r) => a + (Number(r.qty) || 0), 0), n: hit.length, keys: [...new Set(hit.map((r) => r.mat_no))] };
   }, [raw, mats]);
 
-  if (raw === null) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลดความต้องการลูกค้า…</div>;
+  if (raw === null) return <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลดความต้องการลูกค้า…')}</div>;
 
   const withDemand = perMat.filter((x) => x.sim);
   const shortList = withDemand.filter((x) => x.adv.key === 'short');
@@ -129,11 +129,11 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
     const pn = mats[0]?.p_no;
     return (
       <div style={{ padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid #f59e0b55', background: '#f59e0b14', fontSize: 12, color: '#f59e0b', lineHeight: 1.7 }}>
-        ⚠️ <b>ยังเทียบกับความต้องการลูกค้าไม่ได้</b> — ไม่พบออเดอร์/forecast ที่ผูกกับ{group ? 'สินค้าในกลุ่มนี้' : 'สินค้านี้'}
+        ⚠️ <b>{tr('ยังเทียบกับความต้องการลูกค้าไม่ได้')}</b> {tr('— ไม่พบออเดอร์/forecast ที่ผูกกับ')}{group ? 'สินค้าในกลุ่มนี้' : 'สินค้านี้'}
         <div style={{ color: 'var(--muted)', marginTop: 4 }}>
-          ออเดอร์จากลูกค้าอ้าง <b>เลขพาร์ทลูกค้า</b> แต่ยอดผลิตอ้าง <b>เลข SAP</b> — ต้องมี <code>P/N</code> ตรงกับที่ลูกค้าใช้ ระบบถึงจับคู่ได้
-          {pn ? <> · ตอนนี้ตั้งไว้เป็น <b>{pn}</b></> : <> · <b>ตอนนี้ยังไม่ได้ตั้ง P/N เลย</b></>}
-          <br />แก้ที่ <b>Product Master → ช่อง P/N</b> หรือปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales
+          ออเดอร์จากลูกค้าอ้าง <b>{tr('เลขพาร์ทลูกค้า')}</b> {tr('แต่ยอดผลิตอ้าง')} <b>{tr('เลข SAP')}</b> {tr('— ต้องมี')} <code>P/N</code> ตรงกับที่ลูกค้าใช้ ระบบถึงจับคู่ได้
+          {pn ? <> {tr('· ตอนนี้ตั้งไว้เป็น')} <b>{pn}</b></> : <> · <b>{tr('ตอนนี้ยังไม่ได้ตั้ง P/N เลย')}</b></>}
+          <br />{tr('แก้ที่')} <b>{tr('Product Master → ช่อง P/N')}</b> หรือปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales
         </div>
       </div>
     );
@@ -153,7 +153,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
 
   return (
     <div style={{ display: 'grid', gap: 12 }}>
-      {err && <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px solid #ef444466', background: '#ef444414', fontSize: 11.5, color: '#ef4444' }}>🔴 โหลดข้อมูลไม่ครบ — ตัวเลขอาจไม่ตรง<br />{err}</div>}
+      {err && <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px solid #ef444466', background: '#ef444414', fontSize: 11.5, color: '#ef4444' }}>{tr('🔴 โหลดข้อมูลไม่ครบ — ตัวเลขอาจไม่ตรง')}<br />{err}</div>}
 
       {/* ── โหมดกลุ่ม: ตัดสินราย MAT ห้ามรวมยอด ── */}
       {group ? (
@@ -164,13 +164,13 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
             </div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
               {shortList.length
-                ? <>ต้องเร่ง: <b>{shortList.map((x) => x.p.mat_no).join(' · ')}</b></>
+                ? <>{tr('ต้องเร่ง:')} <b>{shortList.map((x) => x.p.mat_no).join(' · ')}</b></>
                 : 'ไม่มีเลขไหนที่สต็อกจะติดลบในช่วงที่ดู'}
               {/* ⚠️ ห้ามบอกว่า "รวมกลุ่มแล้วพอ" — สลับขายข้ามเลข SAP ไม่ได้ในทางปฏิบัติ */}
               {shortList.length > 0 && excessList.length > 0 && (
                 <div style={{ marginTop: 5, padding: '6px 9px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px dashed var(--border2)', color: 'var(--muted)' }}>
                   ℹ️ ในกลุ่มมีเลขที่ของเหลืออยู่ ({excessList.map((x) => x.p.mat_no).join(' · ')}) —
-                  <b> โอนมาใช้แทนกันได้เฉพาะกรณีฉุกเฉิน และต้องปรับยอดใน SAP ด้วย</b> ระบบจึงไม่นับรวมให้
+                  <b> {tr('โอนมาใช้แทนกันได้เฉพาะกรณีฉุกเฉิน และต้องปรับยอดใน SAP ด้วย')}</b> ระบบจึงไม่นับรวมให้
                 </div>
               )}
             </div>
@@ -196,7 +196,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
                     <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--accent)' }}>{x.sim ? fmt(x.sim.cumProd) : fmt(Object.values(x.pbd).reduce((a, b) => a + b, 0))}</td>
                     <td style={{ padding: '7px 8px', textAlign: 'right', fontWeight: 800, color: x.sim ? (x.sim.endStock < 0 ? '#ef4444' : 'var(--accent)') : 'var(--muted)' }}>{x.sim ? fmt(x.sim.endStock) : '—'}</td>
                     <td style={{ padding: '7px 8px', color: x.adv.color, fontWeight: 700 }}>
-                      {x.sim ? <>{x.adv.icon} {x.adv.label}</> : <span style={{ color: 'var(--muted)' }}>❔ ไม่มีออเดอร์ผูกกับเลขนี้</span>}
+                      {x.sim ? <>{x.adv.icon} {tr(x.adv.label)}</> : <span style={{ color: 'var(--muted)' }}>{tr('❔ ไม่มีออเดอร์ผูกกับเลขนี้')}</span>}
                     </td>
                   </tr>
                 ))}
@@ -204,7 +204,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
             </table>
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
-            ⚠️ <b>ตัดสินพอ/ขาดแยกทีละเลข SAP ไม่รวมยอดกัน</b> — product เดียวกันแต่คนละปลายทางลูกค้า
+            ⚠️ <b>{tr('ตัดสินพอ/ขาดแยกทีละเลข SAP ไม่รวมยอดกัน')}</b> — product เดียวกันแต่คนละปลายทางลูกค้า
             แลกของกันไม่ได้ (ยอดใน SAP จะเพี้ยน) · เลขที่ไม่มีออเดอร์ผูก = ออเดอร์ถูกบันทึกใต้เลขอื่นของกลุ่ม ไม่ใช่ลูกค้าไม่สั่ง
           </div>
           {/* ⚠️ เคสจริง 2026-08-24: ออเดอร์ของ "ทุกลูกค้า" ไปกองที่เลขเดียว เพราะตอนนำเข้า EDI
@@ -213,15 +213,15 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
               ห้ามซ่อน: ถ้ามีเลขเดียวในกลุ่มที่มีออเดอร์ ต้องเตือนให้ไปตรวจก่อนเร่งผลิต */}
           {withDemand.length === 1 && perMat.length > 1 && (
             <div style={{ marginTop: 6, fontSize: 11, lineHeight: 1.7, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
-              🔎 <b>ทั้งกลุ่มมีออเดอร์อยู่เลขเดียว</b> — ถ้าจริงๆ มีลูกค้าเจ้าอื่นสั่งพาร์ทนี้ด้วย แปลว่าตอนนำเข้า EDI
-              ระบบยัง<b>แยกปลายทางลูกค้าไม่ออก</b> แล้วยกออเดอร์มากองที่เลขเดียว
-              <div style={{ marginTop: 2, opacity: 0.9 }}>แก้: 🚚 Delivery → ⚙️ Ship-to Plant Config ตั้งชื่อลูกค้าให้ code ปลายทาง (เช่น GRBNA → AAT) แล้วอัพไฟล์ EDI ใหม่</div>
+              🔎 <b>{tr('ทั้งกลุ่มมีออเดอร์อยู่เลขเดียว')}</b> — ถ้าจริงๆ มีลูกค้าเจ้าอื่นสั่งพาร์ทนี้ด้วย แปลว่าตอนนำเข้า EDI
+              ระบบยัง<b>{tr('แยกปลายทางลูกค้าไม่ออก')}</b> แล้วยกออเดอร์มากองที่เลขเดียว
+              <div style={{ marginTop: 2, opacity: 0.9 }}>{tr('แก้: 🚚 Delivery → ⚙️ Ship-to Plant Config ตั้งชื่อลูกค้าให้ code ปลายทาง (เช่น GRBNA → AAT) แล้วอัพไฟล์ EDI ใหม่')}</div>
             </div>
           )}
         </>
       ) : (
         <div style={{ padding: '11px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${focus.adv.color}66`, background: `${focus.adv.color}14` }}>
-          <div style={{ fontSize: 13.5, fontWeight: 900, color: focus.adv.color }}>{focus.adv.icon} {focus.adv.label}</div>
+          <div style={{ fontSize: 13.5, fontWeight: 900, color: focus.adv.color }}>{focus.adv.icon} {tr(focus.adv.label)}</div>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.6 }}>{focus.adv.text}</div>
         </div>
       )}
@@ -229,23 +229,23 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
       {/* ออเดอร์ที่อ้างเลขลูกค้าล้วน — ไม่เดาว่าเป็นของ mat ไหน แต่ต้องบอก */}
       {unassigned.qty > 0 && (
         <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px dashed #f59e0b66', fontSize: 11.5, color: '#f59e0b', lineHeight: 1.7 }}>
-          ℹ️ มีออเดอร์อีก {unassigned.n} รอบ ({fmt(unassigned.qty)} ชิ้น) ที่บันทึกด้วยเลข <b>{unassigned.keys.join(', ')}</b> ซึ่งยังไม่ผูกกับเลข SAP ตัวไหน —
-          <b> ระบบไม่เดาให้ว่าเป็นของเลขไหน</b> ตั้ง P/N ให้ตรงที่ Product Master แล้วจะถูกนับเข้าเอง
+          ℹ️ มีออเดอร์อีก {unassigned.n} {tr('รอบ (')}{fmt(unassigned.qty)} ชิ้น) ที่บันทึกด้วยเลข <b>{unassigned.keys.join(', ')}</b> ซึ่งยังไม่ผูกกับเลข SAP ตัวไหน —
+          <b> {tr('ระบบไม่เดาให้ว่าเป็นของเลขไหน')}</b> ตั้ง P/N ให้ตรงที่ Product Master แล้วจะถูกนับเข้าเอง
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
         <Stat label={group ? `สต็อก ${focus.p.mat_no}` : 'สต็อกตอนนี้'} value={focus.stock == null ? '—' : fmt(focus.stock)} unit="ชิ้น"
-          sub={focus.stock == null ? 'ไม่มีข้อมูลสต็อกของเลขนี้' : 'จากคลัง FG'} color={focus.stock == null ? 'var(--muted)' : undefined} />
-        <Stat label="ต้องส่ง (ในช่วงที่ดู)" value={fmt(focus.sim?.cumDem)} unit="ชิ้น"
+          sub={focus.stock == null ? tr('ไม่มีข้อมูลสต็อกของเลขนี้') : tr('จากคลัง FG')} color={focus.stock == null ? 'var(--muted)' : undefined} />
+        <Stat label={tr('ต้องส่ง (ในช่วงที่ดู)')} value={fmt(focus.sim?.cumDem)} unit="ชิ้น"
           sub={focus.D.hasOrder ? `ออเดอร์จริง${focus.D.hasForecast ? ' + forecast' : ''}` : 'forecast เท่านั้น (ยังไม่มีออเดอร์)'} color="#f59e0b" />
-        <Stat label="ผลิตได้ (ในช่วงที่ดู)" value={fmt(focus.sim?.cumProd)} unit="ชิ้น" color="var(--accent)"
+        <Stat label={tr('ผลิตได้ (ในช่วงที่ดู)')} value={fmt(focus.sim?.cumProd)} unit="ชิ้น" color="var(--accent)"
           sub={focus.rate ? `เฉลี่ย ${fmt(focus.rate)} ชิ้น/วันผลิต` : 'ยังไม่มีการผลิตในช่วงนี้'} />
-        <Stat label="ปลายช่วงเหลือ" value={fmt(focus.sim?.endStock)} unit="ชิ้น"
+        <Stat label={tr('ปลายช่วงเหลือ')} value={fmt(focus.sim?.endStock)} unit="ชิ้น"
           color={focus.sim?.endStock < 0 ? '#ef4444' : focus.sim?.endStock > 0 ? 'var(--accent)' : undefined}
-          sub={(focus.sim?.days || []).some((x) => x.stock < 0) ? '⚠️ มีวันที่ของไม่พอ' : 'ไม่มีวันที่ของขาด'} />
+          sub={(focus.sim?.days || []).some((x) => x.stock < 0) ? tr('⚠️ มีวันที่ของไม่พอ') : tr('ไม่มีวันที่ของขาด')} />
         <div style={{ flex: '0 0 auto' }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>มองไปข้างหน้า</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>{tr('มองไปข้างหน้า')}</div>
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}
             style={{ width: 110, padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 }}>
             {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} {tr('วัน')}</option>)}
@@ -255,24 +255,24 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
 
       <div>
         <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>
-          ผลิตรายวัน เทียบ ความต้องการ{group && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> — {focus.p.mat_no} (เลขที่มีออเดอร์มากสุดในกลุ่ม)</span>}
+          ผลิตรายวัน เทียบ ความต้องการ{group && <span style={{ color: 'var(--muted)', fontWeight: 600 }}> — {focus.p.mat_no} {tr('(เลขที่มีออเดอร์มากสุดในกลุ่ม)')}</span>}
         </div>
         <DailyBars data={rows} height={140} unit=" ชิ้น" />
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.7 }}>
-          <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตได้</span> ·
-          <span style={{ color: '#f59e0b', fontWeight: 700 }}> ▬ ต้องส่ง (ออเดอร์จริง)</span> ·
-          <span style={{ color: '#a78bfa', fontWeight: 700 }}> ▬ คาดการณ์ (forecast)</span> ·
+          <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('■ ผลิตได้')}</span> ·
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}> {tr('▬ ต้องส่ง (ออเดอร์จริง)')}</span> ·
+          <span style={{ color: '#a78bfa', fontWeight: 700 }}> {tr('▬ คาดการณ์ (forecast)')}</span> ·
           แท่งเทา = วันข้างหน้า (ยังไม่ผลิต — ระบบไม่เดาว่าจะผลิตได้เท่าไหร่)
-          <br />วันที่มีออเดอร์จริงแล้ว จะ<b>ไม่</b>เอา forecast มาบวกทับ (นับซ้ำ)
+          <br />{tr('วันที่มีออเดอร์จริงแล้ว จะ')}<b>{tr('ไม่')}</b>เอา forecast มาบวกทับ (นับซ้ำ)
         </div>
       </div>
 
       <div>
-        <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>สต็อกคงเหลือจำลอง (ถ้าไม่ผลิตเพิ่มจากนี้)</div>
+        <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>{tr('สต็อกคงเหลือจำลอง (ถ้าไม่ผลิตเพิ่มจากนี้)')}</div>
         <DailyBars data={stockRows} height={120} unit=" ชิ้น" />
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.7 }}>
           สต็อกตอนนี้ + ที่ผลิตแล้ว − ที่ต้องส่ง · <b>วันที่แท่งหายไป = ของขาด (ติดลบ)</b> ·
-          ช่วงข้างหน้าคิดจาก <b>ยังไม่ผลิตเพิ่มเลย</b> — เป็นเส้นที่แย่ที่สุด ไว้ดูว่าเหลือเวลาอีกกี่วันก่อนต้องเร่ง
+          ช่วงข้างหน้าคิดจาก <b>{tr('ยังไม่ผลิตเพิ่มเลย')}</b> — เป็นเส้นที่แย่ที่สุด ไว้ดูว่าเหลือเวลาอีกกี่วันก่อนต้องเร่ง
         </div>
       </div>
     </div>

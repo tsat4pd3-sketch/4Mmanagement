@@ -5,6 +5,7 @@ import useTabParam from '../utils/useTabParam';
 import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
 
+import { tr } from '../utils/i18n';
 /* ── 🔧 ศูนย์ PM — รวม 5 หน้างานซ่อมบำรุงตามแผนเป็นหน้าเดียว (2026-08-26) ──────────────
    ที่มา (feedback หน้างาน): *"หน้าที่เกี่ยวกับ PM 3 หน้า มันควรจะรวมเป็นหน้าเดียวหรือไม่
    เพื่อไม่ต้องกดกลับไปกลับมา เพราะเหมือนจะเป็น workflow ที่ทำงานด้วยกันอยู่แล้ว"*
@@ -64,16 +65,16 @@ export default function PmHub() {
     <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) · sub = คำอธิบายแท็บที่เลือก
             — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
-        <PageHeader title="ซ่อมบำรุงตามแผน (PM)" icon="🔧"
-          sub={cur?.hint || 'ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง'}
+        <PageHeader title={tr('ซ่อมบำรุงตามแผน (PM)')} icon="🔧"
+          sub={tr(cur?.hint) || tr('ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง')}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
 
       {cur ? (
-        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}>
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>}>
           <Hub><cur.Comp /></Hub>
         </Suspense>
       ) : (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>ยังไม่มีสิทธิ์เข้าหน้างาน PM ใดในหน้านี้</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('ยังไม่มีสิทธิ์เข้าหน้างาน PM ใดในหน้านี้')}</div>
       )}
     </Page>
   );

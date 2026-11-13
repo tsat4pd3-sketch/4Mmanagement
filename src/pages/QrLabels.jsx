@@ -262,9 +262,9 @@ export default function QrLabels() {
     return (
       <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
         <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-        <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น" />
+        <PageHeader title={tr('พิมพ์ป้าย QR อุปกรณ์')} icon="🏷️" sub={tr('พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น')} />
         <FilterBar>
-          <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
+          <Segmented value={kind} onChange={setKind} label={tr('ชนิดป้าย')} options={KIND_OPTIONS} />
         </FilterBar>
         <ScanSheetPanel lines={prodLines} canPrint={canPrint} />
       </Page>
@@ -274,7 +274,7 @@ export default function QrLabels() {
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น" />
+      <PageHeader title={tr('พิมพ์ป้าย QR อุปกรณ์')} icon="🏷️" sub={tr('พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น')} />
 
       {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
       <div data-page-note="1" style={{
@@ -283,18 +283,18 @@ export default function QrLabels() {
         background: 'var(--bg2)', border: `1px solid ${linkLabels ? 'var(--border2)' : 'var(--amber)'}`,
       }}>
         {linkLabels ? (
-          <span>ป้ายที่พิมพ์จะเป็น <b>ลิงก์</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
-            {' '}— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน</span>
+          <span>{tr('ป้ายที่พิมพ์จะเป็น')} <b>{tr('ลิงก์')}</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
+            {' '}{tr('— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน')}</span>
         ) : (
-          <span data-warn="1">⚠️ ตอนนี้เปิดจาก <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
-            <b> ข้อความแบบเดิม</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
-            {' '}— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ</span>
+          <span data-warn="1">{tr('⚠️ ตอนนี้เปิดจาก')} <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
+            <b> {tr('ข้อความแบบเดิม')}</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
+            {' '}{tr('— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ')}</span>
         )}
       </div>
 
       {/* ตัวกรอง — FilterBar มาตรฐาน (UI-STANDARD 2026-09-24): ชนิด → ไลน์ → ค้นหา → spacer → ขนาดป้าย (พารามิเตอร์ของปุ่มพิมพ์) + ปุ่ม */}
       <FilterBar>
-        <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
+        <Segmented value={kind} onChange={setKind} label={tr('ชนิดป้าย')} options={KIND_OPTIONS} />
         {/* ไลน์ของอุปกรณ์ — จัดลำดับชั้นตามผัง · ชื่อกลุ่มเครื่องปั๊มที่ไม่มีในทะเบียนไลน์
             (เช่นไลน์แม่พิมพ์) แยก optgroup ไว้ท้าย ห้ามตัดทิ้ง ไม่งั้นกรองหาอุปกรณ์ไม่เจอ */}
         <LineSelect
@@ -304,8 +304,8 @@ export default function QrLabels() {
         />
         <SearchInput value={q} onChange={setQ} fields="เลข/ชื่อ" />
         <span className="spacer" />
-        <span className="filter-count">เลือก {sel.size} / {visible.length}</span>
-        <span className="filter-label">ขนาดป้าย</span>
+        <span className="filter-count">{tr('เลือก')} {sel.size} / {visible.length}</span>
+        <span className="filter-label">{tr('ขนาดป้าย')}</span>
         <select value={size} onChange={e => setSize(e.target.value)}>
           {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{tr(s.label)}</option>)}
         </select>
@@ -318,15 +318,15 @@ export default function QrLabels() {
       </FilterBar>
       {kind === 'delivery' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>ใหญ่ 90×60</b> (สแกนจากระยะแร็ค)
+          ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>{tr('ใหญ่ 90×60')}</b> (สแกนจากระยะแร็ค)
         </div>
       )}
       {kind === 'part' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
           ป้ายติดกล่อง/บัตรคัมบัง/ชั้นวางของพาร์ท — ส่องด้วยกล้องมือถือแล้วเปิดเมนูของพาร์ทนั้น:
-          <b> ✅ ตรวจชิ้นงาน (ใบตรวจ QA)</b> · ใบผลิตของพาร์ท · สโตร์ยิงป้ายนี้ตอนหยิบของได้เหมือนบาร์โค้ด MAT เดิม
-          {' '}· <b>ไม่ต้องรื้อบาร์โค้ดเดิม</b> (ยังสแกนในแอปได้) — ติดเพิ่มเฉพาะจุดที่อยากส่องด้วยกล้องมือถือ
-          {opHidden > 0 && <><br />ℹ️ ไม่แสดง {opHidden} รายการ (ขั้นย่อย OP ที่ไม่มีคัมบังของตัวเอง หรือสินค้าที่ปิดใช้งาน)</>}
+          <b> {tr('✅ ตรวจชิ้นงาน (ใบตรวจ QA)')}</b> · ใบผลิตของพาร์ท · สโตร์ยิงป้ายนี้ตอนหยิบของได้เหมือนบาร์โค้ด MAT เดิม
+          {' '}· <b>{tr('ไม่ต้องรื้อบาร์โค้ดเดิม')}</b> (ยังสแกนในแอปได้) — ติดเพิ่มเฉพาะจุดที่อยากส่องด้วยกล้องมือถือ
+          {opHidden > 0 && <><br />{tr('ℹ️ ไม่แสดง')} {opHidden} {tr('รายการ (ขั้นย่อย OP ที่ไม่มีคัมบังของตัวเอง หรือสินค้าที่ปิดใช้งาน)')}</>}
         </div>
       )}
       {kind === 'delivery' && !loading && !visible.length && (
@@ -338,15 +338,15 @@ export default function QrLabels() {
 
       {kind === 'jig' && shadowCount > 0 && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ℹ️ ซ่อน {shadowCount} รายการในทะเบียน PM ที่เป็น<b>เงา</b>ของเครื่อง/จิ๊ก/แม่พิมพ์ในทะเบียนอุปกรณ์ (มีแผนตรวจ) —
+          ℹ️ ซ่อน {shadowCount} {tr('รายการในทะเบียน PM ที่เป็น')}<b>{tr('เงา')}</b>ของเครื่อง/จิ๊ก/แม่พิมพ์ในทะเบียนอุปกรณ์ (มีแผนตรวจ) —
           ป้ายของตัวจริงพิมพ์จากแถวหลักทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดของชิ้นเดียวกัน
         </div>
       )}
       {kind === 'jig' && (
         <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          แท็บนี้ = <b>จิ๊กในทะเบียนอุปกรณ์</b> + อุปกรณ์ที่มีแต่แผนตรวจ PM (ป้ายชิป <b>ทะเบียน PM</b>) ·
-          🔨 <b>ป้ายแม่พิมพ์อยู่แท็บ 🔨 แม่พิมพ์</b> (สแกนแล้วเด้งเข้าผังจัดเก็บได้)
-          {dupJigs.length > 0 && <><br />⚠️ ข้าม {dupJigs.length} รายการในทะเบียน PM ที่เลขซ้ำกับจิ๊กในทะเบียนอุปกรณ์
+          แท็บนี้ = <b>{tr('จิ๊กในทะเบียนอุปกรณ์')}</b> {tr('+ อุปกรณ์ที่มีแต่แผนตรวจ PM (ป้ายชิป')} <b>{tr('ทะเบียน PM')}</b>) ·
+          🔨 <b>{tr('ป้ายแม่พิมพ์อยู่แท็บ 🔨 แม่พิมพ์')}</b> (สแกนแล้วเด้งเข้าผังจัดเก็บได้)
+          {dupJigs.length > 0 && <><br />{tr('⚠️ ข้าม')} {dupJigs.length} รายการในทะเบียน PM ที่เลขซ้ำกับจิ๊กในทะเบียนอุปกรณ์
             ({dupJigs.map(j => j.jig_no).join(', ')}) — พิมพ์จากแถวจิ๊กแทน · ควรผูกแถว PM เข้ากับจิ๊กตัวนั้นที่หน้า PM Setup</>}
         </div>
       )}
@@ -373,23 +373,23 @@ export default function QrLabels() {
               <th style={{ ...th, width: 44 }}>
                 <input type="checkbox" checked={visible.length > 0 && sel.size === visible.length} onChange={toggleAll} style={{ width: 'auto', cursor: 'pointer' }} />
               </th>
-              <th style={th}>{kind === 'delivery' ? 'รหัสสั้น' : kind === 'part' ? 'MAT' : 'เลข'}</th>
+              <th style={th}>{kind === 'delivery' ? tr('รหัสสั้น') : kind === 'part' ? 'MAT' : tr('เลข')}</th>
               <th style={th}>{tr('ชื่อ')}</th>
               <th style={th}>{tr('ไลน์')}</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</td></tr>}
-            {!loading && !visible.length && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>ไม่พบรายการ</td></tr>}
+            {loading && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</td></tr>}
+            {!loading && !visible.length && <tr><td colSpan={4} style={{ ...td, textAlign: 'center', color: 'var(--muted)' }}>{tr('ไม่พบรายการ')}</td></tr>}
             {visible.map(r => {
               // คีย์ = ชนิดแหล่ง + id (แท็บจิ๊กรวม 2 ทะเบียนที่ id คนละชุด — labelRowKey เป็นเจ้าของกฎ)
               const k = labelRowKey(r);
               return (
               <tr key={k} onClick={() => toggle(k)} style={{ cursor: 'pointer', background: sel.has(k) ? 'var(--accent-dim)' : 'transparent' }}>
                 <td style={td}><input type="checkbox" checked={sel.has(k)} onChange={() => toggle(k)} onClick={e => e.stopPropagation()} style={{ width: 'auto', cursor: 'pointer' }} /></td>
-                <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: kind === 'delivery' ? 'var(--muted)' : 'var(--amber)' }}>{kind === 'delivery' ? '—' : '— ไม่มีเลข —'}</span>}</td>
+                <td style={{ ...td, fontWeight: 700, fontFamily: 'monospace' }}>{noOf(r) || <span style={{ color: kind === 'delivery' ? 'var(--muted)' : 'var(--amber)' }}>{kind === 'delivery' ? '—' : tr('— ไม่มีเลข —')}</span>}</td>
                 <td style={td}>{nameOf(r)}
-                  {kind === 'jig' && r._qr === 'jig' && <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)' }}>ทะเบียน PM</span>}
+                  {kind === 'jig' && r._qr === 'jig' && <span style={{ marginLeft: 6, fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)' }}>{tr('ทะเบียน PM')}</span>}
                 </td>
                 <td style={{ ...td, color: 'var(--text2)' }}>{r.line_name || '—'}</td>
               </tr>

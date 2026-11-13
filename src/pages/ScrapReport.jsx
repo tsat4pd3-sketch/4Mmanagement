@@ -716,8 +716,8 @@ export default function ScrapReport() {
   return (
     <Page>
       <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
-        permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
-      <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
+        permKey="scrap:record" hint={tr('ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ')} />
+      <PageHeader title={tr('ของเสีย — ใบรายงาน & ถังเหลือง/แดง')} icon="♻️"
         sub={tab === 'bins'
           ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — เอกสารตัวจริงอยู่ที่นี่ · QA เห็นเฉพาะคิวรอพิจารณาใน /qa'
           : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
@@ -729,9 +729,9 @@ export default function ScrapReport() {
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
-        <span className="filter-label">ช่วง</span>
+        <span className="filter-label">{tr('ช่วง')}</span>
         <input type="date" value={listFrom} max={listTo} onChange={e => setListFrom(e.target.value)} />
-        <span className="filter-label">ถึง</span>
+        <span className="filter-label">{tr('ถึง')}</span>
         <input type="date" value={listTo} min={listFrom} onChange={e => setListTo(e.target.value)} />
         <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={openNew}>{tr('+ เปิดใบใหม่')}</button>}
@@ -759,25 +759,25 @@ export default function ScrapReport() {
               <div key={rep.id} className="sr-card">
                 <div className="sr-head">
                   <b>{rep.doc_no || '—'}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{tr(sm?.label) || rep.status}</span>
                 </div>
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
-                <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
+                <div className="sr-sum"><ItemCount reportId={rep.id} /> {tr('· ของเสีย')} <ScrapSum reportId={rep.id} /></div>
                 <div className="sr-acts">
                   {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>{tr('เปิด/แก้ใบ')}</button>}
                   <button onClick={() => doPrint(rep)}>PDF</button>
                   <button onClick={() => doExport(rep)}>Excel</button>
-                  {canDel && <DeleteButton onClick={() => delReport(rep)} title="ลบ" />}
+                  {canDel && <DeleteButton onClick={() => delReport(rep)} title={tr('ลบ')} />}
                 </div>
               </div>
             );
           })}
           {reports.length === 0 && (
             <div style={{ ...cardSt, fontSize: 13 }}>
-              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
-                    ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    ไม่มีใบในช่วงนี้ — แต่<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
                       style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
@@ -785,10 +785,10 @@ export default function ScrapReport() {
                     </button>
                   </span>
                 ) : emptyWhy === 'scope0'
-                    ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                    ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)')}</span>
                     : emptyWhy === 'unknown'
-                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
-                      : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง')}</span>
+                      : <span style={{ color: 'var(--muted)' }}>{tr('ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)')}</span>}
             </div>
           )}
         </div>
@@ -807,22 +807,22 @@ export default function ScrapReport() {
                 <td style={tdSt}>{rep.line_name || '—'}</td>
                 <td style={tdSt}><ItemCount reportId={rep.id} /></td>
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
-                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
+                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{tr(STATUS_META[rep.status]?.label) || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>PDF</button>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>Excel</button>
                   {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
-                  {canDel && <DeleteButton style={{ marginLeft: 4 }} onClick={() => delReport(rep)} title="ลบ" />}
+                  {canDel && <DeleteButton style={{ marginLeft: 4 }} onClick={() => delReport(rep)} title={tr('ลบ')} />}
                 </td>
               </tr>
             ))}
             {reports.length === 0 && (
               <tr><td style={tdSt} colSpan={7}>
                 {listErr ? (
-                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 ) : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
-                    ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    ไม่มีใบในช่วงนี้ — แต่<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
                       style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
@@ -830,11 +830,11 @@ export default function ScrapReport() {
                     </button>
                   </span>
                 ) : emptyWhy === 'scope0' ? (
-                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)')}</span>
                 ) : emptyWhy === 'unknown' ? (
-                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง')}</span>
                 ) : (
-                  <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>
+                  <span style={{ color: 'var(--muted)' }}>{tr('ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)')}</span>
                 )}
               </td></tr>
             )}
@@ -849,14 +849,14 @@ export default function ScrapReport() {
           {editor.report.id && (() => { const f = scrapReportFlow(editor.report); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
-            <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
-            <Field label="ไลน์ *">
+            <Field label={tr('วันที่')}><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
+            <Field label={tr('ไลน์ *')}>
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — เลือกไลน์แล้ว "ส่วน" เติมจาก production_lines.section อัตโนมัติ */}
               <LineSelect lines={lines} value={editor.report.line_name} style={inputSt} placeholder={tr('— เลือกไลน์ —')}
                 onChange={v => { const ln = allLines.find(l => l.name === v); setRep({ line_name: v, ...(ln?.section ? { section: ln.section } : {}) }); }} />
             </Field>
             {/* 2026-09-07 แผนก = <select> จากผังองค์กร (cascade จากส่วน) · ค่าเดิมที่ไม่อยู่ในผังยังโชว์ ไม่หายเงียบ */}
-            <Field label="แผนก">
+            <Field label={tr('แผนก')}>
               <select style={inputSt} value={editor.report.dept || ''} onChange={e => setRep({ dept: e.target.value })}>
                 <option value="">—</option>
                 {editor.report.dept && !deptsOf(editor.report.section).includes(editor.report.dept) && <option value={editor.report.dept}>{editor.report.dept} {tr('⚠ ไม่มีในผัง')}</option>}
@@ -864,7 +864,7 @@ export default function ScrapReport() {
               </select>
             </Field>
             {/* 2026-09-07 ส่วน = auto จากไลน์ (อ่านอย่างเดียวเมื่อไลน์มี section) · ไลน์ไม่มี section → เลือกจากผังองค์กร */}
-            <Field label="ส่วน">
+            <Field label={tr('ส่วน')}>
               {(() => {
                 const lnSec = allLines.find(l => l.name === editor.report.line_name)?.section || '';
                 return (
@@ -881,7 +881,7 @@ export default function ScrapReport() {
             <Field label="Storage Location">
               <StorageLocSelect value={editor.report.storage_location || ''} inputStyle={inputSt} history={storageHist} onChange={({ code }) => setRep({ storage_location: code })} />
             </Field>
-            <Field label="ประเภทชิ้นงาน (หัวฟอร์ม)" span3>
+            <Field label={tr('ประเภทชิ้นงาน (หัวฟอร์ม)')} span3>
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 6 }}>
                 {CAT_OPTS.map(([v, l]) => (
                   <label key={v} style={{ fontSize: 12.5, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}>
@@ -896,11 +896,11 @@ export default function ScrapReport() {
 
           {/* toolbar รายการ */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 8 }}>
-            <div style={{ fontWeight: 800, fontSize: 13.5 }}>รายการของเสีย ({editor.items.length})</div>
+            <div style={{ fontWeight: 800, fontSize: 13.5 }}>{tr('รายการของเสีย (')}{editor.items.length})</div>
             <div style={{ flex: 1 }} />
             {/* 🔴 ทางที่ WI บังคับ (§5.5) — วางก่อน "ดึงจาก Daily Report" ให้เป็นทางหลักที่ตาเห็นก่อน */}
             <button style={btnSt('#e05252')} onClick={pullFromRedBins}
-              title="ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด">
+              title={tr('ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด')}>
               {tr('⤵ ดึงจากถังแดง')}
             </button>
             <button style={btnSt('var(--blue)')} onClick={pullFromDefectLogs}>{tr('⤵ ดึงจาก Daily Report')}</button>
@@ -908,11 +908,11 @@ export default function ScrapReport() {
             <button style={btnSt('var(--blue)')} onClick={openReqPicker}>{tr('⤵ ดึงจากใบเบิก QA')}</button>
             {opScan.opRowsCount > 0 && (
               <button style={btnSt('var(--amber)')} onClick={() => explodeOpItems(editor.items)}
-                title="แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง">
+                title={tr('แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง')}>
                 {tr('ระเบิดขั้นตอน (')}{opScan.opRowsCount})
               </button>
             )}
-            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>เพิ่มจาก SAP/BOM</button>
+            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>{tr('เพิ่มจาก SAP/BOM')}</button>
             <button style={ghostBtn} onClick={() => addItem('sub')}>{tr('+ พาร์ทย่อย (กรอกเอง)')}</button>
           </div>
 
@@ -927,11 +927,11 @@ export default function ScrapReport() {
             }}>
               <b>{opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
               จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
-              {opScan.ready.length > 0 && <> · กด <b>ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
+              {opScan.ready.length > 0 && <> {tr('· กด')} <b>{tr('ระเบิดขั้นตอน')}</b> {tr('เพื่อแปลงให้อัตโนมัติ')}</>}
               {opScan.blocked.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                   ⛔ ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
-                  {' '}— ไปตั้งที่ <a href="/products?tab=bom" style={{ color: 'inherit', fontWeight: 800 }}>/products → แท็บ BOM</a> (เลือกแถวที่ติดป้าย 🔩 ขั้นตอน) แล้วกลับมากดระเบิด
+                  {' '}{tr('— ไปตั้งที่')} <a href="/products?tab=bom" style={{ color: 'inherit', fontWeight: 800 }}>{tr('/products → แท็บ BOM')}</a> (เลือกแถวที่ติดป้าย 🔩 ขั้นตอน) แล้วกลับมากดระเบิด
                 </div>
               )}
             </div>
@@ -945,18 +945,18 @@ export default function ScrapReport() {
                 <th style={thSt}>#</th><th style={thSt}>{tr('ที่มา')}</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
                 <th style={thSt}>MAT SAP</th><th style={thSt}>MODEL</th><th style={thSt}>CODE</th><th style={thSt}>BOM</th>
                 <th style={thSt}>Q'TY</th><th style={thSt}>{tr('สาเหตุ')}</th><th style={thSt}>{tr('ช่วง')}</th><th style={thSt}>{tr('ยืนยัน')}</th>
-                <th style={thSt}>{tr('รหัสงานเสีย')}</th><th style={thSt} title="รูปหลักฐานของเสีย">📷</th><th style={thSt}></th>
+                <th style={thSt}>{tr('รหัสงานเสีย')}</th><th style={thSt} title={tr('รูปหลักฐานของเสีย')}>📷</th><th style={thSt}></th>
               </tr></thead>
               <tbody>
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
                     <td style={tdSt} data-l="#" className="sr-c sr-no">{i + 1}
-                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>⤵</span>}
-                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>📦</span>}
-                      {it.src_bin_id && <span title="ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5" style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
-                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: 'var(--red)' }}>🔩</span>}
+                      {it.src_defect_from_logs && <span title={tr('ดึงจาก Daily Report')} style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>⤵</span>}
+                      {it.src_request_item_id && <span title={tr('ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)')} style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>📦</span>}
+                      {it.src_bin_id && <span title={tr('ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5')} style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
+                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title={tr('ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน')} style={{ marginLeft: 3, fontSize: 11, color: 'var(--red)' }}>🔩</span>}
                       {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: 'var(--amber)' }}>🧩</span>}</td>
-                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? 'var(--amber)' : 'var(--blue)' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
+                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? 'var(--amber)' : 'var(--blue)' }}>{it.source === 'sub' ? tr('ย่อย') : tr('หลัก')}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
                     {(() => {
@@ -964,18 +964,18 @@ export default function ScrapReport() {
                       const lockNo = !!(so && so.part_no && !so.badMaster);
                       const lockName = !!(so && so.part_name);
                       return (<>
-                        <td style={tdSt} data-l="PART NO." className="sr-c"><input style={{ ...inputSt, width: 120, padding: '5px 7px', opacity: lockNo ? 0.75 : 1 }} value={it.part_no} readOnly={lockNo} title={lockNo ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
-                        <td style={tdSt} data-l="PART NAME" className="sr-c sr-pname"><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? 'ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง' : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
+                        <td style={tdSt} data-l="PART NO." className="sr-c"><input style={{ ...inputSt, width: 120, padding: '5px 7px', opacity: lockNo ? 0.75 : 1 }} value={it.part_no} readOnly={lockNo} title={lockNo ? tr('ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง') : ''} onChange={e => setItem(it._key, { part_no: e.target.value })} /></td>
+                        <td style={tdSt} data-l="PART NAME" className="sr-c sr-pname"><input style={{ ...inputSt, width: 150, padding: '5px 7px', opacity: lockName ? 0.75 : 1 }} value={it.part_name} readOnly={lockName} title={lockName ? tr('ตามทะเบียน — ล้าง MAT SAP เพื่อแก้เอง') : ''} onChange={e => setItem(it._key, { part_name: e.target.value })} /></td>
                         <td style={tdSt} data-l="MAT SAP" className="sr-c sr-full">
                           <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                             <ProductSelect value={it.mat_no} extraOptions={sapExtra} history={itemMatHist} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
                               allowFree freeHint="พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง" placeholder="MAT SAP"
                               style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 7px', fontSize: 12 }}
                               onChange={r => pickSapForItem(it._key, r)} />
-                            <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
+                            <button style={{ ...ghostBtn, padding: '4px 6px' }} title={tr('เลือกจาก SAP/BOM')} onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
                             {opInfoOf(it.mat_no, explodeCtx.opMap) && (
                               <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'var(--amber-line)', color: 'var(--amber)' }}
-                                title="ระเบิดขั้นนี้เป็นวัตถุดิบ/พาร์ทที่ใส่เข้าไป (เลขที่ตัด SAP ได้)"
+                                title={tr('ระเบิดขั้นนี้เป็นวัตถุดิบ/พาร์ทที่ใส่เข้าไป (เลขที่ตัด SAP ได้)')}
                                 onClick={() => explodeOpItems(editor.items, it._key)}>🧩</button>
                             )}
                           </div>
@@ -1019,17 +1019,17 @@ export default function ScrapReport() {
                       {(it.defect_img || it._imgFile) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <img src={it._imgFile ? URL.createObjectURL(it._imgFile) : it.defect_img}
-                            alt="รูปของเสีย" loading="lazy" title={it._imgFile ? 'ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ' : 'กดเพื่อเปลี่ยน/ดูรูป'}
+                            alt="รูปของเสีย" loading="lazy" title={it._imgFile ? tr('ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ') : tr('กดเพื่อเปลี่ยน/ดูรูป')}
                             onClick={() => setPhotoItem(it._key)}
                             style={{ height: 30, width: 40, objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
                               border: `1px solid ${it._imgFile ? 'var(--amber)' : 'var(--border)'}` }} />
                         </div>
                       ) : (
-                        <button style={{ ...ghostBtn, padding: '4px 7px', opacity: 0.7 }} title="แนบรูปของเสีย (ไม่บังคับ)"
+                        <button style={{ ...ghostBtn, padding: '4px 7px', opacity: 0.7 }} title={tr('แนบรูปของเสีย (ไม่บังคับ)')}
                           onClick={() => setPhotoItem(it._key)}>📎</button>
                       )}
                     </td>
-                    <td style={tdSt} data-l="" className="sr-c sr-del"><DeleteButton onClick={() => delItem(it._key)} title="ลบ" /></td>
+                    <td style={tdSt} data-l="" className="sr-c sr-del"><DeleteButton onClick={() => delItem(it._key)} title={tr('ลบ')} /></td>
                   </tr>
                 ))}
                 {editor.items.length === 0 && <tr><td style={tdSt} colSpan={15}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}
@@ -1048,12 +1048,12 @@ export default function ScrapReport() {
 
           {/* สายอนุมัติ — 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (role ที่ตรงช่องขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม — ตาราง DR) */}
           <div className="sr-sgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14 }}>
-            <Field label="ผู้ตรวจสอบ (QC)"><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={inspectorHist} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
-            <Field label="ผู้ขออนุมัติ (หัวหน้าแผนก)"><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={requesterHist} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก. QA/QC)"><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverQaHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ผลิต)"><PersonSelect value={editor.report.approver_pd_name || ''} roles={['manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverPdHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_pd_name: name })} /></Field>
-            <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverGmHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
-            <Field label="สถานะ">
+            <Field label={tr('ผู้ตรวจสอบ (QC)')}><PersonSelect value={editor.report.inspector_name || ''} roles={['qa']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={inspectorHist} inputStyle={inputSt} onChange={({ name }) => setRep({ inspector_name: name })} /></Field>
+            <Field label={tr('ผู้ขออนุมัติ (หัวหน้าแผนก)')}><PersonSelect value={editor.report.requester_name || ''} roles={['supervisor', 'leader']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={requesterHist} inputStyle={inputSt} onChange={({ name }) => setRep({ requester_name: name })} /></Field>
+            <Field label={tr('ผู้อนุมัติ (ผจก. QA/QC)')}><PersonSelect value={editor.report.approver_qa_name || ''} roles={['qa', 'manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverQaHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_qa_name: name })} /></Field>
+            <Field label={tr('ผู้อนุมัติ (ผจก.ผลิต)')}><PersonSelect value={editor.report.approver_pd_name || ''} roles={['manager']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverPdHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_pd_name: name })} /></Field>
+            <Field label={tr('ผู้อนุมัติ (ผจก.ทั่วไป)')}><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverGmHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
+            <Field label={tr('สถานะ')}>
               <select style={inputSt} value={editor.report.status} onChange={e => setRep({ status: e.target.value })} disabled={!canManage && editor.report.status === 'approved'}>
                 <option value="draft">{tr('ร่าง')}</option><option value="submitted">{tr('ส่งอนุมัติ')}</option>
                 {canManage && <option value="approved">{tr('อนุมัติแล้ว')}</option>}
@@ -1070,13 +1070,13 @@ export default function ScrapReport() {
 
       {/* SAP / BOM picker */}
       {sapPicker && (
-        <Modal title="เลือกจาก SAP / BOM" onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
+        <Modal title={tr('เลือกจาก SAP / BOM')} onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
           <input autoFocus style={inputSt} value={sapSearch} onChange={e => setSapSearch(e.target.value)}
             placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
               <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-pill)', color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-pill)', color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? tr('ย่อย') : tr('หลัก')}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.part_no || o.part_name || o.mat_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_no ? o.part_name : ''}{o.mat_no ? ` · MAT ${o.mat_no}` : ''}</span></div>
@@ -1085,17 +1085,17 @@ export default function ScrapReport() {
                 </div>
               </button>
             ))}
-            {sapSearch.trim().length >= 2 && sapMatches.length === 0 && sapOptions && <div style={{ fontSize: 12, color: 'var(--muted)', padding: 8 }}>ไม่พบ</div>}
+            {sapSearch.trim().length >= 2 && sapMatches.length === 0 && sapOptions && <div style={{ fontSize: 12, color: 'var(--muted)', padding: 8 }}>{tr('ไม่พบ')}</div>}
           </div>
         </Modal>
       )}
 
       {/* ใบเบิก QA — เลือกใบที่จะดึงของเข้าใบรายงานของเสีย (2026-08-24) */}
       {reqPicker && (
-        <Modal title="เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
+        <Modal title={tr('เลือกใบเบิกทดสอบ (FM-STO-003)')} onClose={() => setReqPicker(null)} width={640}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-            แสดงเฉพาะใบที่<b>อนุมัติแล้ว</b>ขึ้นไป · ใบของไลน์ “{editor.report.line_name || '—'}” ขึ้นก่อน<br />
-            จำนวนที่ดึงใช้ <b>จำนวนที่จ่ายจริง</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
+            แสดงเฉพาะใบที่<b>{tr('อนุมัติแล้ว')}</b>{tr('ขึ้นไป · ใบของไลน์ “')}{editor.report.line_name || '—'}{tr('” ขึ้นก่อน')}<br />
+            จำนวนที่ดึงใช้ <b>{tr('จำนวนที่จ่ายจริง')}</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
           </div>
           <div style={{ maxHeight: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {reqPicker.map(r => {
@@ -1108,8 +1108,8 @@ export default function ScrapReport() {
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>
                     {r.doc_no || '(ไม่มีเลขที่)'}
-                    <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{st.label}</span>
-                    {mine && <span style={{ color: 'var(--blue)', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
+                    <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{tr(st.label)}</span>
+                    {mine && <span style={{ color: 'var(--blue)', marginLeft: 6, fontSize: 11 }}>{tr('· ไลน์นี้')}</span>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
                     {r.request_date} · {KIND_LABEL[r.kind] || r.kind} · {r.requester_dept || '—'}
@@ -1148,7 +1148,7 @@ export default function ScrapReport() {
                 </div>
               )}
               <QualityPhotoField
-                label="รูปหลักฐาน" hint="ไม่บังคับ"
+                label={tr('รูปหลักฐาน')} hint={tr('ไม่บังคับ')}
                 url={it.defect_img || null} file={it._imgFile || null}
                 onPick={(f) => setItem(photoItem, f ? { _imgFile: f } : { _imgFile: null, defect_img: null })}
               />
@@ -1186,20 +1186,20 @@ function DefectPicker({ types, value, onClose, onSave }) {
         {list.map(t => (
           <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 'var(--r-md)', background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={sel.has(t.code)} onChange={() => toggle(t.code)} />
-            <b style={{ minWidth: 30 }}>{t.code}</b> {t.label}
+            <b style={{ minWidth: 30 }}>{t.code}</b> {tr(t.label)}
           </label>
         ))}
       </div>
     </div>
   );
   return (
-    <Modal title="เลือกรหัสประเภทงานเสีย" onClose={onClose} width={620}>
+    <Modal title={tr('เลือกรหัสประเภทงานเสีย')} onClose={onClose} width={620}>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        <Col title="P · กระบวนการผลิต" list={grpP} />
-        <Col title="A · ประกอบ / เชื่อม" list={grpA} />
+        <Col title={tr('P · กระบวนการผลิต')} list={grpP} />
+        <Col title={tr('A · ประกอบ / เชื่อม')} list={grpA} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก: <b>{[...sel].join(', ') || '—'}</b></div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('เลือก:')} <b>{[...sel].join(', ') || '—'}</b></div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button style={ghostBtn} onClick={onClose}>{tr('ยกเลิก')}</button>
           <button style={btnSt()} onClick={() => onSave([...sel].join(','))}>{tr('ตกลง')}</button>

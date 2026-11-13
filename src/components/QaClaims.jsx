@@ -210,7 +210,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
       <FilterBar>
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+        <Segmented label={tr('สถานะ')} value={filter} onChange={setFilter} options={[
           { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
         ]} />
         <span className="spacer" />
@@ -236,19 +236,19 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       {(sureIds.size > 0 || maybeIds.size > 0) && (
         <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${sureIds.size ? '#ef444466' : '#f59e0b66'}`, background: sureIds.size ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.6 }}>
           {sureIds.size > 0 && <div style={{ color: '#ef4444' }}>
-            🔁 <b>เคลมซ้ำ {sureIds.size} ใบ</b> — พาร์ทเดิม อาการเดิม กลับมาภายใน {REPEAT_MONTHS} เดือน
-            <span style={{ color: 'var(--text2)' }}> · มาตรการจาก 8D ครั้งก่อน<b>ยังไม่ได้ผลจริง</b> — ทบทวนของเดิม อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3)</span>
+            🔁 <b>{tr('เคลมซ้ำ')} {sureIds.size} {tr('ใบ')}</b> {tr('— พาร์ทเดิม อาการเดิม กลับมาภายใน')} {REPEAT_MONTHS} เดือน
+            <span style={{ color: 'var(--text2)' }}> {tr('· มาตรการจาก 8D ครั้งก่อน')}<b>{tr('ยังไม่ได้ผลจริง')}</b> {tr('— ทบทวนของเดิม อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3)')}</span>
           </div>}
           {maybeIds.size > 0 && <div style={{ color: '#f59e0b', marginTop: sureIds.size ? 5 : 0 }}>
-            ❓ <b>อาจซ้ำอีก {maybeIds.size} ใบ</b>
-            <span style={{ color: 'var(--text2)' }}> — พาร์ทเดิมและพูดถึงชิ้นส่วนเดียวกัน แต่ข้อความไม่ตรงพอจะฟันธง (เช่น "นัทไม่มี" กับ "นัทเชื่อมเยื้องศูนย์" คนละอาการ) <b>ต้องเปิดดูเอง</b></span>
+            ❓ <b>{tr('อาจซ้ำอีก')} {maybeIds.size} {tr('ใบ')}</b>
+            <span style={{ color: 'var(--text2)' }}> — พาร์ทเดิมและพูดถึงชิ้นส่วนเดียวกัน แต่ข้อความไม่ตรงพอจะฟันธง (เช่น "นัทไม่มี" กับ "นัทเชื่อมเยื้องศูนย์" คนละอาการ) <b>{tr('ต้องเปิดดูเอง')}</b></span>
           </div>}
         </div>
       )}
 
       {/* กรองตามขอบเขตแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีรายการ" ทั้งที่มี = จอโกหก (CLAUDE.md §สิทธิ์ 3 ชั้น) */}
       {hiddenN > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>{tr('ซ่อน')} {hiddenN} {tr('ใบของไลน์นอกขอบเขตของคุณ')}</div>
       )}
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
@@ -267,27 +267,27 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                   <td style={{ ...tdSt, fontWeight: 800, whiteSpace: 'nowrap' }}>
                     {c.claim_no}
-                    {sure && <div><Chip label="ซ้ำ" color="#ef4444" /></div>}
-                    {maybe && <div><Chip label="❓ อาจซ้ำ" color="#f59e0b" /></div>}
+                    {sure && <div><Chip label={tr('ซ้ำ')} color="#ef4444" /></div>}
+                    {maybe && <div><Chip label={tr('❓ อาจซ้ำ')} color="#f59e0b" /></div>}
                   </td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.claim_date}</td>
                   <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
                   <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.line_name}</div>}</td>
-                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
+                  <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={tr(SEVERITY[c.severity]?.label)} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
-                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>เลยกำหนด</div>}
+                    {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>{tr('เลยกำหนด')}</div>}
                   </td>
-                  <td style={tdSt}><Chip label={st.label} color={st.color} /></td>
+                  <td style={tdSt}><Chip label={tr(st.label)} color={st.color} /></td>
                   <td style={tdSt}>
                     {c.qa_capa ? <Chip label={`${c.qa_capa.capa_no}`} color={c.qa_capa.status === 'closed' ? '#22c55e' : '#f59e0b'} />
-                      : <span style={{ fontSize: 11, color: '#ef4444' }}>ยังไม่มี 8D</span>}
+                      : <span style={{ fontSize: 11, color: '#ef4444' }}>{tr('ยังไม่มี 8D')}</span>}
                     {c.qa_ncr && <div style={{ marginTop: 3 }}><Chip label={`${c.qa_ncr.ncr_no}`} color="#4d9fff" /></div>}
                   </td>
                 </tr>
               );
             })}
-            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>ยังไม่มีเคลมในช่วงนี้{hiddenN > 0 ? ` (ซ่อน ${hiddenN} ใบของไลน์นอกขอบเขตคุณ)` : ''}</td></tr>}
+            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>{tr('ยังไม่มีเคลมในช่วงนี้')}{hiddenN > 0 ? ` (ซ่อน ${hiddenN} ใบของไลน์นอกขอบเขตคุณ)` : ''}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -306,7 +306,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{detail.id ? detail.claim_no : 'รับเคลมลูกค้าใหม่'}</h3>
+        <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{detail.id ? detail.claim_no : tr('รับเคลมลูกค้าใหม่')}</h3>
         {/* 🪜 ถึงขั้นไหน — กฎ claimFlow() (utils/qaDocStatus.js) · UI §6.30 */}
         {detail.id && (() => { const f = claimFlow(detail); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
 
@@ -325,7 +325,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
               </div>
               {sure.length > 0 && (
                 <div style={{ color: '#f59e0b', marginTop: 5 }}>
-                  มาตรการจาก 8D ครั้งก่อน<b>ยังไม่ได้ผลจริง</b> — ทบทวนของเดิมก่อน อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3 effectiveness)
+                  มาตรการจาก 8D ครั้งก่อน<b>{tr('ยังไม่ได้ผลจริง')}</b> — ทบทวนของเดิมก่อน อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3 effectiveness)
                 </div>
               )}
             </div>
@@ -333,61 +333,61 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
         })()}
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(200px, 100%), 1fr))', gap: 11, marginBottom: 12 }}>
-          <Field label="วันที่รับเคลม *"><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
+          <Field label={tr('วันที่รับเคลม *')}><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
           {/* ลูกค้า = ชื่อกลุ่มทะเบียนเคลม — เลือกจากรายชื่อลูกค้าใน Product Master (CustomerSelect) กันสะกดต่างแล้วแตกกลุ่ม (2026-09-07) */}
-          <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} history={custHist} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
-          <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder={tr('เช่น WLS6033')} disabled={ro} /></Field>
-          <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
-          <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
+          <Field label={tr('ลูกค้า *')}><CustomerSelect value={detail.customer || ''} history={custHist} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
+          <Field label={tr('เลขเคลมฝั่งลูกค้า')}><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder={tr('เช่น WLS6033')} disabled={ro} /></Field>
+          <Field label={tr('กำหนดตอบกลับ')}><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
+          <Field label={tr('เลขพาร์ท (กุญแจหาเอกสาร PFMEA)')}>
             <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={ro} placeholder={tr('ค้นเลขพาร์ท / MAT / ชื่อ…')}
               onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
           </Field>
-          <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>
-          <Field label="ไลน์ผลิต">
+          <Field label={tr('ชื่อพาร์ท')}><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>
+          <Field label={tr('ไลน์ผลิต')}>
             {/* <LineSelect> — ลำดับชั้น/ปลดระวาง/scope เหมือนทุกหน้า (เดิม lines.map ชื่อล้วน · 2026-09-07) */}
             <LineSelect lines={lines} value={detail.line_name || ''} placeholder={tr('— ไม่ระบุ —')} style={inputSt} disabled={ro}
               role={role} lineId={lineId} sections={sections} onChange={(v) => setDetail((f) => ({ ...f, line_name: v }))} />
           </Field>
-          <Field label="ประเภท">
+          <Field label={tr('ประเภท')}>
             <select style={inputSt} value={detail.category} onChange={set('category')} disabled={ro}>
               {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
             </select>
           </Field>
-          <Field label="ความรุนแรง">
+          <Field label={tr('ความรุนแรง')}>
             <select style={inputSt} value={detail.severity} onChange={set('severity')} disabled={ro}>
               {Object.entries(SEVERITY).map(([k, v]) => <option key={k} value={k}>{tr(v.label)}</option>)}
             </select>
           </Field>
-          <Field label="จำนวนที่เคลม (ชิ้น)"><input type="number" style={inputSt} value={detail.qty_claim} onChange={set('qty_claim')} disabled={ro} /></Field>
-          <Field label="จำนวนที่ส่งคืน"><input type="number" style={inputSt} value={detail.qty_returned} onChange={set('qty_returned')} disabled={ro} /></Field>
-          <Field label="Lot / Invoice ที่อ้าง"><input style={inputSt} value={detail.lot_ref || ''} onChange={set('lot_ref')} disabled={ro} /></Field>
-          <Field label="ค่าใช้จ่ายที่เกิด (บาท)"><input type="number" style={inputSt} value={detail.cost_impact} onChange={set('cost_impact')} placeholder={tr('คัดแยก/ขนส่ง/ชดเชย')} disabled={ro} /></Field>
+          <Field label={tr('จำนวนที่เคลม (ชิ้น)')}><input type="number" style={inputSt} value={detail.qty_claim} onChange={set('qty_claim')} disabled={ro} /></Field>
+          <Field label={tr('จำนวนที่ส่งคืน')}><input type="number" style={inputSt} value={detail.qty_returned} onChange={set('qty_returned')} disabled={ro} /></Field>
+          <Field label={tr('Lot / Invoice ที่อ้าง')}><input style={inputSt} value={detail.lot_ref || ''} onChange={set('lot_ref')} disabled={ro} /></Field>
+          <Field label={tr('ค่าใช้จ่ายที่เกิด (บาท)')}><input type="number" style={inputSt} value={detail.cost_impact} onChange={set('cost_impact')} placeholder={tr('คัดแยก/ขนส่ง/ชดเชย')} disabled={ro} /></Field>
         </div>
 
-        <Field label="อาการที่ลูกค้าแจ้ง * (ข้อความนี้คือต้นทางที่ระบบใช้ค้น PFMEA/Control Plan)" span={2}>
+        <Field label={tr('อาการที่ลูกค้าแจ้ง * (ข้อความนี้คือต้นทางที่ระบบใช้ค้น PFMEA/Control Plan)')} span={2}>
           <textarea rows={3} style={{ ...inputSt, resize: 'vertical' }} value={detail.defect_desc} onChange={set('defect_desc')} disabled={ro} />
         </Field>
         <div style={{ height: 10 }} />
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 11 }}>
-          <Field label="สรุปที่ตอบลูกค้า">
+          <Field label={tr('สรุปที่ตอบลูกค้า')}>
             <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={detail.reply_note || ''} onChange={set('reply_note')} disabled={ro} />
           </Field>
-          <Field label="หมายเหตุ">
+          <Field label={tr('หมายเหตุ')}>
             <textarea rows={2} style={{ ...inputSt, resize: 'vertical' }} value={detail.remark || ''} onChange={set('remark')} disabled={ro} />
           </Field>
         </div>
 
         {detail.id && (
           <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <b>งานแก้ไข:</b>
+            <b>{tr('งานแก้ไข:')}</b>
             {detail.capa_id
-              ? <><Chip label="มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>{tr('เปิดใบ 8D →')}</button></>
+              ? <><Chip label={tr('มี 8D แล้ว')} color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>{tr('เปิดใบ 8D →')}</button></>
               : <>
-                <span style={{ color: '#ef4444' }}>ยังไม่มี 8D — เคลมลูกค้าต้องมีการแก้ไขเป็นระบบเสมอ</span>
+                <span style={{ color: '#ef4444' }}>{tr('ยังไม่มี 8D — เคลมลูกค้าต้องมีการแก้ไขเป็นระบบเสมอ')}</span>
                 {canRecord && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => openCapa(detail)}>{tr('เปิด 8D จากเคลมนี้')}</button>}
               </>}
             <span style={{ flex: 1 }} />
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ในใบ 8D จะมีปุ่มให้ระบบค้น PFMEA/Control Plan ที่ต้องแก้ต่อ</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ในใบ 8D จะมีปุ่มให้ระบบค้น PFMEA/Control Plan ที่ต้องแก้ต่อ')}</span>
           </div>
         )}
 
@@ -402,14 +402,14 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
             <button style={btnSt('#4d9fff', '#fff')} disabled={busy} onClick={() => {
               if (!detail.reply_note?.trim()) { toast.error('กรอกสรุปที่ตอบลูกค้าก่อน'); return; }
               save({ status: 'replied' }, 'บันทึกการตอบลูกค้าแล้ว ✓');
-            }}>📤 บันทึกว่าตอบลูกค้าแล้ว</button>
+            }}>{tr('📤 บันทึกว่าตอบลูกค้าแล้ว')}</button>
           )}
           {canManage && detail.id && isOpenQaDoc(detail) && (
             <button style={btnSt('#22c55e')} disabled={busy} onClick={() => {
               /* ⚠️ ปิดเคลมโดยไม่มี 8D = ไม่มีหลักฐานว่าแก้อะไร — auditor จับข้อนี้แน่ */
               if (!detail.capa_id) { toast.error('ปิดเคลมไม่ได้ — ต้องเปิด 8D และดำเนินการแก้ไขก่อน'); return; }
               save({ status: 'closed' }, `ปิด ${detail.claim_no} แล้ว ✓`);
-            }}>✅ ปิดเคลม</button>
+            }}>{tr('✅ ปิดเคลม')}</button>
           )}
         </div>
       </div>

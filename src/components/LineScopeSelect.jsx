@@ -16,6 +16,7 @@ import useOrgScope from '../utils/useOrgScope';
 import { PLANT } from '../utils/orgScope';
 import { isProductionUnit } from '../utils/unitKind';
 
+import { tr } from '../utils/i18n';
 const PICKABLE = ['section', 'line_group', 'line'];
 const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
 
@@ -88,7 +89,7 @@ export default function LineScopeSelect({
   return (
     <OrgScopePicker index={index} value={value} onChange={emit} scopeSet={scopeSet} sections={scopeSecs} failed={ownFailed}
       costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} disabled={disabled} id={id} style={style} width={width}
-      title="ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์ (หัวสีเทา = ฝ่าย/แผนก ดูได้ที่จอ OBEYA)" />
+      title={tr('ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์ (หัวสีเทา = ฝ่าย/แผนก ดูได้ที่จอ OBEYA)')} />
   );
 }
 

@@ -22,7 +22,7 @@ export default function SearchInput({ value, onChange, fields, placeholder, grow
         autoFocus={autoFocus} onKeyDown={onKeyDown}
         onChange={e => onChange && onChange(e.target.value)} style={{ ...ICON_PAD, ...inputStyle }} />
       {value ? (
-        <button type="button" className="search-clear" aria-label="ล้างคำค้น" onClick={() => onChange && onChange('')}>✕</button>
+        <button type="button" className="search-clear" aria-label={tr('ล้างคำค้น')} onClick={() => onChange && onChange('')}>✕</button>
       ) : null}
     </div>
   );

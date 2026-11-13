@@ -44,7 +44,7 @@ export function Pill({ label, color = '#94a3b8', title, small }) {
 export function LightDot({ light = 'grey', size = 12, title }) {
   const c = (LIGHT[light] || LIGHT.grey).color;
   return (
-    <span title={title || LIGHT[light]?.label} className={light === 'red' ? 'dt-alarm-blink' : undefined}
+    <span title={title || tr(LIGHT[light]?.label)} className={light === 'red' ? 'dt-alarm-blink' : undefined}
       style={{ display: 'inline-block', width: size, height: size, borderRadius: '50%', background: c,
         boxShadow: light === 'grey' ? 'none' : `0 0 0 3px ${c}33`, flexShrink: 0 }} />
   );
@@ -67,7 +67,7 @@ export function Modal({ title, onClose, children, width = 640, footer }) {
         style={{ width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
-          <button className="tbtn" onClick={onClose} aria-label="ปิด" style={{ ...ghost, padding: '4px 9px' }}>✕</button>
+          <button className="tbtn" onClick={onClose} aria-label={tr('ปิด')} style={{ ...ghost, padding: '4px 9px' }}>✕</button>
         </div>
         {children}
         {footer && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>{footer}</div>}

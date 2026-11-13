@@ -26,16 +26,16 @@ export default function NotFound() {
     <Page width="form">
       {/* `breadcrumb={false}` — ที่อยู่นี้ไม่อยู่ใน NAV_ITEMS จึงไม่มีหมวดให้ไต่ (จะได้ breadcrumb ว่าง) */}
       <PageHeader
-        icon="🧭" title="ไม่พบหน้านี้" breadcrumb={false}
+        icon="🧭" title={tr('ไม่พบหน้านี้')} breadcrumb={false}
         sub={`ที่อยู่ที่เปิด: ${pathname}${search}`}
       />
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent2)',
                     borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: 13, lineHeight: 1.8, color: 'var(--text2)' }}>
-        <b>สาเหตุที่เจอบ่อย — ไล่ตามลำดับ</b>
-        <div>1. <b>ระบบเพิ่งอัพเดท</b> แล้วแท็บนี้ยังถือรุ่นเก่าอยู่ ⇒ กด <b>โหลดใหม่</b> ด้านล่าง</div>
-        <div>2. ลิงก์เก่า/บุ๊กมาร์กของหน้าที่ถูกย้ายหรือยุบเป็นแท็บของหน้าอื่น</div>
-        <div>3. พิมพ์ที่อยู่ผิด</div>
+        <b>{tr('สาเหตุที่เจอบ่อย — ไล่ตามลำดับ')}</b>
+        <div>1. <b>{tr('ระบบเพิ่งอัพเดท')}</b> {tr('แล้วแท็บนี้ยังถือรุ่นเก่าอยู่ ⇒ กด')} <b>{tr('โหลดใหม่')}</b> {tr('ด้านล่าง')}</div>
+        <div>{tr('2. ลิงก์เก่า/บุ๊กมาร์กของหน้าที่ถูกย้ายหรือยุบเป็นแท็บของหน้าอื่น')}</div>
+        <div>{tr('3. พิมพ์ที่อยู่ผิด')}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
           โหลดใหม่แล้วยังไม่พบ = หน้านั้นไม่มีในระบบ (ถ้าควรมี แจ้งผ่านปุ่ม 💬 แจ้งปัญหา ท้ายเมนู)
         </div>
@@ -44,7 +44,7 @@ export default function NotFound() {
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}
           onClick={() => window.location.reload()}>{tr('โหลดใหม่')}</button>
-        <Link to="/" style={btn}>🏠 กลับหน้าหลัก</Link>
+        <Link to="/" style={btn}>{tr('🏠 กลับหน้าหลัก')}</Link>
       </div>
     </Page>
   );

@@ -225,16 +225,16 @@ export default function StockCountSheet({ role, scope }) {
     load();
   };
 
-  if (loading) return <div style={{ ...card, textAlign:'center', color:'var(--muted)' }}>กำลังโหลด…</div>;
+  if (loading) return <div style={{ ...card, textAlign:'center', color:'var(--muted)' }}>{tr('กำลังโหลด…')}</div>;
 
   return (
     <div style={{ display:'grid', gap:16, alignContent:'start' }}>
 
       {/* ── 📋 ตรวจนับ / เฟิร์มยอด ─────────────────────────────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:15, fontWeight:800, marginBottom:6 }}>ตรวจนับ / เฟิร์มยอด</div>
+        <div style={{ fontSize:15, fontWeight:800, marginBottom:6 }}>{tr('ตรวจนับ / เฟิร์มยอด')}</div>
         <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.65, marginBottom:12 }}>
-          กรอก <b>ยอดที่นับได้จริง</b> (ไม่ใช่ผลต่าง) ระบบคิดส่วนต่างให้เอง แล้วบันทึกเป็นรายการ 🔧 ปรับยอดทีเดียวทั้งคลัง
+          กรอก <b>{tr('ยอดที่นับได้จริง')}</b> (ไม่ใช่ผลต่าง) ระบบคิดส่วนต่างให้เอง แล้วบันทึกเป็นรายการ 🔧 ปรับยอดทีเดียวทั้งคลัง
           · เว้นว่าง = ยังไม่นับ ไม่แตะยอดเดิม · กรอก 0 = นับแล้วไม่มีของ
         </div>
 
@@ -262,9 +262,9 @@ export default function StockCountSheet({ role, scope }) {
         </div>
 
         {!lineFilter ? (
-          <div style={{ fontSize:13, color:'var(--muted)' }}>เลือกไลน์/คลังก่อน แล้วรายการพาร์ทจะขึ้นให้กรอก</div>
+          <div style={{ fontSize:13, color:'var(--muted)' }}>{tr('เลือกไลน์/คลังก่อน แล้วรายการพาร์ทจะขึ้นให้กรอก')}</div>
         ) : !rows.length ? (
-          <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทในคลังนี้{hideZero && ' (ที่ยอดไม่เป็น 0)'}</div>
+          <div style={{ fontSize:13, color:'var(--muted)' }}>{tr('ไม่มีพาร์ทในคลังนี้')}{hideZero && ' (ที่ยอดไม่เป็น 0)'}</div>
         ) : (
           <>
             {/* 📱 มือถือ (15/10 · MOBILE-UX-STANDARD §4 ชนิด A): การ์ดต่อพาร์ท — ตารางกว้าง 620px ในกล่องที่ไม่มี minWidth:0
@@ -279,7 +279,7 @@ export default function StockCountSheet({ role, scope }) {
                     <div key={r.mat_no} className={`sc-card${typed ? ' sc-typed' : ''}`}>
                       <MatLabel mat={r.mat_no} name={r.part_name} />
                       <div className="sc-row">
-                        <div className="sc-sys"><span>ในระบบ</span><b>{n0(r.qty_on_hand)}</b></div>
+                        <div className="sc-sys"><span>{tr('ในระบบ')}</span><b>{n0(r.qty_on_hand)}</b></div>
                         <input type="number" inputMode="numeric" min="0" placeholder={tr('นับได้')} aria-label={`นับได้จริง ${r.mat_no}`}
                           value={counts[r.mat_no] ?? ''}
                           onChange={e => setCounts(c => ({ ...c, [r.mat_no]: e.target.value }))} />
@@ -332,7 +332,7 @@ export default function StockCountSheet({ role, scope }) {
             {canCount && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', marginTop:12,
                 background:'var(--bg2)', border:'1px solid var(--border)', borderRadius: 'var(--r-md)', padding:'8px 10px' }}>
-                <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)' }}>ตัวช่วยกรอก</span>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)' }}>{tr('ตัวช่วยกรอก')}</span>
                 <button style={{ ...btn('var(--bg3)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12, padding:'6px 12px' }}
                   onClick={() => setCounts(c => {
                     const next = { ...c };
@@ -356,7 +356,7 @@ export default function StockCountSheet({ role, scope }) {
               style={isMobile ? undefined : { display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginTop:12 }}>
               <div style={{ fontSize:12, color:'var(--muted)' }}>
                 นับแล้ว <b style={{ color:'var(--text)' }}>{summary.counted}</b>/{rows.length} พาร์ท ·
-                ตรง {summary.same} · เพิ่ม {summary.up} ({n0(summary.upQty)}) · ลด {summary.down} ({n0(summary.downQty)})
+                ตรง {summary.same} {tr('· เพิ่ม')} {summary.up} ({n0(summary.upQty)}) · ลด {summary.down} ({n0(summary.downQty)})
               </div>
               {canApprove && (
                 <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
@@ -370,7 +370,7 @@ export default function StockCountSheet({ role, scope }) {
                   {saving ? 'กำลังบันทึก…' : `💾 บันทึกผลตรวจนับ (${summary.changed})`}
                 </button>
               ) : (
-                <span style={{ fontSize:12, color:'var(--muted)' }}>ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงบันทึกได้</span>
+                <span style={{ fontSize:12, color:'var(--muted)' }}>{tr('ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงบันทึกได้')}</span>
               )}
             </div>
           </>
@@ -382,10 +382,10 @@ export default function StockCountSheet({ role, scope }) {
               "หน้านี้มีแต่ตาราง" (feedback user 24/09) — ต้องพับ + จำกัดความสูงเสมอ */}
       <div style={card}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', marginBottom:8 }}>
-          <div style={{ fontSize:15, fontWeight:800 }}>ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง</div>
+          <div style={{ fontSize:15, fontWeight:800 }}>{tr('ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง')}</div>
           {!!shipGap.open.length && (
             <span style={{ fontSize:12, fontWeight:800, background:'#ef444422', color:'#ef4444', padding:'3px 10px', borderRadius: 'var(--r-pill)' }}>
-              {shipGap.open.length} ใบ · {n0(openQty)} ชิ้น
+              {shipGap.open.length} {tr('ใบ ·')} {n0(openQty)} ชิ้น
             </span>
           )}
           <div style={{ marginLeft:'auto', display:'flex', flexWrap:'wrap', gap:8 }}>
@@ -405,7 +405,7 @@ export default function StockCountSheet({ role, scope }) {
           หน้า 🚚 Delivery หักสต็อกให้อัตโนมัติตอนกด “ส่งแล้ว” — ใบที่หักไม่ได้ (จับคู่เลข SAP ไม่ได้
           หรือของไม่เคยถูกบันทึกเข้าคลัง) จะเตือนบนจอครั้งเดียวแล้วหายไป ยอดคงเหลือจึงค้างสูงกว่าจริง
           <br />
-          🔴 ใบที่ส่ง <b>ก่อน</b> รอบตรวจนับล่าสุดของพาร์ทนั้นถูกกันออกแล้ว
+          🔴 ใบที่ส่ง <b>{tr('ก่อน')}</b> รอบตรวจนับล่าสุดของพาร์ทนั้นถูกกันออกแล้ว
           {shipGap.closedByCount.length > 0 && <> ({shipGap.closedByCount.length} ใบ)</>} —
           ยอดที่นับได้สะท้อนของที่ออกไปแล้ว หักซ้ำจะทำให้ยอดหายสองเท่า
         </div>
@@ -416,7 +416,7 @@ export default function StockCountSheet({ role, scope }) {
             ระบบจึงจะรู้ว่าต้องหักออกจากคลังไหน
           </div>
         ) : !shipGap.open.length && !shipGap.unresolved.length ? (
-          <div style={{ fontSize:13, color:'var(--accent)' }}>✅ ไม่มีใบค้าง — ยอดขาออกตรงกับ ledger ทั้งหมด</div>
+          <div style={{ fontSize:13, color:'var(--accent)' }}>{tr('✅ ไม่มีใบค้าง — ยอดขาออกตรงกับ ledger ทั้งหมด')}</div>
         ) : (
           <>
             {showGap && !!shipGap.open.length && (
@@ -459,7 +459,7 @@ export default function StockCountSheet({ role, scope }) {
 
             {showGap && !!shipGap.unresolved.length && (
               <div style={{ fontSize:12, color:'#f59e0b', marginBottom:10, lineHeight:1.6 }}>
-                ⚠️ อีก {shipGap.unresolved.length} ใบ ({n0(shipGap.unresolved.reduce((s, o) => s + (Number(o.qty) || 0), 0))} ชิ้น)
+                ⚠️ อีก {shipGap.unresolved.length} {tr('ใบ (')}{n0(shipGap.unresolved.reduce((s, o) => s + (Number(o.qty) || 0), 0))} ชิ้น)
                 จับคู่เลข SAP ไม่ได้ — ระบบไม่เดาให้ ต้องแก้ p_no ที่ Product Master ก่อน เช่น{' '}
                 {shipGap.unresolved.slice(0, 3).map(o => o.mat_no).join(', ')}
                 <div style={{ marginTop:2 }}>
@@ -469,7 +469,7 @@ export default function StockCountSheet({ role, scope }) {
             )}
 
             {!canCount && !!shipGap.open.length && (
-              <div style={{ fontSize:12, color:'var(--muted)' }}>ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงหักย้อนหลังได้</div>
+              <div style={{ fontSize:12, color:'var(--muted)' }}>{tr('ดูอย่างเดียว — ต้องมีสิทธิ์ line_stock:issue จึงหักย้อนหลังได้')}</div>
             )}
           </>
         )}

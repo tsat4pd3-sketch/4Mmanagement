@@ -367,9 +367,9 @@ export default function QAInspectionSetup() {
 
   return (
     <Page>
-      <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
+      <PageHeader title={tr('มาตรฐานการตรวจ & Drawing')} icon="📐"
         tabs={MAIN_TABS} tab={tab} onTab={setTab}
-        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจต่อ part" />
+        sub={tr('อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจต่อ part')} />
 
       {tab === 'inspectors' && <QaInspectorScopes canManage={canManage} />}
 
@@ -379,7 +379,7 @@ export default function QAInspectionSetup() {
         <div style={{ ...cardSt, padding: 12, ...(isMobile ? null : { position: 'sticky', top: 70 }) }}>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <SearchInput value={search} onChange={setSearch} fields="part" />
-            {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title="เพิ่ม Part" onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
+            {canManage && <button style={{ ...btnSt(), padding: '8px 12px' }} title={tr('เพิ่ม Part')} onClick={() => setPartModal({ ...EMPTY_PART })}>＋</button>}
           </div>
           <div style={{ maxHeight: '65vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {shownParts.map(p => (
@@ -398,19 +398,19 @@ export default function QAInspectionSetup() {
                 </div>
               </button>
             ))}
-            {shownParts.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12, padding: 16, textAlign: 'center' }}>ยังไม่มี part{canManage ? ' — กด ＋ เพื่อเพิ่ม' : ''}</div>}
+            {shownParts.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12, padding: 16, textAlign: 'center' }}>{tr('ยังไม่มี part')}{canManage ? ' — กด ＋ เพื่อเพิ่ม' : ''}</div>}
           </div>
         </div>
 
         {/* ── ขวา: รายละเอียด part ── */}
         {!sel ? (
-          <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', padding: 60 }}>เลือก part จากรายการด้านซ้าย</div>
+          <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', padding: 60 }}>{tr('เลือก part จากรายการด้านซ้าย')}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
             {/* header */}
             <div style={{ ...cardSt, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
               {prodImg && (
-                <a href={prodImg} target="_blank" rel="noreferrer" title="รูปจาก Product Master/BOM — คลิกเปิดเต็มจอ" style={{ flexShrink: 0 }}>
+                <a href={prodImg} target="_blank" rel="noreferrer" title={tr('รูปจาก Product Master/BOM — คลิกเปิดเต็มจอ')} style={{ flexShrink: 0 }}>
                   <img src={prodImg} alt={sel.part_no} style={{
                     width: 72, height: 72, objectFit: 'cover', borderRadius: 10,
                     border: '1px solid var(--border2)', background: 'var(--bg2)', display: 'block',
@@ -420,7 +420,7 @@ export default function QAInspectionSetup() {
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 900, fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {sel.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{sel.part_name || ''}</span>
-                  {sel.part_rank && <Chip label={PART_RANK[sel.part_rank]?.label || sel.part_rank} color={PART_RANK[sel.part_rank]?.color || '#6b7280'} />}
+                  {sel.part_rank && <Chip label={tr(PART_RANK[sel.part_rank]?.label) || sel.part_rank} color={PART_RANK[sel.part_rank]?.color || '#6b7280'} />}
                   {sel.part_kind && <Chip label={PART_KIND[sel.part_kind] || sel.part_kind} color="var(--blue)" />}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
@@ -440,7 +440,7 @@ export default function QAInspectionSetup() {
               {canManage && partWrite.ok && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button style={btnSt()} onClick={() => setEditor({})}
-                    title="แผ่น Drawing/รูปชิ้นงาน + ปักหมุด + สเปคทุกจุด — หน้าตาและวิธีใช้เดียวกับตั้งค่าจุดตรวจ PM">
+                    title={tr('แผ่น Drawing/รูปชิ้นงาน + ปักหมุด + สเปคทุกจุด — หน้าตาและวิธีใช้เดียวกับตั้งค่าจุดตรวจ PM')}>
                     {tr('ตั้งค่าจุดตรวจ & Drawing')}
                   </button>
                   <button style={ghostBtn} onClick={() => setPartModal({
@@ -494,7 +494,7 @@ export default function QAInspectionSetup() {
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* คัดลอก "ออกจาก" พาร์ทนี้ไม่ได้แก้พาร์ทนี้ ⇒ ไม่ต้องผ่าน partWrite · ปลายทางเช็คขอบเขตในโมดัล */}
                     {canManage && items.length > 0 && (
-                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">{tr('คัดลอกไปพาร์ทอื่น')}</button>
+                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title={tr('คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ')}>{tr('คัดลอกไปพาร์ทอื่น')}</button>
                     )}
                     {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>{tr('แก้ไข / เพิ่มจุดตรวจ')}</button>}
                   </div>
@@ -513,8 +513,8 @@ export default function QAInspectionSetup() {
                       <tr key={it.id} style={{ opacity: it.is_active ? 1 : 0.45 }}>
                         <td style={{ ...tdSt, fontWeight: 900, whiteSpace: 'nowrap' }}>
                           <span style={{ color: it.rank ? QA_RANK[it.rank]?.color : 'var(--blue)' }}>{it.rank ? '◆' : '●'} {it.balloon_no}</span>
-                          {it.pos_x == null && <span title="ยังไม่วางบน drawing" style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>∅</span>}
-                          {it.image_path && <span title="มีรูปโคลสอัพของจุดนี้" style={{ marginLeft: 4, fontSize: 11 }}>🔍</span>}
+                          {it.pos_x == null && <span title={tr('ยังไม่วางบน drawing')} style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>∅</span>}
+                          {it.image_path && <span title={tr('มีรูปโคลสอัพของจุดนี้')} style={{ marginLeft: 4, fontSize: 11 }}>🔍</span>}
                           {it.pos_x != null && drawings.length > 1 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500, marginTop: 1 }}>
                               {drawings.find(d => d.id === it.drawing_id)?.title || drawings[0]?.title || '—'}
@@ -529,13 +529,13 @@ export default function QAInspectionSetup() {
                         </td>
                         <td style={tdSt}>{it.method || '—'}</td>
                         <td style={tdSt}>{it.rank ? <Chip label={it.rank} color={QA_RANK[it.rank]?.color || '#6b7280'} /> : '—'}</td>
-                        <td style={tdSt}><Chip label={STAGE[it.stage]?.label || it.stage} color={STAGE[it.stage]?.color || '#6b7280'} /></td>
+                        <td style={tdSt}><Chip label={tr(STAGE[it.stage]?.label) || it.stage} color={STAGE[it.stage]?.color || '#6b7280'} /></td>
                         <td style={tdSt}>{[it.frequency, it.sample_size != null ? `n=${it.sample_size}` : null].filter(Boolean).join(' · ') || '—'}</td>
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                            {canEdit && <button className="tbtn" title="แก้ไขจุดนี้ (เปิดตั้งค่าจุดตรวจที่การ์ดของจุดนี้)" onClick={() => setEditor({ focusItemId: it.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
+                            {canEdit && <button className="tbtn" title={tr('แก้ไขจุดนี้ (เปิดตั้งค่าจุดตรวจที่การ์ดของจุดนี้)')} onClick={() => setEditor({ focusItemId: it.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                             {it.item_type === 'variable' && (
-                              <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
+                              <button className="tbtn" title={tr('สร้างจุดควบคุม SPC จากจุดตรวจนี้')} onClick={() => sendToSPC(it)}
                                 style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>SPC</button>
                             )}
                           </td>
@@ -544,7 +544,7 @@ export default function QAInspectionSetup() {
                     ))}
                     {items.length === 0 && (
                       <tr><td style={tdSt} colSpan={9}>
-                        <span style={{ color: 'var(--muted)' }}>ยังไม่มีจุดตรวจ{canEdit ? ' — กด "🎯 แก้ไข / เพิ่มจุดตรวจ"' : ''}</span>
+                        <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่มีจุดตรวจ')}{canEdit ? ' — กด "🎯 แก้ไข / เพิ่มจุดตรวจ"' : ''}</span>
                       </td></tr>
                     )}
                   </tbody>
@@ -561,7 +561,7 @@ export default function QAInspectionSetup() {
         <Modal title={partModal.id ? `✏️ แก้ไข ${partModal.part_no}` : '➕ เพิ่ม Part'} onClose={() => { setPartModal(null); setBomSearch(''); }}>
           {/* เลือกจากฐานข้อมูล BOM / Product Master → เติมฟอร์มให้ (แก้ทับได้) */}
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px dashed var(--border2)' }}>
-            <Field label="เลือกจากฐานข้อมูล BOM / Product Master">
+            <Field label={tr('เลือกจากฐานข้อมูล BOM / Product Master')}>
               <input style={inputSt} value={bomSearch} onChange={e => setBomSearch(e.target.value)}
                 placeholder={bomOptions === null ? 'กำลังโหลดฐานข้อมูล…' : `พิมพ์ค้นหา Part No. / ชื่อพาร์ท / MAT.NO (${bomOptions.length.toLocaleString()} รายการ)`} />
             </Field>
@@ -582,7 +582,7 @@ export default function QAInspectionSetup() {
                   </button>
                 ))}
                 {bomMatches.length === 0 && bomOptions !== null && (
-                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>ไม่พบ — กรอกเองด้านล่างได้เลย</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>{tr('ไม่พบ — กรอกเองด้านล่างได้เลย')}</div>
                 )}
               </div>
             )}
@@ -591,7 +591,7 @@ export default function QAInspectionSetup() {
             <Field label="Part No. *"><input style={inputSt} value={partModal.part_no} onChange={e => setPartModal(f => ({ ...f, part_no: e.target.value }))} /></Field>
             <Field label="Part Name"><input style={inputSt} value={partModal.part_name} onChange={e => setPartModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             {/* 🔗 MAT (SAP) — กุญแจผูก "ฝ่ายผลิตเรียกตรวจ (FME)" กับพาร์ทนี้ · ไม่ตั้ง = งานเรียกตรวจหาพาร์ทไม่เจอ (19/10) */}
-            <Field label="MAT (SAP) — ใช้ผูกงานเรียกตรวจ FME" span>
+            <Field label={tr('MAT (SAP) — ใช้ผูกงานเรียกตรวจ FME')} span>
               <ProductSelect value={partModal.mat_no || ''} allowFree
                 onChange={({ mat_no, name, customer, line_name }) => setPartModal(f => ({
                   ...f, mat_no: mat_no || '',
@@ -600,9 +600,9 @@ export default function QAInspectionSetup() {
                 }))} />
             </Field>
             {/* ลูกค้า — เลือกจากรายชื่อใน Product Master (CustomerSelect) กันสะกดต่างข้ามโมดูล (2026-09-07) */}
-            <Field label="ลูกค้า"><CustomerSelect value={partModal.customer || ''} history={custHist} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
+            <Field label={tr('ลูกค้า')}><CustomerSelect value={partModal.customer || ''} history={custHist} onChange={({ customer }) => setPartModal(f => ({ ...f, customer }))} /></Field>
             <Field label="Model"><input style={inputSt} value={partModal.model} onChange={e => setPartModal(f => ({ ...f, model: e.target.value }))} /></Field>
-            <Field label="ไลน์ผลิต">
+            <Field label={tr('ไลน์ผลิต')}>
               {/* qa_parts.line_name ใช้ scope พาร์ทใน QaCheckSheet — ชื่อต้อง canonical → <LineSelect> (2026-09-07) */}
               <LineSelect lines={lines} value={partModal.line_name || ''} placeholder={tr('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setPartModal(f => ({ ...f, line_name: v }))} />
@@ -616,14 +616,14 @@ export default function QAInspectionSetup() {
                 {Object.entries(PART_RANK).map(([v, r]) => <option key={v} value={v}>{tr(r.label)}</option>)}
               </select>
             </Field>
-            <Field label="ชนิด Part">
+            <Field label={tr('ชนิด Part')}>
               <select style={inputSt} value={partModal.part_kind} onChange={e => setPartModal(f => ({ ...f, part_kind: e.target.value }))}>
                 <option value="">{tr('— ไม่ระบุ —')}</option>
                 {Object.entries(PART_KIND).map(([v, l]) => <option key={v} value={v}>{tr(l)}</option>)}
               </select>
             </Field>
             {partModal.id && (
-              <Field label="สถานะ">
+              <Field label={tr('สถานะ')}>
                 <select style={inputSt} value={partModal.is_active ? '1' : '0'} onChange={e => setPartModal(f => ({ ...f, is_active: e.target.value === '1' }))}>
                   <option value="1">{tr('ใช้งาน')}</option><option value="0">{tr('ปิดใช้งาน')}</option>
                 </select>

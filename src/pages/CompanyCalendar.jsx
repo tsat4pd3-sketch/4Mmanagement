@@ -123,9 +123,9 @@ export default function CompanyCalendar() {
 
   return (
     <Page>
-      <PageHeader title="ปฏิทินบริษัท — วันทำงาน/วันหยุด" icon="📅"
+      <PageHeader title={tr('ปฏิทินบริษัท — วันทำงาน/วันหยุด')} icon="📅"
         filters={<>
-          <span className="filter-label">ปี</span>
+          <span className="filter-label">{tr('ปี')}</span>
           <button className="ctl-btn" onClick={() => setYear(y => y - 1)} style={navBtnSt}>‹</button>
           <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)', minWidth: 50, textAlign: 'center' }}>{year}</span>
           <button className="ctl-btn" onClick={() => setYear(y => y + 1)} style={navBtnSt}>›</button>
@@ -136,11 +136,11 @@ export default function CompanyCalendar() {
         {DAY_TYPES.map(t => (
           <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
             <div style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: DAY_TYPE_META[t].color, flexShrink: 0 }} />
-            {DAY_TYPE_META[t].label} <strong style={{ color: 'var(--text)' }}>{counts[t]} วัน</strong>
+            {tr(DAY_TYPE_META[t].label)} <strong style={{ color: 'var(--text)' }}>{counts[t]} {tr('วัน')}</strong>
           </div>
         ))}
         {!canEdit && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ดูได้อย่างเดียว — แก้ไขได้เฉพาะชุดสิทธิ์ ผู้ดูแลระบบ / งานเอกสาร</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ดูได้อย่างเดียว — แก้ไขได้เฉพาะชุดสิทธิ์ ผู้ดูแลระบบ / งานเอกสาร')}</span>
         )}
       </div>
 
@@ -155,7 +155,7 @@ export default function CompanyCalendar() {
               <select value={bulkWeekday} onChange={e => setBulkWeekday(e.target.value)} style={{ width: 'auto' }}>
                 {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{tr(w)}</option>)}
               </select>
-              <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>เป็น</span>
+              <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('เป็น')}</span>
               <select value={bulkType} onChange={e => setBulkType(e.target.value)} style={{ width: 'auto' }}>
                 {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{tr(DAY_TYPE_META[t].label)}</option>)}
               </select>
@@ -181,9 +181,9 @@ export default function CompanyCalendar() {
 
       {canEdit && (
         <InfoMore size={11} style={{ marginBottom: 14 }} id="cal_help"
-          lead={<>💡 คลิกตัวเลขวันที่เพื่อสลับสถานะ — <b>ยังไม่บันทึกจนกว่าจะกด "บันทึก"</b></>}>
+          lead={<>{tr('💡 คลิกตัวเลขวันที่เพื่อสลับสถานะ —')} <b>ยังไม่บันทึกจนกว่าจะกด "บันทึก"</b></>}>
           ลำดับที่สลับ: วันทำงาน → OT×1.5 → OT×2 → หยุดจ่าย 75% → วันทำงาน
-          <br /><b>หยุดจ่าย 75% (ม.75)</b> = หยุดชั่วคราวเหตุลูกค้าลด order — หยุดได้ค่าจ้าง 75% ·
+          <br /><b>{tr('หยุดจ่าย 75% (ม.75)')}</b> = หยุดชั่วคราวเหตุลูกค้าลด order — หยุดได้ค่าจ้าง 75% ·
           มาทำงาน = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด)
         </InfoMore>
       )}

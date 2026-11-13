@@ -446,7 +446,7 @@ export default function MorningMeeting() {
       if ((o.qty_ng ?? 0) > 0) causes.push({ icon: '❌', text: `NG ${o.qty_ng}`, color: 'var(--red)' });
       if (absent > 0) causes.push({ icon: '👤', text: `ขาด ${absent} คน`, color: 'var(--amber)' });
       if (fmPending > 0) causes.push({ icon: '🔄', text: `4M ค้าง ${fmPending}`, color: 'var(--amber)' });
-      if (unfinished) causes.push({ icon: '⏳', text: o.status === 'carry_over' ? 'ยกยอดข้ามกะ' : 'ใบยังไม่ปิด', color: 'var(--muted)' });
+      if (unfinished) causes.push({ icon: '⏳', text: o.status === 'carry_over' ? tr('ยกยอดข้ามกะ') : tr('ใบยังไม่ปิด'), color: 'var(--muted)' });
       return { o, line, shift: sess?.shift, target, actual, gap: Math.max(0, target - actual), unfinished, dtMin, causes };
     }).filter(Boolean).sort((a, b) => b.gap - a.gap);
   }, [orders, sessions, downtimes, attendance, fourM]);
@@ -607,7 +607,7 @@ export default function MorningMeeting() {
     const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>สรุปประชุมแถวเช้า ${fmtDate(meetingDate)}</title>
 <style>body{font-family:'Sarabun',sans-serif;font-size:13px;margin:24px}h1{font-size:18px}h2{font-size:14px;margin:16px 0 6px}table{border-collapse:collapse;width:100%}</style></head><body>
 <h1>🌅 สรุปประชุมแถวเช้า — ${fmtDate(meetingDate)} · ${scopeLabel}</h1>
-<p>📦 ผลิตรวม <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
+<p>{tr('📦 ผลิตรวม')} <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
 ⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง${sum.dtPct != null ? ` = ${sum.dtPct}% ของเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60)} ชม. · ${sum.dtMachines} เครื่อง` : ''} — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
 <table><tr><th style="${td}">{tr('ไลน์')}</th><th style="${td}">{tr('พาร์ท')}</th><th style="${td}">{tr('เป้า')}</th><th style="${td}">{tr('ได้จริง')}</th><th style="${td}">{tr('ขาด')}</th><th style="${td}">{tr('สาเหตุ')}</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
@@ -649,7 +649,7 @@ export default function MorningMeeting() {
         { label: 'เข้างาน', value: `${sum.present}/${sum.attTotal}`, sub: sum.attTotal ? `${pctStr(sum.present, sum.attTotal)}%` : 'ไม่มีข้อมูลเช็คชื่อวันนั้น', color: 'var(--blue)' },
       ].map(k => (
         <div key={k.label} title={k.title || undefined} style={{ ...card, height: '100%', minHeight: 92, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: 4, minWidth: 0 }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{k.label}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr(k.label)}</div>
           <div style={{ fontSize: 26, fontWeight: 900, fontFamily: 'var(--font-display)', color: k.color, lineHeight: 1.1 }}>{k.value}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', overflowWrap: 'break-word' }}>{k.sub}</div>
         </div>
@@ -690,8 +690,8 @@ export default function MorningMeeting() {
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 52px 44px 52px', columnGap: 8, rowGap: 5, alignItems: 'baseline' }}>
                   <span />
-                  <span style={head}>ยอดผลิต</span>
-                  <span style={head} title="% เทียบเป้าการผลิตของกะ">ตามเป้า</span>
+                  <span style={head}>{tr('ยอดผลิต')}</span>
+                  <span style={head} title={tr('% เทียบเป้าการผลิตของกะ')}>{tr('ตามเป้า')}</span>
                   <span style={head}>OEE</span>
                   <span style={head}>DT</span>
                   {['day', 'night'].map(sh => {
@@ -700,18 +700,18 @@ export default function MorningMeeting() {
                       <Fragment key={sh}>
                         <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{SHIFT_LABEL[sh]}</span>
                         {!s ? (
-                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>— ไม่เปิดกะ —</span>
+                          <span style={{ gridColumn: '2 / -1', fontSize: 12, color: 'var(--muted)' }}>{tr('— ไม่เปิดกะ —')}</span>
                         ) : (
                           <>
                             <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--text)' }}>
                               {s.pct != null ? `${s.actual.toLocaleString()}/${s.target.toLocaleString()}` : s.actual.toLocaleString()}
                             </span>
                             <span style={{ ...cell, color: s.pct != null ? achieveColor(s.pct) : 'var(--muted)' }}
-                              title={s.pct == null ? 'ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ' : undefined}>
+                              title={s.pct == null ? tr('ยังไม่ตั้งเป้ากะ/std และไม่มีเป้าใบงานให้เทียบ') : undefined}>
                               {s.pct != null ? `${s.pct}%` : '—'}
                             </span>
                             {/* OEE ยังไม่อนุมัติปิดกะ = โชว์สีส้ม+ ~ (ค่าเบื้องต้น หัวหน้ารู้ว่ายังไม่ official) */}
-                            <span title={s.oee != null && s.oeePending ? 'ค่าเบื้องต้น — ยังไม่ผ่านการอนุมัติปิดกะ' : undefined}
+                            <span title={s.oee != null && s.oeePending ? tr('ค่าเบื้องต้น — ยังไม่ผ่านการอนุมัติปิดกะ') : undefined}
                               style={{ ...cell, color: s.oee == null ? 'var(--muted)' : s.oeePending ? 'var(--amber)' : 'var(--blue)', fontWeight: s.oee != null ? 800 : 400 }}>
                               {s.oee != null ? `${s.oeePending ? '~' : ''}${Math.round(s.oee)}%` : '—'}
                             </span>
@@ -726,7 +726,7 @@ export default function MorningMeeting() {
                 </div>
                 {notClosed.length > 0 && (
                   <div style={{ marginTop: 'auto' }}>
-                    <span style={chip('var(--amber)')}>⏳ ยังไม่ปิดกะ: {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
+                    <span style={chip('var(--amber)')}>{tr('⏳ ยังไม่ปิดกะ:')} {notClosed.map(sh => (sh === 'day' ? 'กะเช้า' : 'กะดึก')).join(' + ')}</span>
                   </div>
                 )}
               </>
@@ -734,7 +734,7 @@ export default function MorningMeeting() {
           })()}
         </div>
       ))}
-      {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>ไม่มีไลน์ใน scope</div>}
+      {lineResults.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>{tr('ไม่มีไลน์ใน scope')}</div>}
     </div>
   );
 
@@ -742,7 +742,7 @@ export default function MorningMeeting() {
     <div style={card}>
       <h2 style={h2St}>{tr('งานหลุดแผน')} <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} {tr('รายการ')}</span></h2>
       {missedOrders.length === 0 ? (
-        <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
+        <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ทุกใบงานได้ตามเป้า')}</div>
       ) : (
         <div style={{ overflowX: 'auto', ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -765,7 +765,7 @@ export default function MorningMeeting() {
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {m.causes.length ? m.causes.map((c, i) => (
                         <span key={i} style={chip(c.color)}>{c.icon} {c.text}</span>
-                      )) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>ไม่พบสาเหตุที่บันทึกไว้ — ระบุในที่ประชุม</span>}
+                      )) : <span style={{ color: 'var(--muted)', fontSize: 11 }}>{tr('ไม่พบสาเหตุที่บันทึกไว้ — ระบุในที่ประชุม')}</span>}
                     </div>
                   </td>
                   {canRecord && (
@@ -774,7 +774,7 @@ export default function MorningMeeting() {
                         problem: `${m.o.part_name || m.o.mat_no || m.o.prod_no} หลุดแผน ${m.gap} ชิ้น (${m.actual}/${m.target})`,
                         line_name: m.line, ref_kind: 'order_miss', ref_id: String(m.o.id),
                       })}
-                        title="ตั้งเป็น Action Item"
+                        title={tr('ตั้งเป็น Action Item')}
                         style={{ whiteSpace: 'nowrap' }}>
                         Action
                       </button>
@@ -793,32 +793,32 @@ export default function MorningMeeting() {
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
         <h2 style={h2St}>{tr('Top Downtime นอกแผน')} <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} {tr('นาที')}</span></h2>
-        {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
+        {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มี Downtime นอกแผน')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDowntime.unplanned.map(t => (
               <div key={t.name} style={{ fontSize: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.name} {t.carry && <span style={chip('var(--amber)')}>ข้ามกะ</span>}
+                      {t.name} {t.carry && <span style={chip('var(--amber)')}>{tr('ข้ามกะ')}</span>}
                     </div>
                     <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', marginTop: 3, overflow: 'hidden' }}>
                       <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || 'var(--red)', borderRadius: 'var(--r-xs)' }} />
                     </div>
                   </div>
-                  <span style={{ fontWeight: 800, color: 'var(--red)', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
-                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} ครั้ง</span>
+                  <span style={{ fontWeight: 800, color: 'var(--red)', whiteSpace: 'nowrap' }}>{Math.round(t.min)} {tr('น.')}</span>
+                  <span style={{ color: 'var(--muted)', fontSize: 11, whiteSpace: 'nowrap' }}>{t.count} {tr('ครั้ง')}</span>
                 </div>
                 {/* note ที่พนักงานพิมพ์ — ทำให้ประเภทกว้างๆ เช่น "อื่นๆ" อ่านรู้เรื่องว่าเกิดอะไรจริง */}
                 {t.topDescs.length > 0 && (
                   <div style={{ marginTop: 2, paddingLeft: 10, display: 'flex', flexDirection: 'column', gap: 1 }}>
                     {t.topDescs.map(([desc, min]) => (
                       <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {Math.round(min)} น.</span>
+                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {Math.round(min)} {tr('น.')}</span>
                       </div>
                     ))}
                     {Object.keys(t.descs).length > 3 && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ …และอีก {Object.keys(t.descs).length - 3} รายการ</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('↳ …และอีก')} {Object.keys(t.descs).length - 3} {tr('รายการ')}</div>
                     )}
                   </div>
                 )}
@@ -836,7 +836,7 @@ export default function MorningMeeting() {
               <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--muted)' }}
                 title={t.topDescs.map(([desc, min]) => `${desc} — ${Math.round(min)} น.`).join('\n')}>
                 <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-                <span style={{ whiteSpace: 'nowrap' }}>{Math.round(t.min)} น. · {t.count} ครั้ง</span>
+                <span style={{ whiteSpace: 'nowrap' }}>{Math.round(t.min)} {tr('น. ·')} {t.count} {tr('ครั้ง')}</span>
               </div>
             ))}
           </div>
@@ -844,7 +844,7 @@ export default function MorningMeeting() {
       </div>
       <div style={{ ...card, height: '100%' }}>
         <h2 style={h2St}>{tr('Top ของเสีย (NG/Suspect)')}</h2>
-        {topDefects.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีของเสียที่บันทึก</div> : (
+        {topDefects.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มีของเสียที่บันทึก')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDefects.map((t, i) => (
               <div key={i} style={{ fontSize: 12 }}>
@@ -852,13 +852,13 @@ export default function MorningMeeting() {
                   <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     <b>{t.type}</b> <span style={{ color: 'var(--muted)' }}>· {t.part}</span>
                   </span>
-                  <span style={{ fontWeight: 800, color: 'var(--red)' }}>{t.qty} ชิ้น</span>
+                  <span style={{ fontWeight: 800, color: 'var(--red)' }}>{t.qty} {tr('ชิ้น')}</span>
                 </div>
                 {t.topDescs.length > 0 && (
                   <div style={{ paddingLeft: 10 }}>
                     {t.topDescs.map(([desc, q]) => (
                       <div key={desc} style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {q} ชิ้น</span>
+                        ↳ {desc} <span style={{ color: 'var(--red)' }}>— {q} {tr('ชิ้น')}</span>
                       </div>
                     ))}
                   </div>
@@ -881,7 +881,7 @@ export default function MorningMeeting() {
     return (
       <div style={card}>
         <h2 style={h2St}>{tr('4M Change เมื่อวาน')} <span style={chip('var(--blue)')}>{fourM.length} {tr('รายการ')}</span></h2>
-        {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
+        {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('— ไม่มีบันทึก 4M —')}</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
               const st = FOURM_STATUS[m.status] || { label: m.status, color: 'var(--muted)' };
@@ -890,7 +890,7 @@ export default function MorningMeeting() {
                    `nowrap` กินไป 316 จาก 328px ⇒ **รายละเอียด 4M ถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด**
                    บนมือถือให้พับบรรทัดได้ · ชื่อไลน์ยังไม่ตัดกลางคำ แต่ต้องหดแบบ ellipsis */
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-                  <span style={chip(st.color)}>{st.label}</span>
+                  <span style={chip(st.color)}>{tr(st.label)}</span>
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</span>
                   <span style={chip('var(--muted)')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
                   <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0 }}>{m.description}</span>
@@ -900,9 +900,9 @@ export default function MorningMeeting() {
             {routine.length > 0 && (
               <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: '3px solid var(--green)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span style={chip('var(--green)')}>อนุมัติ</span>
+                  <span style={chip('var(--green)')}>{tr('อนุมัติ')}</span>
                   <span style={{ color: 'var(--text2)' }}>
-                    ย้ายจุดในไลน์เดิม (skill ผ่าน/เคยทำ) <b>{routine.length} คน</b> —{' '}
+                    ย้ายจุดในไลน์เดิม (skill ผ่าน/เคยทำ) <b>{routine.length} {tr('คน')}</b> —{' '}
                     <span style={{ color: 'var(--muted)' }}>
                       {Object.entries(routineByLine).map(([ln, n]) => `${ln} ×${n}`).join(' · ')}
                     </span>
@@ -942,7 +942,7 @@ export default function MorningMeeting() {
             <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d._line}</b>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d.machine_no || ''}</span>
             <span style={{ color: 'var(--red)', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
-            <span style={{ ...chip('var(--red)'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>ยังซ่อมไม่เสร็จ</span>
+            <span style={{ ...chip('var(--red)'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{tr('ยังซ่อมไม่เสร็จ')}</span>
             {canRecord && (
               <button type="button" className="pg-btn sm" onClick={() => openActModal({
                 problem: `เครื่อง ${d.machine_no || ''} ${d._line}: ${d.dr_downtime_types?.name_th || 'Downtime'} ยังซ่อมไม่เสร็จ`,
@@ -951,7 +951,7 @@ export default function MorningMeeting() {
             )}
           </div>
         )) : (
-          <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีเครื่องซ่อมค้าง</div>
+          <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มีเครื่องซ่อมค้าง')}</div>
         )}
         {/* 4M ที่ยังรออนุมัติ (ทุกวัน ไม่เฉพาะเมื่อวาน = ของที่ควรตามในที่ประชุม) — เหลืองนิ่งตาม Andon */}
         {fourM.filter(m => ['pending', 'pending_qa'].includes(m.status)).map(m => (
@@ -960,7 +960,7 @@ export default function MorningMeeting() {
             <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
                 แต่เติมสถานะที่ 3 เข้า filter แล้วลืมเติมใน FOURM_STATUS = จอขาว */}
-            <span style={chip('var(--amber)')}>{FOURM_STATUS[m.status]?.label || m.status}</span>
+            <span style={chip('var(--amber)')}>{tr(FOURM_STATUS[m.status]?.label) || m.status}</span>
           </div>
         ))}
         {openActions.filter(a => a._carry).length > 0 && (
@@ -982,7 +982,7 @@ export default function MorningMeeting() {
           </button>
         )}
       </h2>
-      {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ยังไม่มี action item —</div> : (
+      {actions.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('— ยังไม่มี action item —')}</div> : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, ...(bounded ? { maxHeight: 'calc(100vh - 320px)', overflowY: 'auto' } : null) }}>
           {actions.map(a => {
             const st = ACT_STATUS[a.status] || ACT_STATUS.open;
@@ -996,12 +996,12 @@ export default function MorningMeeting() {
                   {a._carry && <span style={chip('var(--amber)')} title={`จากประชุมวันที่ ${fmtDate(a.meeting_date)}`}>⏮ {fmtDate(a.meeting_date)}</span>}
                   {a.line_name && <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{a.line_name}</b>}
                   <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', flex: '1 1 auto', minWidth: 0 }}>{a.problem}</span>
-                  {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>สาเหตุ: {a.root_cause}</span>}
+                  {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>{tr('สาเหตุ:')} {a.root_cause}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                   {a.assignee && <span style={chip('var(--blue)')}>{a.assignee}</span>}
                   {a.due_date && <span style={chip(overdue ? 'var(--red)' : 'var(--muted)')}>{overdue ? '⚠ เลยกำหนด ' : '📅 '}{fmtDate(a.due_date)}</span>}
-                  <span style={chip(st.color)}>{st.label}</span>
+                  <span style={chip(st.color)}>{tr(st.label)}</span>
                   {canRecord && ['open', 'doing'].includes(a.status) && (
                     <>
                       {a.status === 'open' && <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'doing')}>{tr('เริ่มทำ')}</button>}
@@ -1023,7 +1023,7 @@ export default function MorningMeeting() {
     { title: 'ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <KpiStrip />
-        <SectionHead icon="🏭" title="ผลรายไลน์" extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
+        <SectionHead icon="🏭" title={tr('ผลรายไลน์')} extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
         <LineCards />
       </div>
     ) },
@@ -1073,13 +1073,13 @@ export default function MorningMeeting() {
   return (
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* หัวเพจ + ปุ่ม (UI-STANDARD 2026-09-24) — โหมดประชุม (tvMode) เป็น overlay เต็มจอแยกต่างหาก ไม่ใช้หัวนี้ */}
-      <PageHeader title="ประชุมแถวเช้า" icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
+      <PageHeader title={tr('ประชุมแถวเช้า')} icon="🌅" sub={`สรุปวันงาน ${fmtDate(meetingDate)}`}
         actions={<>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [โหมดประชุม] [ส่งสรุป Telegram] · พิมพ์ → ⋯ */}
           <OverflowMenu items={[{ key: 'print', icon: '📄', label: 'พิมพ์', onClick: handlePrint, title: 'พิมพ์สรุปเป็นเอกสาร' }]} />
-          <button type="button" className="pg-btn" onClick={() => { setSlide(0); setTvMode(true); }} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">{tr('โหมดประชุม')}</button>
+          <button type="button" className="pg-btn" onClick={() => { setSlide(0); setTvMode(true); }} title={tr('โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)')}>{tr('โหมดประชุม')}</button>
           {canRecord && (
-            <button type="button" className="pg-btn primary" onClick={sendTelegram} disabled={sendingTg} style={{ opacity: sendingTg ? 0.6 : 1 }} title="ส่งสรุปประชุมเข้า Telegram">
+            <button type="button" className="pg-btn primary" onClick={sendTelegram} disabled={sendingTg} style={{ opacity: sendingTg ? 0.6 : 1 }} title={tr('ส่งสรุปประชุมเข้า Telegram')}>
               {sendingTg ? tr('กำลังส่ง…') : tr('ส่งสรุป Telegram')}
             </button>
           )}
@@ -1088,7 +1088,7 @@ export default function MorningMeeting() {
         {sectionOpts.length > 1 && (
           <SectionScopeSelect lines={scopedLines} value={secFilter} onChange={s => setSecFilter(s)} only={sectionOpts} />
         )}
-        <span className="filter-label">วันที่ประชุม</span>
+        <span className="filter-label">{tr('วันที่ประชุม')}</span>
         <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
       </FilterBar>
 
@@ -1096,14 +1096,14 @@ export default function MorningMeeting() {
         <NoticeBar tone="bad">{loadErr}</NoticeBar>
       )}
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลดข้อมูล…')}</div>
       ) : (
         <>
           <KpiStrip />
-          <SectionHead icon="🏭" title="ผลรายไลน์"
+          <SectionHead icon="🏭" title={tr('ผลรายไลน์')}
             extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์ · ~OEE = รออนุมัติปิดกะ`} />
           <LineCards />
-          <SectionHead icon="🔎" title="เจาะปัญหาเมื่อวาน" />
+          <SectionHead icon="🔎" title={tr('เจาะปัญหาเมื่อวาน')} />
           <MissedPanel bounded />
           <DtDefectPanel />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
@@ -1123,7 +1123,7 @@ export default function MorningMeeting() {
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
-            <span style={{ fontSize: 14, color: 'var(--muted)' }}>ประชุมแถวเช้า · {fmtDate(meetingDate)} · {scopeLabel}</span>
+            <span style={{ fontSize: 14, color: 'var(--muted)' }}>{tr('ประชุมแถวเช้า ·')} {fmtDate(meetingDate)} · {scopeLabel}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
@@ -1133,7 +1133,7 @@ export default function MorningMeeting() {
                 {gestureOn ? 'ปิดท่ามือ' : 'คุมด้วยท่ามือ'}
                 <ToggleDot on={gestureOn} />
               </button>
-              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title="ออกจากโหมดประชุม (Esc)">✕</button>
+              <button onClick={() => { setTvMode(false); setGestureOn(false); }} style={{ ...btnSt(false), fontSize: 14 }} title={tr('ออกจากโหมดประชุม (Esc)')}>✕</button>
             </div>
           </div>
           {/* zoom ขยายทั้งวาระให้อ่านจากระยะไกล (จอ TV) — เนื้อหา component เดียวกับโหมดปกติเป๊ะ */}
@@ -1148,7 +1148,7 @@ export default function MorningMeeting() {
           </div>
           {/* 📷 Gesture Mode — mount เฉพาะตอนเปิด (unmount = ดับกล้องทันที) */}
           {gestureOn && (
-            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
+            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>{tr('⏳ กำลังโหลด Gesture Mode…')}</div>}>
               <GestureCam onGesture={handleGesture} onError={handleGestureError} />
             </Suspense>
           )}

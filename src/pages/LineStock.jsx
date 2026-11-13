@@ -379,8 +379,8 @@ function StockTab({ role, scope }) {
   const drMats = useMemo(() => new Set(products.map(p => String(p.mat_no || '').toUpperCase()).filter(Boolean)), [products]);
   // พาร์ทลูกที่ไม่อยู่ใน dr_products (BOM / parts_master) → กลุ่มแยกใน <ProductSelect> (2026-09-07 แทน dropdown ทำเอง 8 แถว)
   const matExtraOptions = useMemo(() => {
-    const out = Object.entries(bomMap).map(([m, name]) => ({ mat_no: m, name, group: '🧩 พาร์ทลูก (BOM)' }));
-    knownMats.forEach(m => { if (m && !bomMap[m]) out.push({ mat_no: m, name: '', group: '🧰 ทะเบียนพาร์ท (parts_master)' }); });
+    const out = Object.entries(bomMap).map(([m, name]) => ({ mat_no: m, name, group: tr('🧩 พาร์ทลูก (BOM)') }));
+    knownMats.forEach(m => { if (m && !bomMap[m]) out.push({ mat_no: m, name: '', group: tr('🧰 ทะเบียนพาร์ท (parts_master)') }); });
     return out;
   }, [bomMap, knownMats]);
 
@@ -530,7 +530,7 @@ function StockTab({ role, scope }) {
   return (
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
-        permKey="line_stock:issue" hint="ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ" />
+        permKey="line_stock:issue" hint={tr('ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ')} />
       {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว ใต้แท็บทันที: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน → ปุ่มคำสั่งชิดขวา (UI-STANDARD §2.1) */}
       <FilterBar>
         {/* คลังปลายทางที่ไม่ใช่ไลน์ผลิต (FG WAREHOUSE / STORE) แยก optgroup ให้ชัด
@@ -542,7 +542,7 @@ function StockTab({ role, scope }) {
         />
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
         {!showTxn && groupMode === 'sloc' && (
-          <select value={areaActive} onChange={e => setAreaFilter(e.target.value)} aria-label="เลือกพื้นที่ SAP">
+          <select value={areaActive} onChange={e => setAreaFilter(e.target.value)} aria-label={tr('เลือกพื้นที่ SAP')}>
             <option value="">{allOf('พื้นที่ SAP')}</option>
             {groups.map(g => <option key={g.key} value={g.key}>{g.title} ({g.parts.length})</option>)}
           </select>
@@ -568,20 +568,20 @@ function StockTab({ role, scope }) {
             + จ่ายพาร์ทเข้าไลน์
           </button>
         )}
-        <InfoMore label="สโตร์ กับ จัดส่ง ต่างกันยังไง" size={11.5} style={{ flexBasis: '100%' }}>
+        <InfoMore label={tr('สโตร์ กับ จัดส่ง ต่างกันยังไง')} size={11.5} style={{ flexBasis: '100%' }}>
           🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </InfoMore>
       </FilterBar>
       <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
-        <b style={{ color:'var(--text2)' }}>พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
+        <b style={{ color:'var(--text2)' }}>{tr('พาร์ทย่อยคงเหลือในไลน์')}</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
       </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
         <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'var(--amber-line)' }}>
           <div style={{ padding:'12px 16px', background:'var(--amber-dim)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-            <div style={{ fontWeight:800, fontSize:14, color:'var(--amber)' }}>⏳ รายการรออนุมัติ ({pendingMine.length})
+            <div style={{ fontWeight:800, fontSize:14, color:'var(--amber)' }}>{tr('⏳ รายการรออนุมัติ (')}{pendingMine.length})
               {pendingHidden > 0 && <span style={{ fontWeight:600, fontSize:12, color:'var(--muted)' }}>
-                {' '}· ซ่อน {pendingHidden} ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)</span>}
+                {' '}{tr('· ซ่อน')} {pendingHidden} {tr('ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)')}</span>}
             </div>
             <div style={{ fontSize:11, color:'var(--muted)' }}>
               {canApprove ? 'อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ' : 'เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้'}
@@ -598,7 +598,7 @@ function StockTab({ role, scope }) {
               </thead>
               <tbody>
                 {pendingMine.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>ไม่มีรายการรออนุมัติ</td></tr>
+                  <tr><td colSpan={8} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{tr('ไม่มีรายการรออนุมัติ')}</td></tr>
                 )}
                 {pendingMine.map(t => (
                   <tr key={t.id}>
@@ -656,7 +656,7 @@ function StockTab({ role, scope }) {
             sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'var(--red-line)' : 'var(--border)' }}>
-            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {c.label}</div>
+            <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {tr(c.label)}</div>
             <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? 'var(--red)' : 'var(--text)', marginTop:2 }}>
               {c.value}<span style={{ fontSize:12, fontWeight:600, color:'var(--text2)', marginLeft:3 }}>{c.unit}</span>
             </div>
@@ -670,9 +670,9 @@ function StockTab({ role, scope }) {
       {scopeNames && (stockScoped.hidden > 0 || stockScoped.offRegistry.length > 0) && (
         <div style={{ ...card, padding:'8px 12px', marginBottom:12, fontSize:11.5, color:'var(--text2)',
                       borderColor:'var(--border)', display:'flex', flexWrap:'wrap', gap:'4px 10px' }}>
-          <span>🔭 <b>ขอบเขตของคุณ:</b> {scopeNames.join(' · ')}</span>
+          <span>🔭 <b>{tr('ขอบเขตของคุณ:')}</b> {scopeNames.join(' · ')}</span>
           {stockScoped.hidden > 0 && (
-            <span>· ซ่อนไลน์นอกขอบเขต <b>{stockScoped.hidden.toLocaleString()}</b> รายการ</span>
+            <span>{tr('· ซ่อนไลน์นอกขอบเขต')} <b>{stockScoped.hidden.toLocaleString()}</b> {tr('รายการ')}</span>
           )}
           {stockScoped.offRegistry.length > 0 && (
             <span>· <b>{stockScoped.offRegistry.join(' / ')}</b> ไม่ใช่ไลน์ในทะเบียน
@@ -727,7 +727,7 @@ function StockTab({ role, scope }) {
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {shownGroups.length === 0 && groups.length > 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
-              ไม่พบพาร์ทที่ตรงกับ “{stockQ.trim()}”{areaActive ? ' ในพื้นที่ที่เลือก' : ''} — มีทั้งหมด {allPartCount.toLocaleString()} รายการที่ถูกกรองออก
+              ไม่พบพาร์ทที่ตรงกับ “{stockQ.trim()}”{areaActive ? ' ในพื้นที่ที่เลือก' : ''} {tr('— มีทั้งหมด')} {allPartCount.toLocaleString()} รายการที่ถูกกรองออก
             </div>
           ) : groups.length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
@@ -754,14 +754,14 @@ function StockTab({ role, scope }) {
                       {groupMode === 'sloc' && g.lineNames.length > 0 && (
                         <span style={{ fontSize:11, color:'var(--muted)' }}>{g.lineNames.join(' · ')}</span>
                       )}
-                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
+                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} {tr('รายการหมด')}</span>}
                       {noLvParts.length > 0 && (
                         <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
                           style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
                           {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
                         </span>
                       )}
-                      <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} พาร์ท</span>
+                      <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} {tr('พาร์ท')}</span>
                     </div>
                   </div>
                   {/* 🧾 คอลัมน์ตามใบ Monitor Stock ของทีมวางแผน (13/10): ลำดับ · รูป · ชิ้นงาน · STD/กล่อง · MAX · MIN · คงเหลือ
@@ -799,7 +799,7 @@ function StockTab({ role, scope }) {
                                   </div>
                                 )}
                               </td>
-                              <td title="จำนวนต่อกล่อง/คัมบัง (ค่ามาตรฐานคัมบัง) — คนละตัวกับขนาดล็อตผลิต"
+                              <td title={tr('จำนวนต่อกล่อง/คัมบัง (ค่ามาตรฐานคัมบัง) — คนละตัวกับขนาดล็อตผลิต')}
                                   style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:12, color:'var(--muted)', whiteSpace:'nowrap' }}>
                                 {ks?.std != null ? Number(ks.std).toLocaleString() : '—'}
                               </td>
@@ -811,9 +811,7 @@ function StockTab({ role, scope }) {
                               </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)' }}>
-                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background: st.bg, color: st.color }}>
-                                  {st.label}
-                                </span>
+                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background: st.bg, color: st.color }}>{tr(st.label)}</span>
                               </td>
                               {canIssue && (
                                 <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
@@ -844,9 +842,9 @@ function StockTab({ role, scope }) {
                     return (
                       <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', background:'var(--blue-dim)' }}>
                         <div style={{ fontSize:12.5, fontWeight:800, color:'var(--text)' }}>🔩 มุม SAP
-                          <span style={{ fontWeight:400, fontSize:11.5, color:'var(--muted)' }}> · ชิ้นผ่านขั้น OP ยังไม่ถูกแม่ใช้ ⇒ ใน SAP ยังเป็นของที่ขั้นกิน (SAP ตัดตอนคอนเฟิร์มแม่)</span>
+                          <span style={{ fontWeight:400, fontSize:11.5, color:'var(--muted)' }}> {tr('· ชิ้นผ่านขั้น OP ยังไม่ถูกแม่ใช้ ⇒ ใน SAP ยังเป็นของที่ขั้นกิน (SAP ตัดตอนคอนเฟิร์มแม่)')}</span>
                         </div>
-                        {opInputs.error && <div style={{ fontSize:11.5, color:'var(--red)', marginTop:4 }}>⚠ อ่านสูตรขั้น OP ไม่ได้ ({opInputs.error}) — ตัวเลขมุม SAP ด้านล่างอาจไม่ครบ</div>}
+                        {opInputs.error && <div style={{ fontSize:11.5, color:'var(--red)', marginTop:4 }}>{tr('⚠ อ่านสูตรขั้น OP ไม่ได้ (')}{opInputs.error}) — ตัวเลขมุม SAP ด้านล่างอาจไม่ครบ</div>}
                         <div style={{ fontSize:11.5, color:'var(--text2)', marginTop:4 }}>
                           ชิ้นผ่านขั้นในพื้นที่: {sv.ops.map(o => `${o.mat_no} ${Number(o.qty).toLocaleString()}${o.unmapped ? ' (ขั้นยังไม่ผูกว่ากินอะไร — แปลงไม่ได้)' : ''}`).join(' · ')}
                         </div>
@@ -879,7 +877,7 @@ function StockTab({ role, scope }) {
           <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ fontWeight:700, fontSize:14 }}>
               ประวัติ Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? 'กำลังโหลด…' : `${txnRows.length.toLocaleString()} รายการ`}
-              {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> (ซ่อน {(txnScoped.rows.length - txnRows.length).toLocaleString()} ที่ไม่ตรงคำค้น)</span> : null}
+              {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> {tr('(ซ่อน')} {(txnScoped.rows.length - txnRows.length).toLocaleString()} ที่ไม่ตรงคำค้น)</span> : null}
             </div>
             {canIssue && (
               <div style={{ display:'flex', gap:6 }}>
@@ -911,7 +909,7 @@ function StockTab({ role, scope }) {
               </thead>
               <tbody>
                 {!txnLoading && txnRows.length === 0 && (
-                  <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{txnErr ? 'โหลดไม่สำเร็จ — ดูข้อความด้านบน' : 'ไม่มีรายการในช่วง/คำค้นนี้'}</td></tr>
+                  <tr><td colSpan={7} style={{ padding:30, textAlign:'center', color:'var(--muted)', fontSize:13 }}>{txnErr ? tr('โหลดไม่สำเร็จ — ดูข้อความด้านบน') : tr('ไม่มีรายการในช่วง/คำค้นนี้')}</td></tr>
                 )}
                 {txnRows.slice(0, txnShow).map(t => (
                   <tr key={t.id}>
@@ -938,9 +936,9 @@ function StockTab({ role, scope }) {
           </div>
           {txnRows.length > txnShow && (
             <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', fontSize:12.5, color:'var(--muted)' }}>
-              แสดง {txnShow.toLocaleString()} จาก {txnRows.length.toLocaleString()} รายการ
+              แสดง {txnShow.toLocaleString()} {tr('จาก')} {txnRows.length.toLocaleString()} รายการ
               <button onClick={() => setTxnShow(n => n + TXN_PAGE)} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>{tr('แสดงเพิ่ม')} {Math.min(TXN_PAGE, txnRows.length - txnShow).toLocaleString()}</button>
-              <span>· Export CSV ได้ครบทุกแถว</span>
+              <span>{tr('· Export CSV ได้ครบทุกแถว')}</span>
             </div>
           )}
         </div>
@@ -984,9 +982,9 @@ function StockTab({ role, scope }) {
                       เตือนอย่างเดียว ไม่บล็อก — บางกรณีอาจตั้งใจฝากไว้ที่แผนกจริง */}
                   {childLinesOf[form.line_name]?.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
-                      ⚠️ <b>{form.line_name}</b> เป็นไลน์ระดับแผนก (มีไลน์ลูก {childLinesOf[form.line_name].join(' · ')})
-                      — ของที่จ่ายเข้าที่นี่ <b>ระบบจะหักตอนปิดใบผลิตไม่ได้</b> เพราะงานเปิดกะที่ไลน์ลูก
-                      <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
+                      ⚠️ <b>{form.line_name}</b> {tr('เป็นไลน์ระดับแผนก (มีไลน์ลูก')} {childLinesOf[form.line_name].join(' · ')})
+                      — ของที่จ่ายเข้าที่นี่ <b>{tr('ระบบจะหักตอนปิดใบผลิตไม่ได้')}</b> เพราะงานเปิดกะที่ไลน์ลูก
+                      <br />{tr('แนะนำให้เลือก')}<b>{tr('ไลน์ลูก')}</b>ที่ใช้พาร์ทนี้จริงแทน
                     </div>
                   )}
                   {/* 🔴 ปิดที่ต้นเหตุ — วัตถุดิบ/งาน blank ถูกจ่ายเข้าไลน์ขั้นถัดไป คือที่มาของ
@@ -1039,7 +1037,7 @@ function StockTab({ role, scope }) {
                   </div>
                 )}
                 {bomProduct && (productBom[bomProduct] || []).length === 0 && (
-                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>product นี้ยังไม่มี BOM</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>{tr('product นี้ยังไม่มี BOM')}</div>
                 )}
               </div>
 
@@ -1078,7 +1076,7 @@ function StockTab({ role, scope }) {
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>{tr('จำนวน (ชิ้น) *')}</label>
                   {form.line_name && form.mat_no.trim() && (
-                    <span style={{ fontSize:11, color:'var(--muted)' }}>คงเหลือปัจจุบัน: <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? 'var(--red)' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
+                    <span style={{ fontSize:11, color:'var(--muted)' }}>{tr('คงเหลือปัจจุบัน:')} <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? 'var(--red)' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
                   )}
                 </div>
                 <input type="number" min="0.001" step="any" style={{ ...inputSt, fontSize:20, fontWeight:900, textAlign:'center' }}
@@ -1105,7 +1103,7 @@ function StockTab({ role, scope }) {
       {rejectTx && (
         <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(420px,100%)' }}>
-            <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
+            <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>{tr('❌ ปฏิเสธคำขอ')}</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
               {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'var(--blue)' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
             </div>
@@ -1286,7 +1284,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
           <button onClick={openNew} style={btn('#0284c7')}>{tr('+ เพิ่มรอบจัดส่ง')}</button>
         )}
       </FilterBar>
-      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
+      <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>{tr('⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ')}</p>
 
       {Object.keys(grouped).length === 0 ? (
         <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
@@ -1298,7 +1296,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
             <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
               <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>{lineName}</div>
-                <span style={{ fontSize:11, color:'var(--muted)' }}>{rndList.length} รอบ</span>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>{rndList.length} {tr('รอบ')}</span>
               </div>
               <div style={{ overflowX:'auto' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
@@ -1344,8 +1342,8 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                         {canEdit && (
                           <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
                             <div style={{ display:'flex', gap:6 }}>
-                              <IconButton onClick={() => openEdit(r)} title="แก้ไข">✏️</IconButton>
-                              <DeleteButton onClick={() => handleDelete(r.id)} title="ลบรายการนี้" />
+                              <IconButton onClick={() => openEdit(r)} title={tr('แก้ไข')}>✏️</IconButton>
+                              <DeleteButton onClick={() => handleDelete(r.id)} title={tr('ลบรายการนี้')} />
                             </div>
                           </td>
                         )}
@@ -1404,7 +1402,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                       placeholder="1"
                     />
                     {form.line_name && (
-                      <button onClick={suggestRound} title="แนะนำรอบถัดไป"
+                      <button onClick={suggestRound} title={tr('แนะนำรอบถัดไป')}
                         style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)', padding:'6px 10px', fontSize:12, flexShrink:0 }}>
                         +1
                       </button>
@@ -1466,7 +1464,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 {form.delivery_time && (
                   <div style={{ fontSize:12, color:'var(--amber)', fontWeight:700 }}>
                     เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
-                    {' '}({form.points_count||1} จุด × {form.time_per_point_min||10} น.)
+                    {' '}({form.points_count||1} {tr('จุด ×')} {form.time_per_point_min||10} น.)
                   </div>
                 )}
               </div>
@@ -1575,7 +1573,7 @@ function DeliveryTimeBoardTab() {
     <>
       <InternalTimeBoard
         title={`บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
-        hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง"
+        hint={tr('ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง')}
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
       />
@@ -1592,17 +1590,17 @@ function DeliveryTimeBoardTab() {
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} {tr('รอบ')} {r.round_no}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.15)', color: st.color }}>{tr(st.label)}</span>
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>{r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
-                  ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} → ส่ง {(r.delivery_time || '').slice(0, 5)}<br />
-                  {r.points_count || 1} จุด × {r.time_per_point_min || 10} นาที · เตรียม {r.prep_minutes || 60} นาที
+                  ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} {tr('→ ส่ง')} {(r.delivery_time || '').slice(0, 5)}<br />
+                  {r.points_count || 1} {tr('จุด ×')} {r.time_per_point_min || 10} {tr('นาที · เตรียม')} {r.prep_minutes || 60} นาที
                 </div>
-                {st.d?.confirmed_by && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
-                {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? 'var(--green)' : 'var(--amber)' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
+                {st.d?.confirmed_by && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>{tr('✓ ส่งโดย')} {st.d.confirmed_by}</div>}
+                {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? 'var(--green)' : 'var(--amber)' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} {tr('รับโดย')} {st.d.received_by}</div>}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>{tr('กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board')}</div>
               </div>
             </div>
           </>
@@ -1718,15 +1716,15 @@ function InflowRulesTab({ canEdit }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
       <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>รับงานเข้า stock เมื่อปิดออเดอร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('รับงานเข้า stock เมื่อปิดออเดอร์')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
-          <br />แต่ละกฎเลือกได้: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
-          {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
-          {' '}<b style={{ color: 'var(--red)' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
-          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{INFLOW_MODES.lot.label}</b> (เฉพาะกฎ MAT ตรงตัว) = {INFLOW_MODES.lot.hint}
+          <br />{tr('แต่ละกฎเลือกได้:')} <b>{tr(INFLOW_MODES.auto.label)}</b> = {tr(INFLOW_MODES.auto.hint)} ·
+          {' '}<b>{tr(INFLOW_MODES.confirm.label)}</b> = {tr(INFLOW_MODES.confirm.hint)} (แท็บ 📥 รอรับเข้า) ·
+          {' '}<b style={{ color: 'var(--red)' }}>{tr(INFLOW_MODES.off.label)}</b> = {tr(INFLOW_MODES.off.hint)}
+          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{tr(INFLOW_MODES.lot.label)}</b> (เฉพาะกฎ MAT ตรงตัว) = {tr(INFLOW_MODES.lot.hint)}
           · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
-          <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
+          <br />{tr('กฎแบบ')} <strong>{tr('MAT ตรงตัว')}</strong> {tr('ชนะแบบ')} <strong>{tr('ขึ้นต้นด้วย')}</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
         </div>
       </div>
 
@@ -1740,26 +1738,26 @@ function InflowRulesTab({ canEdit }) {
           </tr></thead>
           <tbody>
             {rules.length === 0 && (
-              <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีกฎ — งานที่ปิดออเดอร์จะไม่ถูก post เข้า stock อัตโนมัติ</td></tr>
+              <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีกฎ — งานที่ปิดออเดอร์จะไม่ถูก post เข้า stock อัตโนมัติ')}</td></tr>
             )}
             {rules.map(r => (
               <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
                   {r.match_type === 'prefix'
-                    ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontSize: 14 }}>{r.match_value}</span></>
+                    ? <>{tr('ขึ้นต้นด้วย')} <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontSize: 14 }}>{r.match_value}</span></>
                     : <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontSize: 14 }}>{r.match_value}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>
                   {/* 🔧 โหมดปิดล็อต: ยอดลงที่ไลน์ผลิตของล็อต — คลังในแถวไม่ถูกใช้ ห้ามโชว์เหมือนเป็นปลายทางจริง */}
                   {inflowModeOf(r) === 'lot'
-                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
+                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>{tr('ไลน์ผลิตของล็อต (ตอนปิดล็อต)')}</span>
                     : <>📍 {r.dest_line_name}</>}
                 </td>
                 <td style={{ padding: '8px 14px' }}>
                   {canEdit
-                    ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label="วิธีรับเข้า"
+                    ? <Segmented value={inflowModeOf(r)} onChange={v => setRuleMode(r, v)} label={tr('วิธีรับเข้า')}
                         options={inflowModesFor(r).map(m => ({ value: m.key, label: m.label }))} />
-                    : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{INFLOW_MODES[inflowModeOf(r)].label}</span>}
+                    : <span style={{ fontSize: 12, fontWeight: 800, color: INFLOW_MODES[inflowModeOf(r)].color }}>{tr(INFLOW_MODES[inflowModeOf(r)].label)}</span>}
                 </td>
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>
                   {canEdit && (
@@ -1778,17 +1776,17 @@ function InflowRulesTab({ canEdit }) {
 
       {canEdit && (
         <div style={card}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>➕ เพิ่ม/แก้กฎ</div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>{tr('➕ เพิ่ม/แก้กฎ')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชนิดเงื่อนไข</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชนิดเงื่อนไข')}</span>
               <select value={form.match_type} onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))} style={{ ...inputSt, width: 150 }}>
                 <option value="prefix">{tr('MAT ขึ้นต้นด้วย…')}</option>
                 <option value="mat">{tr('MAT ตรงตัว')}</option>
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{form.match_type === 'prefix' ? 'เลขขึ้นต้น (เช่น 1, 2)' : 'MAT No.'}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{form.match_type === 'prefix' ? tr('เลขขึ้นต้น (เช่น 1, 2)') : 'MAT No.'}</span>
               {/* prefix = ข้อความอิสระโดยชอบ · MAT ตรงตัว = เลือกจาก Product Master (2026-09-07) */}
               {form.match_type === 'prefix'
                 ? <input value={form.match_value} onChange={e => setForm(f => ({ ...f, match_value: e.target.value }))}
@@ -1797,7 +1795,7 @@ function InflowRulesTab({ canEdit }) {
                     onChange={({ mat_no }) => setForm(f => ({ ...f, match_value: mat_no }))} />}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ปลายทาง (ไลน์ / คลัง)</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ปลายทาง (ไลน์ / คลัง)')}</span>
               {/* dest_line_name ถูก copy เป็น line_stock_transactions.line_name โดย trigger = join key ของ line_stock_summary
                   พิมพ์ผิด = "ไลน์ผี" ที่มีของแต่ไม่มีใครเห็น → เลือกจากทะเบียนไลน์ + คลังกลางเท่านั้น (2026-09-07 · บั๊กคลาสเดียวกับรอบจัดส่ง) */}
               <LineSelect lines={lines} value={form.dest_line_name} onChange={v => setForm(f => ({ ...f, dest_line_name: v }))} {...scope}
@@ -1863,14 +1861,14 @@ export default function LineStock() {
   return (
     <Page>
       <PageHeader
-        title="Line Stock — สต๊อกหน้าไลน์" icon="📦"
-        sub="ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต"
+        title={tr('Line Stock — สต๊อกหน้าไลน์')} icon="📦"
+        sub={tr('ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต')}
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
 
       {(activeTab === 'out' || activeTab === 'in') && (
         <Hub>
-          <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>}>
+          <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>
             {/* key แยก = state ตู้ของ 2 แท็บไม่ปนกัน */}
             <HeijunkaKanban key={activeTab} mode="ops" direction={activeTab}
               opsStores={activeTab === 'out' ? OPS_STORES_OUT : OPS_STORES_IN} />

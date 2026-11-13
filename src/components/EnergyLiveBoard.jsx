@@ -135,16 +135,16 @@ export default function EnergyLiveBoard() {
   }, [board.panels, readings, meters]);
 
   if (missing) return (
-    <NoticeBar tone="bad">ยังไม่ได้ apply migration <code>20261109_energy_live_board</code> (DR) — แจ้ง admin</NoticeBar>
+    <NoticeBar tone="bad">{tr('ยังไม่ได้ apply migration')} <code>20261109_energy_live_board</code> {tr('(DR) — แจ้ง admin')}</NoticeBar>
   );
-  if (!loaded) return <div style={{ color: 'var(--muted)', padding: 20 }}>กำลังโหลด…</div>;
+  if (!loaded) return <div style={{ color: 'var(--muted)', padding: 20 }}>{tr('กำลังโหลด…')}</div>;
 
   /* 🔍 หน้ารายตู้ — ชื่อใน URL ไม่ตรงทะเบียน = บอกตรงๆ + ปุ่มกลับ (ห้ามเด้งกลับเงียบ) */
   if (meterParam) {
     const dm = board.meters.find(x => x.name === meterParam);
     if (!dm) return (
       <div style={{ display: 'grid', gap: 10 }}>
-        <NoticeBar tone="warn">ไม่พบตู้ <b>{meterParam}</b> ในทะเบียนบอร์ดสด (อาจถูกปิดใช้/เปลี่ยนชื่อ)</NoticeBar>
+        <NoticeBar tone="warn">{tr('ไม่พบตู้')} <b>{meterParam}</b> {tr('ในทะเบียนบอร์ดสด (อาจถูกปิดใช้/เปลี่ยนชื่อ)')}</NoticeBar>
         <div><button type="button" className="pg-btn" onClick={() => openMeter(null)}>{tr('← กลับบอร์ดรวม')}</button></div>
       </div>
     );
@@ -158,18 +158,18 @@ export default function EnergyLiveBoard() {
 
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-      {err && <NoticeBar tone="bad">โหลดค่ามิเตอร์ไม่สำเร็จ: {err} — ตัวเลขบนจอเป็นของรอบก่อนหน้า</NoticeBar>}
+      {err && <NoticeBar tone="bad">{tr('โหลดค่ามิเตอร์ไม่สำเร็จ:')} {err} {tr('— ตัวเลขบนจอเป็นของรอบก่อนหน้า')}</NoticeBar>}
       {!board.meters.length && (
-        <NoticeBar tone="warn">ยังไม่มีมิเตอร์ในทะเบียนบอร์ดสด (<code>energy_live_meters</code>)</NoticeBar>
+        <NoticeBar tone="warn">{tr('ยังไม่มีมิเตอร์ในทะเบียนบอร์ดสด (')}<code>energy_live_meters</code>)</NoticeBar>
       )}
       {board.meters.length > 0 && t.never === t.total && (
         <NoticeBar tone="warn">
-          <b>ยังไม่เคยได้รับค่าจากมิเตอร์เลย</b> — ตัวส่ง (Node-RED) ต้อง POST ชื่อ topic ให้ตรงกับที่ผูกไว้ใน ตั้งค่า › การเชื่อมต่อ Node-RED / เครื่องจักร (/integrations)
+          <b>{tr('ยังไม่เคยได้รับค่าจากมิเตอร์เลย')}</b> — ตัวส่ง (Node-RED) ต้อง POST ชื่อ topic ให้ตรงกับที่ผูกไว้ใน ตั้งค่า › การเชื่อมต่อ Node-RED / เครื่องจักร (/integrations)
           เช่น <code>dieshop/DB-ROBOT/kw</code> · ช่องทั้งหมดจึงขึ้น "—" (ไม่ใช่ 0)
         </NoticeBar>
       )}
       {t.resets > 0 && (
-        <NoticeBar tone="warn">เลขมิเตอร์ถอยหลังวันนี้ {t.resets} ครั้ง (reset / เปลี่ยนมิเตอร์) — ช่วงนั้นไม่ถูกนับเป็นหน่วยไฟ ยอดวันนี้อาจต่ำกว่าจริง</NoticeBar>
+        <NoticeBar tone="warn">{tr('เลขมิเตอร์ถอยหลังวันนี้')} {t.resets} {tr('ครั้ง (reset / เปลี่ยนมิเตอร์) — ช่วงนั้นไม่ถูกนับเป็นหน่วยไฟ ยอดวันนี้อาจต่ำกว่าจริง')}</NoticeBar>
       )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
@@ -183,14 +183,14 @@ export default function EnergyLiveBoard() {
 
       {/* ── KPI ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, alignContent: 'start' }}>
-        <Kpi color={ACC} label="กำลังไฟรวมขณะนี้" value={fmt(t.kw)} unit="kW"
-          sub={<>ออนไลน์ {t.online}/{t.total} เครื่อง{allPeak.length > 0 && <> · สูงสุดวันนี้ {fmt(Math.max(...allPeak.map(p => p.kw)))} kW ({timeTh(allPeak.reduce((a, b) => (b.kw > a.kw ? b : a)).at)})</>}</>} />
-        <Kpi color={INFO} label="ใช้ไฟวันนี้" value={fmt(t.todayKwh)} unit="kWh" sub="นับจากเลขมิเตอร์ ตั้งแต่ 00:00 น." />
-        <Kpi color={INFO} label="ใช้ไฟเดือนนี้" value={fmt(t.monthKwh, 0)} unit="kWh"
+        <Kpi color={ACC} label={tr('กำลังไฟรวมขณะนี้')} value={fmt(t.kw)} unit="kW"
+          sub={<>{tr('ออนไลน์')} {t.online}/{t.total} {tr('เครื่อง')}{allPeak.length > 0 && <> {tr('· สูงสุดวันนี้')} {fmt(Math.max(...allPeak.map(p => p.kw)))} kW ({timeTh(allPeak.reduce((a, b) => (b.kw > a.kw ? b : a)).at)})</>}</>} />
+        <Kpi color={INFO} label={tr('ใช้ไฟวันนี้')} value={fmt(t.todayKwh)} unit="kWh" sub={tr('นับจากเลขมิเตอร์ ตั้งแต่ 00:00 น.')} />
+        <Kpi color={INFO} label={tr('ใช้ไฟเดือนนี้')} value={fmt(t.monthKwh, 0)} unit="kWh"
           sub={t.avgPerDay != null ? `เฉลี่ยวันละ ${fmt(t.avgPerDay)} kWh (${t.monthDays} วันที่มีข้อมูล)` : 'ยังไม่มีข้อมูลของเดือนนี้'} />
-        <Kpi color={t.offline || t.never ? WARN : GOOD} label="สถานะมิเตอร์" value={t.online} unit={`/ ${t.total} ออนไลน์`}
-          sub={<><span style={{ color: WARN }}>ขาดการติดต่อ {t.offline}</span> · <span style={{ color: 'var(--muted)' }}>ยังไม่เคยส่ง {t.never}</span></>} />
-        <Kpi color={t.alerts.length ? BAD : GOOD} label="เกินลิมิตตอนนี้" value={t.alerts.length} unit="เครื่อง"
+        <Kpi color={t.offline || t.never ? WARN : GOOD} label={tr('สถานะมิเตอร์')} value={t.online} unit={`/ ${t.total} ออนไลน์`}
+          sub={<><span style={{ color: WARN }}>{tr('ขาดการติดต่อ')} {t.offline}</span> · <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่เคยส่ง')} {t.never}</span></>} />
+        <Kpi color={t.alerts.length ? BAD : GOOD} label={tr('เกินลิมิตตอนนี้')} value={t.alerts.length} unit="เครื่อง"
           sub={t.alerts.length ? `ที่ ${t.alerts.map(m => m.name).join(', ')}` : 'ทุกเครื่องอยู่ในลิมิต (นับเฉพาะเครื่องที่ออนไลน์)'} />
       </div>
 
@@ -202,7 +202,7 @@ export default function EnergyLiveBoard() {
       {/* ── การ์ดรายเครื่อง ── */}
       {board.meters.length > 0 && (
         <div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>เครื่องจักรทั้งหมด <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>· คลิกการ์ดเพื่อเปิดหน้ารายตู้</span></div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{tr('เครื่องจักรทั้งหมด')} <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>{tr('· คลิกการ์ดเพื่อเปิดหน้ารายตู้')}</span></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, alignContent: 'start' }}>
             {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} machines={machinesOf[m.key] || []} onOpen={openMeter} />)}
           </div>
@@ -218,12 +218,12 @@ function EventsPanel({ events }) {
     ? { label: 'ปกติแล้ว', color: GOOD } : { label: 'เตือน', color: e.level === 'alarm' || e.level === 'crit' ? BAD : WARN });
   return (
     <div style={{ ...card }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เหตุการณ์ล่าสุด</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เหตุการณ์ล่าสุด')}</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
         จากระบบไฟ Node-RED (เกณฑ์/ลิมิตตั้งที่ Node-RED) · {EVENTS_SHOW} รายการล่าสุด · ใหม่อยู่บน · เก็บย้อนหลัง 30 วัน
       </div>
       {!events.length ? (
-        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีเหตุการณ์ที่ส่งมา</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่มีเหตุการณ์ที่ส่งมา')}</div>
       ) : (
         <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 2 }}>
           {events.map(e => {
@@ -234,7 +234,7 @@ function EventsPanel({ events }) {
                   {new Date(e.ev_time).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </span>
                 <b style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.scope_name}</b>
-                <span style={{ color: L.color, fontWeight: 700, fontSize: 11.5 }}>{L.label}</span>
+                <span style={{ color: L.color, fontWeight: 700, fontSize: 11.5 }}>{tr(L.label)}</span>
                 <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.message}>{e.message}</span>
               </div>
             );
@@ -265,13 +265,13 @@ function PanelFlow({ panel, onOpen }) {
   const busX = 330, boxX = 680, midY = top + (n * rowH) / 2 - rowH / 2 + 26;
   return (
     <div style={{ ...card }}>
-      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เส้นทางจ่ายไฟจากตู้ {panel.panel}</div>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เส้นทางจ่ายไฟจากตู้')} {panel.panel}</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ความเร็วเส้นแปรตามกำลังไฟที่ใช้ · ยอดตู้ = ผลรวมเครื่องที่ออนไลน์</div>
       {/* 📱 มือถือ: SVG กว้าง 1000 ถูกย่อจนตัวหนังสือ < 11px ⇒ แสดงเป็นรายการแทน (จอคอมไม่เปลี่ยน) */}
       {isMobile ? (
         <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: ACC }}>{fmt(panel.kw)} kW
-            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}> · ออนไลน์ {panel.online}/{panel.total}{panel.partial ? ' (ยอดไม่ครบ)' : ''}</span></div>
+            <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}> {tr('· ออนไลน์')} {panel.online}/{panel.total}{panel.partial ? ' (ยอดไม่ครบ)' : ''}</span></div>
           {panel.meters.map(m => {
             const sm = statusMeta(m);
             return (
@@ -287,10 +287,10 @@ function PanelFlow({ panel, onOpen }) {
       <svg viewBox={`0 0 1000 ${H}`} style={{ width: '100%', height: 'auto', display: 'block', marginTop: 6 }} role="img"
         aria-label={`ตู้ ${panel.panel} ${fmt(panel.kw)} kW`}>
         <rect x="40" y={midY - 46} width="230" height="92" rx="12" fill={ACC} opacity="0.9" />
-        <text x="155" y={midY - 18} textAnchor="middle" fill="var(--bg)" fontSize="15" fontWeight="700">ตู้ {panel.panel}</text>
+        <text x="155" y={midY - 18} textAnchor="middle" fill="var(--bg)" fontSize="15" fontWeight="700">{tr('ตู้')} {panel.panel}</text>
         <text x="155" y={midY + 12} textAnchor="middle" fill="var(--bg)" fontSize="28" fontWeight="800">{fmt(panel.kw)} kW</text>
         <text x="155" y={midY + 34} textAnchor="middle" fill="var(--bg)" fontSize="13">
-          ออนไลน์ {panel.online}/{panel.total} เครื่อง{panel.partial ? ' (ยอดไม่ครบ)' : ''}
+          ออนไลน์ {panel.online}/{panel.total} {tr('เครื่อง')}{panel.partial ? ' (ยอดไม่ครบ)' : ''}
         </text>
         <line x1="270" y1={midY} x2={busX} y2={midY} stroke={ACC} strokeWidth="5" />
         <line x1={busX} y1={top + 26} x2={busX} y2={top + (n - 1) * rowH + 26} stroke={ACC} strokeWidth="5" />
@@ -303,7 +303,7 @@ function PanelFlow({ panel, onOpen }) {
           return (
             <g key={m.key} role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => onOpen(m.name)}
               onKeyDown={(e) => { if (e.key === 'Enter') onOpen(m.name); }}>
-              <title>เปิดหน้ารายตู้ {m.name}</title>
+              <title>{tr('เปิดหน้ารายตู้')} {m.name}</title>
               <circle cx={busX} cy={y} r="6" fill={ACC} />
               <line x1={busX} y1={y} x2={boxX} y2={y} stroke="var(--border)" strokeWidth="5" />
               <line x1={busX} y1={y} x2={boxX} y2={y} stroke={live ? ACC : IDLE} strokeWidth="5" strokeDasharray="18 10"
@@ -317,7 +317,7 @@ function PanelFlow({ panel, onOpen }) {
               <text x={boxX + 42} y={y - 2} fill="var(--text)" fontSize="19" fontWeight="800">
                 <title>{m.name}</title>{m.name.length > 20 ? `${m.name.slice(0, 19)}…` : m.name}
               </text>
-              <text x={boxX + 42} y={y + 17} fill={sm.color} fontSize="13" fontWeight="700">{sm.label}</text>
+              <text x={boxX + 42} y={y + 17} fill={sm.color} fontSize="13" fontWeight="700">{tr(sm.label)}</text>
             </g>
           );
         })}
@@ -339,7 +339,7 @@ function MeterCard({ m, pts, machines, onOpen }) {
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>{m.subtitle}</div>
           {machines.length > 0 && (
             <div style={{ fontSize: 11.5, color: 'var(--text2)' }} title={machines.map(x => `${x.no} (${x.line})`).join(', ')}>
-              จ่ายให้ {machines.length} เครื่อง: {machines.map(x => x.no).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(', ')}
+              จ่ายให้ {machines.length} {tr('เครื่อง:')} {machines.map(x => x.no).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(', ')}
             </div>
           )}
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
@@ -354,10 +354,10 @@ function MeterCard({ m, pts, machines, onOpen }) {
       <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, marginTop: 10, alignItems: 'center' }}>
         <Gauge kw={m.kw} max={m.gaugeMax} color={m.status !== 'online' ? IDLE : m.overKw ? BAD : GOOD} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          <Stat label="แรงดัน (เฉลี่ย 3 เฟส)" value={fmt(m.v, 0)} unit="V" color={INFO} />
-          <Stat label="กระแส (เฟสสูงสุด)" value={fmt(m.a)} unit="A" color={m.overA ? BAD : ACC} />
-          <Stat label="ใช้วันนี้" value={fmt(m.todayKwh)} unit="kWh" color={INFO} />
-          <Stat label="เลขมิเตอร์" value={fmt(m.kwhTotal, 0)} unit="kWh" color={INFO} />
+          <Stat label={tr('แรงดัน (เฉลี่ย 3 เฟส)')} value={fmt(m.v, 0)} unit="V" color={INFO} />
+          <Stat label={tr('กระแส (เฟสสูงสุด)')} value={fmt(m.a)} unit="A" color={m.overA ? BAD : ACC} />
+          <Stat label={tr('ใช้วันนี้')} value={fmt(m.todayKwh)} unit="kWh" color={INFO} />
+          <Stat label={tr('เลขมิเตอร์')} value={fmt(m.kwhTotal, 0)} unit="kWh" color={INFO} />
         </div>
       </div>
 
@@ -396,7 +396,7 @@ function Gauge({ kw, max, color }) {
       )}
       <text x="60" y="62" textAnchor="middle" fill={color} fontSize="24" fontWeight="800">{fmt(kw)}</text>
       <text x="60" y="80" textAnchor="middle" fill="var(--muted)" fontSize="12">kW</text>
-      <text x="60" y="112" textAnchor="middle" fill="var(--muted)" fontSize="11">สเกล 0–{max != null ? Math.round(max) : '?'}</text>
+      <text x="60" y="112" textAnchor="middle" fill="var(--muted)" fontSize="11">{tr('สเกล 0–')}{max != null ? Math.round(max) : '?'}</text>
     </svg>
   );
 }
@@ -420,7 +420,7 @@ function Spark({ pts, limit }) {
   });
   return (
     <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 56, display: 'block', marginTop: 10 }}
-      role="img" aria-label="กราฟกำลังไฟวันนี้">
+      role="img" aria-label={tr('กราฟกำลังไฟวันนี้')}>
       {limit != null && <line x1="0" x2={W} y1={y(limit)} y2={y(limit)} stroke={BAD} strokeDasharray="6 6" strokeWidth="1" vectorEffect="non-scaling-stroke" />}
       <path d={d} fill="none" stroke={GOOD} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
     </svg>

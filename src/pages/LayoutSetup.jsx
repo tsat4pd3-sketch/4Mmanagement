@@ -10,6 +10,7 @@ import MtnMachineLayout from './MtnMachineLayout'
 import LineSetup from './LineSetup'
 import TransportMapEditor from '../components/TransportMapEditor'
 
+import { tr } from '../utils/i18n';
 // ตั้งค่าผัง/Floorplan รวมที่เดียว (หมวดตั้งค่าโปรแกรม) — แยก setup ออกจากหน้า display (2026-07-16)
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
 //   เฟส1: แท็บภาพรวมโรงงาน (FactoryMap setupMode) · ผลิต/MTN ลิงก์ไปหน้าเดิม · Store/AMR = อนาคต
@@ -28,8 +29,8 @@ export default function LayoutSetup() {
   return (
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
       <PageHeader
-        title="ตั้งค่าผัง / Floorplan" icon="🗺️"
-        sub={cur ? cur.desc : 'รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่'}
+        title={tr('ตั้งค่าผัง / Floorplan')} icon="🗺️"
+        sub={cur ? tr(cur.desc) : tr('รวมการตั้งค่าผังทุกมุมมองไว้ที่เดียว — หน้าแสดงผล (ผังรวมโรงงาน/Dashboard) ดูอย่างเดียว การแก้ผังทำที่นี่')}
         tabs={TABS} tab={tab} onTab={setTab}
       />
 
@@ -37,17 +38,17 @@ export default function LayoutSetup() {
       {tab === 'factory' && (
         can('factory_map', 'edit', role)
           ? <FactoryMap setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>{tr('ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)')}</div>
       )}
       {tab === 'production' && (
         can('line_setup', 'edit', role)
           ? <LineSetup embedded />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>{tr('ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) —')} <Link to="/linesetup" style={{ color: 'var(--accent)' }}>{tr('เปิดหน้าดูอย่างเดียว')}</Link></div>
       )}
       {tab === 'mtn' && (
         can('pm', 'setup', role)
           ? <MtnMachineLayout setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>{tr('ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)')}</div>
       )}
       {tab === 'store' && <TransportMapEditor />}
       </Hub>

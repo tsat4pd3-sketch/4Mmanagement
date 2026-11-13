@@ -93,7 +93,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
       saveLabel={picked.length ? `📋 คัดลอกไป ${picked.length} พาร์ท` : 'เลือกพาร์ทปลายทาง'}>
       <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
         ใช้กับพาร์ทพี่น้องที่สเปคเหมือนกัน (เช่น RH/LH · ต่างลูกค้า) — ตั้งพาร์ทเดียวแล้วคัดลอก ไม่ต้องพิมพ์ซ้ำ
-        <br />📍 <b>หมุด</b>: พาร์ทปลายทางใช้แบบคนละแผ่น ⇒ หมุดถูกถอดออก จุดตรวจขึ้นเป็น "ยังไม่วางตำแหน่ง" ให้ปักใหม่ใน 🎯
+        <br />📍 <b>{tr('หมุด')}</b>: พาร์ทปลายทางใช้แบบคนละแผ่น ⇒ หมุดถูกถอดออก จุดตรวจขึ้นเป็น "ยังไม่วางตำแหน่ง" ให้ปักใหม่ใน 🎯
       </div>
 
       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, cursor: 'pointer' }}>
@@ -104,7 +104,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
 
       <SearchInput value={search} onChange={setSearch} grow={false} placeholder={tr('ค้น Part No. / ชื่อ / ลูกค้า / ไลน์...')} />
       {blockedN > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{blockedN} {tr('พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้')}</div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 6, alignContent: 'start' }}>
@@ -125,26 +125,26 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
               </div>
               <span style={{ fontSize: 11, color: has ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' }}>
                 {!counts ? '…' : c?.items == null ? 'นับไม่ได้' : has ? `มี ${c.items} จุดแล้ว` : 'ยังไม่มีจุด'}
-                {counts && c?.dwgs != null && <><br />แบบ {c.dwgs} แผ่น</>}
+                {counts && c?.dwgs != null && <><br />{tr('แบบ')} {c.dwgs} {tr('แผ่น')}</>}
               </span>
             </div>
           );
         })}
-        {!shown.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{others.length ? 'ไม่พบพาร์ทที่ค้น' : 'ยังไม่มีพาร์ทอื่นในทะเบียน'}</div>}
+        {!shown.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{others.length ? tr('ไม่พบพาร์ทที่ค้น') : tr('ยังไม่มีพาร์ทอื่นในทะเบียน')}</div>}
       </div>
 
       {report && (
         <div style={{ fontSize: 12, lineHeight: 1.8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
-          <b style={{ color: 'var(--accent)' }}>✅ คัดลอกสำเร็จ {ok.length} พาร์ท</b>
+          <b style={{ color: 'var(--accent)' }}>{tr('✅ คัดลอกสำเร็จ')} {ok.length} {tr('พาร์ท')}</b>
           {ok.map(r => (
             <div key={r.partId}>
-              · {r.label} — {r.count} จุด{r.drawings ? ` + แบบ ${r.drawings} แผ่น (หมุดตามเดิม)` : ' · ต้องปักหมุดใหม่'}
+              · {r.label} — {r.count} {tr('จุด')}{r.drawings ? ` + แบบ ${r.drawings} แผ่น (หมุดตามเดิม)` : ' · ต้องปักหมุดใหม่'}
               {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('เปิดพาร์ทนี้ →')}</button>}
             </div>
           ))}
           {!!skip.length && (
             <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
-              ⚠️ ข้าม {skip.length} พาร์ท — {skip.map(r => `${r.label} (${QA_COPY_SKIP[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
+              ⚠️ ข้าม {skip.length} {tr('พาร์ท —')} {skip.map(r => `${r.label} (${QA_COPY_SKIP[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
             </div>
           )}
         </div>

@@ -106,29 +106,29 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
     finally { setBusy(''); }
   };
 
-  if (!data) return <div style={card}><div style={{ color: 'var(--muted)' }}>กำลังโหลดข้อมูลจากเครื่อง…</div></div>;
+  if (!data) return <div style={card}><div style={{ color: 'var(--muted)' }}>{tr('กำลังโหลดข้อมูลจากเครื่อง…')}</div></div>;
   const unmappedTags = tags.filter(t => !t.map?.machine_id);
   const nothingYet = !data.states.length && !data.counters.length;
 
   return (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
       <NoticeBar tone="info">
-        🏭 ข้อมูลจากเครื่อง · <b>เฟสเดินคู่</b> — ยังไม่เข้าสูตร OEE และไม่สร้างใบ downtime · ใช้เทียบกับที่คนลงใน Daily Report เท่านั้น
-        · ย้อนหลัง {DAYS} วัน (ตั้งแต่ {data.fromDate ? fmtDate(data.fromDate) : '—'}) · ข้อมูลเก็บ 90 วัน
+        🏭 ข้อมูลจากเครื่อง · <b>{tr('เฟสเดินคู่')}</b> — ยังไม่เข้าสูตร OEE และไม่สร้างใบ downtime · ใช้เทียบกับที่คนลงใน Daily Report เท่านั้น
+        · ย้อนหลัง {DAYS} {tr('วัน (ตั้งแต่')} {data.fromDate ? fmtDate(data.fromDate) : '—'}) · ข้อมูลเก็บ 90 วัน
       </NoticeBar>
-      {data.errs.length > 0 && <NoticeBar tone="bad">อ่านไม่สำเร็จ: {data.errs.join(' · ')} — ตัวเลขด้านล่างไม่ครบ</NoticeBar>}
-      {machinesFailed && <NoticeBar tone="warn">โหลดทะเบียนเครื่องไม่สำเร็จ — ยังผูกเครื่อง/รู้ไลน์ไม่ได้</NoticeBar>}
+      {data.errs.length > 0 && <NoticeBar tone="bad">{tr('อ่านไม่สำเร็จ:')} {data.errs.join(' · ')} {tr('— ตัวเลขด้านล่างไม่ครบ')}</NoticeBar>}
+      {machinesFailed && <NoticeBar tone="warn">{tr('โหลดทะเบียนเครื่องไม่สำเร็จ — ยังผูกเครื่อง/รู้ไลน์ไม่ได้')}</NoticeBar>}
       {nothingYet && !data.errs.length && (
-        <NoticeBar tone="warn">ยังไม่ได้รับข้อมูลจากเครื่องใน {DAYS} วันนี้ — import flow (ช่วงหยุด + นับชิ้น) แล้วตั้ง env ใน Node-RED ก่อน</NoticeBar>
+        <NoticeBar tone="warn">{tr('ยังไม่ได้รับข้อมูลจากเครื่องใน')} {DAYS} {tr('วันนี้ — import flow (ช่วงหยุด + นับชิ้น) แล้วตั้ง env ใน Node-RED ก่อน')}</NoticeBar>
       )}
 
       {/* ① ผูกรหัสเครื่อง */}
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>① รหัสเครื่องของต้นทาง ↔ เครื่องในทะเบียน ESM</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('① รหัสเครื่องของต้นทาง ↔ เครื่องในทะเบียน ESM')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
           ผูกแล้วข้อมูลย้อนหลังตามเอง (เก็บรหัสต้นทางไว้ ไม่ต้องย้ายข้อมูล) · ระบบเสนอเฉพาะเลขที่ตรงกับทะเบียนตัวเดียว — กดยืนยันเอง
         </div>
-        {!tags.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่เห็นรหัสเครื่องจากต้นทางนี้</div> : (
+        {!tags.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่เห็นรหัสเครื่องจากต้นทางนี้')}</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={th}>{tr('รหัสต้นทาง')}</th><th style={th}>{tr('เห็นล่าสุด')}</th><th style={th}>{tr('เครื่องใน ESM')}</th><th style={th}>{tr('ผู้ยืนยัน')}</th></tr></thead>
@@ -145,7 +145,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                             <MachineSelect valueKey="id" value={cur} machines={machines} groupByLine disabled={!!busy}
                               onChange={(m) => m?.id && m.id !== cur && save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: m.id }, `ผูก ${t.tag}`)} />
                             {cur && !machinesFailed && machines.length > 0 && !machineNo(cur) && (
-                              <span style={{ fontSize: 12, color: 'var(--red)' }}>⚠ เครื่องที่ผูกไว้ไม่อยู่ในทะเบียนแล้ว — เลือกใหม่หรือเลิกผูก</span>
+                              <span style={{ fontSize: 12, color: 'var(--red)' }}>{tr('⚠ เครื่องที่ผูกไว้ไม่อยู่ในทะเบียนแล้ว — เลือกใหม่หรือเลิกผูก')}</span>
                             )}
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               {t.suggest && (
@@ -161,8 +161,8 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                             </div>
                           </div>
                         ) : (
-                          cur ? <b>{machineNo(cur) || (machinesFailed || !machines.length ? '…' : '⚠ เครื่องนี้ไม่อยู่ในทะเบียนแล้ว')}</b>
-                            : <span style={{ color: 'var(--amber)' }}>ยังไม่ผูก{t.suggest ? ` (ข้อเสนอ: ${t.suggest.machine_no})` : ''}</span>
+                          cur ? <b>{machineNo(cur) || (machinesFailed || !machines.length ? '…' : tr('⚠ เครื่องนี้ไม่อยู่ในทะเบียนแล้ว'))}</b>
+                            : <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่ผูก')}{t.suggest ? ` (ข้อเสนอ: ${t.suggest.machine_no})` : ''}</span>
                         )}
                       </td>
                       <td style={{ ...td, fontSize: 12, color: 'var(--muted)' }}>
@@ -179,7 +179,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
 
       {/* ② จับคู่เหตุผล */}
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>② เหตุผลหยุดของต้นทาง ↔ ประเภท downtime ของ ESM</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('② เหตุผลหยุดของต้นทาง ↔ ประเภท downtime ของ ESM')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
           เลือกเองทีละรายการ · ระบบเสนอเฉพาะชื่อที่ตรงเป๊ะ · ไม่มีตัวตรงก็กด "ไม่มีใน ESM" ได้ (บันทึกว่าตรวจแล้ว) · ตอนนี้ใช้แสดงชื่อเท่านั้น ยังไม่สร้างใบ downtime
         </div>
@@ -188,7 +188,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
             {reasons.unmappable.toLocaleString()} ช่วงเป็นสถานะ ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่
           </NoticeBar>
         )}
-        {!reasons.rows.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่เห็นเหตุผลหยุดจากต้นทางนี้</div> : (
+        {!reasons.rows.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่เห็นเหตุผลหยุดจากต้นทางนี้')}</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={th}>{tr('ชุดเหตุผล')}</th><th style={th}>{tr('รหัส · ชื่อฝั่งต้นทาง')}</th><th style={th}>{DAYS} {tr('วัน')}</th><th style={th}>{tr('ประเภท downtime ใน ESM')}</th></tr></thead>
@@ -201,8 +201,8 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                   return (
                     <tr key={k}>
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>{KIND_LABEL[r.kind]}</td>
-                      <td style={td}><span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>{r.code}</span> · {r.text || <i style={{ color: 'var(--muted)' }}>ต้นทางไม่ส่งชื่อ</i>}</td>
-                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.count.toLocaleString()} ครั้ง · {minTxt(r.sec)} นาที</td>
+                      <td style={td}><span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 700 }}>{r.code}</span> · {r.text || <i style={{ color: 'var(--muted)' }}>{tr('ต้นทางไม่ส่งชื่อ')}</i>}</td>
+                      <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.count.toLocaleString()} {tr('ครั้ง ·')} {minTxt(r.sec)} {tr('นาที')}</td>
                       <td style={{ ...td, minWidth: 260 }}>
                         {canManage ? (
                           <div style={{ display: 'grid', gap: 6 }}>
@@ -210,7 +210,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                               loadFail={data.errs.includes('ประเภท downtime') ? 'โหลดประเภท downtime ไม่สำเร็จ' : ''}
                               onChange={({ id }) => id && id !== cur && save(k, 'map_reason', { ...base, downtime_type_id: id }, `จับคู่เหตุผล ${r.code}`)} />
                             {cur && !dtById.has(cur) && !data.errs.includes('ประเภท downtime') && (
-                              <span style={{ fontSize: 12, color: 'var(--red)' }}>⚠ ประเภทที่จับคู่ไว้ถูกลบจากทะเบียนแล้ว — เลือกใหม่หรือล้าง</span>
+                              <span style={{ fontSize: 12, color: 'var(--red)' }}>{tr('⚠ ประเภทที่จับคู่ไว้ถูกลบจากทะเบียนแล้ว — เลือกใหม่หรือล้าง')}</span>
                             )}
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                               {sug && (
@@ -225,12 +225,12 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                                 <button type="button" className="pg-btn" disabled={!!busy}
                                   onClick={() => save(k, 'map_reason', { ...base, clear: true }, `ล้างการจับคู่ ${r.code}`)}>{tr('ล้าง')}</button>
                               )}
-                              {r.map && !cur && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้ว: ไม่มีตัวตรงใน ESM</span>}
+                              {r.map && !cur && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ตรวจแล้ว: ไม่มีตัวตรงใน ESM')}</span>}
                             </div>
                           </div>
                         ) : (
-                          r.map ? (cur ? <b>{dtById.get(cur)?.name_th || '⚠ ประเภทนี้ถูกลบแล้ว'}</b> : 'ไม่มีตัวตรงใน ESM')
-                            : <span style={{ color: 'var(--amber)' }}>ยังไม่จับคู่</span>
+                          r.map ? (cur ? <b>{dtById.get(cur)?.name_th || tr('⚠ ประเภทนี้ถูกลบแล้ว')}</b> : 'ไม่มีตัวตรงใน ESM')
+                            : <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่จับคู่')}</span>
                         )}
                       </td>
                     </tr>
@@ -244,19 +244,19 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
 
       {/* ③ เทียบ Daily Report */}
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>③ เทียบกับ Daily Report (รายไลน์ × กะ)</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('③ เทียบกับ Daily Report (รายไลน์ × กะ)')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
           ชิ้นแสดงรายเครื่อง ไม่รวมเป็นยอดไลน์ (ชิ้นเดียวอาจผ่านหลายเครื่อง) · นาที = เวลาหยุดที่เครื่องบันทึก แบ่งตามกะ ESM (เช้า 08–20 · ดึก 20–08)
           · "–" = ไม่มีข้อมูล ไม่ใช่ 0
         </div>
         {unmappedTags.length > 0 && (
           <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
-            {unmappedTags.length} รหัสเครื่องยังไม่ผูก ({unmappedTags.map(t => t.tag).join(', ')}) — ไม่อยู่ในตารางนี้จนกว่าจะผูกที่ ①
+            {unmappedTags.length} {tr('รหัสเครื่องยังไม่ผูก (')}{unmappedTags.map(t => t.tag).join(', ')}) — ไม่อยู่ในตารางนี้จนกว่าจะผูกที่ ①
           </NoticeBar>
         )}
         {data.drErr && <NoticeBar tone="bad" style={{ marginBottom: 8 }}>{data.drErr}</NoticeBar>}
-        {compare == null ? <div style={{ color: 'var(--muted)' }}>กำลังโหลด Daily Report…</div>
-          : !compare.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีอะไรให้เทียบ — ต้องผูกเครื่องอย่างน้อย 1 ตัวก่อน</div> : (
+        {compare == null ? <div style={{ color: 'var(--muted)' }}>{tr('กำลังโหลด Daily Report…')}</div>
+          : !compare.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่มีอะไรให้เทียบ — ต้องผูกเครื่องอย่างน้อย 1 ตัวก่อน')}</div> : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -264,7 +264,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                     <th style={th}>{tr('วัน · กะ')}</th><th style={th}>{tr('ไลน์')}</th>
                     <th style={th}>{tr('Daily Report: ยอดผลิต')}</th><th style={th}>{tr('DT คนลง (นาที)')}</th>
                     <th style={th}>{tr('เครื่อง')}</th><th style={th}>{tr('ชิ้นจากเครื่อง')}</th><th style={th}>{tr('NG กดหน้าเครื่อง')}</th>
-                    {STATE_ORDER.map(s => <th key={s} style={th} title={STATE_META[s].label}>{STATE_META[s].label} {tr('(นาที)')}</th>)}
+                    {STATE_ORDER.map(s => <th key={s} style={th} title={tr(STATE_META[s].label)}>{tr(STATE_META[s].label)} {tr('(นาที)')}</th>)}
                     <th style={th}>{tr('หยุดสั้น (นาที)')}</th><th style={th}>{tr('DT คนลงเครื่องนี้')}</th>
                   </tr>
                 </thead>
@@ -277,23 +277,23 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                           <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }} rowSpan={ms.length}>{fmtDate(r.workDate)} · {r.shift === 'day' ? 'เช้า' : 'ดึก'}</td>
                           <td style={{ ...td, whiteSpace: 'nowrap' }} rowSpan={ms.length}>{r.line}</td>
                           <td style={td} rowSpan={ms.length}>
-                            {r.session ? <b>{num(r.session.actual_qty)}</b> : <span style={{ color: 'var(--muted)' }}>ไม่มีใบผลิต</span>}
-                            {r.sessionCount > 1 && <div style={{ fontSize: 11, color: 'var(--amber)' }}>{r.sessionCount} ใบในกะนี้ (รวมยอด)</div>}
+                            {r.session ? <b>{num(r.session.actual_qty)}</b> : <span style={{ color: 'var(--muted)' }}>{tr('ไม่มีใบผลิต')}</span>}
+                            {r.sessionCount > 1 && <div style={{ fontSize: 11, color: 'var(--amber)' }}>{r.sessionCount} {tr('ใบในกะนี้ (รวมยอด)')}</div>}
                           </td>
                           <td style={td} rowSpan={ms.length}>
                             {num(r.humanDtMin)}
-                            {r.humanLineDtMin != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่ระบุเครื่อง {num(r.humanLineDtMin)}</div>}
+                            {r.humanLineDtMin != null && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่ระบุเครื่อง')} {num(r.humanLineDtMin)}</div>}
                           </td>
                         </>}
                         {m ? <>
                           <td style={{ ...td, whiteSpace: 'nowrap', fontFamily: 'ui-monospace, monospace' }}>{m.machineNo}</td>
-                          <td style={td}>{num(m.pieces)}{m.pieces != null && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{m.minutes.toLocaleString()} นาทีที่มีข้อมูล</div>}</td>
+                          <td style={td}>{num(m.pieces)}{m.pieces != null && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{m.minutes.toLocaleString()} {tr('นาทีที่มีข้อมูล')}</div>}</td>
                           <td style={td}>{num(m.ng)}</td>
                           {STATE_ORDER.map(s => <td key={s} style={td}>{m.stopSec[s] ? minTxt(m.stopSec[s]) : '0'}</td>)}
                           <td style={td}>{minTxt(m.minorSec)}</td>
                           <td style={td}>{num(m.humanDtMin)}</td>
                         </> : (
-                          <td style={{ ...td, color: 'var(--amber)' }} colSpan={STATE_ORDER.length + 5}>เครื่องไม่ได้ส่งข้อมูลกะนี้</td>
+                          <td style={{ ...td, color: 'var(--amber)' }} colSpan={STATE_ORDER.length + 5}>{tr('เครื่องไม่ได้ส่งข้อมูลกะนี้')}</td>
                         )}
                       </tr>
                     ));
@@ -304,7 +304,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
           )}
         {compare?.length > 0 && (
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-            หยุดรวมที่เครื่องบันทึก {DAYS} วัน: {minTxt(facts.reduce((s, f) => s + stopTotals(f.stopSec).all, 0))} นาที
+            หยุดรวมที่เครื่องบันทึก {DAYS} {tr('วัน:')} {minTxt(facts.reduce((s, f) => s + stopTotals(f.stopSec).all, 0))} นาที
             · DT ที่คนลง: {num(compare.reduce((s, r) => s + (r.humanDtMin || 0), 0))} นาที
           </div>
         )}

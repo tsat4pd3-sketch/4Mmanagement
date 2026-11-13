@@ -11,6 +11,7 @@ import { useSuppliersState, SUPPLIER_KINDS } from '../utils/useSuppliers';
 import { registryFailText } from '../utils/useMasterRows.js';
 import { appendHistoryOptions } from '../utils/pickerOptions';
 
+import { tr } from '../utils/i18n';
 const up = (s) => String(s ?? '').trim().toUpperCase().replace(/\s+/g, ' ');
 
 export default function SupplierSelect({
@@ -31,7 +32,7 @@ export default function SupplierSelect({
       kind: r.kind, _pref: pref.size ? pref.has(r.kind) : false,
     }));
     tagged.sort((a, b) => (b._pref - a._pref) || a.label.localeCompare(b.label, 'th'));
-    const base = tagged.map(o => ({ ...o, group: pref.size ? (o._pref ? '🎯 ชนิดที่เกี่ยวข้อง' : '🏷️ ชนิดอื่น') : undefined }));
+    const base = tagged.map(o => ({ ...o, group: pref.size ? (o._pref ? tr('🎯 ชนิดที่เกี่ยวข้อง') : tr('🏷️ ชนิดอื่น')) : undefined }));
     return appendHistoryOptions(base, { history, current: value, keyOf: up, make: (v) => ({ kind: null, code: null }) });
   }, [rows, kinds, strict, value, history]);
   const sel = useMemo(() => options.find(o => o.key === up(value)) || null, [options, value]);
@@ -41,7 +42,7 @@ export default function SupplierSelect({
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} onChange={emit}
-      allowFree={allowFree} placeholder={placeholder} freeHint={freeHint} emptyText="ไม่พบผู้ขายในทะเบียน"
+      allowFree={allowFree} placeholder={placeholder} freeHint={freeHint} emptyText={tr('ไม่พบผู้ขายในทะเบียน')}
       loadFail={failed ? registryFailText('ทะเบียนผู้ขาย', stale) : ''}
       disabled={disabled} inputStyle={inputStyle} style={style} />
   );

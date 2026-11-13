@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import useIsMobile from '../utils/useIsMobile';
 import { canAccessPage } from '../utils/permissions';
 import useLang from '../utils/useLang';
+import { tr } from '../utils/i18n';
 import Icon from './Icon';   // 🌐 ป้ายแถบล่างแปลที่จุดวาด
 
 /* ══ 📱 MobileNavBar — แถบล่าง 4 ช่องของจอมือถือ/handheld (2026-10-15 · docs/MOBILE-UX-STANDARD.md §3) ══════
@@ -52,7 +53,7 @@ export default function MobileNavBar({ role, onOpenMenu, onOpenSearch }) {
   ].filter(Boolean);
 
   return (
-    <nav className="mnav" aria-label="เมนูลัด">
+    <nav className="mnav" aria-label={tr('เมนูลัด')}>
       {items.map(it => (
         <button key={it.key} type="button" onClick={it.go} aria-current={it.on ? 'page' : undefined}
           className={it.on ? 'on' : ''}>

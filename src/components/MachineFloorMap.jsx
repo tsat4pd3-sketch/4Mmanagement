@@ -2,6 +2,7 @@ import { useRef, useState, useEffect } from 'react'
 import { markerScale } from '../utils/markerScale'
 import { cropBox } from '../utils/mapCrop'
 
+import { tr } from '../utils/i18n';
 /* Factory floor-map with equipment markers.
    Reuses the object-fit:contain letterbox math from LineSetup so markers (stored
    as % of the real image via pos_top/pos_left) stay pinned to the image at any
@@ -115,8 +116,8 @@ export default function MachineFloorMap({
         background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', color: 'var(--muted)', textAlign: 'center', padding: 24 }}>
         <div>
           <div style={{ fontSize: 34, marginBottom: 10 }}>🗺️</div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>ยังไม่มีรูปผัง</div>
-          <div style={{ fontSize: 12, marginTop: 4 }}>{editable ? 'อัปโหลดรูปผังโซนก่อน' : 'อัปโหลดรูปผังได้ที่หน้า “ตั้งค่าผังไลน์”'}</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{tr('ยังไม่มีรูปผัง')}</div>
+          <div style={{ fontSize: 12, marginTop: 4 }}>{editable ? tr('อัปโหลดรูปผังโซนก่อน') : tr('อัปโหลดรูปผังได้ที่หน้า “ตั้งค่าผังไลน์”')}</div>
         </div>
       </div>
     )
@@ -170,7 +171,7 @@ export default function MachineFloorMap({
                 className={p.blink ? 'dt-alarm-blink' : ''}
                 onPointerDown={(e) => startDrag(e, p)}
                 onClick={(e) => { e.stopPropagation(); onSelect?.(p) }}
-                title={p.label}
+                title={tr(p.label)}
                 style={{
                   position: 'absolute', top: pos.top, left: pos.left, transform: sel ? 'translate(-50%, -50%) scale(1.18)' : 'translate(-50%, -50%)',   // ⚠️ ห้ามใช้ CSS `scale:` (Cr104 > จอ TV Cr94)
                   width: size, height: size, borderRadius: '50%',
@@ -197,7 +198,7 @@ export default function MachineFloorMap({
 
                 {editable && (
                   <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onMarkerRemove?.(p.id) }}
-                    title="เอาออกจากผัง"
+                    title={tr('เอาออกจากผัง')}
                     style={{ position: 'absolute', top: -6, right: -6, width: 16, height: 16, borderRadius: '50%', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', cursor: 'pointer', boxShadow: 'var(--shadow-float)' }}>✕</div>
                 )}
 
@@ -205,7 +206,7 @@ export default function MachineFloorMap({
                 {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                   <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.82)', outline: sel ? `2px solid ${color}` : undefined, color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {p.label}
+                    {tr(p.label)}
                   </div>
                   {p.sub && (
                     <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -221,7 +222,7 @@ export default function MachineFloorMap({
       )}
       {/* 🏷️ โชว์/ซ่อนป้ายชื่อทุกหมุด — label บอก action ที่จะเกิดเมื่อกด (หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ) */}
       <button onClick={() => setShowPills(v => !v)}
-        title="แสดง/ซ่อนป้ายชื่อทุกหมุดบนผัง (ชื่อยังดูได้จากการชี้/คลิกหมุด — หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ)"
+        title={tr('แสดง/ซ่อนป้ายชื่อทุกหมุดบนผัง (ชื่อยังดูได้จากการชี้/คลิกหมุด — หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ)')}
         style={{
           position: 'absolute', top: 10, right: 10, zIndex: 20,
           padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer',

@@ -27,7 +27,7 @@ import { tr } from '../utils/i18n';
  *
  * ใช้:
  *   <InfoMore lead="เลือกได้หลายส่วนงาน">ข้อความยาว…</InfoMore>
- *   <InfoMore label="วิธีใช้" id="cal_help">ข้อความยาว…</InfoMore>   // id = จำสถานะเปิด/ปิด
+ *   <InfoMore label={tr('วิธีใช้')} id="cal_help">ข้อความยาว…</InfoMore>   // id = จำสถานะเปิด/ปิด
  */
 
 /** เครื่องหมายเปิดอ่านเพิ่ม — แก้ที่นี่ที่เดียวทั้งระบบ

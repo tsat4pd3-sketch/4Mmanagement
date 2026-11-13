@@ -25,12 +25,12 @@ function Cell({ value, auto, disabled, onCommit }) {
   /* ≈ ค่าอัตโนมัติ (กำลังคนจากทะเบียนพนักงาน) — โชว์จางเมื่อยังไม่มีค่ากรอกมือ · กรอกทับได้ · ลบที่กรอก = กลับไปใช้ค่าอัตโนมัติ */
   const autoTxt = value == null && auto != null ? `≈ ${fmt(auto)}` : '';
   if (disabled) {
-    return <span title={autoTxt ? 'ค่าอัตโนมัติจากทะเบียนพนักงาน (ยังไม่มีใครกรอก)' : undefined}
+    return <span title={autoTxt ? tr('ค่าอัตโนมัติจากทะเบียนพนักงาน (ยังไม่มีใครกรอก)') : undefined}
       style={{ display: 'inline-block', minWidth: 72, textAlign: 'right', fontSize: 12, color: value == null ? 'var(--muted)' : 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value == null ? (autoTxt || '–') : fmt(value)}</span>;
   }
   return (
     <input value={v} onChange={e => setV(e.target.value)} onBlur={() => onCommit(v.trim())} onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-      inputMode="decimal" placeholder={autoTxt} title={autoTxt ? 'ค่าอัตโนมัติจากทะเบียนพนักงาน — กรอกทับได้ถ้าตัวเลขจริงต่างจากนี้' : undefined}
+      inputMode="decimal" placeholder={autoTxt} title={autoTxt ? tr('ค่าอัตโนมัติจากทะเบียนพนักงาน — กรอกทับได้ถ้าตัวเลขจริงต่างจากนี้') : undefined}
       style={{ width: 92, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', border: '1px solid var(--border)',
         color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }} />
   );
@@ -122,9 +122,9 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
             {vars.map(v => (
               <tr key={v.key}>
                 <td style={nameTd}>
-                  <b>{v.label}</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>({v.unit})</span>
+                  <b>{tr(v.label)}</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>({v.unit})</span>
                   {formulasUsingVar(v.key).length > 0 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ในสูตร: {formulasUsingVar(v.key).join(' · ')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ใช้ในสูตร:')} {formulasUsingVar(v.key).join(' · ')}</div>
                   )}
                 </td>
                 {MONTHS.map((_, i) => {
@@ -151,19 +151,19 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
       <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
         ตัวเลขฐานจากบัญชี/SAP (กรอกเดือนละครั้ง) — ระบบคำนวณ %DL+OH · %RM · DSI · ยอดขาย/หัว ให้เอง
         <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>
-          ขอบเขต: {label} · {rows.length} ค่าในปี {year + 543}
+          ขอบเขต: {label} · {rows.length} {tr('ค่าในปี')} {year + 543}
         </span>
         {/* 📥 อยู่บนหัวแผง (19/10 · user: "หาที่อัพไฟล์ไม่เจอ") — แผงพับอยู่ก็ยังเห็น · กันไม่ให้คลิกไปสลับพับ/กาง */}
         {canManage && (
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
-            title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
+            title={tr('อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก')}
             style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
             {tr('นำเข้าจาก Excel บัญชี')}
           </button>
         )}
       </summary>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 6 }}>
-        <InfoMore id="kpi-base-howto" size={11.5} label="ตัวเลขฐานใช้ยังไง" style={{ flex: 1, minWidth: 280 }}>
+        <InfoMore id="kpi-base-howto" size={11.5} label={tr('ตัวเลขฐานใช้ยังไง')} style={{ flex: 1, minWidth: 280 }}>
           KPI ที่ตั้ง "ที่มาของตัวเลข = 🧮 คำนวณจากตัวเลขฐาน" (ปุ่ม ✏️ ของแถว) จะไม่ต้องกรอก % เอง — ระบบเอายอดเงินของหน่วย ÷ ยอดขายกลางของโรงงานให้ทุกเดือน ·
           ช่องว่าง = ยังไม่มีตัวเลข (ไม่ใช่ 0) · เดือนที่ขาดตัวแปรใดตัวแปรหนึ่ง แถว KPI จะเขียนบอกว่าขาดอะไร ·
           <b>≈ จาง = กำลังคนจากทะเบียนพนักงาน</b> (ยังไม่มีใครกรอก · ทะเบียนอาจไม่ครบ กรอกทับได้)
@@ -175,7 +175,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
       )}
       {block('🏭 ค่ากลางทั้งโรงงาน — คนกลางกรอกครั้งเดียว ทุกหน่วยใช้ตัวเดียวกัน', BASE_VARS_BY_LEVEL.plant, PLANT_BASE_KEY, plant && canManage,
         plant ? (canManage ? '' : (blockText || 'ดูได้อย่างเดียว — ต้องมีสิทธิ์ kpi:manage + ใบผ่านทั้งโรงงาน'))
-          : <span>อ่านอย่างเดียวที่นี่ — กรอกที่ขอบเขต <b style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={onGoPlant}>ทั้งโรงงาน</b></span>)}
+          : <span>{tr('อ่านอย่างเดียวที่นี่ — กรอกที่ขอบเขต')} <b style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={onGoPlant}>{tr('ทั้งโรงงาน')}</b></span>)}
       {block(plant ? '🏢 ยอดรวมทั้งโรงงาน (ตัวตั้งของ KPI ระดับโรงงาน)' : `🏢 ยอดเงินของ ${label} (กรอกยอดเงินอย่างเดียว ระบบหารให้)`,
         BASE_VARS_BY_LEVEL.unit, mySk, canManage, canManage ? '' : (blockText || 'ดูได้อย่างเดียว'))}
     </details>

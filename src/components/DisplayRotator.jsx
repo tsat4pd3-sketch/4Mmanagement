@@ -11,6 +11,7 @@ import { tvPages } from '../utils/tvPager';
 import { NAV_ITEMS, UserContext } from '../App';
 import { getCurrentShift, getWorkDate } from '../utils/workDate';
 
+import { tr } from '../utils/i18n';
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
    2026-10-09 · คำสั่ง user: "ตั้งว่าจอ user นี้จะเปิดอะไรวนบ้าง" · ตั้งค่าที่ /display-rotation
    ฝังที่ ProtectedLayout ทุก branch (/tv · หน้า Home · หน้าปกติ) — บัญชีที่ไม่มีแถว = ไม่ทำอะไรเลย (1 คิวรีตอนเข้า)
@@ -353,7 +354,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
 
   if (loadErr) {
     return (
-      <div style={chipStyle} title={loadErr}>⚠ โหลดรอบจอวนหน้าไม่สำเร็จ — จอจะค้างหน้านี้</div>
+      <div style={chipStyle} title={loadErr}>{tr('⚠ โหลดรอบจอวนหน้าไม่สำเร็จ — จอจะค้างหน้านี้')}</div>
     );
   }
   if (!active || !cur) return null;
@@ -367,7 +368,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
   if (compact) {
     return (
       <div style={{ ...chipStyle, padding: '3px 9px', opacity: 0.55, gap: 6 }} role="status" aria-live="off"
-        title="แตะจอเพื่อหยุดวน / ดูปุ่มควบคุม">
+        title={tr('แตะจอเพื่อหยุดวน / ดูปุ่มควบคุม')}>
         {Math.min(idx, n - 1) + 1}/{n} · {fmtSec(Math.max(0, cur.sec - elapsed))}
       </div>
     );
@@ -375,7 +376,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
 
   return (
     <div style={chipStyle} role="status" aria-live="off">
-      <span style={{ fontWeight: 800 }}>จอวนหน้า {Math.min(idx, n - 1) + 1}/{n}</span>
+      <span style={{ fontWeight: 800 }}>{tr('จอวนหน้า')} {Math.min(idx, n - 1) + 1}/{n}</span>
       <span style={{ color: 'var(--muted)' }}>{status}</span>
       {skipped.length > 0 && (
         <span title={skipTitle} style={{ color: 'var(--amber)', fontWeight: 700 }}>
@@ -414,7 +415,7 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
     <div role="banner" style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>
         <span style={{ fontSize: 20, lineHeight: 1 }}>{nav.icon}</span>
-        <span style={{ fontSize: 21, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{nav.label}</span>
+        <span style={{ fontSize: 21, fontWeight: 900, fontFamily: 'var(--font-display)', whiteSpace: 'nowrap' }}>{tr(nav.label)}</span>
         {chips.map(c => (
           <span key={c} style={barChip}>{c}</span>
         ))}
@@ -426,7 +427,7 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
         )}
       </div>
       {loadErr && (
-        <span title={loadErr} style={{ fontSize: 16, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้</span>
+        <span title={loadErr} style={{ fontSize: 16, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{tr('⚠ โหลดรอบวนไม่สำเร็จ — ค้างหน้านี้')}</span>
       )}
       {active && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -434,23 +435,23 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
             {idx + 1}/{n} · {status}
           </span>
           {skipped.length > 0 && (
-            <span title={skipTitle} style={{ fontSize: 16, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
+            <span title={skipTitle} style={{ fontSize: 16, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr('⚠ ข้าม')} {skipped.length} {tr('หน้า')}</span>
           )}
           {controls}
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
         {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>{secs.join(' · ')}</span>}
-        <span style={{ fontSize: 17, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
+        <span style={{ fontSize: 17, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{shift} {tr('· วันงาน')} {wd}</span>
         <span style={{ fontSize: 26, fontWeight: 900, minWidth: 70, textAlign: 'right' }}>{hhmm}</span>
         {/* 🚪 ☀️ บัญชีจอ TV ไม่มี sidebar/เมนูโปรไฟล์ (ซ่อนทั้งชุดในโหมด TV) ⇒ เดิมออกจากระบบ/สลับธีมไม่ได้เลย
             (feedback ประชุม 02/11) — วางไว้ที่แถบนี้ที่เดียว · ออกจากระบบต้องยืนยันก่อน กันแตะโดนตอนเดินผ่าน */}
         {onToggleTheme && (
-          <button type="button" onClick={onToggleTheme} title={theme === 'dark' ? 'สลับเป็นธีมสว่าง' : 'สลับเป็นธีมมืด'}
-            aria-label="สลับธีม" style={barBtn}>{theme === 'dark' ? '☀️' : '🌙'}</button>
+          <button type="button" onClick={onToggleTheme} title={theme === 'dark' ? tr('สลับเป็นธีมสว่าง') : tr('สลับเป็นธีมมืด')}
+            aria-label={tr('สลับธีม')} style={barBtn}>{theme === 'dark' ? '☀️' : '🌙'}</button>
         )}
         {onLogout && (
-          <button type="button" title="ออกจากระบบ (บัญชีจอนี้)" aria-label="ออกจากระบบ" style={barBtn}
+          <button type="button" title={tr('ออกจากระบบ (บัญชีจอนี้)')} aria-label={tr('ออกจากระบบ')} style={barBtn}
             onClick={() => { if (window.confirm('ออกจากระบบบัญชีจอนี้?\nจอจะกลับไปหน้าเข้าสู่ระบบ')) onLogout(); }}>🚪</button>
         )}
       </div>

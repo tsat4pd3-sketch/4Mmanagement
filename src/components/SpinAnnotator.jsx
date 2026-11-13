@@ -133,7 +133,7 @@ export default function SpinAnnotator({
                 {pins.map(p => (
                   <CalloutPin key={p.key} xPct={p.x * 100} yPct={p.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                     offX={p.label_dx} offY={p.label_dy}
-                    label={p.label} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
+                    label={tr(p.label)} color={p.color || 'var(--accent)'} badge={pinHasDetail[p.key] ? '🔍' : null}
                     /* 🔴 "หมุดที่กำลังเลือก" ต้องต่างที่ **วงไฮไลต์** ไม่ใช่แค่เปลี่ยนสี (23/09 · audit หมุดทั้งโปรเจค)
                        สีประเภทจุดตรวจตั้งเองได้ในทะเบียน — ประเภทสีเขียวจะหน้าตาเหมือนหมุดที่กำลังวางเป๊ะ */
                     selected={p.selected} hollow={p.hollow}
@@ -154,7 +154,7 @@ export default function SpinAnnotator({
         {/* ซูมอยู่ = กรอบเป็นตัวเลื่อน ป้ายลอยจะเลื่อนหนีไปกับรูป ⇒ ย้ายไปเขียนใต้กรอบแทน */}
         {arming && !isPdf && cur && !zoomed && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-            <span style={{ padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>แตะที่รูปเพื่อวางตำแหน่ง</span>
+            <span style={{ padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>{tr('แตะที่รูปเพื่อวางตำแหน่ง')}</span>
           </div>
         )}
       </div>
@@ -162,9 +162,9 @@ export default function SpinAnnotator({
       {/* แถบซูม — ทุกจอที่ปักหมุดได้ซูมแบบเดียวกัน (เดิม PM ไม่มี) */}
       {cur && !isPdf && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก" aria-label="ซูมออก">➖</button>
+          <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title={tr('ซูมออก')} aria-label={tr('ซูมออก')}>➖</button>
           <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
-          <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.min(ZOOM_MAX, +(z + 0.5).toFixed(2)))} disabled={zoom >= ZOOM_MAX || !fit} title="ซูมเข้า" aria-label="ซูมเข้า">➕</button>
+          <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.min(ZOOM_MAX, +(z + 0.5).toFixed(2)))} disabled={zoom >= ZOOM_MAX || !fit} title={tr('ซูมเข้า')} aria-label={tr('ซูมเข้า')}>➕</button>
           {zoom > 1 && <button type="button" style={tinyBtn} onClick={() => setZoom(1)}>{tr('↺ พอดีกรอบ')}</button>}
           <span style={{ fontSize: 11, color: arming && zoom > 1 ? 'var(--accent)' : 'var(--muted)', fontWeight: arming && zoom > 1 ? 700 : 400 }}>
             {arming && zoom > 1 ? '📍 แตะที่รูปเพื่อวางตำแหน่ง' : zoom > 1 ? 'เลื่อนดูส่วนอื่นในกรอบได้' : 'ซูมเข้าเพื่อวางจุดเล็กๆ ให้แม่น'}
@@ -185,7 +185,7 @@ export default function SpinAnnotator({
                 {f.isPdf
                   ? <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg3)', fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>PDF</div>
                   : <img src={f._preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
-                {!readOnlyFrames && onRemoveFrame && <button onClick={e => { e.stopPropagation(); onRemoveFrame(f._key) }} title="ลบรูปนี้" aria-label="ลบรูปนี้"
+                {!readOnlyFrames && onRemoveFrame && <button onClick={e => { e.stopPropagation(); onRemoveFrame(f._key) }} title={tr('ลบรูปนี้')} aria-label={tr('ลบรูปนี้')}
                   style={{ position: 'absolute', top: -1, right: -1, width: 16, height: 16, borderRadius: '0 0 0 5px', background: '#e05c4a', color: '#fff', fontSize: 11, lineHeight: '16px', textAlign: 'center', border: 'none', cursor: 'pointer', padding: 0 }}>×</button>}
                 <span style={{ position: 'absolute', bottom: 0, left: 0, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, padding: '0 4px', borderRadius: '0 4px 0 0' }}>{cnt ? `${i + 1}·${cnt}📍` : i + 1}</span>
               </div>
@@ -193,7 +193,7 @@ export default function SpinAnnotator({
             </div>
           )
         })}
-        {!readOnlyFrames && onAddFrames && <label title={subject === 'part' ? 'เพิ่มแผ่น Drawing' : 'เพิ่มรูป'} style={{ width: 46, height: 40, borderRadius: 'var(--r-md)', border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
+        {!readOnlyFrames && onAddFrames && <label title={subject === 'part' ? tr('เพิ่มแผ่น Drawing') : tr('เพิ่มรูป')} style={{ width: 46, height: 40, borderRadius: 'var(--r-md)', border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
           <input type="file" accept={acceptPdf ? 'image/*,application/pdf' : 'image/*'} multiple hidden disabled={busy} onChange={async e => {
             const picked = [...(e.target.files || [])];
             e.target.value = '';
@@ -220,12 +220,12 @@ export default function SpinAnnotator({
                 if (ok) onReplaceFrame(cur._key, ok)
               }} />
               <button type="button" style={tinyBtn} disabled={busy} onClick={() => replaceRef.current?.click()}
-                title="เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม">{tr('เปลี่ยนรูป')}</button>
+                title={tr('เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม')}>{tr('เปลี่ยนรูป')}</button>
             </>
           )}
         </div>
       )}
-      {isPdf && <div style={{ fontSize: 11.5, color: '#f59a3f', fontWeight: 700 }}>⚠️ แผ่น PDF ปักหมุดไม่ได้ — ถ้าต้องการหมุดให้อัปเป็นรูปภาพ (PNG/JPG)</div>}
+      {isPdf && <div style={{ fontSize: 11.5, color: '#f59a3f', fontWeight: 700 }}>{tr('⚠️ แผ่น PDF ปักหมุดไม่ได้ — ถ้าต้องการหมุดให้อัปเป็นรูปภาพ (PNG/JPG)')}</div>}
 
       {!readOnlyFrames && <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         {spinnable
@@ -235,12 +235,12 @@ export default function SpinAnnotator({
       {/* ⚠️ วิธีใช้ที่ถูก (feedback หน้างาน 2026-08-21) — รูปมุมแคบอย่าอัปเป็นเฟรมแยก
          เพราะคนตรวจจะไม่รู้ว่ามันอยู่ตรงไหนของเครื่อง */}
       {!readOnlyFrames && <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px', lineHeight: 1.65 }}>
-        💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็น{subject === 'part' ? 'ทั้งชิ้นงาน' : 'ทั้งเครื่อง'}แล้วปักหมุด</b> — ส่วนรูปโคลสอัพของแต่ละจุด
-        ให้แนบที่ช่อง <b>รูปจุด</b> ในการ์ดจุดตรวจ (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
+        💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็น{subject === 'part' ? 'ทั้งชิ้นงาน' : 'ทั้งเครื่อง'}{tr('แล้วปักหมุด')}</b> — ส่วนรูปโคลสอัพของแต่ละจุด
+        ให้แนบที่ช่อง <b>{tr('รูปจุด')}</b> ในการ์ดจุดตรวจ (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
         {subject !== 'part' && <div style={{ marginTop: 3, opacity: 0.85 }}>อัปรูปโคลสอัพเป็นเฟรมแยกตรงนี้ = คนตรวจไม่รู้ว่าอยู่ตรงไหนของเครื่อง</div>}
         {/* 📐 บอกตรงจุดอัป (user 23/09) — คนอัปคือคนเดียวที่แก้เรื่องนี้ได้ ตอนถ่ายเท่านั้น
             ตัวจำกัดขนาดรูปบนมือถือคือ "ความสูง" ⇒ แนวนอน 4:3/16:9 เต็มความกว้างพอดี */}
-        <div style={{ marginTop: 3, opacity: 0.85 }}>{subject === 'part' ? 'จัดแผ่น/ถ่ายรูปชิ้นงาน' : 'ถ่าย/จัดกรอบ'}เป็น <b>แนวนอน</b> รูปจะเต็มความกว้างจอมือถือตอนตรวจ — แนวตั้งจะเหลือขอบว่างข้างละครึ่งจอ</div>
+        <div style={{ marginTop: 3, opacity: 0.85 }}>{subject === 'part' ? 'จัดแผ่น/ถ่ายรูปชิ้นงาน' : 'ถ่าย/จัดกรอบ'}{tr('เป็น')} <b>{tr('แนวนอน')}</b> {tr('รูปจะเต็มความกว้างจอมือถือตอนตรวจ — แนวตั้งจะเหลือขอบว่างข้างละครึ่งจอ')}</div>
       </div>}
     </div>
   )

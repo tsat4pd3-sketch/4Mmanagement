@@ -127,7 +127,7 @@ export default function DieStatusBoard({
     <div>
       {!ready && (
         <div data-page-note="1" style={{ ...warnBox, marginBottom: 12 }}>
-          <b>⚠️ สถานะ manual ยังใช้ไม่ได้</b> — {MIGRATION_HINT}
+          <b>{tr('⚠️ สถานะ manual ยังใช้ไม่ได้')}</b> — {MIGRATION_HINT}
           <div style={{ marginTop: 3, color: 'var(--muted)' }}>คอลัมน์ "ใบซ่อม MO ค้าง" ยังแสดงได้ปกติ (อ่านจากระบบแจ้งซ่อมโดยตรง)</div>
         </div>
       )}
@@ -170,7 +170,7 @@ export default function DieStatusBoard({
         </div>
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / พาร์ท / หมายเหตุ" />
         <span className="spacer" />
-        <span className="filter-count">แสดง {rows.length} ตัว</span>
+        <span className="filter-count">{tr('แสดง')} {rows.length} {tr('ตัว')}</span>
       </FilterBar>
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
@@ -203,20 +203,20 @@ export default function DieStatusBoard({
                           onChange={ev => changeStatus(d, ev.target.value)}
                           style={{ ...inp, width: '100%', padding: '5px 7px', fontSize: 12, borderColor: meta.color, color: meta.color, fontWeight: 700 }}>
                           <option value="">{tr('❔ ยังไม่ระบุสถานะ')}</option>
-                          {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
+                          {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {tr(s.label)}</option>)}
                         </select>
                       ) : (
                         <span style={{
                           fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
                           color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`, whiteSpace: 'nowrap',
-                        }}>{meta.icon} {meta.label}</span>
+                        }}>{meta.icon} {tr(meta.label)}</span>
                       )}
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, display: 'flex', gap: 4, alignItems: 'baseline' }}>
                         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.status_note || ''}>
                           {e.status_note ? `📝 ${e.status_note}` : ''}
                         </span>
                         {canEdit && ready && (
-                          <button onClick={() => editNote(d)} title="แก้หมายเหตุสถานะ"
+                          <button onClick={() => editNote(d)} title={tr('แก้หมายเหตุสถานะ')}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--muted)', padding: 0 }}>✎</button>
                         )}
                       </div>
@@ -225,7 +225,7 @@ export default function DieStatusBoard({
                       <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.machine_no}>{d.machine_no}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {setNameOf(d) || '—'}{e.op_seq != null ? ` · OP${e.op_seq}` : ''}
-                        {feedLineOf(d) ? <> · ป้อนไลน์ <b style={{ color: 'var(--text2)' }}>{feedLineOf(d)}</b></> : null}
+                        {feedLineOf(d) ? <> {tr('· ป้อนไลน์')} <b style={{ color: 'var(--text2)' }}>{feedLineOf(d)}</b></> : null}
                       </div>
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.line_name || '—'}</td>
@@ -243,12 +243,12 @@ export default function DieStatusBoard({
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       {placed ? (
-                        <button onClick={() => onShowOnMap(d)} title="ดูตำแหน่งบนผังจัดเก็บ"
+                        <button onClick={() => onShowOnMap(d)} title={tr('ดูตำแหน่งบนผังจัดเก็บ')}
                           style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 11.5, color: 'var(--text)', cursor: 'pointer' }}>
                           {areaNameOf(e.area_id) || tr('ดูบนผัง')}
                         </button>
                       ) : (
-                        <span style={{ fontSize: 11.5, color: '#f59e0b' }} title="ไปวางที่แท็บผังจัดเก็บ">ยังไม่วางบนผัง</span>
+                        <span style={{ fontSize: 11.5, color: '#f59e0b' }} title={tr('ไปวางที่แท็บผังจัดเก็บ')}>{tr('ยังไม่วางบนผัง')}</span>
                       )}
                     </td>
                     <td style={{ ...tdStyle, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
@@ -261,7 +261,7 @@ export default function DieStatusBoard({
                 );
               })}
               {!rows.length && (
-                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>ไม่พบแม่พิมพ์ตามเงื่อนไข</td></tr>
+                <tr><td colSpan={9} style={{ ...tdStyle, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>{tr('ไม่พบแม่พิมพ์ตามเงื่อนไข')}</td></tr>
               )}
             </tbody>
           </table>

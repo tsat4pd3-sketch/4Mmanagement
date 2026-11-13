@@ -9,6 +9,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 import { bandProgress, daysToNextBand, evidenceState, shadowDelta } from '../utils/skillExp';
 
+import { tr } from '../utils/i18n';
 const box = {
   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 7,
   padding: '8px 10px', minWidth: 104, flex: '1 1 104px',
@@ -39,7 +40,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>● {st.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>● {tr(st.label)}</span>
         {/* 🔴 ประเมินไม่ได้ ≠ คะแนน 0 — ต้องเขียนบนจอตรงๆ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ) */}
         {ev.shadow_score == null ? (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -59,7 +60,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <div style={box}>
-          <div style={capLabel}>รอบสะสม (shot)</div>
+          <div style={capLabel}>{tr('รอบสะสม (shot)')}</div>
           <div style={capValue}>{nf(ev.cum_cycles)}</div>
           <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--border2)', marginTop: 5, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.round(prog * 100)}%`, background: 'var(--accent)' }} />
@@ -73,7 +74,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         </div>
 
         <div style={box}>
-          <div style={capLabel}>ของเสียเทียบไลน์</div>
+          <div style={capLabel}>{tr('ของเสียเทียบไลน์')}</div>
           <div style={{ ...capValue, color: ev.quality_ok === false ? '#ef4444' : 'var(--text)' }}>
             {ev.ng_ratio == null ? '–' : `${Number(ev.ng_ratio).toFixed(2)}x`}
           </div>
@@ -83,15 +84,15 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         </div>
 
         <div style={box}>
-          <div style={capLabel}>ความหลากหลาย</div>
-          <div style={capValue}>{parts} รุ่น</div>
+          <div style={capLabel}>{tr('ความหลากหลาย')}</div>
+          <div style={capValue}>{parts} {tr('รุ่น')}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            เปลี่ยนรุ่น {nf(ev.n_changeover)} · เจอเหตุ {nf(ev.n_abnormal)} วัน
+            เปลี่ยนรุ่น {nf(ev.n_changeover)} {tr('· เจอเหตุ')} {nf(ev.n_abnormal)} วัน
           </div>
         </div>
 
         <div style={box}>
-          <div style={capLabel}>การรับรอง</div>
+          <div style={capLabel}>{tr('การรับรอง')}</div>
           <div style={capValue}>
             {ev.has_ojt ? '✅' : '—'} OJT {ev.is_trainer ? ' · ' : ''}
           </div>
@@ -103,8 +104,8 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
         {!compact && (
           <div style={box}>
-            <div style={capLabel}>มาทำงาน</div>
-            <div style={capValue}>{nf(ev.days_worked)} วัน</div>
+            <div style={capLabel}>{tr('มาทำงาน')}</div>
+            <div style={capValue}>{nf(ev.days_worked)} {tr('วัน')}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
               ล่าสุด {ev.last_worked_date || '–'}
             </div>
@@ -115,7 +116,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
       {missing.length > 0 && (
         <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                       background: 'var(--bg2)', border: '1px solid rgba(245,158,11,0.35)' }}>
-          <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังขาด:</span>{' '}
+          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{tr('ยังขาด:')}</span>{' '}
           <span style={{ color: 'var(--text2)' }}>{missing.join(' · ')}</span>
         </div>
       )}

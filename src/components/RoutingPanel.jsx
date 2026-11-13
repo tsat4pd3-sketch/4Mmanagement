@@ -82,7 +82,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
 
   const byLine = useMemo(() => {
     const g = {};
-    filtered.forEach(p => { (g[p.line_name || '— ไม่ระบุไลน์'] ||= []).push(p); });
+    filtered.forEach(p => { (g[p.line_name || tr('— ไม่ระบุไลน์')] ||= []).push(p); });
     return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
@@ -207,12 +207,12 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
 
       {/* ── ขวา: ขั้นตอน ── */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
-        {!sel && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 28, textAlign: 'center' }}>เลือกพาร์ททางซ้ายเพื่อกำหนดลำดับกระบวนการ</div>}
+        {!sel && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 28, textAlign: 'center' }}>{tr('เลือกพาร์ททางซ้ายเพื่อกำหนดลำดับกระบวนการ')}</div>}
         {sel && <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{sel.mat_no} · {sel.name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไลน์ใน Product Master: {sel.line_name || '—'} · CT {sel.cycle_time_sec ?? '—'} sec</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ไลน์ใน Product Master:')} {sel.line_name || '—'} · CT {sel.cycle_time_sec ?? '—'} sec</div>
             </div>
             {canEdit && <div style={{ display: 'flex', gap: 8 }}>
               {!steps.length && sel.line_name && (
@@ -224,11 +224,11 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             </div>}
           </div>
 
-          {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
+          {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
           {!loading && !steps.length && (
             <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่ได้กำหนดลำดับกระบวนการ<br />
-              <span style={{ fontSize: 12 }}>VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing</span>
+              <span style={{ fontSize: 12 }}>{tr('VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing')}</span>
             </div>
           )}
 
@@ -249,7 +249,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
                         {r.is_outsourced
-                          ? <span style={{ color: '#a78bfa' }}>จ้างนอก · {r.vendor_name}</span>
+                          ? <span style={{ color: '#a78bfa' }}>{tr('จ้างนอก ·')} {r.vendor_name}</span>
                           : (r.line_name || '—')}
                       </td>
                       {[r.ct_sec, r.setup_sec, r.lot_size, r.operators].map((v, k) => (
@@ -262,12 +262,12 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '5px 8px', borderTop: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
                         {canEdit && <>
-                          <button onClick={() => move(i, -1)} disabled={i === 0} title="เลื่อนขึ้น"
+                          <button onClick={() => move(i, -1)} disabled={i === 0} title={tr('เลื่อนขึ้น')}
                             style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, fontSize: 13 }}>▲</button>
-                          <button onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="เลื่อนลง"
+                          <button onClick={() => move(i, 1)} disabled={i === steps.length - 1} title={tr('เลื่อนลง')}
                             style={{ background: 'none', border: 'none', cursor: i === steps.length - 1 ? 'default' : 'pointer', opacity: i === steps.length - 1 ? 0.3 : 1, fontSize: 13 }}>▼</button>
-                          <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
-                          <DeleteButton onClick={() => remove(r)} title="ลบ" />
+                          <button onClick={() => openEdit(r)} title={tr('แก้ไข')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
+                          <DeleteButton onClick={() => remove(r)} title={tr('ลบ')} />
                         </>}
                       </td>
                     </tr>
@@ -329,7 +329,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                 <label style={lbl}>{tr('กระบวนการ')}</label>
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inp}>
                   <option value="">{tr('— ไม่ระบุ —')}</option>
-                  {activeProcessTypes().map(p => <option key={p.key} value={p.key}>{p.icon || ''} {p.label}</option>)}
+                  {activeProcessTypes().map(p => <option key={p.key} value={p.key}>{p.icon || ''} {tr(p.label)}</option>)}
                 </select>
               </div>
               {[

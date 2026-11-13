@@ -151,7 +151,7 @@ export default function StoreCallSiren({ slot = 0 }) {
     if (!muted) return null;
     /* ชิปสถานะความพร้อม — ห้ามกระพริบ/ห้ามแดง (UI-CONVENTIONS §2) */
     return (
-      <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
+      <div onClick={unlockNow} title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่')}
         style={fixed({ bottom: chipBottom, right: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7,
           background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)',
           padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' })}>
@@ -179,18 +179,18 @@ export default function StoreCallSiren({ slot = 0 }) {
               <MatLabel mat={a.mat_no} name={a.part_name} size={12.5} />
               <div style={{ fontSize: 12, color: '#c6efd8' }}>
                 ขอ {Number(a.request_qty || 0).toLocaleString()} ชิ้น
-                {' · '}แจ้ง {hhmm(a.requested_at)}{wait != null ? ` (รอมาแล้ว ${wait.toLocaleString()} นาที)` : ''}
+                {' · '}{tr('แจ้ง')} {hhmm(a.requested_at)}{wait != null ? ` (รอมาแล้ว ${wait.toLocaleString()} นาที)` : ''}
                 {a.requested_by ? ` · โดย ${a.requested_by}` : ''}
                 {' · '}{reqSourceMeta(a.source).short}
               </div>
             </div>
             {muted && (
-              <span onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ"
+              <span onClick={unlockNow} title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ')}
                 style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
                 แตะเพื่อเปิดเสียง
               </span>
             )}
-            <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)"
+            <button onClick={() => goPrep(a)} title={tr('ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)')}
               style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
               {tr('ไปเตรียมงาน')}

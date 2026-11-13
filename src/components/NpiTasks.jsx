@@ -78,13 +78,13 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>✅ งานในโปรเจค ({rows.length}{hidden ? ` · ซ่อน ${hidden}` : ''})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('✅ งานในโปรเจค (')}{rows.length}{hidden ? ` · ซ่อน ${hidden}` : ''})</div>
           <label style={{ fontSize: 12 }}><input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} /> {tr('แสดงที่เสร็จ/ยกเลิก')}</label>
           <label style={{ fontSize: 12 }}><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} /> {tr('เฉพาะของฉัน')}</label>
         </div>
         {canEdit && <button style={btn()} onClick={() => setModal({ title: '', detail: '', part_id: '', phase_code: '', deliverable_id: '', assignee_name: '', assignee_uid: '', due_date: '', status: 'open' })}>{tr('+ งาน')}</button>}
       </div>
-      {!rows.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tasks.length ? 'ไม่มีงานตามตัวกรอง' : 'ยังไม่มีงาน'}</div> : (
+      {!rows.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tasks.length ? tr('ไม่มีงานตามตัวกรอง') : tr('ยังไม่มีงาน')}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th style={thSt}></th><th style={thSt}>{tr('งาน')}</th><th style={thSt}>{tr('พาร์ท/เฟส')}</th><th style={thSt}>{tr('ผู้รับ')}</th><th style={thSt}>{tr('กำหนด')}</th><th style={thSt}>{tr('สถานะ')}</th><th style={thSt}></th></tr></thead>
@@ -96,17 +96,17 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                 return (
                   <tr key={t.id}>
                     <td style={tdSt}><LightDot light={lt} /></td>
-                    <td style={{ ...tdSt, minWidth: 220 }}><div style={{ fontWeight: 700, color: 'var(--text)' }}>{t.title}</div>{t.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{t.detail}</div>}{dv && <div style={{ fontSize: 11, color: '#4d9fff' }}>{dv.label}</div>}</td>
-                    <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>ทั้งโปรเจค</span>}{t.phase_code && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tplPhases.find(x => x.code === t.phase_code)?.label || t.phase_code}</div>}</td>
-                    <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>ยังไม่มอบหมาย</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน</div>}</td>
+                    <td style={{ ...tdSt, minWidth: 220 }}><div style={{ fontWeight: 700, color: 'var(--text)' }}>{t.title}</div>{t.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{t.detail}</div>}{dv && <div style={{ fontSize: 11, color: '#4d9fff' }}>{tr(dv.label)}</div>}</td>
+                    <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>{tr('ทั้งโปรเจค')}</span>}{t.phase_code && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tplPhases.find(x => x.code === t.phase_code)?.label || t.phase_code}</div>}</td>
+                    <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>{tr('ยังไม่มอบหมาย')}</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน')}</div>}</td>
                     <td style={{ ...tdSt, color: lt === 'red' ? '#ef4444' : undefined, fontWeight: lt === 'red' ? 800 : 400 }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
-                    <td style={tdSt}><Pill label={TASK_STATUS[t.status]?.label} color={TASK_STATUS[t.status]?.color} /></td>
+                    <td style={tdSt}><Pill label={tr(TASK_STATUS[t.status]?.label)} color={TASK_STATUS[t.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                       {canEdit && t.status !== 'done' && t.status !== 'cancelled' && <>
                         {t.status === 'open' && <button style={{ ...ghost, padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'doing')}>{tr('▶ เริ่ม')}</button>}{' '}
                         <button style={{ ...btn('#22c55e'), padding: '2px 8px', fontSize: 11 }} onClick={() => quick(t, 'done')}>{tr('✓ เสร็จ')}</button>{' '}
                       </>}
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <DeleteButton onClick={() => del(t)} title="ลบ" /></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setModal({ ...t, _orig_uid: t.assignee_uid, part_id: t.part_id || '', phase_code: t.phase_code || '', deliverable_id: t.deliverable_id || '', assignee_name: t.assignee_name || '', assignee_uid: t.assignee_uid || '', due_date: t.due_date || '', detail: t.detail || '' })}>✏️</button> <DeleteButton onClick={() => del(t)} title={tr('ลบ')} /></>}
                     </td>
                   </tr>
                 );
@@ -117,20 +117,20 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
       )}
 
       {modal && (
-        <Modal title={modal.id ? 'แก้ไขงาน' : 'มอบหมายงาน'} onClose={() => setModal(null)} width={620}
+        <Modal title={modal.id ? tr('แก้ไขงาน') : tr('มอบหมายงาน')} onClose={() => setModal(null)} width={620}
           footer={<><button style={ghost} onClick={() => setModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={save}>{saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ชื่องาน *" span={2}><input style={inp} value={modal.title} onChange={e => setModal({ ...modal, title: e.target.value })} /></Field>
-            <Field label="รายละเอียด" span={2}><textarea style={{ ...inp, minHeight: 56 }} value={modal.detail || ''} onChange={e => setModal({ ...modal, detail: e.target.value })} /></Field>
-            <Field label="พาร์ท"><select style={inp} value={modal.part_id} onChange={e => setModal({ ...modal, part_id: e.target.value, deliverable_id: '' })}><option value="">{tr('ทั้งโปรเจค')}</option>{parts.map(p => <option key={p.id} value={p.id}>{tr(p.part_no)}</option>)}</select></Field>
-            <Field label="เฟส"><select style={inp} value={modal.phase_code} onChange={e => setModal({ ...modal, phase_code: e.target.value })}><option value="">—</option>{tplPhases.map(p => <option key={p.code} value={p.code}>{tr(p.label)}</option>)}</select></Field>
-            <Field label="รายการเอกสารที่เกี่ยว" span={2}><select style={inp} value={modal.deliverable_id} onChange={e => { const d = partDelivs.find(x => x.id === e.target.value); setModal({ ...modal, deliverable_id: e.target.value, phase_code: d?.phase_code || modal.phase_code }); }} disabled={!modal.part_id}><option value="">{modal.part_id ? '—' : 'เลือกพาร์ทก่อน'}</option>{partDelivs.map(d => <option key={d.id} value={d.id}>{tr(d.label)}</option>)}</select></Field>
-            <Field label="ผู้รับมอบหมาย" hint="user ระบบ = แจ้งเตือนเข้ากระดิ่ง · พิมพ์ชื่อเองก็ได้">
+            <Field label={tr('ชื่องาน *')} span={2}><input style={inp} value={modal.title} onChange={e => setModal({ ...modal, title: e.target.value })} /></Field>
+            <Field label={tr('รายละเอียด')} span={2}><textarea style={{ ...inp, minHeight: 56 }} value={modal.detail || ''} onChange={e => setModal({ ...modal, detail: e.target.value })} /></Field>
+            <Field label={tr('พาร์ท')}><select style={inp} value={modal.part_id} onChange={e => setModal({ ...modal, part_id: e.target.value, deliverable_id: '' })}><option value="">{tr('ทั้งโปรเจค')}</option>{parts.map(p => <option key={p.id} value={p.id}>{tr(p.part_no)}</option>)}</select></Field>
+            <Field label={tr('เฟส')}><select style={inp} value={modal.phase_code} onChange={e => setModal({ ...modal, phase_code: e.target.value })}><option value="">—</option>{tplPhases.map(p => <option key={p.code} value={p.code}>{tr(p.label)}</option>)}</select></Field>
+            <Field label={tr('รายการเอกสารที่เกี่ยว')} span={2}><select style={inp} value={modal.deliverable_id} onChange={e => { const d = partDelivs.find(x => x.id === e.target.value); setModal({ ...modal, deliverable_id: e.target.value, phase_code: d?.phase_code || modal.phase_code }); }} disabled={!modal.part_id}><option value="">{modal.part_id ? '—' : tr('เลือกพาร์ทก่อน')}</option>{partDelivs.map(d => <option key={d.id} value={d.id}>{tr(d.label)}</option>)}</select></Field>
+            <Field label={tr('ผู้รับมอบหมาย')} hint={tr('user ระบบ = แจ้งเตือนเข้ากระดิ่ง · พิมพ์ชื่อเองก็ได้')}>
               <SearchSelect value={modal.assignee_uid} text={modal.assignee_name} options={userOpts} allowFree placeholder={tr('ค้นชื่อ…')}
                 onChange={({ id, text }) => setModal({ ...modal, assignee_uid: id || '', assignee_name: text })} />
             </Field>
-            <Field label="กำหนดเสร็จ"><input type="date" style={inp} value={modal.due_date} onChange={e => setModal({ ...modal, due_date: e.target.value })} /></Field>
-            <Field label="สถานะ"><MetaSelect value={modal.status} onChange={v => setModal({ ...modal, status: v })} meta={TASK_STATUS} /></Field>
+            <Field label={tr('กำหนดเสร็จ')}><input type="date" style={inp} value={modal.due_date} onChange={e => setModal({ ...modal, due_date: e.target.value })} /></Field>
+            <Field label={tr('สถานะ')}><MetaSelect value={modal.status} onChange={v => setModal({ ...modal, status: v })} meta={TASK_STATUS} /></Field>
           </div>
         </Modal>
       )}

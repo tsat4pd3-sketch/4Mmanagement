@@ -78,7 +78,7 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
       inactive={!p.is_active}
       closeup={{ preview: p._imgPreview, onPick: f => onChange({ _imgFile: f }), onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 8, marginBottom: 8 }}>
-        <input value={p.balloon_no} onChange={e => onChange({ balloon_no: e.target.value })} placeholder="No." aria-label="เลข balloon" title="เลข balloon ตามแบบ เช่น H35, A1, 7" />
+        <input value={p.balloon_no} onChange={e => onChange({ balloon_no: e.target.value })} placeholder="No." aria-label={tr('เลข balloon')} title={tr('เลข balloon ตามแบบ เช่น H35, A1, 7')} />
         <input value={p.characteristic} onChange={e => onChange({ characteristic: e.target.value })} placeholder={tr('ชื่อจุดตรวจ เช่น ความกว้างร่อง A')} />
       </div>
 
@@ -100,13 +100,13 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
           {/* พรีวิวจากค่าชุดเดียวกับที่ตัดสินอัตโนมัติ (utils/qaSpec — ห้ามประกอบข้อความสเปคเอง) */}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
             จอตรวจจะแสดงสเปคว่า <b style={{ color: 'var(--text)' }}>{specLabel(p)}</b>
-            {p.lsl === '' && p.usl === '' && <span style={{ color: '#f59e0b' }}> · ยังไม่ตั้ง LSL/USL — ระบบไม่ตัดสินอัตโนมัติ</span>}
+            {p.lsl === '' && p.usl === '' && <span style={{ color: '#f59e0b' }}> {tr('· ยังไม่ตั้ง LSL/USL — ระบบไม่ตัดสินอัตโนมัติ')}</span>}
           </div>
         </>
       )}
       <div style={{ marginBottom: 8 }}>
-        <label style={S.label}>{isVar ? 'ข้อความตามแบบ (แสดงเมื่อไม่ได้ตั้ง LSL/USL)' : 'เกณฑ์ตัดสิน (Quality standard)'}</label>
-        <input value={p.spec_text} onChange={e => onChange({ spec_text: e.target.value })} placeholder={isVar ? 'เช่น "5 ± 1.5"' : 'เช่น ไม่มีครีบ / GO-NOGO ผ่าน'} />
+        <label style={S.label}>{isVar ? tr('ข้อความตามแบบ (แสดงเมื่อไม่ได้ตั้ง LSL/USL)') : tr('เกณฑ์ตัดสิน (Quality standard)')}</label>
+        <input value={p.spec_text} onChange={e => onChange({ spec_text: e.target.value })} placeholder={isVar ? tr('เช่น "5 ± 1.5"') : tr('เช่น ไม่มีครีบ / GO-NOGO ผ่าน')} />
       </div>
 
       <div className="mgrid" style={S.row2}>
@@ -152,12 +152,12 @@ function TitlePicker({ current, used, onPick, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>ตั้งชื่อแผ่น/มุมมอง</div>
+        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>{tr('ตั้งชื่อแผ่น/มุมมอง')}</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
           {STANDARD_VIEWS.map(v => {
             const taken = used.includes(v) && v !== current;
             return (
-              <button key={v} type="button" disabled={taken} onClick={() => onPick(v)} title={taken ? 'มีแผ่นชื่อนี้อยู่แล้ว' : ''}
+              <button key={v} type="button" disabled={taken} onClick={() => onPick(v)} title={taken ? tr('มีแผ่นชื่อนี้อยู่แล้ว') : ''}
                 style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, cursor: taken ? 'not-allowed' : 'pointer', opacity: taken ? 0.4 : 1,
                   border: '1px solid var(--border2)', background: v === current ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)' }}>
                 {v}{taken ? ' ✓' : ''}
@@ -445,9 +445,9 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
     <InspectEditorModal wide={wide} bodyRef={bodyRef} onClose={onClose} onSave={handleSave} saving={saving}
       title={`ตั้งค่าจุดตรวจ — ${part.part_no || part.part_name || 'ชิ้นงาน'}`} subtitle={[part.part_name, part.customer].filter(Boolean).join(' · ') || 'ชิ้นงาน'}>
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
       ) : loadErr ? (
-        <div style={{ padding: 16, color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดข้อมูลไม่สำเร็จ ({loadErr}) — ปิดแล้วเปิดใหม่ · ยังไม่ได้แก้อะไร</div>
+        <div style={{ padding: 16, color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดข้อมูลไม่สำเร็จ (')}{loadErr}) — ปิดแล้วเปิดใหม่ · ยังไม่ได้แก้อะไร</div>
       ) : (
         <PinWorkspace twoCol={wide} stickyRef={stickyRef}
           boardTitle="Drawing / รูปชิ้นงาน (หลายแผ่น) + จุดตรวจ"
@@ -470,7 +470,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
               onRenameFrame={key => setTitleFor(key)} onReplaceFrame={replaceFrame}
               pinHasDetail={Object.fromEntries(points.map(p => [p._key, !!(p._imgPreview || p.image_path)]))} />
           )}
-          boardFooter={activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ เลือกแผ่นที่เห็นจุดชัด แล้วแตะวางตำแหน่ง</p>}
+          boardFooter={activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{tr('✦ เลือกแผ่นที่เห็นจุดชัด แล้วแตะวางตำแหน่ง')}</p>}
           listTitle={`จุดตรวจชิ้นงาน (${points.length})`} onAdd={addPoint}
           jump={{ points: points.map(p => ({ _key: p._key, name: p.characteristic, group_name: '' })), labels, onJump: jumpTo, flashKey, onTop: scrollTop }}>
           {points.map(p => (

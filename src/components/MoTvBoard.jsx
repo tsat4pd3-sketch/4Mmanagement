@@ -28,6 +28,7 @@ import {
   buildMoTvBoard, fmtWait, moTvGroupMeta, MO_TV_GROUPS, MO_TV_COLS, MO_TV_DONE_FILTER,
 } from '../utils/moTvBoard';
 
+import { tr } from '../utils/i18n';
 /** เพดานแถว — ใบเปิดทั้งโรงงาน ~400 ใบ (13/10) · ชนเพดาน = จอเขียนบอกว่าอาจไม่ครบ */
 const CAP = 1000;
 
@@ -95,7 +96,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
         <div style={{ fontSize: fz(18, 40), fontWeight: 900, color: 'var(--text)', lineHeight: 1.2 }}>{title}</div>
         <div style={{ fontSize: fz(13, 24), color: 'var(--text2)', fontWeight: 700 }}>{teamLabel}</div>
         <div style={{ marginLeft: 'auto', fontSize: fz(26, 60), fontWeight: 900, color: worst === 'none' ? 'var(--text)' : statusColor(worst), lineHeight: 1 }}>
-          {rows ? board.rows.length : '…'} <span style={{ fontSize: fz(13, 26), fontWeight: 700, color: 'var(--text2)' }}>ใบ</span>
+          {rows ? board.rows.length : '…'} <span style={{ fontSize: fz(13, 26), fontWeight: 700, color: 'var(--text2)' }}>{tr('ใบ')}</span>
         </div>
       </div>
 
@@ -113,16 +114,16 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
-              {x.icon} {x.label} · {rows ? n : '…'}
+              {x.icon} {tr(x.label)} · {rows ? n : '…'}
             </button>
           );
         })}
       </div>
 
       {/* 🔴 ความซื่อสัตย์ของจอ — ห้ามซ่อนบน TV (ย่อเป็นบรรทัดสั้นตัวใหญ่) */}
-      {err && <Warn tv={tv} fz={fz}>⚠ โหลดใบ MO ไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})</Warn>}
+      {err && <Warn tv={tv} fz={fz}>{tr('⚠ โหลดใบ MO ไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง (')}{err})</Warn>}
       {board.badGroup && <Warn tv={tv} fz={fz}>⚠ ค่า mo=&quot;{group}&quot; ไม่รู้จัก — แสดงทุกขั้นแทน (แก้ลิงก์ที่หน้าตั้งค่าจอวน)</Warn>}
-      {rows && rows.length >= CAP && <Warn tv={tv} fz={fz}>⚠ ใบเปิดเกิน {CAP} ใบ — จออาจแสดงไม่ครบ</Warn>}
+      {rows && rows.length >= CAP && <Warn tv={tv} fz={fz}>{tr('⚠ ใบเปิดเกิน')} {CAP} {tr('ใบ — จออาจแสดงไม่ครบ')}</Warn>}
 
       {/* ที่ซ่อน/ประมาณ — เขียนให้เห็นเสมอ (กรองแล้วต้องบอกว่าซ่อนกี่รายการ)
           วางก่อนกล่องแบ่งหน้า: useTvPager ตั้งความสูงกล่องถึงขอบล่างจอ ⇒ ของที่อยู่ใต้กล่องตกจอ */}
@@ -141,7 +142,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
             ✅ ไม่มีใบค้างในกองนี้
           </div>
         )}
-        {!rows && !err && <div style={{ textAlign: 'center', padding: 28, color: 'var(--muted)', fontSize: fz(14, 26) }}>กำลังโหลด...</div>}
+        {!rows && !err && <div style={{ textAlign: 'center', padding: 28, color: 'var(--muted)', fontSize: fz(14, 26) }}>{tr('กำลังโหลด...')}</div>}
         <div style={{ display: 'grid', gridTemplateColumns: cols, gap: tv ? 14 : 10, alignContent: 'start' }}>
           {board.rows.map(r => <MoCard key={r.o.id} r={r} tv={tv} fz={fz} showStage={!g} />)}
         </div>
@@ -172,7 +173,7 @@ function MoCard({ r, tv, fz, showStage }) {
       display: 'flex', flexDirection: 'column', gap: tv ? 6 : 4, minWidth: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-        <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: fz(14, 28), color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข)'}</span>
+        <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: fz(14, 28), color: 'var(--text)' }}>{o.mo_no || tr('(ยังไม่ออกเลข)')}</span>
         <span style={{ marginLeft: 'auto', fontWeight: 900, fontSize: fz(18, 40), color: ink, whiteSpace: 'nowrap' }}>
           {r.exact || r.ageMin == null ? '' : '≈'}{fmtWait(r.ageMin)}
         </span>
@@ -186,8 +187,8 @@ function MoCard({ r, tv, fz, showStage }) {
       <div style={{ fontSize: fz(12, 22), color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         <span>{deptNameOf(o.mtn_dept) || '–'}</span>
         {showStage && <span style={{ fontWeight: 800, color: 'var(--text)' }}>{r.waitIcon} {r.waitTitle}</span>}
-        {!showStage && r.waitWho && <span>รอ: {r.waitWho}</span>}
-        {techs ? <span>{techs}</span> : (reporter && <span>ผู้แจ้ง: {reporter}</span>)}
+        {!showStage && r.waitWho && <span>{tr('รอ:')} {r.waitWho}</span>}
+        {techs ? <span>{techs}</span> : (reporter && <span>{tr('ผู้แจ้ง:')} {reporter}</span>)}
         {r.group === 'other' && <span>{moStatusLabel(o)}</span>}
       </div>
     </div>

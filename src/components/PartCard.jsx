@@ -3,6 +3,7 @@ import { useMatIndex } from './MatLabel';
 import { matInfo } from '../utils/matLabel';
 import { textOn } from '../utils/statusZones';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🃏 PartCard — การ์ดพาร์ท/สต๊อกมาตรฐานของทั้งระบบ (2026-09-25 · คำสั่ง user)
 
    *"หลายจอที่เป็นการ์ดมอนิเตอร์สตอคในระบบ มีหลายแบบมาก audit และปรับให้เป็นมาตรฐานที
@@ -105,7 +106,7 @@ export default function PartCard({
                   · ค่านั้น **ไม่ถูกทิ้ง** — ตกมาเป็นบรรทัดรอง (clamp 2 บรรทัด + title ดูเต็มได้)
                   · รายละเอียด/ตัวเลขที่วัด → `src/utils/matLabel.js` §looksLikePartNo */}
               {head && (
-                <div title={info.lead === 'pno' ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
+                <div title={info.lead === 'pno' ? tr('Part No. ของลูกค้า') : tr('ชื่อชิ้นงาน / สเปควัตถุดิบ')}
                   style={{ fontSize: 13, fontWeight: 800, color: matTone || 'var(--text)',
                     ...(info.lead === 'pno' ? { fontFamily: 'monospace' } : { lineHeight: 1.3 }), ...PC_NUM }}>
                   {head}
@@ -125,7 +126,7 @@ export default function PartCard({
                   ⇒ ใช้ `--text2` ไม่ใช่ `--muted` และ 11.5px (เพดานจอ TV 11) */}
               {/* 🔎 02/10 feedback หน้างาน: *"เลข MAT SAP เล็กไป มองไม่เห็น"* — เดิม 11.5px สี text2
                   ⇒ 15px ตัวหนา สีข้อความหลัก ในกล่องพื้น bg2 (กวาดตาหาเจอเป็น "ป้ายรหัส" แยกจากชื่องาน) */}
-              <div title="เลข MAT (SAP) — เลขเดียวกับบาร์โค้ดบนกล่อง/บัตรคัมบัง · ใช้แยกพาร์ทที่ Part No. ซ้ำกัน"
+              <div title={tr('เลข MAT (SAP) — เลขเดียวกับบาร์โค้ดบนกล่อง/บัตรคัมบัง · ใช้แยกพาร์ทที่ Part No. ซ้ำกัน')}
                 style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, marginTop: 5,
                   padding: '2px 8px', borderRadius: 'var(--radius)', background: 'var(--bg2)', border: '1px solid var(--border)',
                   fontSize: 15, fontFamily: 'monospace', letterSpacing: 0.4, fontWeight: 800,
@@ -140,7 +141,7 @@ export default function PartCard({
                 fontSize: 12.5, fontWeight: 800, padding: '3px 9px', borderRadius: 'var(--radius)',
                 whiteSpace: 'nowrap', background: st.color || st.bg, border: `1px solid ${st.color || st.border}`,
                 color: st.color ? textOn(st.color) : 'var(--text)',
-              }}>{st.label}</span>
+              }}>{tr(st.label)}</span>
             )}
           </div>
           {sub && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{sub}</div>}
@@ -154,7 +155,7 @@ export default function PartCard({
         }}>
           {metric && (
             <div>
-              <div style={PC_LABEL}>{metric.label}</div>
+              <div style={PC_LABEL}>{tr(metric.label)}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1.15, whiteSpace: 'nowrap', ...PC_NUM }}>
                 {metric.value}
                 {metric.unit ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 4 }}>{metric.unit}</span> : null}
@@ -163,7 +164,7 @@ export default function PartCard({
           )}
           {aside && (
             <div style={{ minWidth: 0, textAlign: metric ? 'right' : 'left' }}>
-              <div style={PC_LABEL}>{aside.label}</div>
+              <div style={PC_LABEL}>{tr(aside.label)}</div>
               <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', lineHeight: 1.3, ...CLAMP2 }}
                 title={String(aside.value ?? '')}>{aside.value}</div>
             </div>

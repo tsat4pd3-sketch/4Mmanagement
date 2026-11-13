@@ -33,7 +33,7 @@ export default function InspectEditorModal({ title, subtitle, subColor, wide, bo
             <h2 style={S.title}>{title}</h2>
             {subtitle && <span style={{ fontSize: 12, color: subColor || 'var(--muted)' }}>{subtitle}</span>}
           </div>
-          <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <button onClick={onClose} aria-label={tr('ปิด')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div ref={bodyRef} style={S.body}>{children}</div>
         <div style={S.foot}>

@@ -131,7 +131,7 @@ function ActionList({ items, empty = '✅ ไม่มีงานค้าง',
           {it.tag && <span style={{ fontSize: 11, fontWeight: 700, color: it.tagColor || 'var(--muted)', whiteSpace: 'nowrap' }}>{it.tag}</span>}
         </button>
       ))}
-      {items.length > max && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>…และอีก {items.length - max} รายการ</div>}
+      {items.length > max && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('…และอีก')} {items.length - max} {tr('รายการ')}</div>}
     </div>
   );
 }
@@ -359,59 +359,59 @@ function ProductionView({ d, ctx }) {
     {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน (กติกาเดียวกับ QaView) */}
     {d.loadErr && (
       <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
-        🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+        🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>{tr('ไม่ครบ')}</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length}${forgottenDT.length ? ` · ลืมปิดรายการ ${forgottenDT.length}` : ''} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title={tr('ต้องทำตอนนี้')} sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length}${forgottenDT.length ? ` · ลืมปิดรายการ ${forgottenDT.length}` : ''} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
+      <Kpi label={tr('ผลิตวันนี้ / เป้า')} value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
       {/* 🔍 AM กะนี้ — ไม่มีทะเบียน ≠ ตรวจครบ · โหลดไม่ได้ = — (กฎความซื่อสัตย์ของจอ) */}
       <Kpi label={`AM ตรวจเครื่องแล้ว (${d.am?.shift?.label || 'กะนี้'})`}
         value={d.amErr ? '—' : amTotal ? `${amChecked}/${amTotal}` : '0'} unit={d.amErr || !amTotal ? '' : 'เครื่อง'}
         color={d.amErr ? undefined : amNg || amLate ? 'var(--red)' : amWait ? 'var(--amber)' : amTotal && amChecked === amTotal ? 'var(--green)' : undefined}
         sub={d.amErr ? 'โหลดสถานะ AM ไม่ได้' : !amTotal ? 'ไลน์ในขอบเขตยังไม่ลงทะเบียนเครื่อง AM' : `เลยเวลา ${amLate} · รอตรวจ ${amWait} · ยังไม่เริ่มผลิต ${amNotStarted}${amNg ? ` · ผิดปกติ ${amNg}` : ''}`} />
-      <Kpi label={liveN ? 'OEE วันนี้ (รวมค่าสด)' : 'OEE วันนี้'} value={oeeToday == null ? '—' : +oeeToday.toFixed(1)} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
+      <Kpi label={liveN ? tr('OEE วันนี้ (รวมค่าสด)') : tr('OEE วันนี้')} value={oeeToday == null ? '—' : +oeeToday.toFixed(1)} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
         sub={`${liveN ? `รวมค่าสด ${liveN} กะที่ยังเดิน (ยืนยันตอนปิดกะ) · ` : ''}${oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`}`} />
-      <Kpi label="Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? 'var(--amber)' : undefined}
+      <Kpi label={tr('Downtime นอกแผน')} value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? 'var(--amber)' : undefined}
         sub={`เมื่อวาน ${fmtNum(sum(prev, l => l.dt))} นาที`} />
-      <Kpi label="ของเสียวันนี้" value={fmtNum(sum(today, l => l.ng))} unit="ชิ้น" color={sum(today, l => l.ng) > 0 ? 'var(--red)' : undefined}
+      <Kpi label={tr('ของเสียวันนี้')} value={fmtNum(sum(today, l => l.ng))} unit="ชิ้น" color={sum(today, l => l.ng) > 0 ? 'var(--red)' : undefined}
         sub={`เมื่อวาน ${fmtNum(sum(prev, l => l.ng))} ชิ้น`} />
-      <Kpi label="คนเข้างาน" value={`${fmtNum(manpower.came)}/${fmtNum(manpower.head)}`}
+      <Kpi label={tr('คนเข้างาน')} value={`${fmtNum(manpower.came)}/${fmtNum(manpower.head)}`}
         sub={manpower.head ? `${Math.round(manpower.came / manpower.head * 100)}% ของกำลังคน` : '—'} />
-      <Kpi label="กะที่ยังไม่ปิด" value={openSess} unit="กะ" color={openSess ? 'var(--amber)' : 'var(--green)'}
-        sub={openSess ? 'ตัวเลขด้านบนยังไม่ครบทั้งวัน' : 'ปิดครบแล้ว'} />
+      <Kpi label={tr('กะที่ยังไม่ปิด')} value={openSess} unit="กะ" color={openSess ? 'var(--amber)' : 'var(--green)'}
+        sub={openSess ? tr('ตัวเลขด้านบนยังไม่ครบทั้งวัน') : tr('ปิดครบแล้ว')} />
     </div>
 
-    <Section title="ไลน์ที่ต้องเข้าไปช่วยก่อน" sub={`เรียงจาก % ทำได้น้อยสุด · วันงาน ${fmtDate(workDate)}`}>
+    <Section title={tr('ไลน์ที่ต้องเข้าไปช่วยก่อน')} sub={`เรียงจาก % ทำได้น้อยสุด · วันงาน ${fmtDate(workDate)}`}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 620 }}>
           <thead><tr><th style={TH}>{tr('ไลน์')}</th><th style={THR}>{tr('เป้า')}</th><th style={THR}>{tr('ผลิตได้')}</th><th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th><th style={THR}>NG</th></tr></thead>
           <tbody>
             {lineRows.map(l => (
               <tr key={l.line}>
-                <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: 'var(--amber)' }}> · ยังไม่ปิดกะ</span> : null}</td>
+                <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: 'var(--amber)' }}> {tr('· ยังไม่ปิดกะ')}</span> : null}</td>
                 <td style={TDR}>{fmtNum(l.target)}</td><td style={TDR}>{fmtNum(l.actual)}</td>
                 <td style={{ ...TDR, color: pctCol(l.pct), fontWeight: 700 }}>{l.pct == null ? '—' : l.pct + '%'}</td>
-                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }} title={l.oeeLive ? 'รวมค่าสดของกะที่ยังเดิน — ตัวเลขจริงยืนยันตอนปิดกะ' : undefined}>{l.oee == null ? '—' : l.oee}{l.oeeLive ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> สด</span> : null}</td>
+                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }} title={l.oeeLive ? tr('รวมค่าสดของกะที่ยังเดิน — ตัวเลขจริงยืนยันตอนปิดกะ') : undefined}>{l.oee == null ? '—' : l.oee}{l.oeeLive ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> {tr('สด')}</span> : null}</td>
                 <td style={{ ...TDR, color: l.dt > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
                 <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
               </tr>
             ))}
-            {!lineRows.length && <tr><td style={TD} colSpan={7}>ยังไม่มีกะที่เปิดในวันนี้</td></tr>}
+            {!lineRows.length && <tr><td style={TD} colSpan={7}>{tr('ยังไม่มีกะที่เปิดในวันนี้')}</td></tr>}
           </tbody>
         </table>
       </div>
     </Section>
 
-    <ParetoAbcChart title="Downtime นอกแผน 7 วัน (ABC)" records={dtRecords} unit="นาที"
+    <ParetoAbcChart title={tr('Downtime นอกแผน 7 วัน (ABC)')} records={dtRecords} unit="นาที"
       dims={[{ key: 'machine', label: 'เครื่องจักร' }, { key: 'line', label: 'ไลน์' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
-      sectionStyle={cardSt} emptyText="ไม่มี downtime นอกแผนใน 7 วัน" />
+      sectionStyle={cardSt} emptyText={tr('ไม่มี downtime นอกแผนใน 7 วัน')} />
 
-    <Section title="ทางลัด">
+    <Section title={tr('ทางลัด')}>
       <Links navigate={navigate} items={[['/daily-report', '📊 Daily Report'], ['/factory-map', '🗺️ ผังรวมโรงงาน'], ['/oee-analytics', '📈 OEE'], ['/morning-meeting', '🌅 ประชุมเช้า'], ['/management', '🔄 จัดการไลน์']]} />
     </Section>
   </>);
@@ -529,23 +529,23 @@ function MaintenanceView({ d, ctx }) {
   ];
 
   return (<>
-    <Section title="ต้องทำตอนนี้" sub={`เรียกช่างค้าง ${callMtn.length} · ใบซ่อมค้างเกิน 3 วัน ${stale.length} · PM เกินกำหนด ${overdue.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title={tr('ต้องทำตอนนี้')} sub={`เรียกช่างค้าง ${callMtn.length} · ใบซ่อมค้างเกิน 3 วัน ${stale.length} · PM เกินกำหนด ${overdue.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="ใบซ่อมเปิดอยู่" value={scopedMo.length} unit="ใบ" color={scopedMo.length ? 'var(--amber)' : 'var(--green)'}
+      <Kpi label={tr('ใบซ่อมเปิดอยู่')} value={scopedMo.length} unit="ใบ" color={scopedMo.length ? 'var(--amber)' : 'var(--green)'}
         sub={Object.entries(byStep).map(([k, v]) => `${k} ${v}`).join(' · ') || 'ไม่มีใบค้าง'} />
-      <Kpi label="⏳ ค้างเกิน 3 วัน" value={stale.length} unit="ใบ" color={stale.length ? 'var(--red)' : 'var(--green)'} sub="นับจากวันที่แจ้ง" />
-      <Kpi label="PM เกินกำหนด" value={overdue.length} unit="แผน" color={overdue.length ? 'var(--red)' : (pmNever.length || pmNoCycle.length) ? 'var(--amber)' : 'var(--green)'}
+      <Kpi label={tr('⏳ ค้างเกิน 3 วัน')} value={stale.length} unit="ใบ" color={stale.length ? 'var(--red)' : 'var(--green)'} sub={tr('นับจากวันที่แจ้ง')} />
+      <Kpi label={tr('PM เกินกำหนด')} value={overdue.length} unit="แผน" color={overdue.length ? 'var(--red)' : (pmNever.length || pmNoCycle.length) ? 'var(--amber)' : 'var(--green)'}
         sub={`ใกล้ครบใน 14 วัน ${dueSoon.length}${pmNever.length ? ` · ไม่เคยตรวจ ${pmNever.length}` : ''}${pmNoCycle.length ? ` · ไม่ตั้งรอบ ${pmNoCycle.length}` : ''}`} />
-      <Kpi label="DT เครื่องเสีย 30 วัน" value={fmtNum(unplannedMin)} unit="นาที" sub="downtime นอกแผนทุกสาเหตุ" />
-      <Kpi label="⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม" value={gap.length} unit="เครื่อง" color={gap.length ? 'var(--red)' : 'var(--green)'} sub="หยุด ≥2 ครั้งใน 30 วัน" />
-      <Kpi label="แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}${pmNoLine ? ` · ไม่ระบุไลน์ ${pmNoLine} แผน (แสดงรวมทุกขอบเขต)` : ''}`} />
+      <Kpi label={tr('DT เครื่องเสีย 30 วัน')} value={fmtNum(unplannedMin)} unit="นาที" sub={tr('downtime นอกแผนทุกสาเหตุ')} />
+      <Kpi label={tr('⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม')} value={gap.length} unit="เครื่อง" color={gap.length ? 'var(--red)' : 'var(--green)'} sub={tr('หยุด ≥2 ครั้งใน 30 วัน')} />
+      <Kpi label={tr('แผน PM ช่างที่ใช้งาน')} value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}${pmNoLine ? ` · ไม่ระบุไลน์ ${pmNoLine} แผน (แสดงรวมทุกขอบเขต)` : ''}`} />
     </div>
 
-    <Section title="⚠️ เครื่องที่หยุดซ้ำ แต่ยังไม่มีใบแจ้งซ่อม" tone="warn"
-      sub="ฝ่ายผลิตลง downtime ไว้แต่ไม่ได้เปิดใบซ่อม → ช่างไม่เห็นงาน · เรียงตามนาทีที่เสียไปมากสุด (30 วัน)">
+    <Section title={tr('⚠️ เครื่องที่หยุดซ้ำ แต่ยังไม่มีใบแจ้งซ่อม')} tone="warn"
+      sub={tr('ฝ่ายผลิตลง downtime ไว้แต่ไม่ได้เปิดใบซ่อม → ช่างไม่เห็นงาน · เรียงตามนาทีที่เสียไปมากสุด (30 วัน)')}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 640 }}>
           <thead><tr><th style={TH}>{tr('เครื่อง')}</th><th style={TH}>{tr('ไลน์')}</th><th style={THR}>{tr('ครั้ง')}</th><th style={THR}>{tr('รวม (นาที)')}</th><th style={TH}>{tr('สาเหตุที่พบบ่อย')}</th><th style={TH}></th></tr></thead>
@@ -560,13 +560,13 @@ function MaintenanceView({ d, ctx }) {
                 <td style={TD}><button type="button" className="pg-btn sm" onClick={() => navigate('/mtn-repair')}>{tr('เปิดใบซ่อม →')}</button></td>
               </tr>
             ))}
-            {!gap.length && <tr><td style={TD} colSpan={6}>✅ ไม่มี — เครื่องที่หยุดซ้ำมีใบซ่อมครบแล้ว</td></tr>}
+            {!gap.length && <tr><td style={TD} colSpan={6}>{tr('✅ ไม่มี — เครื่องที่หยุดซ้ำมีใบซ่อมครบแล้ว')}</td></tr>}
           </tbody>
         </table>
       </div>
     </Section>
 
-    <Section title="PM ที่ใกล้ครบกำหนด (14 วันข้างหน้า)">
+    <Section title={tr('PM ที่ใกล้ครบกำหนด (14 วันข้างหน้า)')}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 520 }}>
           <thead><tr><th style={TH}>{tr('อุปกรณ์')}</th><th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ครบกำหนด')}</th><th style={THR}>{tr('เหลือ (วัน)')}</th></tr></thead>
@@ -581,13 +581,13 @@ function MaintenanceView({ d, ctx }) {
                 </td>
               </tr>
             ))}
-            {!overdue.length && !dueSoon.length && <tr><td style={TD} colSpan={4}>ไม่มีแผนที่ครบกำหนดใน 14 วัน</td></tr>}
+            {!overdue.length && !dueSoon.length && <tr><td style={TD} colSpan={4}>{tr('ไม่มีแผนที่ครบกำหนดใน 14 วัน')}</td></tr>}
           </tbody>
         </table>
       </div>
     </Section>
 
-    <Section title="ทางลัด">
+    <Section title={tr('ทางลัด')}>
       <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 Andon Board (จอแขวน)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
@@ -667,24 +667,24 @@ function StoreView({ d, ctx }) {
     {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — จอสโตร์ขึ้นเขียวทั้งที่ของขาดคือกรณีที่แย่ที่สุด */}
     {d.loadErr && (
       <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
-        🔴 โหลดข้อมูลสต็อก/รอบส่ง/ใบสั่งซื้อไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> อย่าเพิ่งสรุปว่า "ไม่มีงานค้าง"
+        🔴 โหลดข้อมูลสต็อก/รอบส่ง/ใบสั่งซื้อไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>{tr('ไม่ครบ')}</b> อย่าเพิ่งสรุปว่า "ไม่มีงานค้าง"
       </div>
     )}
-    <Section title="ต้องทำตอนนี้" sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} พาร์ท · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title={tr('ต้องทำตอนนี้')} sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} พาร์ท · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="🟥 ต่ำกว่า Min" value={under.length} unit="พาร์ท" color={under.length ? 'var(--red)' : 'var(--green)'} sub="เทียบ kanban_standards" />
-      <Kpi label="🟧 เกิน Max" value={over.length} unit="พาร์ท" color={over.length ? 'var(--amber)' : 'var(--green)'} sub="สต๊อกค้างเกินจำเป็น" />
-      <Kpi label="รอบส่งวันนี้" value={`${d.rounds.length - lateRounds.length}/${d.rounds.length}`} color={lateRounds.length ? 'var(--amber)' : 'var(--green)'} sub={`เลยเวลายังไม่ยืนยัน ${lateRounds.length}`} />
-      <Kpi label="ออเดอร์ลูกค้าวันนี้" value={`${shipped}/${ordTotal}`} color={ordTotal && shipped < ordTotal ? 'var(--amber)' : 'var(--green)'} sub="ส่งแล้ว / ทั้งหมด" />
+      <Kpi label={tr('🟥 ต่ำกว่า Min')} value={under.length} unit="พาร์ท" color={under.length ? 'var(--red)' : 'var(--green)'} sub={tr('เทียบ kanban_standards')} />
+      <Kpi label={tr('🟧 เกิน Max')} value={over.length} unit="พาร์ท" color={over.length ? 'var(--amber)' : 'var(--green)'} sub={tr('สต๊อกค้างเกินจำเป็น')} />
+      <Kpi label={tr('รอบส่งวันนี้')} value={`${d.rounds.length - lateRounds.length}/${d.rounds.length}`} color={lateRounds.length ? 'var(--amber)' : 'var(--green)'} sub={`เลยเวลายังไม่ยืนยัน ${lateRounds.length}`} />
+      <Kpi label={tr('ออเดอร์ลูกค้าวันนี้')} value={`${shipped}/${ordTotal}`} color={ordTotal && shipped < ordTotal ? 'var(--amber)' : 'var(--green)'} sub={tr('ส่งแล้ว / ทั้งหมด')} />
       {/* นับ "พาร์ทที่ต้องสั่ง" ไม่ใช่จำนวนใบ — จำนวนใบไม่ใช่ปริมาณงานจริง (กฎบอร์ดสโตร์) */}
-      <Kpi label="พาร์ทที่ต้องสั่งซื้อ" value={d.pr.length} unit="พาร์ท" color={prLate.length ? 'var(--red)' : undefined} sub={`เลยกำหนด ${prLate.length} · รวม ${prSlips.toLocaleString()} ใบ`} />
-      <Kpi label="พาร์ทที่มีสต๊อก" value={matRows.length} unit="รายการ" sub={`ตั้ง Min/Max แล้ว ${matRows.filter(r => r.min > 0 || r.max > 0).length}`} />
+      <Kpi label={tr('พาร์ทที่ต้องสั่งซื้อ')} value={d.pr.length} unit="พาร์ท" color={prLate.length ? 'var(--red)' : undefined} sub={`เลยกำหนด ${prLate.length} · รวม ${prSlips.toLocaleString()} ใบ`} />
+      <Kpi label={tr('พาร์ทที่มีสต๊อก')} value={matRows.length} unit="รายการ" sub={`ตั้ง Min/Max แล้ว ${matRows.filter(r => r.min > 0 || r.max > 0).length}`} />
     </div>
 
-    <Section title="พาร์ทที่ต้องเติมก่อน" sub="เรียงจากขาดมากสุดเทียบ Min">
+    <Section title={tr('พาร์ทที่ต้องเติมก่อน')} sub={tr('เรียงจากขาดมากสุดเทียบ Min')}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 600 }}>
           <thead><tr><th style={TH}>MAT</th><th style={TH}>{tr('ชื่อ')}</th><th style={THR}>{tr('คงเหลือ')}</th><th style={THR}>Min</th><th style={THR}>{tr('ขาด')}</th></tr></thead>
@@ -697,13 +697,13 @@ function StoreView({ d, ctx }) {
                 <td style={{ ...TDR, color: 'var(--red)', fontWeight: 700 }}>-{fmtNum(r.short)}</td>
               </tr>
             ))}
-            {!under.length && <tr><td style={TD} colSpan={5}>✅ ไม่มีพาร์ทต่ำกว่า Min</td></tr>}
+            {!under.length && <tr><td style={TD} colSpan={5}>{tr('✅ ไม่มีพาร์ทต่ำกว่า Min')}</td></tr>}
           </tbody>
         </table>
       </div>
     </Section>
 
-    <Section title="ทางลัด">
+    <Section title={tr('ทางลัด')}>
       <Links navigate={navigate} items={[['/line-stock', '📦 Store'], ['/store-monitor', '🚨 เฝ้าระวังสต๊อก', under.length], ['/heijunka', '🎴 Kanban'], ['/customer-demand', '🚚 Delivery'], ['/rundown-stock', '📉 Rundown']]} />
     </Section>
   </>);
@@ -839,43 +839,43 @@ function QaView({ d, ctx }) {
     {/* "0 ของเสีย" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — ไม่งั้นจอที่พังอยู่ดูเหมือนจอที่ทุกอย่างปกติ */}
     {d.loadErr && (
       <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
-        🔴 โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ — ตัวเลขของเสีย · PPM · พาเรโต ด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
+        🔴 โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ — ตัวเลขของเสีย · PPM · พาเรโต ด้านล่าง<b>{tr('ไม่ครบ')}</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="ต้องทำตอนนี้" sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title={tr('ต้องทำตอนนี้')} sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="ของเสีย 7 วัน" value={fmtNum(ng7)} unit="ชิ้น" color={ng7 ? 'var(--red)' : 'var(--green)'} sub={`ผลิตดี ${fmtNum(ok7)} ชิ้น`} />
-      <Kpi label="PPM (7 วัน)" value={ppm == null ? '—' : fmtNum(ppm)} color={ppm == null ? undefined : ppm > 5000 ? 'var(--red)' : ppm > 1000 ? 'var(--amber)' : 'var(--green)'}
-        sub="เสีย ÷ ยอดที่ผลิตทั้งหมด (ดี+เสีย) × 1,000,000" />
-      <Kpi label="✍️ ไลน์ที่บันทึกของเสียวันนี้" value={`${ranLines.length - noLog.length}/${ranLines.length}`}
-        color={noLog.length ? 'var(--amber)' : 'var(--green)'} sub="ไลน์ที่เดินกะวันนี้" />
-      <Kpi label="4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? 'var(--amber)' : 'var(--green)'} sub="ค้างที่ QA" />
-      <Kpi label="LPA พบปัญหา" value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? 'var(--amber)' : 'var(--green)'} sub="ตอบ N/T ใน 30 วัน" />
-      <Kpi label="การตรวจ LPA" value={d.lpa.length} unit="ครั้ง" sub="30 วันล่าสุด" />
-      <Kpi label="เคลมลูกค้าที่ยังไม่ปิด" value={claimOpen.length} unit="ใบ"
+      <Kpi label={tr('ของเสีย 7 วัน')} value={fmtNum(ng7)} unit="ชิ้น" color={ng7 ? 'var(--red)' : 'var(--green)'} sub={`ผลิตดี ${fmtNum(ok7)} ชิ้น`} />
+      <Kpi label={tr('PPM (7 วัน)')} value={ppm == null ? '—' : fmtNum(ppm)} color={ppm == null ? undefined : ppm > 5000 ? 'var(--red)' : ppm > 1000 ? 'var(--amber)' : 'var(--green)'}
+        sub={tr('เสีย ÷ ยอดที่ผลิตทั้งหมด (ดี+เสีย) × 1,000,000')} />
+      <Kpi label={tr('✍️ ไลน์ที่บันทึกของเสียวันนี้')} value={`${ranLines.length - noLog.length}/${ranLines.length}`}
+        color={noLog.length ? 'var(--amber)' : 'var(--green)'} sub={tr('ไลน์ที่เดินกะวันนี้')} />
+      <Kpi label={tr('4M รออนุมัติ QA')} value={d.fourM.length} unit="ใบ" color={d.fourM.length ? 'var(--amber)' : 'var(--green)'} sub={tr('ค้างที่ QA')} />
+      <Kpi label={tr('LPA พบปัญหา')} value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? 'var(--amber)' : 'var(--green)'} sub={tr('ตอบ N/T ใน 30 วัน')} />
+      <Kpi label={tr('การตรวจ LPA')} value={d.lpa.length} unit="ครั้ง" sub={tr('30 วันล่าสุด')} />
+      <Kpi label={tr('เคลมลูกค้าที่ยังไม่ปิด')} value={claimOpen.length} unit="ใบ"
         color={claimLate.length ? 'var(--red)' : claimOpen.length ? 'var(--amber)' : 'var(--green)'}
         sub={claimLate.length ? `เลยกำหนดตอบ ${claimLate.length} ใบ` : (claimNo8D.length ? `ยังไม่เปิด 8D ${claimNo8D.length} ใบ` : 'ไม่มีค้าง')} />
-      <Kpi label="8D ปิดแล้ว เอกสารตามครบ" value={peRate == null ? '—' : `${peRate}%`}
+      <Kpi label={tr('8D ปิดแล้ว เอกสารตามครบ')} value={peRate == null ? '—' : `${peRate}%`}
         color={peRate == null ? undefined : peRate >= 90 ? 'var(--green)' : peRate >= 50 ? 'var(--amber)' : 'var(--red)'}
         sub={capaClosed.length ? `${peDone}/${capaClosed.length} ใบ · IATF §10.2.4` : 'ยังไม่มี 8D ที่ปิด'} />
-      <Kpi label="8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? 'var(--amber)' : 'var(--green)'}
+      <Kpi label={tr('8D ค้างดำเนินการ')} value={capaOpen.length} unit="ใบ" color={capaOpen.length ? 'var(--amber)' : 'var(--green)'}
         sub={d.crOpen ? `คำขอแก้เอกสารค้าง ${d.crOpen}` : 'ไม่มีคำขอแก้เอกสารค้าง'} />
       {/* วัดจาก defect_logs จริง ไม่ใช่ข้อความที่คนพิมพ์ — ใบที่ยังวัดไม่ได้ ไม่ถูกนับเป็นทั้งได้ผล/ไม่ได้ผล */}
-      <Kpi label="8D ที่ของเสียลดจริง" value={effRate == null ? '—' : `${effRate}%`}
+      <Kpi label={tr('8D ที่ของเสียลดจริง')} value={effRate == null ? '—' : `${effRate}%`}
         color={effRate == null ? undefined : effRate >= 80 ? 'var(--green)' : effRate >= 50 ? 'var(--amber)' : 'var(--red)'}
         sub={capaMeasured.length
           ? `วัดได้ ${capaMeasured.length} ใบ${capaBadEff.length ? ` · ยังไม่ลด ${capaBadEff.length}` : ''}`
           : 'ยังไม่มีใบที่วัดผลได้ — ต้องกรอกวันที่มาตรการมีผล'} />
     </div>
 
-    <ParetoAbcChart title="ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
+    <ParetoAbcChart title={tr('ของเสีย 7 วัน แยกตามประเภท (ABC)')} records={defRecords} unit="ชิ้น"
       dims={[{ key: 'line', label: 'ไลน์' }, { key: 'product', label: 'ชิ้นงาน' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
-      sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
+      sectionStyle={cardSt} emptyText={tr('ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง')} />
 
-    <Section title="ทางลัด">
+    <Section title={tr('ทางลัด')}>
       <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'],
         // คิวอนุมัติ 4M ทั้งก้อน — from = ใบเก่าสุด (d.fourM เรียงวันจากเก่าไปใหม่) ให้เห็นครบทุกใบที่ค้าง
         [`${FOURM_TAB}&status=pending_qa${d.fourM.length ? `&from=${d.fourM[0].work_date}` : ''}`, '📝 4M รออนุมัติ', d.fourM.length],
@@ -988,8 +988,8 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             ซึ่งเป็นอาการที่ PageHeader ถูกสร้างมาแก้พอดี · แก้แล้ว 2026-08-26)
            ⚠️ ยังไม่ใช้ `useTabParam` โดยตั้งใจ — `?dept=` ต้องเขียนลง URL เสมอ (default ต่างกันตาม role) */}
         <PageHeader
-          title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
-          sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
+          title={embedded ? OBEYA_TITLE : tr('Dashboard ส่วนงาน')} icon={embedded ? OBEYA_ICON : '📊'}
+          sub={<>{tr('วันงาน')} {fmtDate(workDate)} · {scopeText} {tr('· อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)')}</>}
           actions={<button type="button" className="pg-btn" onClick={load}>{tr('รีเฟรช')}</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
              เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
@@ -999,23 +999,23 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
           /* เลือกมุมมองฝ่าย = "ตัวกรอง" ของหน้านี้ ⇒ `filters` (ใต้แท็บ ตำแหน่งเดียวกับแท็บอื่นของ OBEYA)
              แกน `?dept=` คือหน้าที่/ฝ่าย ไม่ใช่ PD1..PD4 — จึงใช้คำว่า "มุมมอง" ไม่ใช่ "ส่วนงาน" */
           filters={view === 'now' ? (<>
-            <span className="filter-label">มุมมอง</span>
-            <Segmented label="มุมมองฝ่าย" value={dept} onChange={setDept}
+            <span className="filter-label">{tr('มุมมอง')}</span>
+            <Segmented label={tr('มุมมองฝ่าย')} value={dept} onChange={setDept}
               options={DEPTS.map(t => ({ value: t.key, label: `${t.icon} ${t.label}` }))} />
             <span className="spacer" />
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
-              title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
+              title={tr('เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)')}
               style={tvBtn(false)}>{tr('Andon Board (จอแขวน)')}</button>
           </>) : undefined}
         />
 
-      {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {view === 'now' && err && <div style={{ ...cardSt, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
+      {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>{tr('กำลังโหลดข้อมูล...')}</div>}
+      {view === 'now' && err && <div style={{ ...cardSt, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13 }}>{tr('โหลดข้อมูลไม่สำเร็จ:')} {err}</div>}
       {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
       {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
       {view === 'now' && !loading && !err && data && data.dept !== dept &&
-        <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังเปลี่ยนส่วนงาน...</div>}
+        <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>{tr('กำลังเปลี่ยนส่วนงาน...')}</div>}
     </Page>
   );
 }

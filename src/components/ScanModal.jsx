@@ -218,7 +218,7 @@ export default function ScanModal({
                 setTyped(v);
               }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
-              placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
+              placeholder={isMobile && !kbd ? tr('กดปุ่มสแกนข้างเครื่องได้เลย') : tr('เช่น RB-104 หรือ ESM:M:…')}
               inputMode={isMobile && !kbd ? 'none' : undefined}
               style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
@@ -235,12 +235,12 @@ export default function ScanModal({
           </div>
         </div>
 
-        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>⏳ กำลังบันทึก…</div>}
+        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{tr('⏳ กำลังบันทึก…')}</div>}
         {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
         {footer}
         {ok && !err && !busy && (okMsg
           ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
-          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
+          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>{tr('✓ อ่านได้:')} <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>
   );
