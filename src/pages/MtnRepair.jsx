@@ -2470,7 +2470,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
      (คำสั่ง user 2026-09-15 — เกณฑ์อยู่ที่ mtnApprovalState() ใน mtnMoForm.js ที่เดียว) */
   const mtnForm = isMtnFormOrder(o);
   const appr = mtnForm ? mtnApprovalState(o) : null;
-  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, ...stepPerms(role) };
+  const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm, approvalBlocked: !!appr?.blocked, actorSide, posRank, isShared: isSharedAccount(), ...stepPerms(role) };
   // เกณฑ์เดียวกับ guard ตอนกดบันทึกใน StepModal — อยู่ที่ mtnStepPerm.js ที่เดียว
   const canEditStep = (step) => canDoStep(step, stepCtx).ok;
   /* ⏭ ข้าม QA — ใบค้างรอ QA (ขั้น 4 เลือก "เกี่ยวกับคุณภาพ") แต่งานไม่เกี่ยวคุณภาพจริง
@@ -2488,6 +2488,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       /* 🔒 บอกให้ตรงเหตุ — "ไม่มีสิทธิ์" เฉยๆ ทำให้คนไปขอ role เพิ่ม ทั้งที่ปัญหาคือ "ตำแหน่งไม่ถึง"
          (ทางแก้ที่ถูกคือไปแก้ตำแหน่งในบัญชีที่ /add-user ไม่ใช่ขอสิทธิ์) */
       if (v.code === 'already_signed') return toast.error('ใบนี้เซ็นไปแล้ว');
+      if (v.code === 'shared_account') return toast.error('บัญชีกลางเซ็นช่องผู้จัดการไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีของตัวเอง');
       if (v.code === 'rank_too_low')
         return toast.error('ช่องนี้ต้องเป็นระดับหัวหน้าแผนก/ผู้จัดการขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)');
       if (v.code === 'out_of_scope')
@@ -3086,6 +3087,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
                   ? <button onClick={() => signApproval('mtn_mgr')} disabled={signBusy === 'mtn_mgr'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'mtn_mgr' ? trI18n('กำลังบันทึก…') : trI18n('รับทราบใบ MO (ผจก.ส่วนซ่อมบำรุง)')}</button>
                   : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{({
                       rank_too_low: 'รับทราบได้เฉพาะระดับผู้จัดการ',
+                      shared_account: 'บัญชีกลางเซ็นไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีตัวเอง',
                       wrong_side: 'ช่องนี้เป็นของฝั่งซ่อมบำรุง',
                       other_team: 'ช่องนี้เป็นของ ผจก. ทีมที่รับใบนี้',
                     })[ack.code] || 'รับทราบได้เฉพาะ ผจก. ที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติ'}</span>}
@@ -3122,6 +3124,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>{
                 ({
                   rank_too_low: 'เซ็นช่องนี้ได้เฉพาะระดับหัวหน้าแผนกขึ้นไป',
+                      shared_account: 'บัญชีกลางเซ็นไม่ได้ — ให้ผู้จัดการ login ด้วยบัญชีตัวเอง',
                   out_of_scope: `ใบนี้เป็นของ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ส่วนงานอื่น'} — เซ็นได้เฉพาะใบในขอบเขตที่ตัวเองรับผิดชอบ`,
                 })[canSignMtnApproval(appr.missing[0], stepCtx).code]
                 || 'เซ็นได้เฉพาะผู้จัดการที่ถูกระบุในใบ หรือผู้ถือสิทธิ์อนุมัติปิดใบ'
@@ -3284,7 +3287,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
-              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low',
+              wrongSide: canDoStep(next.step, stepCtx).code === 'wrong_side', rankTooLow: canDoStep(next.step, stepCtx).code === 'rank_too_low', sharedAccount: canDoStep(next.step, stepCtx).code === 'shared_account',
               orderLine: o.line_name, orderSection: o.dept_section, mtnForm, toolTeam: isToolTeamOrder(o),
               awaitApproval: canDoStep(next.step, stepCtx).code === 'await_mgr_approval' ? { missing: appr.missing, deptName: o.dept_manager_name, plantName: o.plant_manager_name } : null }) || []).map((t, i) => <div key={i}>{t}</div>)}
             {/* 🔴 ระบบปล่อยผ่านเพราะ "ไม่รู้ฝั่ง/ตำแหน่งของคนกด" ⇒ ต้องเขียนบนจอ ห้ามเงียบ
@@ -3681,7 +3684,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       const inReporterScope = orderInReporterScope(o, reporterScope || {});
       // 🔒 ด่านอนุมัติของใบ MTN (งานปรับปรุง/สร้าง) — เกณฑ์เดียวกับตัวซ่อนปุ่มใน DetailDrawer
       const approvalBlocked = isMtnForm && mtnApprovalState(o).blocked;
-      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, ...stepPerms(role) };
+      const stepCtx = { order: o, fullName, inOrderTeam, inReporterScope, hasTeams: userTeams.length > 0, mtnForm: isMtnForm, approvalBlocked, actorSide, posRank, isShared: isSharedAccount(), ...stepPerms(role) };
       if (skipQa) {
         // ข้าม QA — เกณฑ์เดียวกับปุ่มใน DetailDrawer (canSkipQa) · ใบต้องยังค้างรอ QA อยู่จริง ณ ตอนกด
         const vs = canSkipQa(stepCtx);
@@ -3709,8 +3712,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           return toast.error(meta?.side === 'reporter'
             ? `ช่องนี้เป็นของฝ่ายที่แจ้ง (${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'เจ้าของค่าใช้จ่าย'}) — ฝั่งช่างเซ็นแทนไม่ได้`
             : 'ช่องนี้เป็นของฝั่งซ่อมบำรุง — ฝ่ายที่แจ้งเซ็นแทนไม่ได้');
+        if (verdict.code === 'shared_account')
+          return toast.error(`ช่องนี้เป็นลายเซ็นของ${meta?.whoShort || 'ผู้มีตำแหน่ง'} — บัญชีกลางเซ็นแทนไม่ได้ ให้เจ้าของตำแหน่ง login ด้วยบัญชีของตัวเอง`);
         if (verdict.code === 'rank_too_low')
-          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
+          return toast.error(`ช่องนี้ต้องเป็นระดับ${verdict.needRank >= 60 ? 'ผู้จัดการ' : verdict.needRank <= 30 ? 'วิศวกร / หัวหน้า' : 'หัวหน้าแผนก/ส่วน'}ขึ้นไป — ตำแหน่งของบัญชีนี้ต่ำกว่าที่ช่องกำหนด (แก้ตำแหน่งได้ที่ /add-user)`);
         if (verdict.code === 'out_of_scope')
           return toast.error(`ใบนี้เป็นของ ${[o.line_name, o.dept_section].filter(Boolean).join(' · ') || 'ฝ่ายอื่น'} — ขั้นนี้ทำได้เฉพาะใบของส่วนงานตัวเอง (ผู้เปิดใบหรือหัวหน้าฝ่ายนั้นเป็นคนกด)`);
         if (meta?.byReporter)

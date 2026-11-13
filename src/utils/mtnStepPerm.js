@@ -32,6 +32,12 @@ import {
 } from './mtnMoForm.js';
 import { MANAGER_SIGN_MIN_RANK } from './signRank.js';
 
+/* 🤝 ขั้นรับมอบ/ติดตามผล (ช่องของหัวหน้าแผนกผู้แจ้ง) — ระดับขั้นต่ำ = **วิศวกร (30)** (2026-11-13 · คำสั่ง user)
+   เดิม 40 (หัวหน้าไลน์) แต่ผู้เปิดใบข้ามด่านตำแหน่งได้เสมอ (`isReporterSelf`) ⇒ QC/พนักงานที่เปิดใบรับมอบเองได้
+   ตัดทางข้ามแล้ว + ลดเพดานเป็น 30 ตามกติกาเดิม "วิศวกรเลเวลเท่ากับหัวหน้าแผนก" (27/10)
+   วัดก่อนเปลี่ยน (30 วัน): ผู้เปิดใบที่รับมอบเองทั้งที่ต่ำกว่า 40 = 9 ใบ (QC 3 · วิศวกร 6) ⇒ หลังเปลี่ยน QC ต้องให้หัวหน้า QA รับมอบ */
+export const HANDOVER_MIN_RANK = 30;
+
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
   2: {
@@ -60,7 +66,7 @@ export const MTN_STEPS = {
   },
   6: {
     stage: 'handover',
-    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: 40,
+    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: HANDOVER_MIN_RANK,
     icon: '🤝', title: 'รับมอบ / ติดตามผล',
     who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
   },
@@ -103,7 +109,7 @@ export const MTN_FORM_STEPS = {
   /* แทนที่ขั้น 5 (QA) ของฟอร์มอื่น — ลูป MTN ไม่มี QA จึงเดินจากตรวจรับงาน (4) มารับมอบเลย */
   5: {
     stage: 'handover',
-    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: 40,
+    key: 'handover', fallback: 'report', ownTeam: false, byReporter: true, reporterSide: true, side: 'reporter', minRank: HANDOVER_MIN_RANK,
     icon: '🤝', title: 'รับมอบ / ติดตามผล',
     who: 'หัวหน้าแผนกของฝ่ายที่แจ้ง', whoShort: 'หัวหน้าแผนกผู้แจ้ง',
   },
@@ -405,7 +411,7 @@ export function stepAssumptions(step, { mtnForm = false, toolTeam = false, actor
 
 export function canDoStep(step, opts = {}) {
   const { order = {}, fullName = '', can = () => false, seeded = () => true, inOrderTeam = false, inReporterScope = null, hasTeams = false, mtnForm = false, approvalBlocked = false,
-    actorSide = 'unknown', posRank = null } = opts;
+    actorSide = 'unknown', posRank = null, isShared = false } = opts;
 
   // ขั้น 1 = แก้ข้อมูลการแจ้ง — ใครแจ้งได้ก็แก้ได้ (พฤติกรรมเดิม)
   if (Number(step) === 1) return can('report') ? { ok: true, code: 'report' } : { ok: false, code: 'denied' };
@@ -417,6 +423,11 @@ export function canDoStep(step, opts = {}) {
 
   /* 🔒 ด่านฝั่ง + ตำแหน่ง (2026-10-02) — ตรวจ**ก่อน** manage_master เพื่อให้รู้ว่า
      "ถ้าไม่ใช่ผู้ถือคีย์หัวหน้า คนนี้จะกดได้ไหม" ⇒ ตอบได้ว่านี่คือการ "เซ็นแทน" หรือไม่ */
+  /* 🖥️ บัญชีกลาง (`account_kind='shared'`) ห้ามเซ็นช่องที่ล็อกตำแหน่ง (2026-11-13 · คำสั่ง user)
+     ช่องที่มี `minRank` = ลายเซ็นของ "ตำแหน่ง" (หัวหน้าแผนก/ผจก.) — บัญชีกลางไม่ใช่คนคนเดียว ⇒ ไม่มีตำแหน่ง
+     วัดก่อนเปิดด่าน: ใบทีม MTN ขั้น 7 "ผจก.ช่าง อนุมัติ" ถูกเซ็นด้วยบัญชีกลาง `maintenance` 89/89 ใบใน 30 วัน
+     ขั้นกรอกงาน (จ่ายงาน/ลงผลซ่อม — ไม่มี minRank) บัญชีกลางยังทำได้ตามเดิม · ตรวจก่อน manage_master */
+  if (isShared && meta.minRank != null) return { ok: false, code: 'shared_account' };
   const sideBad = !sideAllows(actorSide, meta.side);
   const rankBad = meta.minRank != null && posRank != null && posRank < meta.minRank;
   // ผู้เปิดใบทำขั้นของตัวเองได้เสมอ (เช็คก่อนด่านฝั่ง/ตำแหน่ง — เจ้าของใบต้องไม่ถูกล็อกออก)
@@ -427,8 +438,13 @@ export function canDoStep(step, opts = {}) {
      (ผู้ตรวจสอบ=หัวหน้าแผนก · รับรองโดย=ผจก.ส่วน · ผู้จัดการ) เซ็นแทนกันไม่ได้
      ⚠️ ผลข้างเคียงที่ user รับทราบแล้ว: คนที่ควรเซ็นลาหยุด = ใบค้างรอจนกว่าจะกลับมา
         (ทางออกคือมอบตำแหน่ง/ฝั่งให้คนรักษาการที่ `/add-user` ไม่ใช่ให้หัวหน้ากดแทนเงียบๆ) */
-  if (!isReporterSelf && (sideBad || rankBad)) {
-    return { ok: false, code: sideBad ? 'wrong_side' : 'rank_too_low', need: meta.side, needRank: meta.minRank };
+  /* 🔴 ผู้เปิดใบข้ามได้เฉพาะด่าน "ฝั่ง" — **ด่านตำแหน่งไม่ยกเว้นใคร** (13/11 · คำสั่ง user "ตัดทางข้าม")
+     เดิม `isReporterSelf` ข้ามทั้งคู่ ⇒ พนักงาน/QC ที่เปิดใบเซ็นช่อง "หัวหน้าแผนกผู้แจ้ง" ได้ */
+  if (!isReporterSelf && sideBad) {
+    return { ok: false, code: 'wrong_side', need: meta.side, needRank: meta.minRank };
+  }
+  if (rankBad) {
+    return { ok: false, code: 'rank_too_low', need: meta.side, needRank: meta.minRank };
   }
 
   /* 🔒 ด่าน "ทีมใครทีมมัน" (15/10 · คำสั่ง user) — ตรวจ**ก่อน** manage_master
@@ -657,7 +673,9 @@ function canAckMtnMgr(opts = {}) {
 }
 
 export function canSignMtnApproval(kind, opts = {}) {
-  const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;
+  const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null, isShared = false } = opts;
+  /* 🖥️ ช่องผู้จัดการทุกช่อง = ลายเซ็นของคน ⇒ บัญชีกลางเซ็นไม่ได้ (13/11 · เหตุผลเดียวกับ canDoStep) */
+  if (isShared && ['dept', 'plant', 'mtn_mgr'].includes(kind)) return { ok: false, code: 'shared_account' };
   if (kind === 'mtn_mgr') return canAckMtnMgr(opts);
   if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
   const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
@@ -989,8 +1007,9 @@ export function canSkipQa(opts = {}) {
  * ข้อความบอกเหตุผลเมื่อทำไม่ได้ (UI-CONVENTIONS §6.9 — ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล)
  * คืนเป็นโครงสร้าง ไม่ใช่ JSX — ให้หน้าจอวาดเอง
  */
-export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, toolTeam = false, awaitApproval = null, wrongSide = false, rankTooLow = false, assumed = [] } = {}) {
+export function stepDenyHint(step, { teamName = '', reporterName = '', outOfScope = false, otherTeam = false, orderLine = '', orderSection = '', mtnForm = false, toolTeam = false, awaitApproval = null, wrongSide = false, rankTooLow = false, sharedAccount = false, assumed = [] } = {}) {
   const meta = stepMeta(step, { mtnForm, toolTeam });
+  if (sharedAccount && meta) return [`ช่อง “${meta.title}” เป็นลายเซ็นของ${meta.whoShort || 'ผู้มีตำแหน่ง'} — บัญชีกลางเซ็นแทนไม่ได้ ให้เจ้าของตำแหน่ง login ด้วยบัญชีของตัวเอง`];
   if (!meta) return null;
   const lines = [`ขั้นนี้เป็นหน้าที่ของ: ${meta.who}`];
   /* 🔒 ล็อกฝั่ง/ตำแหน่ง (2026-10-04) — ต้องบอกให้ตรงเหตุ ไม่งั้นคนจะไปขอ role เพิ่ม

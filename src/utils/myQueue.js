@@ -157,7 +157,7 @@ export function soleSignerFor(o, w, me = {}) {
     order: o, fullName: me.name || '', can: canNoBoss, seeded: me.seeded || (() => true),
     inOrderTeam: typeof me.inTeam === 'function' ? !!me.inTeam(o) : false,
     hasTeams: !!me.hasTeams, mtnForm: isMtnFormRow(o),
-    actorSide: me.actorSide, posRank: me.posRank,
+    actorSide: me.actorSide, posRank: me.posRank, isShared: !!me.isShared,
   });
   return !!r.ok && (r.code === 'perm' || r.code === 'fallback');
 }
@@ -263,7 +263,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
        ของตัวเองอยู่แล้วผ่าน moWaitMeta/approvalWaitsOnMe · นับซ้ำ = badge เกินจริง
        และป้ายนี้เขียนว่า "ไม่บล็อกงาน" ซึ่งจะกลายเป็นคำโกหกสำหรับใบที่บล็อกอยู่ */
     if (isMtnFormRow(o) && !o.dept_manager_at && !isApprovalBlocked(o) && scopeStateOf(o, me) === 'in'
-        && canSignMtnApproval('dept', { order: o, fullName: me.name || '', can: me.can || (() => false) }).ok) {
+        && canSignMtnApproval('dept', { order: o, fullName: me.name || '', can: me.can || (() => false), isShared: !!me.isShared }).ok) {
       ackCount += 1;
       const aAge = ageDays(o.work_date, now);
       if (aAge != null && (ackOldest == null || aAge > ackOldest)) ackOldest = aAge;

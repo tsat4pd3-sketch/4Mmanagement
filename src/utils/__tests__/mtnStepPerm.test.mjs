@@ -781,3 +781,14 @@ test('✍️ ช่องเซ็น 4 ฟอร์ม MTN: ผจก.ส่ว
   // ไม่รู้ตำแหน่ง/ฝั่ง = ไม่บล็อก
   assert.equal(canSignMtnApproval('mtn_mgr', { ...base, fullName: 'นาย ก ข', posRank: null, actorSide: 'unknown' }).ok, true);
 });
+
+test('🖥️ บัญชีกลางเซ็นช่องที่ล็อกตำแหน่งไม่ได้ · ขั้นกรอกงานยังทำได้', () => {
+  const mtn = { mtn_dept: 'maintenance', status: 'handover' };
+  const base = { order: mtn, can: () => true, actorSide: 'mtn', hasTeams: true, inOrderTeam: true, mtnForm: true, isShared: true };
+  assert.equal(canDoStep(7, base).code, 'shared_account');          // ผจก.ช่าง อนุมัติ
+  assert.equal(canDoStep(6, base).code, 'shared_account');          // หัวหน้าแผนกช่าง
+  assert.equal(canDoStep(3, { ...base, order: { ...mtn, status: 'assigned' } }).ok, true);   // ลงผลซ่อม
+  assert.equal(canDoStep(7, { ...base, isShared: false }).ok, true);
+  assert.equal(canSignMtnApproval('dept', { order: {}, can: () => true, isShared: true }).code, 'shared_account');
+  assert.equal(canSignMtnApproval('mtn_mgr', { order: { mo_approved_by: 'x' }, fullName: 'x', isShared: true }).code, 'shared_account');
+});
