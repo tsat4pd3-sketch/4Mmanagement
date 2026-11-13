@@ -187,14 +187,24 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
 
     // ② ออเดอร์ล่วงหน้า — เฉพาะดิวตั้งแต่วันนี้ไป (ดิวเก่าเป็นประวัติ ไม่ใช่ backlog)
     const future = rec.orders.filter(o => !o.past);
-    if (ok) ok = checkWrite(await supabaseDR.from('customer_shipping_orders')
-      .delete().eq('source', 'monitoring').eq('status', 'pending'), 'ล้างออเดอร์รอบก่อน');
-    if (ok && future.length) {
-      ok = await insertChunked('customer_shipping_orders', future.map(o => ({
-        mat_no: o.mat_no, part_name: o.part_name || nameOfMat[norm(o.mat_no)] || null,
-        customer: o.customer || null, customer_part_no: o.customer_part_no, due_date: o.due_date, qty: o.qty,
-        status: 'pending', source: 'monitoring', note: o.note, created_by_name: by,
-      })), 'บันทึกออเดอร์');
+    /* 🔴 ลบ+ใส่ ต้องอยู่ใน transaction เดียว ⇒ ผ่าน RPC `fn_monitoring_orders_replace` (13/11)
+       เดิมเป็น **2 คำขอแยกกัน**: ถ้าตัวใส่ล้มหลังตัวลบสำเร็จ (เน็ตสะดุด/ไฟล์ใหญ่)
+       **ออเดอร์หายทั้งชุด ไม่มีอะไรย้อนให้** — จอขึ้นว่าบันทึกไม่สำเร็จ แต่ของเดิมหายไปแล้ว
+       และ RPC ปิด audit รายแถวในตัว แล้วเขียน **audit สรุป 1 แถว** (`BULK_REPLACE`) แทน N แถว
+       — ตารางนี้เคยกิน **28.2% ของ `audit_log` ทั้งตาราง** เพราะลบทั้งชุดแล้วเขียนใหม่ทุกรอบอัปโหลด
+       ⚠️ ส่งทั้งก้อนในคำขอเดียว (แบ่ง chunk ไม่ได้ ไม่งั้นหมดความเป็น transaction เดียว)
+          — ไฟล์ปกติหลักร้อยถึงพันแถว ≈ ไม่กี่ร้อย KB · ถ้าวันหนึ่งไฟล์ใหญ่กว่านี้มาก
+          ต้องเปลี่ยนไปใช้ staging table ฝั่ง DB ไม่ใช่กลับไปแบ่ง chunk */
+    if (ok) {
+      const { error: eRep } = await supabaseDR.rpc('fn_monitoring_orders_replace', {
+        p_rows: future.map(o => ({
+          mat_no: o.mat_no, part_name: o.part_name || nameOfMat[norm(o.mat_no)] || null,
+          customer: o.customer || null, customer_part_no: o.customer_part_no,
+          due_date: o.due_date, qty: o.qty, note: o.note,
+        })),
+        p_by: by,
+      });
+      ok = checkWrite({ error: eRep }, 'บันทึกออเดอร์');
     }
 
     // ③ ประวัติการส่ง → ตารางของตัวเอง (ห้ามปนกับใบส่งของ)
