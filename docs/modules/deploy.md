@@ -163,6 +163,22 @@ push เข้า main วันละถึง 31 ครั้ง (หลาย
 · ต้องมี: TLS (ใบรับรอง) · ทางเข้าจากนอกโรงงาน (คนใช้มือถือ 4G/5G จริง — วัดได้ 679 IP เมื่อ 13/10)
 · ⚠️ `vite:preloadError` auto-reload ใน `src/main.jsx` ต้องยังทำงาน (ไฟล์ chunk เก่าหายหลัง deploy)
 
+#### 🐳 อิมเมจ ESM สำหรับ INET Container Platform (13/11/2026 · คำสั่ง user)
+ปลายทาง = **INET Container Platform** (ข้างใต้เป็น OpenShift — เห็นเมนู DeploymentConfigs · ยังไม่ได้ยืนยันเวอร์ชันกับ INET)
+· INET import ผ่านเมนู **+ → Container images** แล้วระบบเขา build ให้ · **เริ่มที่เว็บ ESM ก่อน** (NM ยังไม่ทำ)
+· ไฟล์: `Dockerfile` · `nginx.conf` · `.dockerignore` (รากรีโป)
+- 🔴 **`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` ต้องส่งเป็น build args** — Vite ฝังลง JS ตอน build
+  ใส่เป็น env ของ Deployment ตอนรัน = ไม่มีผล · ไม่ส่ง = build ล้มทันทีที่บรรทัดตรวจ (ตั้งใจ ห้ามถอด)
+  · anon key ไม่ใช่ความลับ (ส่งถึงทุกเบราว์เซอร์อยู่แล้ว) ⇒ คำเตือน `SecretsUsedInArgOrEnv` ของ docker เมินได้
+- 🔴 **build ใน Dockerfile = `npm run build` เต็มชุด** (context/lint/เทส) ห้ามลัดเป็น `vite build`
+  · ไม่มี `.git` ในอิมเมจ ⇒ changelog เตือนแล้วคงไฟล์เดิม (ออกแบบไว้แล้ว ไม่ล้ม)
+- 🔴 **รันด้วย UID สุ่มไม่ใช่ root** (OpenShift) ⇒ `nginx-unprivileged` พอร์ต **8080** · Service/Route ต้องชี้ 8080
+- 🔴 **กฎ cache/rewrite ใน `nginx.conf` ลอกจาก `render.yaml`** — แก้ที่หนึ่งต้องแก้อีกที่ จนกว่าจะเลิก Render
+- ⚠️ Docker Hub จำกัดจำนวนดึง (เจอ 429 ตอนทดสอบ) — ถ้า INET build ล้มที่ `FROM` ให้ถามเรื่อง mirror ของเขา
+- ✅ ทดสอบ 13/11 (ค่า Supabase ปลอม): เทส 4412 ผ่าน 0 ล้ม · อิมเมจ 127 MB · รันด้วย UID 1000680000 ได้ ·
+  `/` และ path ย่อย (`/daily-report`) = 200 + `no-cache` · `/assets/*.js` = `immutable` · ไฟล์ไม่มี = 404 · gzip ทำงาน
+- ⬜ ยังไม่ได้ทำ: ทดสอบบน INET จริง · โดเมน/HTTPS (Route) · ทางเข้าจากมือถือนอกโรงงาน · รอบ deploy (หน้าต่างเวลาข้างล่างยังใช้)
+
 **ขั้น 2 — self-host Supabase (ความเสี่ยงสูง ห้ามเริ่มจนครบเงื่อนไข)**
 🔴 **เงื่อนไขที่ต้องมีครบก่อน ขาดข้อใดข้อหนึ่ง = ยังไม่ย้าย:**
 1. **มีคนดูแลจริง** (ไม่ใช่ AI session) — patch security · ต่ออายุใบรับรอง · ดู log

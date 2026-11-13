@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-nm
+.git
+.env
+.env.*
+.claude/worktrees
+supabase/.temp
+**/__pycache__
