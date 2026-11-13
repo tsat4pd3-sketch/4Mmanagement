@@ -10278,6 +10278,33 @@ const EN = {
   'ส่งซ่อมภายนอก (รอ supplier)': 'External repair (waiting for supplier)',
   'ส่งต่อทีมอื่น (แก้เองไม่ได้)': 'Forwarded to another team (cannot fix here)',
   'รหัสที่ผังยังไม่ผูกหน่วย': 'Codes not yet linked to a unit in the org chart',
+
+  /* ── 🔧 ธง "เครื่องเสียของช่างไหม" ในทะเบียนประเภท downtime (13/11) ── */
+  'เป็นเครื่องเสียที่ช่างรับผิดชอบไหม': 'Is this a maintenance-owned breakdown?',
+  'ของช่าง (เครื่องเสีย)': 'Maintenance (machine breakdown)',
+  'ไม่ใช่ของช่าง': 'Not maintenance',
+  'ไม่ใช่ของช่าง (คุณภาพ · ปรับตั้ง · รอของ)': 'Not maintenance (quality · setup · waiting parts)',
+  'ยังไม่ระบุ': 'Not set',
+  'ของช่าง': 'Maintenance',
+  'ประเภทที่ยังไม่ติ๊กธง "ของช่างไหม"': 'Types not yet flagged as maintenance-owned',
+  'ติ๊กเพื่อแยกมุมมองใน KPI ช่าง — ประเภทในแผนไม่ต้องติ๊ก': 'Flag these to split the maintenance KPI view — planned types need no flag',
+  'นับเข้า Machine Break Down ฝั่งช่าง เช่น Robot Alarm · Sensor · แม่พิมพ์ชำรุด':
+    'Counted as maintenance Machine Break Down, e.g. robot alarm · sensor · damaged die',
+  'ไลน์หยุดจริงแต่ไม่ใช่เครื่องเสีย เช่น แก้ไขปัญหาคุณภาพ · ปรับตั้ง · รอของ':
+    'A real line stop but not a breakdown, e.g. quality rework · setup · waiting for parts',
+  'ยังไม่มีใครตัดสิน — ชั่วโมงจะอยู่ถังแยก ไม่ถูกนับให้ฝั่งไหน':
+    'Nobody has decided yet — these hours sit in their own bucket, counted for neither side',
+  'ใช้แยกมุมมองใน KPI ช่างเท่านั้น — ไม่กระทบ Machine Break Down / MTBF / MTTR ที่ส่งกลุ่ม':
+    'Used only for the maintenance KPI view — it does not affect the Machine Break Down / MTBF / MTTR reported to the group',
+  'ชั่วโมงเดียวกันนี้ เป็นเครื่องเสียของช่างเท่าไหร่': 'How much of these same hours is a maintenance breakdown',
+  'ยังไม่ระบุ (ไม่มีใครติ๊กธงในทะเบียน)': 'Not set (nobody has flagged it in the registry)',
+  'ติ๊กธงไปแล้ว': 'Flagged so far',
+  'ของชั่วโมง — ที่เหลือยังไม่ถูกนับให้ฝั่งไหน': 'of the hours — the rest is counted for neither side',
+  'ติ๊กได้ที่ ตั้งค่า → ประเภท Downtime ในหน้ารายงานผลิตรายวัน':
+    'Set it under Settings → Downtime types on the daily production report page',
+  'ติ๊กครบทุกประเภทแล้ว': 'Every type has been flagged',
+  'แท่งนี้ไม่กระทบเลขที่ส่งกลุ่ม — Machine Break Down / MTBF / MTTR ในตารางข้างล่างยังนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม':
+    'This bar does not affect the numbers reported to the group — Machine Break Down / MTBF / MTTR in the table below still count the full line stop per the KPI Guideline',
 };
 
 export default EN;

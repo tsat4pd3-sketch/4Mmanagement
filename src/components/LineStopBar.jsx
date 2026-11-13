@@ -56,7 +56,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
           const w = pct(r.hr);
           if (w <= 0) return null;
           return (
-            <div key={r.key} title={`${r.label} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
+            <div key={r.key} title={`${tr(r.label)} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
               style={{ width: `${w}%`, background: r.color,
                        borderRight: '1px solid var(--border)',
                        /* แถบ "ยังแบ่งไม่ได้" ต้องดูต่างจากช่วงที่รู้ชัด แต่ยังมองเห็น */
