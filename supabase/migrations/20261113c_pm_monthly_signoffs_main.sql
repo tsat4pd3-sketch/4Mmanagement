@@ -9,6 +9,7 @@
 -- ต้นแบบ: am_monthly_signoffs (20261103) — ลงนาม = บันทึก (snapshot) · ห้ามลบ · เพิกถอน = revoked + เหตุผล
 -- คีย์สิทธิ์: pm:monthly_approve (③) · pm:monthly_ack (④) — seed admin · manager · mtn (③ เท่านั้น — ผจก.ช่างบางคน role=mtn)
 --   ตำแหน่ง ≥ ผู้จัดการ + ทีม/ส่วนงานที่ดูแล + ไม่ใช่บัญชีกลาง ตัดสินที่ client (`pmMonthlyVerdict`) · ฐานคุม "ใคร" + "คีย์ตาม kind"
+-- ✅ apply แล้ว 2026-11-13 ผ่าน MCP · ทดสอบ RLS: ผจก. ลงนามได้ · หัวหน้าแผนก/ลงนามในชื่อคนอื่น = ถูกปฏิเสธ
 -- ✅ backward-compatible: ตารางใหม่ล้วน · ก่อน apply จอเขียนบอก "ระบบลงนามยังไม่เปิดใช้"
 -- ↩️ rollback (ย้อนโค้ดก่อน แล้วรันใน SQL Editor "MAIN"):
 --    drop table if exists public.pm_monthly_signoffs;
