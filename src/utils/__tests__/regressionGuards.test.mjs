@@ -10422,6 +10422,52 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
 
+/* ═══ 🚫 4M ห้ามอนุมัติใบตัวเอง / ห้ามคนเดียวเซ็นทั้ง SV+QA (2026-11-13 · คำสั่ง user) ═════════
+   คู่กับ trigger `protect_four_m_status()` (20261113_four_m_no_self_approve_main.sql) */
+test('🛡️ 4M: ปุ่มอนุมัติต้องผ่าน fourMSelfBlock ทั้งขั้น SV และ QA', () => {
+  const rp = stripComments(readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8'))
+  assert.match(rp, /const selfBlock = fourMSelfBlock\(log, myUid\);\s*if \(selfBlock\)/,
+    '\n\n❌ handleApprove ต้องเช็ค fourMSelfBlock ก่อนอนุมัติ/เปิด modal QA\n')
+  assert.match(rp, /const selfBlock = fourMSelfBlock\(qaApproveModal, user\.id\);/,
+    '\n\n❌ ปุ่มยืนยัน QA ต้องเช็ค fourMSelfBlock ซ้ำตอนเขียนจริง\n')
+  assert.match(rp, /const userCanAct = canApproveLog\(l\) && !selfBlock;/,
+    '\n\n❌ ปุ่ม SV/QA Approve ในแถวต้องซ่อนเมื่อเป็นใบของตัวเอง\n')
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261113_four_m_no_self_approve_main.sql'), 'utf8')
+  assert.match(mig, /cannot approve a 4M log you created/, '\n\n❌ trigger ฝั่ง DB ต้องกันอนุมัติใบตัวเอง\n')
+})
+
+/* ═══ ✍️ ใบ MO ฟอร์ม MTN ช่อง "ผจก.ส่วนซ่อมบำรุง" ต้องให้เจ้าตัวกดเอง (2026-11-13 · คำสั่ง user) ═══ */
+test('🛡️ MtnRepair: ขั้น 2 ห้ามลงเวลา/ลายเซ็นช่อง ผจก.ส่วนซ่อมบำรุงแทนเจ้าตัว', () => {
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'))
+  assert.doesNotMatch(mr, /mo_approved_at:\s*o\.mo_approved_at \|\|/,
+    '\n\n❌ ขั้นจ่ายงานห้ามเขียน mo_approved_at ให้ ผจก. (ช่องอนุมัติที่เจ้าตัวไม่ได้กด)\n')
+  assert.match(mr, /mo_ack_at: nowIso/, '\n\n❌ ปุ่มรับทราบของ ผจก. ต้อง stamp mo_ack_at\n')
+  assert.match(mr, /o\.mo_ack_at\s*\?\s*sg\('ผู้อนุมัติ \(ผจก\.ส่วนซ่อมบำรุง\)'/,
+    '\n\n❌ ใบพิมพ์ต้องโชว์ลายเซ็น/วันที่ช่องนี้เฉพาะเมื่อ ผจก. กดรับทราบแล้ว (mo_ack_at)\n')
+  const perm = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8')
+  assert.match(perm, /7: \{\s*\.\.\.MTN_STEPS\[7\],\s*minRank: 60,/,
+    '\n\n❌ ขั้น 7 ใบ JIG/DIE ต้องเป็น ผจก.ฝ่ายผู้แจ้ง (minRank 60) — คำสั่ง user 13/11\n')
+})
+
+/* ═══ ✍️ ลายเซ็นต้องเป็นของเจ้าตัว — ห้ามก๊อป signature_url ของคนที่เลือกจาก picker (2026-11-13 · คำสั่ง user) ═══
+   ของกลาง `src/utils/selfSign.js` (pickSignerPatch / isSelfName) */
+test('🛡️ ฟอร์มที่มีช่องเลือกผู้เซ็น ห้ามแปะลายเซ็นของคนที่เลือก', () => {
+  const read = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'))
+  const lpa = read('src/pages/LayerProcessAudit.jsx')
+  assert.doesNotMatch(lpa, /auditor_sig_url:\s*r\.kind === 'free'/, '\n\n❌ LPA: ห้ามดึง r.signature_url ของผู้ตรวจที่เลือก\n')
+  assert.match(lpa, /pickSignerPatch\(r\.name/, '\n\n❌ LPA: ช่องผู้ตรวจต้องผ่าน pickSignerPatch\n')
+  const bbs = read('src/pages/BbsCheck.jsx')
+  assert.doesNotMatch(bbs, /inspector_sig_url:\s*p\?\.signature_url/, '\n\n❌ BBS: ห้ามแปะลายเซ็นของผู้ตรวจที่เลือก\n')
+  assert.match(bbs, /pickSignerPatch\(p\?\.full_name/, '\n\n❌ BBS: ต้องผ่าน pickSignerPatch\n')
+  const mr = read('src/components/MaterialRequests.jsx')
+  assert.doesNotMatch(mr, /_sig_url`\]:\s*p\?\.signature_url/, '\n\n❌ FM-STO-003: ห้ามแปะลายเซ็นของคนที่เลือก\n')
+  const ojt = read('src/pages/OjtTraining.jsx')
+  assert.doesNotMatch(ojt, /\[sigKey\]:\s*p\.signature_url/, '\n\n❌ OJT: ช่องผู้จัดทำห้ามแปะลายเซ็นของคนที่เลือก\n')
+  const rp = read('src/pages/Report.jsx')
+  assert.doesNotMatch(rp, /setMakerSig\(ldr\.signature_url|setCheckerSig\(sv\.signature_url|setApproverSig\(mgr\.signature_url/,
+    '\n\n❌ Multi-Skill: ห้ามดึงลายเซ็นหัวหน้าประจำไลน์มาพิมพ์อัตโนมัติ\n')
+})
+
 /* ═══ 🚪 nav-route-reachable — หน้าที่สร้างแล้วต้องหาเจอ (2026-11-13) ═══════════════════════
    เจอตอนไล่เมนูซ้ำ/ไม่เข้าหมวด (คำสั่ง user) — มี route ที่ render หน้าจริง 88 ตัว แต่เมนูมี 70
    ส่วนต่างทั้งหมดอธิบายได้ (LegacyTabRedirect ของหน้าที่ยุบเป็นแท็บ · เข้าทาง QR/เมนูโปรไฟล์)

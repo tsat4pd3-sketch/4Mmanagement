@@ -38,6 +38,8 @@ import DraftRestoreBar from '../components/DraftRestoreBar';
 
 import NoticeBar from '../components/NoticeBar';
 import { tr } from '../utils/i18n';
+import { pickSignerPatch, isSelfName } from '../utils/selfSign';
+import { checkWriteRows } from '../utils/dbWrite';
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
    1) Layer Process Audit Plan   — แผนตรวจรายเดือน ต่อไลน์+กะ (สถานีรายวัน + ชั้นผู้ตรวจ ○●⊗)
@@ -684,6 +686,7 @@ export default function LayerProcessAudit() {
 
   const handleSignDone = async (blob) => {
     if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
+    if (!isSelfName(draft?.auditor_name, fullName)) { setShowSignPad(false); toast.error('เซ็นได้เฉพาะผู้ตรวจที่ระบุในใบ (ต้อง login เป็นคนนั้น)'); return; }
     const keyAtSign = draftKeyRef.current;
     setShowSignPad(false);
     try {
@@ -704,6 +707,21 @@ export default function LayerProcessAudit() {
       setDraft(prev => ({ ...prev, auditor_sig_url: url }));
       toast.success('บันทึกลายเซ็นแล้ว');
     } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+  };
+
+  /* ✍️ ผู้ตรวจเซ็นเอง (13/11 · คำสั่ง user) — ใบที่บันทึกไว้แล้วแต่ช่องลายเซ็นว่าง (คนอื่นบันทึกแทน)
+     เจ้าตัว login แล้วกดเซ็น ⇒ เขียนลายเซ็นโปรไฟล์ของตัวเองลงใบ · ไม่มีลายเซ็นโปรไฟล์ = เปิดแผ่นเซ็นแทน */
+  const signAsAuditor = async () => {
+    if (!draft?.id) return;
+    if (!isSelfName(draft.auditor_name, fullName)) { toast.error('เซ็นได้เฉพาะผู้ตรวจที่ระบุในใบ (ต้อง login เป็นคนนั้น)'); return; }
+    if (!lineGuard('ใบตรวจ LPA ของไลน์นี้')) return;
+    const mySig = myProfile?.signature_url || null;
+    if (!mySig) { setShowSignPad(true); return; }
+    const res = await supabase.from('lpa_audits').update({ auditor_sig_url: mySig, updated_at: new Date().toISOString() })
+      .eq('id', draft.id).select('id');
+    if (!checkWriteRows(res, 'เซ็นผู้ตรวจ LPA')) return;
+    setDraft(prev => (prev?.id === draft.id ? { ...prev, auditor_sig_url: mySig } : prev));
+    toast.success('เซ็นผู้ตรวจแล้ว');
   };
 
   const saveAudit = async () => {
@@ -1232,15 +1250,25 @@ ${issuesHtml}
               <div style={lb}>{tr('ผู้ตรวจ')}</div>
               {/* ผู้ตรวจจาก profiles → ลายเซ็นตามคนที่เลือก (ไม่ใช่แค่โปรไฟล์ตัวเอง) · พิมพ์เองยังได้ (2026-09-07) */}
               <PersonSelect value={draft?.auditor_name || ''} history={auditorHist} style={{ width: 200 }}
-                onChange={r => setDraft(prev => ({ ...prev, auditor_name: r.name, auditor_sig_url: r.kind === 'free' ? prev?.auditor_sig_url || null : (r.signature_url || null) }))} />
+                onChange={r => setDraft(prev => {
+                  /* 🔴 ลายเซ็นติดเฉพาะเมื่อเลือก "ตัวเอง" — เลือกคนอื่น = ช่องลายเซ็นว่าง รอเจ้าตัวมาเซ็นเอง (utils/selfSign.js) */
+                  const pk = pickSignerPatch(r.name, { fullName, mySig: myProfile?.signature_url || null });
+                  const keepDrawn = pk.self && isSelfName(prev?.auditor_name, fullName) && prev?.auditor_sig_url;
+                  return { ...prev, auditor_name: r.name, auditor_sig_url: keepDrawn ? prev.auditor_sig_url : pk.sig };
+                })} />
             </div>
             <div>
               <div style={lb}>{tr('ลายเซ็น')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {draft?.auditor_sig_url
                   ? <img src={draft.auditor_sig_url} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2 }} />
-                  : <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ยังไม่มี')}</span>}
-                {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>{tr('เซ็นใหม่')}</button>}
+                  : <span style={{ fontSize: 11, color: draft?.auditor_name && !isSelfName(draft.auditor_name, fullName) ? 'var(--amber)' : 'var(--muted)' }}>
+                      {draft?.auditor_name && !isSelfName(draft.auditor_name, fullName) ? `รอ ${draft.auditor_name} login มาเซ็นเอง` : tr('ยังไม่มี')}
+                    </span>}
+                {/* ✍️ แผ่นเซ็น/ปุ่มเซ็น = เฉพาะเจ้าตัว (ผู้ตรวจที่ระบุ = คนที่ login) */}
+                {canRecord && isSelfName(draft?.auditor_name, fullName) && (draft?.id && !draft?.auditor_sig_url
+                  ? <button onClick={signAsAuditor} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>{tr('✍️ เซ็นเป็นผู้ตรวจ')}</button>
+                  : <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>{tr('เซ็นใหม่')}</button>)}
               </div>
             </div>
           </div>

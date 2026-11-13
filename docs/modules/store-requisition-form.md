@@ -46,3 +46,6 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
 
 ## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
 ใบ FM-STO-003 — แถบ ✓→○ ใน Editor (`matReqFlow()` `utils/materialRequest.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+## ✍️ ลายเซ็นต้องเป็นของเจ้าตัว (2026-11-13 · คำสั่ง user · `utils/selfSign.js` · UI §6.37)
+- 6 ช่องลายเซ็น: เลือกชื่อใครก็ได้ แต่ลายเซ็นติดเฉพาะเจ้าตัว · ช่องคนอื่นขึ้น "รอ … login มาเซ็นเอง" · เจ้าตัวกด "✍️ เซ็นช่องนี้" แล้วบันทึก
