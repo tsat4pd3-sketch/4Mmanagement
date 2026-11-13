@@ -61,6 +61,7 @@ import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { isDetailsPending } from '../utils/moDetailsPending';   // ⏳ ใบที่เปิดให้ตอนเรียกช่าง ยังรอรายละเอียด (13/11)
+import { checkDtClosedAtShiftEnd } from '../utils/shiftDataSanity';   // 🔍 จับข้อมูลที่ทำให้ OEE โกหก (13/11)
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
 import { MB_FLAGS, mbFlagOf, mbFlagMeta, mbValueForDb } from '../utils/dtBreakdownOwner';   // 🔧 ธง "เครื่องเสียของช่างไหม" (13/11)
@@ -1451,6 +1452,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         '\n\nยืนยันบันทึกโดยไม่เลือกเครื่อง? — เช่น พาร์ทหมด / ไฟดับทั้งโรงงาน');
       if (!ok) return;
     }
+    /* 🔍 ใบที่ "ปิดตรงเวลาเลิกกะ" — เตือนแต่ไม่บล็อก (13/11 · คำสั่ง user)
+       ที่มา: ไล่ใบที่ซ่อมเสร็จแล้วปิดช้าสุด 6 ใบของ ต.ค. **ทั้ง 6 ใบปิดตรงเวลาเลิกกะเป๊ะ**
+         ⇒ ไม่ใช่ "คืนไลน์นาน" แต่เป็นลงดาวไทม์แล้วไม่ปิดตอนไลน์กลับมาเดิน
+       🔴 เตือน ไม่บล็อก — ของจริงมีเคสที่หยุดยาวถึงเลิกกะจริง
+       🔴 หักเวลาพักก่อนถาม (พักถูกกันออกจากฐาน %A อยู่แล้ว) ไม่งั้นกล่าวหาเกินจริง
+       🔴 กฎอยู่ `utils/shiftDataSanity.js` ห้ามคิดเกณฑ์เองในหน้า */
+    const dtEndChk = (() => {
+      const win = selSession ? shiftWindow(selSession, Date.now()) : null;
+      if (!win?.hardEnd || !endedAt || !startedAt) return null;
+      return checkDtClosedAtShiftEnd({
+        endedMs: endedAt.getTime(), startedMs: startedAt.getTime(), shiftEndMs: win.endMs,
+        planned: dtCat === 'planned',
+        breakIntervals: breakIntervalsIn({
+          policies: breakPolicies, startMs: startedAt.getTime(), endMs: endedAt.getTime(),
+          workDate: selSession?.work_date || null, shift: selSession?.shift,
+          processType: selSession?.process_type ?? null, shiftEndMs: win.endMs,
+          lineName: selSession?.line_name ?? null,
+        }),
+      });
+    })();
+    if (dtEndChk && !window.confirm(dtEndChk.text + '\n\nยืนยันบันทึกตามนี้?')) return;
+
     setSavingDT(true);
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -2764,6 +2787,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         dtRowCount: dtLogs.length,
         endTimeWarn: closeEndTime ? checkCloseTime(closeEndTime, selSession, Date.now(), { downtimes: previewDecidedDt() }) : null,
         suspectPending: sumSuspectPending(defectLogs),
+        /* 🔍 นับใบนอกแผนที่ "ปิดตรงเวลาเลิกกะ" (13/11) — ตัดสินรายใบที่ checkDtClosedAtShiftEnd()
+           🔴 ไม่รู้กรอบกะ (กะยังไม่ปิด/ไม่มี shift_min) = นับ 0 ⇒ ด่านไม่ขึ้น ห้ามเดา */
+        dtClosedAtShiftEnd: (() => {
+          const win = selSession ? shiftWindow(selSession, Date.now()) : null;
+          if (!win?.hardEnd) return 0;
+          return previewDecidedDt().filter(d => {
+            if (d?.dr_downtime_types?.category === 'planned') return false;
+            const st = d?.started_at ? Date.parse(d.started_at) : null;
+            const en = d?.ended_at ? Date.parse(d.ended_at) : null;
+            if (!st || !en) return false;
+            return !!checkDtClosedAtShiftEnd({ endedMs: en, startedMs: st, shiftEndMs: win.endMs });
+          }).length;
+        })(),
       });
       if (confirmChecks(checks).length) { setRecheckTicks({}); setCloseRecheck(checks); return; }
     }
