@@ -133,7 +133,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
     <div onClick={onClose} style={{
       position: 'fixed', inset: 0, zIndex: 2100,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
-      background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(6px)',
+      background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)',
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',

@@ -53,7 +53,7 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
   return (
     <div className="modal-scroll" /* ปิดจาก backdrop ได้เฉพาะตอนยังไม่พิมพ์อะไร (UI-CONVENTIONS §5) */
       onClick={() => { if (!text.trim()) onClose(); }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={box} onClick={e => e.stopPropagation()}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ flex: 1, minWidth: 0 }}>

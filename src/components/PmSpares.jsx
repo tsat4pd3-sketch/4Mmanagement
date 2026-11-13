@@ -37,7 +37,7 @@ const Chip = ({ c, children }) => <span style={{ display: 'inline-block', paddin
 function Shell({ title, sub, onClose, children, width = 680 }) {
   return (
     // ฟอร์มมีข้อมูลที่กรอก — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · modal-scroll = เลื่อนถึงปุ่มล่างได้
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>

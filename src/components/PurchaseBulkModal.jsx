@@ -181,7 +181,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
 
   return (
     /* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกจำนวนค้างแล้วเผลอแตะข้างนอกไม่ควรหาย */
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000,
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: 'min(560px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 18 }}>

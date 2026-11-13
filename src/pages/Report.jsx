@@ -1868,7 +1868,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     <div>
       {/* Reject modal */}
       {rejectModal && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{trI18n('❌ ระบุเหตุผลที่ Reject')}</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
@@ -1890,7 +1890,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       {/* QA Approve Modal */}
       {qaApproveModal && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>{trI18n('QA ยืนยันคุณภาพงาน')}</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
@@ -1944,7 +1944,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
 
       {/* Image viewer modal */}
       {imageViewModal && (
-        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 13, color: '#fff', marginBottom: 8, fontWeight: 600 }}>{imageViewModal.title}</div>
             <img src={imageViewModal.url} style={{ maxWidth: '88vw', maxHeight: '80vh', borderRadius: 10, objectFit: 'contain', display: 'block' }} />

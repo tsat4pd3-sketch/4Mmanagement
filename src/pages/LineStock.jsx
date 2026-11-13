@@ -946,7 +946,7 @@ function StockTab({ role, scope }) {
 
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
@@ -1101,7 +1101,7 @@ function StockTab({ role, scope }) {
 
       {/* ── Reject reason modal ── (ฟอร์มมี input → ไม่ปิดจาก backdrop click ตาม UI-CONVENTIONS §5) */}
       {rejectTx && (
-        <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>{tr('❌ ปฏิเสธคำขอ')}</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
@@ -1359,7 +1359,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
 
       {/* Modal */}
       {showModal && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+        <div style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
@@ -1844,6 +1844,15 @@ const TABS = [
   { key:'timeboard', label: 'บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
   { key:'inflow',    label: 'กฎรับเข้า' },
 ];
+/* 🗂 13/11: 12 แท็บ → 6 ช่องบน (กฎ ≤7 · UI §6.8 ข้อ 6) — คีย์ลูก = ?tab= เดิม (TABS/LEGACY_TABS ไม่เปลี่ยน)
+   ขาออก/ขาเข้า/Stock = งานรายวัน อยู่หน้าสุด · ติดตาม/กระทบยอด = ของที่ค้างหลังส่ง · ตั้งค่าคลัง = ทะเบียน/กฎ */
+const lsTab = (k) => TABS.find(t => t.key === k);
+const LS_TAB_GROUPS = [
+  lsTab('out'), lsTab('in'), lsTab('stock'),
+  { key: 'recon', label: '📋 ติดตาม / กระทบยอด', children: ['sap', 'diff', 'count', 'wip'].map(lsTab) },
+  { key: 'setup', label: '⚙️ ตั้งค่าคลัง',        children: ['levels', 'zones', 'delivery', 'inflow'].map(lsTab) },
+  lsTab('timeboard'),
+];
 
 export default function LineStock() {
   const { role, fullName, lineId, sections } = useContext(UserContext);
@@ -1863,7 +1872,7 @@ export default function LineStock() {
       <PageHeader
         title={tr('Line Stock — สต๊อกหน้าไลน์')} icon="📦"
         sub={tr('ยอดคงเหลือ mini-store ของไลน์ · รอบจัดส่งภายใน · กฎรับเข้าอัตโนมัติเมื่อปิดใบผลิต')}
-        tabs={TABS} tab={activeTab} onTab={setActiveTab}
+        tabs={LS_TAB_GROUPS} tab={activeTab} onTab={setActiveTab}
       />
 
       {(activeTab === 'out' || activeTab === 'in') && (

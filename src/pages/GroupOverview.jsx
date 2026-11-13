@@ -880,7 +880,7 @@ export default function GroupOverview() {
            display-only (ไม่มีช่องกรอก) → ปิดด้วยคลิกพื้นหลัง/✕ ได้ตาม §5 · zIndex ≥ 2000 (เหนือ 🔔) */}
       {pickComp && (
         <div onClick={() => setPickComp(null)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000,
+          position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000,
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
         }}>
           <div onClick={e => e.stopPropagation()} style={{

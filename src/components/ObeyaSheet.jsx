@@ -131,7 +131,7 @@ function SheetZoom({ onClose, children }) {
   }, [onClose]);
   return createPortal(
     <div className="modal-scroll" onClick={onClose}
-      style={{ position: 'fixed', inset: 0, zIndex: 1900, background: 'rgba(0,0,0,0.6)', display: 'flex', padding: 12 }}>
+      style={{ position: 'fixed', inset: 0, zIndex: 1900, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', padding: 12 }}>
       <div onClick={(e) => e.stopPropagation()}
         style={{ width: 'min(1280px, 96vw)', height: 'min(800px, 92vh)', display: 'grid', margin: 'auto', minHeight: 0 }}>
         {children}

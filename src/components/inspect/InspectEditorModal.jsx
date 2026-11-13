@@ -7,7 +7,7 @@ import { tr } from '../../utils/i18n';
    📄 docs/modules/inspection-point-setup.md */
 const S = {
   overlay: {
-    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)',
+    position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)',
     zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
   },
   modal: {

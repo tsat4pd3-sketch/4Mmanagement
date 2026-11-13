@@ -110,7 +110,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
 
   return (
     /* อ่านอย่างเดียว ไม่มีฟอร์ม — แต่ปิดด้วยปุ่มเท่านั้นตามแนวของหน้าใบ MO (กันเผลอแตะแล้วหลุด) */
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>

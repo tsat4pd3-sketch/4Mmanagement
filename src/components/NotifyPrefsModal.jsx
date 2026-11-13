@@ -70,7 +70,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
     /* `modal-scroll` = กติกากลาง (index.css) — overlay เลื่อนเอง + `> * { margin:auto }`
        ⚠️ ห้ามใส่ max-height/overflow ที่ตัวกล่อง · ไม่ปิดจากการคลิก backdrop */
     <div className="modal-scroll"
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', padding: '4vh 3vw' }}>
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3200, display: 'flex', padding: '4vh 3vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 560px)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('ตั้งค่าแจ้งเตือนของฉัน')}</div>

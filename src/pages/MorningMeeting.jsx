@@ -1158,7 +1158,7 @@ export default function MorningMeeting() {
       {/* ── Modal เพิ่ม Action Item (ฟอร์ม — ห้ามปิดจาก backdrop ตามกติกา §5) ── */}
       {actModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
+          <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)' }} />
           <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 'var(--r-lg)', background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('➕ Action Item — ประชุม')} {fmtDate(meetingDate)}</h3>

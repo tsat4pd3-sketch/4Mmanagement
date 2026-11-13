@@ -290,7 +290,7 @@ export default function WipBetweenSteps() {
 
       {counting && (
         <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...card, width: 'min(92vw, 420px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <b>{tr('นับจริง —')} {tr(counting.label)}</b>
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>

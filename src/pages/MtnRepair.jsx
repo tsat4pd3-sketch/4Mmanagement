@@ -74,6 +74,7 @@ import { suggestItemTypeFromHistory, registryItemTypeOf, pickMoItemType } from '
 import { machineKey } from '../utils/machineNo';
 /* 🔴 เกณฑ์ "รายละเอียดชัดพอไหม" ของใบแจ้งซ่อม — ห้าม hardcode ความยาว/ข้อความในหน้า */
 import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
+import { isDetailsPending, detailsPendingText, canClearDetailsFlag, moDetailsMissing } from '../utils/moDetailsPending';   // ⏳ ใบที่เปิดให้ตอนเรียกช่าง ยังรอรายละเอียด (13/11)
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
@@ -149,6 +150,14 @@ const getWorkDate = () => {
 /** ISO → ค่าที่ <input type="datetime-local"> ใช้ได้ (เวลาท้องถิ่น) · ว่าง = '' */
 const localDt = (v) => { if (!v) return ''; const d = new Date(v); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
 const localDtNow = () => { const d = new Date(); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+/* ISO → ค่าของ <input type="datetime-local"> (นาฬิกาเครื่อง เหมือน localDtNow) · แกะไม่ออก/ว่าง = '' */
+const localDtValue = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
 
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
 const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
@@ -217,6 +226,10 @@ const MO_LIST_COLS = [
   'reported_by_name', 'reporter_prod',
   'repair_done_at', 'accept_at', 'satisfaction',      // แท็บ KPI (first-response · ความพึงพอใจ)
   'quality_related', 'qa_skipped_at',                 // สถานะ QA บนป้าย
+  /* ⏳ ใบที่ระบบเปิดให้ตอนกด "เรียกช่าง" แล้วยังรอคนใส่รายละเอียด (13/11 · คำสั่ง user)
+     🔴 เอาแค่ธง boolean (~2 ไบต์/ใบ) **ห้ามลาก `before_img` มาด้วย** — เป็น URL ~150 ตัวอักษร
+        × 1000 ใบ = ~150 KB/โหลด บนจอที่เปิดค้างทั้งวัน · รายการช่องที่ขาดโชว์ในใบ (select('*') อยู่แล้ว) */
+  'details_pending',
   /* ด่านอนุมัติก่อนเริ่มงาน — `isApprovalBlocked()` ต้องเห็นทั้ง 3 ช่อง
      🔴 ขาดช่องใดช่องหนึ่ง = undefined = "ไม่รู้" ⇒ ใบตกกลับไปอยู่กอง "รอช่างรับงาน" เงียบๆ */
   'dept_manager_at', 'plant_manager_at', 'purpose',
@@ -341,7 +354,9 @@ function SignField({ signatureUrl, existing, onChange }) {
 /* 📝 เปิดใบแจ้งซ่อมจากรายการ Downtime (หน้า /daily-report) — ฟอร์มเดียวกับหน้านี้ (08/11 · คำสั่ง user)
    โหลดทะเบียนที่ฟอร์มต้องใช้เอง (หน้า Daily Report ไม่มี) · โหลดไม่สำเร็จ = เขียนบนจอ + ลองใหม่ ห้ามเปิดฟอร์มครึ่งๆ
    ⚠️ ไลน์ในฟอร์ม = เฉพาะครอบครัวไลน์ของกะนี้ (ไม่ขยายขอบเขตเกินกะที่คนนี้ทำงานอยู่) */
-export function MoReportFromDowntime({ downtime, lineName, initial, defaultDept, fullName, onClose, onSaved }) {
+export function MoReportFromDowntime({ downtime, lineName, initial, defaultDept, fullName, onClose, onSaved,
+  /* ⏳ มี id = "เพิ่มรายละเอียดใบเดิม" ไม่ใช่เปิดใบใหม่ (13/11) — ใบที่ระบบเปิดให้ตอนกดเรียกช่าง */
+  fillOrderId = null, hasBefore = false }) {
   const [st, setSt] = useState({ loading: true, err: '' });
   const [m, setM] = useState(null);
   const load = useCallback(async () => {
@@ -380,8 +395,14 @@ export function MoReportFromDowntime({ downtime, lineName, initial, defaultDept,
   );
   return (
     <ReportModal {...m} fullName={fullName} defaultDept={defaultDept} onClose={onClose} onSaved={onSaved}
-      title={`เปิดใบแจ้งซ่อมจาก Downtime · ${lineName || ''}`} initial={initial}
-      sourceDowntimeId={downtime?.id || null} requireBefore />
+      title={fillOrderId
+        ? `เพิ่มรายละเอียดใบ MO · ${lineName || ''}`
+        : `เปิดใบแจ้งซ่อมจาก Downtime · ${lineName || ''}`}
+      initial={initial}
+      fillOrderId={fillOrderId}
+      sourceDowntimeId={fillOrderId ? null : (downtime?.id || null)}
+      /* รูปก่อนซ่อมบังคับเหมือนเดิม — ยกเว้นใบที่มีรูปอยู่แล้ว (เติมรายละเอียดรอบที่ 2) */
+      requireBefore={!fillOrderId || !hasBefore} />
   );
 }
 
@@ -410,7 +431,7 @@ const IO_DIGITS = MO_IO_DIGITS;
 function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '4vh 2vw' }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '4vh 2vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
@@ -496,6 +517,11 @@ export default function MtnRepair() {
      อ่านจาก URL ตรงๆ แบบเดียวกับ `?wait=` · ลิงก์แจ้งเตือน `mtn_pr_waiting` ชี้มาที่ `?pr=waiting` */
   const fPr = sp.get('pr') || '';
   const setFPr = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ pr: v || null }); }, [mergeSp]);
+  /* ⏳ `?doc=pending` — ใบที่เปิดให้ตอนกดเรียกช่าง แล้วยังไม่มีใครใส่รายละเอียด (13/11 · คำสั่ง user)
+     🔴 **ไม่ใช่ด่าน** — ใบพวกนี้ยัง "รอรับงาน" ปกติ ช่างรับ/ซ่อม/ปิดได้ตามเดิม (ห้ามให้ไลน์รอเอกสาร)
+        ช่องนี้มีไว้ "ไล่เก็บเอกสารย้อนหลัง" เท่านั้น · อ่านจาก URL ตรงๆ แบบเดียวกับ `?pr=` */
+  const fDoc = sp.get('doc') || '';
+  const setFDoc = useCallback((v) => { inPageFilterEdit.current = true; mergeSp({ doc: v || null }); }, [mergeSp]);
   const [openPrs, setOpenPrs] = useState({ byOrder: {}, error: null });
   const [fLine, setFLine] = useState('');
   const [fDept, setFDept] = useState('');
@@ -517,6 +543,8 @@ export default function MtnRepair() {
      `finest='hour'` — ใบซ่อมมีเวลาเต็ม จึงกดปุ่ม "วันนี้" ได้จริง ไม่ใช่ปุ่มหลอก */
   const tr = useTimeRange({ defaultDays: 365, finest: 'hour' });
   const [showReport, setShowReport] = useState(false);
+  /* ⏳ ใบที่กำลัง "เพิ่มรายละเอียดย้อนหลัง" (13/11) — ใช้ฟอร์มแจ้งซ่อมตัวเดิม โหมดเขียนทับ */
+  const [fillOrder, setFillOrder] = useState(null);
   const [detail, setDetail] = useState(null);
   const [stepModal, setStepModal] = useState(null); // { step, order, editMode }
 
@@ -854,7 +882,19 @@ const HANDOFF_CAP = 2000;
       test: o => isMtnFormOrder(o) && !o.dept_manager_at },
     { key: 'pr', label: 'งาน PR', value: PR_FILTERS.find(x => x.v === fPr)?.label || fPr,
       on: !!fPr && PR_FILTERS.some(x => x.v === fPr), test: prMatch },
-  ], [fWait, fAck, fPr, prMatch]);
+    /* ⏳ ใบรอเพิ่มรายละเอียด — ตัดสินด้วย `isDetailsPending()` ห้ามเทียบ `=== true` ลอยๆ ในหน้า
+       (คอลัมน์ไม่ได้ select มา = null = ไม่รู้ ⇒ ต้องไม่กรองใบหายไปเงียบๆ) */
+    { key: 'doc', label: 'เอกสารใบ MO', value: 'รอเพิ่มรายละเอียด', on: fDoc === 'pending',
+      test: o => isDetailsPending(o) === true },
+  ], [fWait, fAck, fPr, prMatch, fDoc]);
+
+  /* ตัวนับ "รอเพิ่มรายละเอียด" — นับหลังตัวกรองอื่น (ยกเว้นตัวเอง) แบบเดียวกับ prCounts
+     🔴 นับได้เฉพาะเมื่อคิวรีส่งธงมาจริง — `known:false` ⇒ ไม่โชว์เลข (ห้ามโชว์ 0 แล้วคนคิดว่าครบ) */
+  const docPending = useMemo(() => {
+    let known = false, n = 0;
+    beforeWait.forEach(o => { const v = isDetailsPending(o); if (v !== null) known = true; if (v === true) n++; });
+    return { known, n };
+  }, [beforeWait]);
 
   const shownNoDate = useMemo(() => {
     const on = queueFilters.filter(f => f.on);
@@ -927,8 +967,9 @@ const HANDOFF_CAP = 2000;
     else if (key === 'wait') setFWait('');
     else if (key === 'ack') mergeSp({ ack: null });
     else if (key === 'pr') setFPr('');
+    else if (key === 'doc') setFDoc('');
     else if (key === 'date' && oldestLoaded) trSetRange(oldestLoaded, trTo);
-  }, [setFWait, setFPr, mergeSp, oldestLoaded, trSetRange, trTo]);
+  }, [setFWait, setFPr, setFDoc, mergeSp, oldestLoaded, trSetRange, trTo]);
 
   /* ── ⬇️ Export Excel ของช่วงที่เลือก (2026-10-06 · คำขอ user) ────────────────────
      ส่ง `shown` (ใบที่เห็นบนจอหลังกรองทุกชั้น) ⇒ ไฟล์ตรงกับจอเสมอ
@@ -1058,7 +1099,7 @@ const HANDOFF_CAP = 2000;
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{trI18n('กำลังโหลด…')}</div></Page>;
 
-  const cp = { lines: scopedLineObjs, machines, machineTypesById, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters,
+  const cp = { lines: scopedLineObjs, machines, machineTypesById, orders, techs, parts, problemTypes, repairTypes, itemTypes, laborRates, mtnDepts, mtnTeams: mtnTeamRows, role, allUnits, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams, reporterScope, defaultDept: userTeams.length === 1 ? userTeams[0] : '', onOpenImprovement: openImprovementFromMo, onReload: reloadAll, reloadMasters: loadMasters, onFillDetails: setFillOrder,
     /* 🔄 30/10 — ให้ฟอร์มแจ้งซ่อมกดโหลดทะเบียนไลน์ใหม่ได้เองเมื่ออ่านไม่สำเร็จ (ไม่ต้องออกจากระบบ) */
     lineLoadErr, onReloadLines: () => { invalidateProductionLines(); setLineLoadErr(''); loadMasters(); } };
 
@@ -1110,6 +1151,17 @@ const HANDOFF_CAP = 2000;
             {/* ตัวรวมไม่โชว์ในลิสต์ — ยกเว้นตอนที่ถูกเลือกอยู่จริง (มาจากลิงก์กระดิ่ง) ไม่งั้นช่องจะว่างทั้งที่กรองอยู่ */}
             {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{trI18n(x.label)} ({prCounts[x.v] ?? 0})</option>)}
           </select>
+          {/* ⏳ ใบรอเพิ่มรายละเอียด (13/11) — โชว์ช่องนี้เฉพาะเมื่อ "มีของให้ไล่เก็บ" หรือกำลังกรองอยู่
+              🔴 ไม่มีใบค้าง = ไม่ต้องรบกวนแถบกรอง · ธงอ่านไม่ได้ (known:false) = ไม่โชว์เลขแต่ยังเลือกได้ */}
+          {(fDoc || (docPending.known && docPending.n > 0)) && (
+            <select value={fDoc} onChange={e => setFDoc(e.target.value)} aria-label={trI18n('เอกสารใบ MO')}
+              style={docPending.n && !fDoc ? { borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700 } : undefined}>
+              <option value="">{allOf('เอกสารใบ MO')}</option>
+              <option value="pending">
+                {trI18n('⏳ รอเพิ่มรายละเอียด')}{docPending.known ? ` (${docPending.n})` : ''}
+              </option>
+            </select>
+          )}
           <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง / ช่างที่รับงาน" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} {trI18n('รายการ')}</span>
@@ -1248,6 +1300,20 @@ const HANDOFF_CAP = 2000;
       {tab === 'master' && can('mtn_repair', 'manage_master', role) && <MasterTab {...cp} fullName={fullName} />}
 
       {showReport && <ReportModal {...cp} onClose={() => setShowReport(false)} onSaved={() => { setShowReport(false); loadOrders(); }} />}
+      {/* ⏳ เพิ่มรายละเอียดใบที่ระบบเปิดให้ตอนกดเรียกช่าง (13/11 · คำสั่ง user "มาใส่ย้อนหลังได้")
+          🔴 ฟอร์มเดียวกับแจ้งซ่อมใหม่ + ตัวตรวจชุดเดียวกัน + **รูปก่อนซ่อมบังคับเหมือนเดิม**
+             (คำสั่ง user 08/11 — ใบที่มาจาก downtime ต้องมีรูปให้ช่างเห็นอาการ)
+          🔴 เติมค่าเดิมจากใบ แล้วเขียนทับใบเดิม — ห้ามเปิดใบใหม่ (ใบซ้ำกับ downtime เดียวกัน) */}
+      {fillOrder && <ReportModal {...cp} fillOrderId={fillOrder.id} requireBefore={!fillOrder.before_img}
+        title={`เพิ่มรายละเอียดใบ MO${fillOrder.mo_no ? ` ${fillOrder.mo_no}` : ' (ยังไม่ออกเลข)'}`}
+        initial={{
+          mtn_dept: fillOrder.mtn_dept || '', line_name: fillOrder.line_name || '', machine_no: fillOrder.machine_no || '',
+          item_type: fillOrder.item_type || '', problem_group: fillOrder.problem_group || '',
+          problem_characteristic: fillOrder.problem_characteristic || '', report_note: fillOrder.report_note || '',
+          occurred_at: localDtValue(fillOrder.occurred_at),
+        }}
+        onClose={() => setFillOrder(null)}
+        onSaved={() => { setFillOrder(null); reloadAll(); }} />}
       {/* `detail` = ใบเต็ม (fetchFullOrder) และถูกรีเฟรชโดย reloadAll — เดิมหยิบแถวจาก `orders`
           ซึ่งตอนนี้เป็นคอลัมน์ย่อแล้ว ห้ามกลับไป `orders.find(...)` */}
       {detail && <DetailDrawer order={detail} {...cp}
@@ -1304,7 +1370,25 @@ function MoRow({ o, onOpen }) {
     <tr onClick={onOpen} tabIndex={0} role="button" className={pending ? 'mo-row-alert' : ''}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
       <td style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{trI18n('(ยังไม่ออกเลข)')}</span>}</td>
-      <td><span style={statusChipStyle(o)}>{stripIcon(trI18n(m.label))}</span></td>
+      <td>
+        <span style={statusChipStyle(o)}>{stripIcon(trI18n(m.label))}</span>
+        {/* ⏳ ใบที่ระบบเปิดให้ตอนกด "เรียกช่าง" แล้วยังไม่มีใครใส่รายละเอียด (13/11 · คำสั่ง user)
+            🔴 ต้องแยกให้เห็นในคิว — ใบที่ระบบสร้างเองห้ามปนกับใบที่คนกรอกครบเงียบๆ
+            🔴 ป้ายนี้ไม่ใช่สถานะงาน (ใบยัง "รอรับงาน" ปกติ) ⇒ วาดเป็นป้ายที่ 2 ตัวเล็ก ไม่ทับป้ายสถานะ
+            🔴 ตัดสินที่ detailsPendingText() — คืน null = ไม่ขึ้นป้าย (ใบปกติ หรือไม่ได้ select ธงมา) */}
+        {(() => {
+          const t = detailsPendingText(o);
+          if (!t) return null;
+          return (
+            <div title={trI18n('เปิดใบให้อัตโนมัติตอนกดเรียกช่าง — เปิดใบนี้แล้วกดเพิ่มรายละเอียดได้')}
+              style={{ marginTop: 2, fontSize: 11, fontWeight: 700, color: 'var(--amber)',
+                       background: 'var(--amber-dim)', borderRadius: 'var(--r-xs)',
+                       padding: '1px 5px', display: 'inline-block', whiteSpace: 'nowrap' }}>
+              ⏳ {trI18n('รอเพิ่มรายละเอียด')}
+            </div>
+          );
+        })()}
+      </td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
           <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
@@ -1357,7 +1441,10 @@ function FormStep({ n, title, visible = true }) {
      · `sourceDowntimeId` ผูกที่มา (กันเปิดซ้ำ + MTTR เขียนเวลากลับ `syncDowntimeTimes`)
      · `requireBefore` = รูปก่อนซ่อมบังคับ · ไม่ส่ง 3 ตัวนี้ = พฤติกรรมเดิมเป๊ะ */
 function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machineTypesById = {}, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved,
-  initial = null, sourceDowntimeId = null, requireBefore = false, title = 'แจ้งซ่อมใหม่ (Step 1)' }) {
+  initial = null, sourceDowntimeId = null, requireBefore = false, title = 'แจ้งซ่อมใหม่ (Step 1)',
+  /* ⏳ โหมด "เพิ่มรายละเอียดย้อนหลัง" (13/11) — ส่ง id ของใบที่ระบบเปิดให้ตอนกดเรียกช่าง
+     🔴 ฟอร์มตัวเดียวกัน ตัวตรวจชุดเดียวกัน ต่างแค่ **เขียนทับใบเดิม ไม่เปิดใบใหม่** */
+  fillOrderId = null }) {
   const [f, setF] = useState(() => {
     const base = {
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
@@ -1670,6 +1757,31 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
       const payload = { ...fRest, ...mtnForm, problem_group: groupForDb(f.problem_group), want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
         report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null,
         ...(sourceDowntimeId ? { source_downtime_id: sourceDowntimeId } : {}) };
+      /* ⏳ โหมดเติมรายละเอียดย้อนหลัง — เขียนทับใบเดิม
+         🔴 **ห้ามแตะสถานะ/ขั้น/เวลาแจ้ง/ผู้แจ้ง** — ช่างอาจรับงานหรือซ่อมไปแล้วระหว่างรอเอกสาร
+            เขียน status:'pending' ทับ = ดึงใบที่ซ่อมอยู่กลับไปกองรอรับงาน (ล้มเหลวเงียบ)
+         🔴 ปลดธงได้ก็ต่อเมื่อครบทุกช่องตาม `canClearDetailsFlag()` — รูปอัปโหลดทีหลัง จึงส่ง
+            before_img ที่กำลังจะได้เข้าไปด้วย (มี `beforeFile` = จะมีรูปแน่นอนหลังอัปโหลดสำเร็จ) */
+      if (fillOrderId) {
+        const { status: _s, current_step: _cs, report_at: _ra, work_date: _wd,     // eslint-disable-line no-unused-vars
+          reported_by_name: _rn, reported_by_uid: _ru, source_downtime_id: _sd,    // eslint-disable-line no-unused-vars
+          ...fill } = payload;
+        const done = canClearDetailsFlag(fill, beforeFile ? { before_img: 'pending-upload' } : {});
+        const okFill = checkWriteRows(await supabaseDR.from('mtn_orders')
+          .update({ ...fill, details_pending: done ? false : true })
+          .eq('id', fillOrderId).select('id'), 'เพิ่มรายละเอียดใบ MO');
+        if (!okFill) { setSaving(false); return; }
+        if (beforeFile) {
+          try {
+            const blob = await resizeMoImage(beforeFile);
+            const url = await uploadMtnImg(blob, `before/${fillOrderId}-${Date.now()}.${imgExt(blob)}`);
+            checkWrite(await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', fillOrderId), 'ผูกรูปเข้าใบ');
+          } catch (e) { toast.error('อัปโหลดรูปไม่สำเร็จ: ' + e.message + ' — ใบยังติดธงรอรายละเอียด แนบรูปใหม่ได้'); }
+        }
+        toast.success(done ? 'เพิ่มรายละเอียดครบแล้ว — ใบหลุดจากคิวรอเอกสาร' : 'บันทึกแล้ว แต่ยังไม่ครบ — ใบยังอยู่ในคิวรอเพิ่มรายละเอียด');
+        onSaved();
+        return;
+      }
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
       if (error?.code === '42703') {
@@ -2370,7 +2482,7 @@ function printMoReportMtn(o, dparts = [], logo0, dlabor = [], cmt = NO_CMT, cost
 }
 
 /* ── Detail drawer ───────────────────────────────────── */
-function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload }) {
+function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MTN_DEPTS, fullName, signatureUrl, improvements, supplyByMachineNo, userTeams = [], reporterScope = null, onOpenImprovement, onClose, onStep, onReload, onFillDetails }) {
   const isMobile = useIsMobile();   // 📱 ปุ่ม "ขั้นถัดไป" เกาะล่างของใบ (15/10)
   /* 🔒 ฝั่ง + ระดับตำแหน่งของคนกด — ใช้ล็อกช่องเซ็นในลูป MO (2026-10-04 · คำสั่ง user)
      🔴 ตัดสินจากข้อมูลที่บันทึกไว้จริงเท่านั้น (mtn_teams / role / sections / position)
@@ -3140,6 +3252,27 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           คุณเป็น<b>{trI18n('ผู้เปิดใบนี้')}</b> — ตรวจรับงานหลังซ่อม (ขั้น 4) และรับมอบ/ติดตามผล (ขั้น 6) ได้เอง
         </NoticeBar>
       )}
+      {/* ⏳ ใบที่ระบบเปิดให้ตอนกด "เรียกช่าง" แล้วยังไม่มีใครใส่รายละเอียด (13/11 · คำสั่ง user)
+          🔴 **ไม่บล็อกอะไรเลย** — ช่างรับงาน/ซ่อม/ปิดได้ตามปกติ (ไลน์ต้องไม่หยุดรอเอกสาร)
+             แถบนี้คือ "ยังขาดอะไร + กดเติมได้ตรงนี้" เท่านั้น
+          🔴 ไล่ชื่อช่องที่ขาดจาก moDetailsMissing() — ใบที่เปิดดูเป็น select('*') จึงรู้ครบ */}
+      {isDetailsPending(o) === true && (() => {
+        const { known, missing } = moDetailsMissing(o);
+        return (
+          <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+            <b>{trI18n('ใบนี้เปิดให้อัตโนมัติตอนกดเรียกช่าง')}</b> — {trI18n('ยังไม่มีใครใส่รายละเอียด')}
+            {known && missing.length ? <> · {trI18n('ขาด')}: <b>{missing.join(' · ')}</b></> : null}
+            {onFillDetails && can('mtn_repair', 'report', role) && (
+              <button type="button" onClick={() => onFillDetails(o)}
+                style={{ marginLeft: 10, padding: '3px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                         borderRadius: 'var(--ctl-r)', border: '1px solid var(--amber)',
+                         background: 'var(--amber-dim)', color: 'var(--amber)' }}>
+                {trI18n('➕ เพิ่มรายละเอียด')}
+              </button>
+            )}
+          </NoticeBar>
+        );
+      })()}
       {/* 🪜 ตอนนี้ถึงขั้นไหน — กฎอยู่ moFlow() (mtnStepPerm.js) ห้ามตัดสินในหน้า · UI §6.30 */}
       {(() => { const f = moFlow(o); return (
         <div style={{ marginBottom: 12, padding: '10px 12px 8px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)' }}>

@@ -220,7 +220,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   return (
     <div className="modal-scroll" /* เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/แนวนอน (UI-CONVENTIONS §4) */ style={{
       position: 'fixed', inset: 0, zIndex: 4000,
-      background: 'rgba(0,0,0,0.65)',
+      background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '16px',
     }}>

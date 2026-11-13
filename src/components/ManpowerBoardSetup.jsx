@@ -226,7 +226,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
   const th = { textAlign: 'center', fontSize: 12, padding: '6px 8px', color: 'var(--muted)' };
   return (
     /* ไม่ปิดจาก backdrop (UI §5) — ปิดได้จากปุ่ม ✕ / ปิด เท่านั้น */
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="card" onClick={e => e.stopPropagation()}
         style={{ width: 'min(960px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
