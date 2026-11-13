@@ -9,7 +9,7 @@
  const ROW = (i) => ({
    id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
    line_name: 'LINE APRON ASSY / HYDROFORM',
-@@ -425,7 +427,7 @@
+@@ -460,7 +462,7 @@
       🔴 ต้องมีทั้ง 2 ฟอร์ม: `mtn_dept` = ทีมที่ใช้ฟอร์ม MTN (8 ขั้น ไม่มี QA) และทีมอื่น (7 ขั้น มี QA)
          เพราะ **เลขขั้นเดียวกันคนละความหมาย** (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN)
          ⇒ ถอดทีมใดทีมหนึ่งออก = สาขา `stageOf` ฝั่งนั้นหลุดด่าน */
@@ -18,7 +18,7 @@
      ...r,
      mo_no: `MO-2610-${String(i).padStart(3, '0')}`,
      status: ['pending', 'assigned', 'repaired', 'checked', 'handover', 'closed'][i % 6],
-@@ -455,6 +457,14 @@
+@@ -490,6 +492,16 @@
            "กำลังซ่อม แต่ใบไม่มีชื่อช่าง" (`kind: 'no_target'`) ถูกเรนเดอร์จริงในด่าน
            ถ้าทุกแถวมีชื่อ = เส้นทางนั้นหลุดด่าน แล้วใบที่ชี้เป้าไม่ได้จะหายจากแผงโดยไม่มีใครรู้ */
      assigned_to: isNullish(r) || i % 7 === 0 ? null : 'ช่างเอก',
@@ -26,14 +26,16 @@
 +    ...(i === 5  ? { status: 'repaired', mtn_dept: 'production' } : {}),
 +    ...(i === 9  ? { mtn_dept: 'maintenance' } : {}),
 +    ...(i === 11 ? { status: 'handover', mtn_dept: 'maintenance', mtn_head_at: '2026-08-05T09:00:00+07:00', approve_at: null } : {}),
-+    ...(i === 12 ? { mtn_dept: 'maintenance', purpose: 'improve', dept_manager_at: null, plant_manager_at: null } : {}),
++    ...(i === 12 ? { mtn_dept: 'maintenance', purpose: 'improve', dept_manager_at: null, plant_manager_at: null, mo_approved_by: 'ผจก.ช่าง ทดสอบ', mo_ack_at: null } : {}),
++    /* WI-MTN patch: ใบที่ระบบเปิดให้ตอนกดเรียกช่าง ยังรอรายละเอียด */
++    ...(i === 1 ? { details_pending: true, item_type: null, problem_characteristic: null, before_img: null } : {}),
 +    ...(i === 15 ? { status: 'qa', mtn_dept: 'jig_maintenance' } : {}),
 +    ...(i === 10 ? { mtn_dept: 'production' } : {}),
 +    ...(i === 13 ? { status: 'handover', mtn_dept: 'maintenance', mtn_head_at: '2026-08-05T09:00:00+07:00', approve_at: '2026-08-06T09:00:00+07:00' } : {}),
    }),
    line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
    /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
-@@ -466,6 +476,8 @@
+@@ -501,6 +513,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -42,14 +44,16 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -985,14 +997,21 @@
+@@ -1042,14 +1056,23 @@
     ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
     ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 +/* WI-MTN patch: ใบขอซื้อของ MO เหลือ 2 แถว ให้ปุ่มเส้นทางงานซ่อมอยู่ในจอ */
-+const _wiPr = () => ROWS.slice(0, 2)
++const _wiPr = () => ROWS.slice(0, 2).map((r, k) => ({ ...r, status: k ? 'ordered' : 'requested', pr_no: k ? '1000123456' : null }))
  const rowsFor = (table) => {
 +  if (table === 'mtn_purchase_requests') return _wiPr()
++  if (table === 'mtn_order_handoffs') return []   // WI-MTN patch: ไม่ให้แถบส่งต่อขึ้นทุกใบ (mock ไม่สนตัวกรอง)
++  if (table === 'mtn_outsource_parts') return ROWS.slice(0, 1)   // WI-MTN patch: ของส่งซ่อมนอก 1 แถว
 +  if (table === 'fixture_points') return ROWS.slice(0, 6).map((r, k) => ({ ...r, machine_id: 'id-3', point_no: `P${k + 1}`, name: `จุดปรับ P${k + 1}`, baseline_shim_mm: 1.0, is_active: true, sort_order: k }))  // WI-MTN patch
 +  if (table === 'machines') return ROWS.map((r, k) => (k % 5 === 2 ? { ...r, equipment_kind: 'jig' } : r))  // WI-MTN patch: มีจิ๊กให้แท็บ JIG
    if (table === 'display_rotations' && ROT_PATHS) {
@@ -60,7 +64,7 @@
    const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
 -  return TABLE_EXTRA[table] ? [...base, ...TABLE_EXTRA[table]] : base
 +  const out = TABLE_EXTRA[table] ? [...base, ...TABLE_EXTRA[table]] : base
-+  if (table === 'downtime_logs') return out.map((r, k) => (k === 0 ? { ...r, ended_at: null, duration_min: null, call_mtn: false } : r))  // WI-MTN patch: DT เปิดค้าง 1 แถว ให้ปุ่มเรียกช่างโผล่
++  if (table === 'downtime_logs') return out.map((r, k) => (k === 0 ? { ...r, ended_at: null, duration_min: null, call_mtn: false } : k === 1 ? { ...r, call_mtn: true, call_mtn_by: 'หัวหน้าไลน์ทดสอบ' } : r))  // WI-MTN patch: DT เปิดค้าง 1 แถว ให้ปุ่มเรียกช่างโผล่
 +  return out
  }
  /* ── 📊 ตัวนับคิวรี (2026-10-08) — ใช้หาว่า "ใครโหลดซ้ำ" โดยไม่ต้องแตะโค้ดใน src/ ──────────
