@@ -402,8 +402,13 @@ Supabase projection ของรอบ 11 ต.ค.–11 พ.ย. = **$37.42** �
 
 วัด 10-11/11 ฝั่ง DR (POST ทั้งหมด 43,105 ครั้ง/วัน — **แต่ POST ไป `rpc/` ไม่ใช่การเขียน**):
 
-1. **`rpc/fn_bom_direct_demand` = 25,512 ครั้ง/วัน = 59% ของ POST ทั้งหมด** — ฟังก์ชันเดียว
-   ×31 = **790,000 ครั้ง/วัน** · ต้องดูก่อนว่าจอไหนเรียกถี่ขนาดนี้ และ cache ได้ไหม
+1. ~~`rpc/fn_bom_direct_demand` = 25,512 ครั้ง/วัน = 59% ของ POST ทั้งหมด~~
+   ✅ **แก้แล้ว 13/11** — เป็น N+1 ที่ `src/lib/lineDemandSync.js`
+   (`Promise.all(mats.map(m => rpc(…, { p_fg_mat: m })))` = 1 คำขอต่อ 1 MAT คูณจำนวนจอที่เปิด ·
+   ไปถึง 3 จอที่ใช้หนัก: `DailyReport` · `HeijunkaKanban` · `LinePartCallPanel`)
+   ⇒ `fn_bom_direct_demand_many(text[])` + `bomKidsOf()` แบ่งก้อนละ 60 MAT
+   · วัด 13/11: ใบผลิตที่เปิดอยู่ 29 MAT = **29 คำขอ → 1 คำขอ**
+   · ตัวเดิมฝั่ง DB ยังอยู่ (trigger `fn_explode_child_demand` ใช้) · ด่าน `bom-direct-demand-batch`
 2. ~~`energy_readings` / `energy_events` เขียนแล้วลบเกือบ 1:1 = เขียนทิ้งเขียนขว้าง~~
    ❌ **ผมสรุปผิด (แก้ 13/11)** — POST:DELETE ≈ 1:1 คือ**หลักฐานว่ามันทำงานถูก** ไม่ใช่ของเสีย:
    `supabase/functions/ingest-energy/index.ts:231,252` ลบของเก่าตาม `READINGS_KEEP_DAYS`/

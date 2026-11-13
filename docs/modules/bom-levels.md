@@ -1335,3 +1335,38 @@ migration `supabase/migrations/20261104_bom_one_level_deduct_phantom_dr.sql`
 >   · อ่าน `ownOrders` ไม่ได้ = `unknown` ห้ามบีบเป็น 0)
 > 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm** — ฝั่งแผนคูณสะสมทุกชั้น · ห้ามสลับ
 > 📄 `docs/modules/bom-levels.md`
+
+---
+
+## ⚡ แตก BOM หลาย MAT = `fn_bom_direct_demand_many` (13/11/2026)
+
+**ที่มา:** วัด 10-11/11 — `rpc/fn_bom_direct_demand` ถูกเรียก **25,512 ครั้ง/วัน = 59% ของ POST
+ทั้งหมดฝั่ง DR** จากจุดเดียว: `src/lib/lineDemandSync.js` เขียนว่า
+
+```js
+Promise.all(mats.map(m => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: m })))   // ❌ N+1
+```
+
+= **1 คำขอ HTTP ต่อ 1 MAT** คูณจำนวนจอที่เปิดอยู่ · ไปถึง 3 จอที่คนใช้หนัก
+(`DailyReport` ตอนเปิดใบผลิต · `HeijunkaKanban` · `LinePartCallPanel`)
+วัด 13/11: ใบผลิตที่เปิดอยู่ 29 MAT = **29 คำขอต่อการโหลด 1 รอบ ต่อ 1 จอ**
+
+### ของใหม่
+
+| | |
+|---|---|
+| ฝั่ง DB | `fn_bom_direct_demand_many(p_fg_mats text[])` (migration `20261113_…_dr.sql`) |
+| ฝั่งจอ | `bomKidsOf(mats)` ใน `src/lib/lineDemandSync.js` — แบ่งก้อนละ `BOM_MANY_CHUNK` (60) |
+
+🔑 **ตัวใหม่ไม่ได้เขียนตรรกะ BOM ใหม่** — มัน `cross join lateral public.fn_bom_direct_demand(…)`
+เรียกตัวเดิมทีละ MAT ⇒ **ผลเหมือนเดิมเป๊ะโดยโครงสร้าง**
+พิสูจน์แล้ว 13/11: สินค้าทั้งทะเบียน **243 ตัว = 476 แถว ตรงกันทั้งสองทาง ต่างกัน 0 แถวทั้งสองทิศ**
+
+### 🔴 กฎที่ต้องรักษา
+
+- **ห้ามก๊อปตรรกะ recursive ของตัวเดิมมาไว้ในตัว `_many`** — กฎ BOM มีชุดเดียว
+- **ตัวเดิม `fn_bom_direct_demand(text)` ห้ามถอด** — trigger `fn_explode_child_demand` ใช้ตอน confirm ใบผลิต
+- **ฝั่งจอห้ามเรียกตัวทีละ MAT อีก** (ด่าน `bom-direct-demand-batch` ใน `regressionGuards`)
+- 🔴 **เพดาน 1000 แถวของ PostgREST** — `bomKidsOf` เช็คทุกก้อน ชนเพดาน = **คืน error (fail-closed)
+  ห้ามคืนของไม่ครบ** (กฎเดียวกับ `fetchByIds`/`fetchAllPages`)
+- **ทุก MAT ที่ส่งเข้าไปต้องมีคีย์กลับมาเสมอ** (ไม่มีลูก = `[]`) — ผู้เรียกพึ่งพฤติกรรมนี้

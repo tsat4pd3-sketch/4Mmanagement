@@ -24,6 +24,50 @@ import { opInputsOf, parentKidsAfterOps, isFirstOpInChain } from '../utils/opInp
 
 const key = (s) => String(s ?? '').trim();
 
+/** MAT ต่อ 1 คำขอ — เพดาน PostgREST คือ 1000 **แถว** ไม่ใช่ 1000 MAT
+ *  วัด 13/11: สินค้าทั้งทะเบียน 243 ตัว = 476 แถว (เฉลี่ย ~2 ลูก/ตัว) ⇒ 60 MAT/ก้อน ≈ 120 แถว
+ *  ห่างเพดานมาก แต่**ยังต้องเช็คซ้ำ**ใน `bomKidsOf` เพราะพาร์ทตัวเดียวที่มีลูกเยอะผิดปกติ
+ *  ก็ดันก้อนนั้นชนเพดานได้ */
+export const BOM_MANY_CHUNK = 60;
+
+/**
+ * แตก BOM "ลูกตรง" ของหลาย MAT — **ยิงเป็นก้อน ไม่ใช่ 1 คำขอต่อ 1 MAT**
+ *
+ * 🔴 เดิมบรรทัดนี้เขียนว่า `Promise.all(mats.map(m => rpc('fn_bom_direct_demand', …)))`
+ *    = N+1 · วัด 10-11/11/2026: `rpc/fn_bom_direct_demand` **25,512 ครั้ง/วัน
+ *    = 59% ของ POST ทั้งหมดฝั่ง DR** มาจากจุดนี้จุดเดียว คูณจำนวนจอที่เปิดอยู่
+ *    ⇒ ใช้ `fn_bom_direct_demand_many(text[])` แทน (migration 20261113 · DR)
+ *    ตัวนั้น `cross join lateral` เรียกฟังก์ชันเดิมทีละ MAT ⇒ **ผลเหมือนเดิมเป๊ะโดยโครงสร้าง**
+ *    (พิสูจน์ 13/11: สินค้า 243 ตัว = 476 แถว ตรงกันทั้งสองทาง ต่าง 0 แถว)
+ *
+ * 🔴 ชนเพดาน 1000 แถว = ข้อมูลขาดแบบเงียบ ⇒ **fail-closed** คืน error ห้ามคืนของไม่ครบ
+ *    (กฎเดียวกับ `fetchByIds`/`fetchAllPages` — ดูหัวไฟล์ `src/utils/fetchByIds.js`)
+ *
+ * @param {string[]} mats  MAT ที่ผ่าน `key()` มาแล้ว (trim แล้ว)
+ * @returns {Promise<{ kidsOf: Map<string, Array>, error: string|null }>}
+ *   **ทุก MAT ที่ส่งเข้ามามีคีย์เสมอ** (ไม่มีลูก = `[]`) — ผู้เรียกพึ่งพฤติกรรมนี้
+ */
+export async function bomKidsOf(mats) {
+  const kidsOf = new Map((mats || []).map(m => [m, []]));
+  for (let i = 0; i < (mats || []).length; i += BOM_MANY_CHUNK) {
+    const chunk = mats.slice(i, i + BOM_MANY_CHUNK);
+    const { data, error } = await supabaseDR.rpc('fn_bom_direct_demand_many', { p_fg_mats: chunk });
+    if (error) return { kidsOf, error: `แตก BOM ไม่ได้ (${error.message})` };
+    const rows = data || [];
+    if (rows.length >= 1000) return { kidsOf, error: 'แตก BOM ได้ไม่ครบ (ชนเพดาน 1000 แถว) — แจ้งผู้ดูแลระบบ' };
+    for (const r of rows) {
+      const list = kidsOf.get(r.fg_mat);
+      if (!list) continue;   // DB คืนเฉพาะ MAT ที่ส่งไป (ทั้งสองฝั่ง trim แล้ว) — กันคีย์ผีไว้เฉยๆ
+      // ตัด `fg_mat` (คอลัมน์ของตัวแบ่งกลุ่ม) ออก ⇒ รูปแถวเท่ากับที่ `fn_bom_direct_demand` เคยคืนเป๊ะ
+      list.push({
+        mat_no: r.mat_no, part_name: r.part_name, qty_per_unit: r.qty_per_unit,
+        source_line: r.source_line, via_phantom: r.via_phantom,
+      });
+    }
+  }
+  return { kidsOf, error: null };
+}
+
 /**
  * 📍 พื้นที่ SAP ของไลน์ (05/11 · คำสั่ง user "แม่-ลูกในพื้นที่ SAP เดียวกันนับว่าอยู่ที่เดียวกัน")
  * @returns {Promise<{ error?: string, code: string|null, lines: string[] }>}  ไม่ผูก = เฉพาะไลน์ตัวเอง
@@ -80,10 +124,8 @@ export async function loadOpenOrderDemand(lineNames, products = null) {
     else (opsOf.get(fg) || []).forEach(op => want.add(op));
   });
   const mats = [...want];
-  const bomRes = await Promise.all(mats.map(m => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: m })));
-  const bomErr = bomRes.find(r => r.error);
-  if (bomErr) return { ...out, made, error: `แตก BOM ไม่ได้ (${bomErr.error.message})` };
-  const kidsOf = new Map(mats.map((m, i) => [m, bomRes[i].data || []]));
+  const { kidsOf, error: bomErr } = await bomKidsOf(mats);
+  if (bomErr) return { ...out, made, error: bomErr };
   const need = new Map();
   const noBom = [];
   const opUnset = [];

@@ -10362,3 +10362,32 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
   assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
+
+test('🛡️ bom-direct-demand-batch — ฝั่งจอห้ามเรียก fn_bom_direct_demand ทีละ MAT', () => {
+  /* บั๊กที่เคยเกิดจริง (วัด 10-11/11/2026): `src/lib/lineDemandSync.js` เขียนว่า
+       Promise.all(mats.map(m => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: m })))
+     = **1 คำขอ HTTP ต่อ 1 MAT (N+1)** คูณจำนวนจอที่เปิดอยู่
+     ⇒ `rpc/fn_bom_direct_demand` ถูกเรียก **25,512 ครั้ง/วัน = 59% ของ POST ทั้งหมดฝั่ง DR**
+     (ใบผลิตที่เปิดอยู่ 29 MAT = 29 คำขอ ต่อการโหลด 1 รอบ ต่อ 1 จอ)
+
+     แก้ด้วย `fn_bom_direct_demand_many(text[])` (migration 20261113 · DR) ที่ `cross join lateral`
+     เรียกฟังก์ชันเดิมทีละ MAT ⇒ ผลเหมือนเดิมเป๊ะ (พิสูจน์: 243 สินค้า = 476 แถว ต่าง 0 แถว)
+     เรียกผ่าน `bomKidsOf()` ใน `src/lib/lineDemandSync.js` ซึ่งแบ่งก้อน + เช็คเพดาน 1000 แถว
+
+     🔴 ตัวเดิม `fn_bom_direct_demand(text)` **ยังต้องอยู่** — trigger `fn_explode_child_demand`
+        ใช้ตอน confirm ใบผลิต · ห้ามถอด · ห้ามไว้แค่ "ห้ามมีชื่อนี้ในรีโป" */
+  const hits = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    // จับเฉพาะการเรียก RPC ตัว "ทีละ MAT" จากฝั่งจอ — ตัว _many ไม่เข้าข่าย
+    if (/\.rpc\(\s*['"`]fn_bom_direct_demand['"`]/.test(src)) hits.push(relative(ROOT, f));
+  }
+  assert.deepEqual(hits, [],
+    '\n\n❌ ไฟล์ด้านล่างเรียก `fn_bom_direct_demand` (ทีละ MAT) จากฝั่งจอ\n'
+    + '   ทำไมพัง: เรียกใน loop/map = 1 คำขอ HTTP ต่อ 1 MAT คูณจำนวนจอที่เปิด\n'
+    + '   (วัด 10-11/11/2026: 25,512 ครั้ง/วัน = 59% ของ POST ทั้งหมดฝั่ง DR จากจุดเดียว)\n'
+    + '   แก้ยังไง: ใช้ `bomKidsOf(mats)` จาก `src/lib/lineDemandSync.js`\n'
+    + '        (ยิง `fn_bom_direct_demand_many` เป็นก้อน + เช็คเพดาน 1000 แถว · ผลเหมือนเดิมเป๊ะ)\n'
+    + '   🔴 ฟังก์ชันเดิมฝั่ง DB ยังต้องอยู่ — trigger fn_explode_child_demand ใช้ตอน confirm ใบ\n\n'
+    + hits.map(h => '   • ' + h).join('\n') + '\n');
+});
