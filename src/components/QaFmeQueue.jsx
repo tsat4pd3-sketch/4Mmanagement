@@ -35,7 +35,7 @@ const STAGE_META = {
 };
 const REASON_LABEL = {
   shift_start: 'เริ่มกะ', model_change: 'เปลี่ยนรุ่น', mid_run: 'ผลิตต่อเนื่องนาน',
-  model_change_out: 'จบรุ่น (กำลังเปลี่ยนรุ่น)', shift_end: 'ปิดกะ',
+  model_change_out: 'จบรุ่น (กำลังเปลี่ยนรุ่น)', shift_end: 'ปิดกะ', lot_end: 'ครบล็อต',
 };
 /* สเตจในคิว ↔ stage ของใบตรวจ (qa_inspection_sheets.stage) */
 // FME_SHEET_STAGE ย้ายไป utils/qaStages.js (single source of truth) — re-export ไว้เผื่อของเดิมอ้างถึง
@@ -308,7 +308,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                   <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>
-                  {o.stage === 'middle' && (o.seq > 1 || o.at_qty) && (
+                  {(o.stage === 'middle' || o.trigger_reason === 'lot_end') && (o.seq > 1 || o.at_qty) && (
                     <span style={{ color: 'var(--muted)' }}>
                       {' '}{tr('· ครั้งที่')} {o.seq || 1}{o.at_qty ? ` (ผลิตครบ ${Number(o.at_qty).toLocaleString()} ชิ้น)` : ''}
                     </span>
