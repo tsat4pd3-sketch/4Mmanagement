@@ -21,10 +21,10 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-27 13:00 · 5S (ยกจากระบบ Core) รอบ 1: ฐานข้อมูล + ข้อมูลเดิม + Setting · แตะ: ตารางใหม่ `act_activity` `act_strategy` `act02_*` (MAIN) + bucket `act-public` · `supabase/migrations/20261127_act02_5s_*.sql` · ไฟล์ใหม่ `src/pages/activity5s/**` · `src/utils/activityPages.js` (เฉพาะแถว 5s) · `src/App.jsx` (route /activity-5s บรรทัดเดียว)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-27 · smf01 · 5S (ยกจากระบบ Core) รอบ 1 · ตาราง `act_activity` (act01–act09 ตามเมนู) · `act_strategy` · `act02_*` 9 ตาราง + วิว `act02_audit_group` · bucket `act-public` · สิทธิ์ `act_5s:manage` (หมวดคุณภาพ & วิศวกรรม — nav_groups ไม่มีหมวดกิจกรรม) · ข้อมูลปี 2026: พื้นที่ 34 · ทีม 86 · หัวข้อตรวจ 25 · แผนตรวจ 102 · หน้าใหม่ `src/pages/activity5s/**` (route /activity-5s ใน App.jsx แยกจาก Activity.jsx) · Setting: พื้นที่ · ทีม · หัวข้อตรวจ · แผนตรวจ · เกณฑ์ผ่าน · Dashboard / Edit Data = รอบ 2 · คนในทีมเก็บรหัส + ชื่อ (ไม่ FK employees: 28/62 คนไม่อยู่ใน employees) · migration `20261127_act02_5s_main.sql` `20261127b_act02_5s_seed_main.sql` (ลงแล้วผ่าน MCP)
 - 2026-11-27 · smf01 · เริ่มระบบจองงาน 2 loop (ไฟล์นี้ + หัวข้อสั้นใน CLAUDE.md)
