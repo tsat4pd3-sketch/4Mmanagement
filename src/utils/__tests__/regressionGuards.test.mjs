@@ -2316,10 +2316,6 @@ test('🛡️ q-ratio-single-entry — ห้ามเขียนตัวห�
     'src/utils/__tests__/qualityZeroOutput.test.mjs': 'เรียก qRatio ของจริง + สแกนซอร์ส',
     /* %VA ของ VSM = เวลาที่เพิ่มค่า ÷ (VA + NVA) — คนละ KPI คนละหน่วย (วินาที) ไม่ใช่ %Q */
     'src/lib/vsmModel.js': '%VA (vaSec/(vaSec+nvaSec)) — สัดส่วนเวลา ไม่ใช่สัดส่วนชิ้น',
-    /* FTT = First Time Through — ตัวหารเขียนไว้ว่า "ผลิตจริง = total + ng" พร้อมเหตุผลในหน้า
-       🔴 ยังไม่ย้ายมา `qRatio` เพราะเป็น KPI แยก (ของสงสัยที่รอ QA ควรเข้าฐานไหมยังไม่เคาะ)
-          — ถ้าจะย้าย ต้องถาม user ก่อน เพราะเลข FTT ที่รายงานไปแล้วจะขยับ */
-    'src/pages/QualityControl.jsx': 'FTT (KPI แยก) — ตัวหารมีเหตุผลเขียนกำกับในหน้า',
   };
   const bad = [];
   for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js', '.mjs'])) {

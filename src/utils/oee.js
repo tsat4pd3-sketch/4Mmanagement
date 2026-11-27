@@ -1372,6 +1372,20 @@ export const qTotalCount = (scannedOk, rows = []) =>
  * @param {number} scrapQty   ของเสียที่ตัดสินแล้ว (`sumDefectQty(rows,'line')`) — ของสงสัยที่รอ QA **ไม่เข้า**
  * @returns {number|null} 0..1 · `null` = ยอดผลิต 0 ⇒ **ตอบไม่ได้ ห้ามคืน 0** (กฎจอซื่อสัตย์)
  */
+/**
+ * 🔴 "ยอดผลิต" ของกะ **จากคอลัมน์ rollup ที่ stamp ไว้ตอนปิดกะ** — ใช้เมื่อ**ไม่มีแถว `defect_logs` ในมือ**
+ * (รายงาน/ไฟล์ export ที่วนหลายร้อยกะ — ดึงแถวของเสียมาด้วยทุกกะ = egress บาน §11)
+ *
+ * ✅ ใช้ได้กับ "ยอดผลิต" เพราะ **ยอดผลิตไม่ขยับตอน QA ตัดสิน** (§7.2.2 ข้อ ③) ⇒ ค่าที่ stamp
+ *    ตอนปิดกะยังจริงเสมอ · 🔴 **ห้ามเอาไปคิด %Q** — ตัวหักของ %Q ขยับตามผลพิจารณา
+ *    ต้องยึด `defect_logs` เหมือนเดิม (กฎเดิม §7.1/§7.2)
+ * 🔴 มีแถว `defect_logs` อยู่แล้ว = ใช้ `producedTotalCount(scanned, rows)` แม่นกว่า (rollup อาจ
+ *    ไม่ได้ stamp ในกะที่ยังไม่ปิด)
+ */
+export const sessionTotalCount = (s) =>
+  (Number(s?.actual_qty) || 0) + (Number(s?.qty_ng) || 0)
+  + (Number(s?.qty_suspect) || 0) + (Number(s?.qty_repair) || 0);
+
 export function qRatio(totalCount, scrapQty) {
   const tc = Number(totalCount) || 0;
   if (!(tc > 0)) return null;
