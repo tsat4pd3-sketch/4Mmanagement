@@ -19,11 +19,13 @@
                 is_break = เหตุผลนี้คือกดพักหน้าเครื่อง (เฉพาะ onplan) — ESM คิดเวลาพักจากนโยบาย · ส่วนเกิน = เสีย A (16/11)
                 เหตุผลหยุดของต้นทาง → dr_downtime_types (null = ยืนยันว่า "ไม่มีตัวตรง" · clear = ลบการจับคู่)
                 🔴 คนกดเท่านั้น — จอเสนอได้ แต่ห้ามเรียก action นี้อัตโนมัติ
-   🔴 รายชื่อชนิดข้างล่างต้องตรง src/utils/integrationKinds.js (edge import จาก src/ ไม่ได้) */
+     kind_create { key, label, icon?, unit?, help?, sort_order? }   เพิ่มชนิดข้อมูลเซนเซอร์ (27/11 · ข้อมูลเข้า sensor_readings)
+     kind_update { key, label?, icon?, unit?, help?, sort_order? }  ชนิดในตัว (is_builtin) แก้ได้แค่ label/icon/help
+     kind_delete { key }   ห้ามลบชนิดในตัว · มีต้นทางเลือกอยู่ / มีข้อมูลอยู่ = ห้ามลบ (นับไม่ได้ = ห้ามลบ)
+   ชนิดข้อมูลอ่านจากตาราง integration_kinds (27/11 · เดิม hardcode) — อ่านไม่ได้ = ไม่ให้บันทึก (fail-closed) */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const MAIN_URL = 'https://ewhdfqwfwofivojtsizn.supabase.co';
-const KINDS = ['energy_readings', 'energy_events', 'energy_daily', 'energy_limits', 'machine_state', 'piece_count', 'machine_live'];
 const COLS = 'id, code, name, note, kinds, key_hint, legacy_secret, is_paused, last_seen_at, last_ok_at, last_error, updated_at, updated_by';
 const CORS = {
   'access-control-allow-origin': '*',
@@ -41,7 +43,8 @@ function newKey(): string {
   const b = crypto.getRandomValues(new Uint8Array(24));
   return 'esm_' + btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-const cleanKinds = (k: unknown) => (Array.isArray(k) ? [...new Set(k.map(String))].filter(x => KINDS.includes(x)) : null);
+const cleanKinds = (k: unknown, known: Set<string>) => (Array.isArray(k) ? [...new Set(k.map(String))].filter(x => known.has(x)) : null);
+const KIND_COLS = 'key, label, icon, unit, help, is_builtin, sort_order, updated_at, updated_by';
 const str = (v: unknown, max: number) => (v == null ? null : String(v).trim().slice(0, max) || null);
 
 Deno.serve(async (req) => {
@@ -66,6 +69,12 @@ Deno.serve(async (req) => {
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
   const now = new Date().toISOString();
   const id = str(body?.id, 64);
+  /* ทะเบียนชนิดข้อมูล — โหลดเมื่อ action ต้องใช้ · อ่านไม่ได้ = หยุด (ห้ามถือว่า "ไม่มีชนิด") */
+  const knownKinds = async (): Promise<Set<string> | Response> => {
+    const { data, error } = await sb.from('integration_kinds').select('key');
+    if (error) return json({ error: `อ่านทะเบียนชนิดข้อมูลไม่ได้: ${error.message}` }, 500);
+    return new Set((data || []).map((r: any) => r.key));
+  };
 
   /* อัปเดตแถวเดียว · 0 แถว = ไม่พบ (ห้ามตอบสำเร็จเงียบ) */
   const patch = async (fields: Record<string, unknown>) => {
@@ -80,7 +89,9 @@ Deno.serve(async (req) => {
     case 'create': {
       const code = str(body.code, 40)?.toLowerCase() || '';
       const name = str(body.name, 120);
-      const kinds = cleanKinds(body.kinds);
+      const known = await knownKinds();
+      if (known instanceof Response) return known;
+      const kinds = cleanKinds(body.kinds, known);
       if (!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(code)) return json({ error: 'รหัสต้นทางใช้ได้แค่ a-z 0-9 - _ (2-40 ตัว)' }, 400);
       if (!name) return json({ error: 'ต้องมีชื่อต้นทาง' }, 400);
       if (!kinds?.length) return json({ error: 'เลือกชนิดข้อมูลอย่างน้อย 1 ชนิด' }, 400);
@@ -103,7 +114,11 @@ Deno.serve(async (req) => {
       const f: Record<string, unknown> = {};
       if ('name' in body) { const n = str(body.name, 120); if (!n) return json({ error: 'ต้องมีชื่อต้นทาง' }, 400); f.name = n; }
       if ('note' in body) f.note = str(body.note, 300);
-      if ('kinds' in body) { const k = cleanKinds(body.kinds); if (!k?.length) return json({ error: 'เลือกชนิดข้อมูลอย่างน้อย 1 ชนิด' }, 400); f.kinds = k; }
+      if ('kinds' in body) {
+        const known = await knownKinds();
+        if (known instanceof Response) return known;
+        const k = cleanKinds(body.kinds, known); if (!k?.length) return json({ error: 'เลือกชนิดข้อมูลอย่างน้อย 1 ชนิด' }, 400); f.kinds = k;
+      }
       const bad = await patch(f);
       return bad || json({ ok: true });
     }
@@ -153,6 +168,56 @@ Deno.serve(async (req) => {
         downtime_type_id: body.is_break ? null : dt, is_break: kind === 'onplan' && !!body.is_break, confirmed_by: who, confirmed_at: now,
       }, { onConflict: 'source_id,reason_kind,reason_code' });
       return error ? json({ error: error.message }, 500) : json({ ok: true });
+    }
+    case 'kind_create': case 'kind_update': {
+      const key = str(body.key, 40)?.toLowerCase() || '';
+      if (!/^[a-z][a-z0-9_]{1,39}$/.test(key)) return json({ error: 'รหัสชนิดใช้ได้แค่ a-z 0-9 _ ขึ้นต้นด้วยตัวอักษร (2-40 ตัว)' }, 400);
+      const f: Record<string, unknown> = { updated_at: now, updated_by: who };
+      if (body.action === 'kind_create' || 'label' in body) {
+        const l = str(body.label, 80); if (!l) return json({ error: 'ต้องมีชื่อชนิดข้อมูล' }, 400); f.label = l;
+      }
+      if ('icon' in body) f.icon = str(body.icon, 8);
+      if ('help' in body) f.help = str(body.help, 300);
+      const custom: Record<string, unknown> = {};
+      if ('unit' in body) custom.unit = str(body.unit, 20);
+      if ('sort_order' in body) { const so = Number(body.sort_order); custom.sort_order = Number.isFinite(so) ? Math.round(so) : 0; }
+      if (body.action === 'kind_create') {
+        const { data, error } = await sb.from('integration_kinds')
+          .insert({ key, ...f, ...custom, is_builtin: false }).select(KIND_COLS).single();
+        if (error) return json({ error: error.code === '23505' ? `รหัสชนิด "${key}" มีอยู่แล้ว` : error.message }, error.code === '23505' ? 409 : 500);
+        return json({ ok: true, kind: data });
+      }
+      const { data: cur, error: e1 } = await sb.from('integration_kinds').select('is_builtin').eq('key', key).maybeSingle();
+      if (e1) return json({ error: e1.message }, 500);
+      if (!cur) return json({ error: 'ไม่พบชนิดข้อมูลนี้' }, 404);
+      // ชนิดในตัว: โค้ดมีปลายทางเฉพาะ ⇒ แก้ได้แค่ชื่อ/ไอคอน/คำอธิบาย (คำสั่ง user 27/11)
+      if (cur.is_builtin && Object.keys(custom).length) return json({ error: 'ชนิดในตัวแก้ได้แค่ชื่อ ไอคอน และคำอธิบาย' }, 400);
+      const { data, error } = await sb.from('integration_kinds').update({ ...f, ...custom }).eq('key', key).select(KIND_COLS);
+      if (error) return json({ error: error.message }, 500);
+      if (!data?.length) return json({ error: 'ไม่พบชนิดข้อมูลนี้' }, 404);
+      return json({ ok: true, kind: data[0] });
+    }
+    case 'kind_delete': {
+      const key = str(body.key, 40) || '';
+      const { data: cur, error: e1 } = await sb.from('integration_kinds').select('is_builtin, label').eq('key', key).maybeSingle();
+      if (e1) return json({ error: e1.message }, 500);
+      if (!cur) return json({ error: 'ไม่พบชนิดข้อมูลนี้' }, 404);
+      if (cur.is_builtin) return json({ error: 'ชนิดในตัวลบไม่ได้ — โค้ดมีปลายทางรับข้อมูลชนิดนี้อยู่' }, 409);
+      // ทะเบียนจับคู่ด้วยข้อความ (integration_sources.kinds) — นับปลายทางให้ครบก่อนลบ · นับไม่ได้ = ห้ามลบ
+      const { data: srcs, error: e2 } = await sb.from('integration_sources').select('name').contains('kinds', [key]);
+      if (e2) return json({ error: `ตรวจต้นทางที่ใช้ชนิดนี้ไม่ได้: ${e2.message}` }, 500);
+      if (srcs?.length) return json({ error: `ลบไม่ได้ — ต้นทาง ${srcs.map((x: any) => x.name).join(', ')} ยังเลือกชนิดนี้อยู่ (เอาออกจากต้นทางก่อน)` }, 409);
+      const [r1, r2] = await Promise.all([
+        sb.from('sensor_readings').select('kind_key', { count: 'exact', head: true }).eq('kind_key', key),
+        sb.from('sensor_daily').select('kind_key', { count: 'exact', head: true }).eq('kind_key', key),
+      ]);
+      if (r1.error || r2.error) return json({ error: `นับข้อมูลของชนิดนี้ไม่ได้: ${(r1.error || r2.error)!.message}` }, 500);
+      const n = (r1.count || 0) + (r2.count || 0);
+      if (n) return json({ error: `ลบไม่ได้ — มีข้อมูลของชนิดนี้อยู่ ${n.toLocaleString()} แถว (ประวัติจะหาย)` }, 409);
+      const { data, error } = await sb.from('integration_kinds').delete().eq('key', key).eq('is_builtin', false).select('key');
+      if (error) return json({ error: error.message }, 500);
+      if (!data?.length) return json({ error: 'ลบไม่สำเร็จ (0 แถว)' }, 500);
+      return json({ ok: true });
     }
     default:
       return json({ error: 'unknown action' }, 400);

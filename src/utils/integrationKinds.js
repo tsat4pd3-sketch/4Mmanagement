@@ -2,8 +2,11 @@ import { tr } from './i18n.js';
 /* 🔌 ศูนย์เชื่อมต่อ — ทะเบียน "ชนิดข้อมูล" ที่ต้นทาง (Node-RED ฯลฯ) ส่งเข้า ESM ได้ (2026-11-11)
    📄 docs/modules/integration-hub.md
 
-   🔴 ที่เดียวที่ประกาศชนิดข้อมูล — จอ /integrations · ตัว gen flow (nodeRedFlow.js) อ่านจากที่นี่
-      edge `integration-admin` มีรายชื่อคีย์ซ้ำ (edge import จาก src/ ไม่ได้) ⇒ เพิ่มชนิดใหม่ต้องตามไปแก้ที่นั่นด้วย
+   🔴 ที่เดียวที่ประกาศ "ปลายทางในโค้ด" ของชนิดในตัว — จอ /integrations · ตัว gen flow (nodeRedFlow.js) อ่านจากที่นี่
+   🔁 27/11 (คำสั่ง user "เพิ่มชนิดไม่ควร hardcode ควรเป็น modal CRUD"): ทะเบียนจริง = ตาราง `integration_kinds` (DR)
+      · ชนิดในตัว (is_builtin) = รายการข้างล่าง — DB แก้ได้แค่ชื่อ/ไอคอน/คำอธิบาย (`mergeKinds` ทับให้) · ห้ามลบ
+      · ชนิดที่เพิ่มเอง = เซนเซอร์ทั่วไป (temp/vibration ฯลฯ) → body `sensors` → `sensor_readings` (7 วัน) + `sensor_daily`
+      · edge `integration-admin` อ่านตารางเดียวกัน (ไม่มีรายชื่อซ้ำในโค้ดแล้ว)
    🔴 หลักการ: ต้นทางส่ง "ข้อเท็จจริง" (ค่า/เวลา/จำนวน) · สูตร/การตัดสินอยู่ที่ ESM
       ⇒ ไม่มีชนิด "เลข OEE ของต้นทาง" ในทะเบียนนี้โดยตั้งใจ (docs/SCADA_REALTIME_DESIGN.md §1)
    status: 'live' = ESM รับได้แล้ว · 'planned' = ออกแบบไว้ ยังไม่มีปลายทางรับ (จอต้องบอก ห้ามให้ติ๊กแล้วเงียบ) */
@@ -32,11 +35,37 @@ export const INTEGRATION_KINDS = [
     help: 'ตอนนี้เครื่องอยู่สถานะไหน มาตั้งแต่เมื่อไหร่ (ข้อความตามต้นทาง) · 1 แถว/เครื่อง ทับทุกนาที' },
 ];
 
-export const kindOf = (key) => INTEGRATION_KINDS.find(k => k.key === key) || null;
+/** ปลายทางของชนิดที่เพิ่มเอง (เซนเซอร์ทั่วไป) — ทุกตัวใช้ปลายทางเดียวกัน แยกด้วย kind_key */
+export const SENSOR_DEST = { status: 'live', module: 'sensor', body: 'sensors', dest: 'sensor_readings · sensor_daily', home: null };
+export const SENSOR_KEEP_DAYS = 7;
+
+/**
+ * รวมชนิดในตัว (โค้ด) + ทะเบียนจาก DB
+ * @param {Array|null} rows  แถว integration_kinds · null = อ่านไม่ได้ ⇒ คืนชนิดในตัวตามโค้ด (จอต้องเขียนบอก)
+ * @returns {Array} ชนิดทั้งหมด เรียง sort_order (ชนิดในตัวที่ DB ไม่มีแถว = ยังอยู่ ตามโค้ด)
+ */
+export function mergeKinds(rows) {
+  if (!Array.isArray(rows)) return INTEGRATION_KINDS.map(k => ({ ...k, builtin: true }));
+  const byKey = new Map(rows.map(r => [r.key, r]));
+  const txt = (v) => (v == null || String(v).trim() === '' ? null : String(v));
+  const builtin = INTEGRATION_KINDS.map((k, i) => {
+    const r = byKey.get(k.key);
+    return { ...k, builtin: true, label: txt(r?.label) || k.label, icon: txt(r?.icon) || k.icon, help: r ? txt(r.help) : k.help,   // มีแถว = ใช้ตาม DB (ล้างแล้ว = ว่างจริง) · ไม่มีแถว = ตามโค้ด
+      sort_order: r?.sort_order ?? i + 1 };
+  });
+  const codeKeys = new Set(INTEGRATION_KINDS.map(k => k.key));
+  const custom = rows.filter(r => !codeKeys.has(r.key) && !r.is_builtin).map(r => ({
+    ...SENSOR_DEST, key: r.key, label: txt(r.label) || r.key, icon: txt(r.icon) || '📈', unit: txt(r.unit),
+    help: txt(r.help) || '', builtin: false, custom: true, sort_order: r.sort_order ?? 0,
+  }));
+  return [...builtin, ...custom].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.key.localeCompare(b.key));
+}
+
+export const kindOf = (key, kinds = INTEGRATION_KINDS) => kinds.find(k => k.key === key) || null;
 
 /** ชนิดที่ไม่รู้จัก ไม่ทิ้งเงียบ — คืนป้าย "ไม่รู้จัก" ให้จอเขียน */
-export function kindLabel(key) {
-  const k = kindOf(key);
+export function kindLabel(key, kinds = INTEGRATION_KINDS) {
+  const k = kindOf(key, kinds);
   return k ? `${k.icon} ${tr(k.label)}` : `❓ ${key} ${tr('(ไม่รู้จัก)')}`;
 }
 

@@ -772,7 +772,8 @@ const TABLE_ROWS = {
   energy_emission_factors: (r, i) => ({ ...r, utility_key: 'electric', kg_co2e: i % 2 ? 0.493 : 0.482, effective_from: i % 2 ? '2023-11-28' : '2026-10-21', source_ref: 'TGO (mock)' }),
   energy_panel_settings: (r, i) => ({ ...r, panel: i % 2 ? 'MDB-03' : 'MDB', demand_target_kw: i % 2 ? null : 1600, baseline_start: i % 2 ? null : '12:00:00', baseline_end: i % 2 ? null : '12:50:00' }),
   integration_sources: (r, i) => ({
-    ...r, kinds: i % 2 ? ['energy_readings', 'energy_events'] : ['machine_state', 'piece_count'],
+    // i%4==0 ติ๊กชนิดเพิ่มเอง 'temp' ด้วย (27/11 · ห้ามถอด) — ป้ายชนิด/flow แม่แบบ sensors ถูกวาดใน crashsweep
+    ...r, kinds: i % 2 ? ['energy_readings', 'energy_events'] : (i % 4 ? ['machine_state', 'piece_count'] : ['machine_state', 'piece_count', 'temp']),
     legacy_secret: false, key_hint: i % 3 ? 'ab12' : null,
   }),
   machine_tag_map: (r, i) => ({ ...r, tag: `JTSRA03-0${(i % 4) + 1}`, machine_id: i % 3 ? `id-${i}` : null }),
@@ -818,6 +819,22 @@ const MOCK_DAY = (n) => {
 }
 
 const TABLE_FIXED = {
+  /* 🔌 ทะเบียนชนิดข้อมูล (27/11 · ห้ามถอด) — ชนิดในตัวที่ DB แก้ชื่อ (energy_readings) + ชนิดเพิ่มเอง 2 ตัว
+     (มีข้อมูล temp · ยังไม่มีข้อมูล vibration) ⇒ modal/การ์ด/ตารางค่าล่าสุด วาดครบทุกกิ่ง */
+  integration_kinds: [
+    { key: 'energy_readings', label: 'ค่าไฟรายนาที (แก้ชื่อแล้ว)', icon: '⚡', unit: null, help: 'kW · kWh · V · A ต่อตู้', is_builtin: true, sort_order: 1, updated_by: null },
+    { key: 'machine_state', label: 'สถานะเครื่อง (ช่วงหยุด)', icon: '🏭', unit: null, help: null, is_builtin: true, sort_order: 5, updated_by: null },
+    { key: 'temp', label: 'อุณหภูมิ', icon: '🌡️', unit: '°C', help: 'อุณหภูมิมอเตอร์/น้ำมันไฮดรอลิก', is_builtin: false, sort_order: 20, updated_by: 'mock' },
+    { key: 'vibration', label: 'การสั่นสะเทือน', icon: null, unit: 'mm/s', help: '', is_builtin: false, sort_order: 21, updated_by: 'mock' },
+  ],
+  sensor_readings: [
+    { source_id: 'id-1', kind_key: 'temp', point: 'M01', bucket_at: new Date(Date.now() - 60000).toISOString(), value: 42.5 },
+    { source_id: 'id-1', kind_key: 'temp', point: 'M02', bucket_at: new Date(Date.now() - 120000).toISOString(), value: 55.1 },
+  ],
+  sensor_daily: [
+    { source_id: 'id-1', kind_key: 'temp', point: 'M01', n: 540, v_sum: 22140, v_min: 35.2, v_max: 48.9 },
+    { source_id: 'id-1', kind_key: 'temp', point: 'M03', n: 12, v_sum: 480, v_min: 38, v_max: 42 },
+  ],
   /* 📈 ทะเบียนเอกสาร (2026-11-26 · /live-benefits) — ต้องมีครบทุกสาขาของ buildPaperModel():
      รายกะ/รายเดือน/รายเรื่อง ที่นับได้ · รายเรื่องที่นับไม่ได้ (material_request) · นับรวมกับตัวอื่น (mo_report_mtn) ·
      เอกสารควบคุม/รายงาน (ไม่นับ) · ยังไม่จัด (paper_basis null) · ปิดใช้ */

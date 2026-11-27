@@ -18817,6 +18817,21 @@ const EN = {
   "หน่วยไฟในนาที": "Energy in minute",
   "แรงดัน 3 เฟส (V)": "3-phase voltage (V)",
   "เส้นทึบ L1-L2 · ประยาว L2-L3 · ประสั้น L3-L1": "solid L1-L2 · long dash L2-L3 · short dash L3-L1",
+  "อ่านทะเบียนชนิดข้อมูลไม่ได้ — แสดงเฉพาะชนิดในตัว ชนิดที่เพิ่มเองจะยังไม่ขึ้น": "Cannot read the data type registry — showing built-in types only",
+  "ลบชนิดข้อมูลแล้ว": "Data type deleted",
+  "+ เพิ่มชนิดข้อมูล": "+ Add data type",
+  "ชนิดในตัว": "Built-in",
+  "ค่าล่าสุดของชนิดที่เพิ่มเอง": "Latest values of custom types",
+  "อ่านค่าเซนเซอร์ไม่ได้": "Cannot read sensor values",
+  "ต่ำสุด / เฉลี่ย / สูงสุด วันนี้": "Min / avg / max today",
+  "ไม่มีค่าใน 15 นาที": "No value in 15 min",
+  "บันทึกชนิดข้อมูลแล้ว": "Data type saved",
+  "เพิ่มชนิดข้อมูลแล้ว": "Data type added",
+  "แก้ชนิดข้อมูล": "Edit data type",
+  "เพิ่มชนิดข้อมูล (เซนเซอร์)": "Add data type (sensor)",
+  "ชื่อที่แสดง": "Display name",
+  "แก้ชื่อ / หมายเหตุ / ชนิดข้อมูล": "Edit name / note / data types",
+  "เลือกชนิดข้อมูลอย่างน้อย 1 ชนิด": "Select at least 1 data type",
 };
 
 export default EN;

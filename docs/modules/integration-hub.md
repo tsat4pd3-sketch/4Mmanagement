@@ -26,8 +26,10 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 
 1. **ต้นทางส่ง "ข้อเท็จจริง" · ESM เป็นเจ้าของสูตร** — ทะเบียนชนิดข้อมูลไม่มี "เลข OEE ของต้นทาง" โดยตั้งใจ
    (`docs/SCADA_REALTIME_DESIGN.md` §1 · มีเทสกัน)
-2. **ทะเบียนชนิดข้อมูลมีที่เดียว = `src/utils/integrationKinds.js`** · edge `integration-admin` มีรายชื่อซ้ำ
-   (edge import จาก `src/` ไม่ได้) ⇒ **เพิ่มชนิดใหม่ต้องแก้ 2 ที่ + deploy edge** — เทส `integrationHub.test.mjs` จับถ้าไม่ตรง
+2. **ทะเบียนชนิดข้อมูล = ตาราง `integration_kinds` (DR) · แก้ผ่าน modal ในแท็บชนิดข้อมูล** (27/11 · เดิม hardcode)
+   · ชนิดในตัว (`is_builtin`) = ปลายทางในโค้ด `src/utils/integrationKinds.js` — DB แก้ได้แค่ชื่อ/ไอคอน/คำอธิบาย · ห้ามลบ ·
+   เพิ่มชนิดในตัวใหม่ = เติมในโค้ด **+ seed แถว is_builtin** (เทส `integrationHub.test.mjs` เทียบกับ migration)
+   · รวมโค้ด+DB ผ่าน `mergeKinds()` เท่านั้น · edge `integration-admin` อ่านตารางเดียวกัน (ห้าม hardcode รายชื่อในเอดจ์ — มีเทส)
 3. **ชนิด `planned` = ESM ยังไม่มีปลายทางรับ** ⇒ ฟอร์มติ๊กไม่ได้ · ตัว gen flow ไม่สร้างโหนดแต่คืน `skipped` ให้จอเขียนบอก
 4. **รหัสลับ:** สร้างฝั่ง server (edge) · เก็บแค่ `sha256` (`key_hash`) + 4 ตัวท้าย (`key_hint`) ·
    **anon อ่าน `key_hash` ไม่ได้** (grant รายคอลัมน์ ⇒ `select('*')` บนตารางนี้จาก client = error — เลือกคอลัมน์เสมอ) ·
@@ -197,3 +199,17 @@ user เลือกจาก 4 ทาง: ① เทียบอย่างเ
 - ต้องให้หน้างาน **import flow ใหม่** ทุกต้นทางค่าไฟ (hdf · dieshop) ถึงจะเห็นค่าตรงจอ Node-RED · 📄 `docs/ENERGY_MONITORING_DESIGN.md`
 - 🧹 **กดผูก topic แล้วรายการ "ยังไม่ได้ผูก" ลบเองทันที** (24/11 · คำสั่ง user) — trigger `trg_energy_topic_mapped_clear` บน `energy_meter_topics` (DR)
   ลบ topic ตัวนั้น + ค่ารายเฟส v1-v3/a1-a3 ของตู้เดียวกัน · ผูกแบบปิดใช้ (`is_active=false`) = ไม่ลบ · ครอบทุกทางที่ผูก (หน้าจอ/SQL)
+
+## 🌡️ ชนิดข้อมูลแก้ได้ + เซนเซอร์ทั่วไป (27/11 · คำสั่ง user "เพิ่มชนิดไม่ควร hardcode ควรเป็น modal CRUD")
+user เลือก: ① รับข้อมูลได้ทันที ② ชนิดในตัว 7 ตัวแก้ได้แค่ชื่อ/ไอคอน/คำอธิบาย ③ เก็บรายนาที 7 วัน + สรุปรายวัน
+- DR migration `20261127_integration_kinds_sensors`: `integration_kinds` · `sensor_readings` (PK ต้นทาง×ชนิด×จุดวัด×นาที · 7 วัน)
+  · `sensor_daily` (n/v_sum/v_min/v_max ต่อวันไทย · trigger `fn_sensor_daily_roll` · เก็บยาว) · RLS อ่านอย่างเดียว · เขียนผ่าน edge
+- edge `integration-admin` v4: `kind_create` / `kind_update` (ชนิดในตัวส่ง unit/sort_order = 400) / `kind_delete`
+  · 🔴 ลบได้เฉพาะชนิดเพิ่มเอง ที่ **ไม่มีต้นทางติ๊กอยู่ + ไม่มีข้อมูลเลย** (นับไม่ได้ = ห้ามลบ) · มีประวัติแล้ว = ลบไม่ได้ (ประวัติจะหาย)
+  · ⚠️ ไฟล์ในรีโปมี `is_break` ของ `map_reason` (รอ user อนุมัติ deploy) — v4 ที่ deploy **ไม่มี** ส่วนนั้น (เหมือน v3)
+- edge `ingest-energy` v12: body `sensors: [{ kind, point, value, at? }]` — ต้องมาจากต้นทางที่ลงทะเบียน · ชนิดไม่รู้จัก/ชนิดในตัว/ค่าอ่านไม่ออก
+  = ข้าม + ตอบ `sensors_skipped` · นาทีซ้ำ = ข้าม (สรุปรายวันไม่บวกซ้ำ)
+- จอ: แท็บชนิดข้อมูล = การ์ด + ✏️/ลบ + modal · ตาราง "ค่าล่าสุดของชนิดที่เพิ่มเอง" (15 นาที + ต่ำ/เฉลี่ย/สูงวันนี้) ·
+  หน้าต้นทาง ✏️ แก้ชนิดข้อมูลของต้นทางได้แล้ว (ชนิดใหม่ต้องติ๊กที่ต้นทาง flow ถึงจะมี) · flow ของชนิดเพิ่มเอง = แม่แบบ
+  inject → function (ต้นทางเติมค่าเอง — ESM ไม่รู้ว่าเซนเซอร์ต่อที่ไหน) → http
+- ยังไม่มี: จอกราฟ/เกณฑ์เตือนของเซนเซอร์ (รอ user บอกว่าจะดูแบบไหน)
