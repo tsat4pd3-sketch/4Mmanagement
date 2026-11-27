@@ -13395,5 +13395,5 @@ test('💾 ร่างฟอร์ม — ต้องผ่าน useFormDraft
   assert.deepEqual(bad, [], '\n\n❌ ด่านร่างฟอร์มพัง:\n   ' + bad.join('\n   ') + '\n'
     + '   กฎ: ร่างเก็บผ่าน `utils/useFormDraft.js` + แถบ `components/DraftBar.jsx` เท่านั้น\n'
     + '   🔴 localStorage เป็นของ "ต่อเครื่องต่อคน" — ห้ามใช้แทนการบันทึกลง DB\n'
-    + '   📄 docs/UI-CONVENTIONS.md §6.43\n');
+    + '   📄 docs/UI-CONVENTIONS.md §6.47\n');
 });
