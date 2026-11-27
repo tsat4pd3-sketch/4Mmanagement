@@ -15,6 +15,10 @@ const CHART_FILES = new Set([
   'src/components/ParetoChart.jsx', 'src/components/ParetoAbcChart.jsx', 'src/components/Qc7Charts.jsx',
   'src/components/CapacityLoadChart.jsx', 'src/components/DowntimeTimeline.jsx', 'src/components/PlanTimeline.jsx',
   'src/components/StoreTimeChart.jsx', 'src/components/PeFlowChart.jsx', 'src/components/VsmCanvas.jsx',
+  /* 27/11 — `<OeeHeadline>` มี sparkline A/P/Q อยู่ในตัว ⇒ ถือ **พาเลตเส้น/แท่งของกราฟ**
+     (`METRIC_COLOR` a/p/q) เหมือนไฟล์กราฟตัวอื่น · ส่วนสี "สถานะ" ในไฟล์นี้เป็น token หมดแล้ว
+     (`oeeColor` → var(--green|--amber|--red) · ตัวเลข A/P/Q → `statusColor()`) */
+  'src/components/OeeHeadline.jsx',
 ]);
 const base = JSON.parse(readFileSync(new URL('./fixtures/colorBaseline.json', import.meta.url), 'utf8')).files;
 

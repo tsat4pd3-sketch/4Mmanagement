@@ -28,6 +28,7 @@ import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COM
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { qRatio, computeSessionOee, computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, dtLineMin, laneBySessionId, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
+import OeeHeadline, { GaugeRing, METRIC_COLOR, oeeColor } from '../components/OeeHeadline';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -65,7 +66,7 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
 // ── Colour helpers ───────────────────────────────────────────────
-const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
+/* `oeeColor` · `METRIC_COLOR` ย้ายไป `components/OeeHeadline.jsx` (ของกลาง · import ข้างบน) */
 /* 🚦 A/P/Q ไม่มีเกณฑ์ตายตัวในไฟล์นี้แล้ว (23/09) — ทุกจุดตัดสินด้วย `statusOf(v, trTarget.x)`
    คือ **เป้าจริงของกรุ๊ปที่เลือก** จากตาราง `oee_targets` ซึ่งเป็นเป้าเดียวกับที่จอพิมพ์ให้คนอ่านเห็น
    (เดิม `aColor` 90/75 · `pColor` 85/70 · `qColor` 99/95 ⇒ กรุ๊ปที่ตั้งเป้าเองจะถูกตัดสินผิดเป้า
@@ -77,8 +78,8 @@ const oeeColor  = v => v >= 80 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
 // target จริงตั้งรายกรุ๊ปจากปุ่ม 🎯 · ระดับ section = ค่าเฉลี่ยของกรุ๊ปใน section (ไม่เก็บใน DB)
 const TARGET = { a: 90, p: 90, q: 99 };
 TARGET.oee = Math.round(TARGET.a * TARGET.p * TARGET.q / 10000 * 10) / 10; // 80.2
-const METRIC_COLOR = { a: '#22c55e', p: '#f59e0b', q: '#a78bfa' };
-const METRIC_LABEL = { a: 'AVAILABILITY (A)', p: 'PERFORMANCE (P)', q: 'QUALITY (Q)' };
+
+/* `METRIC_LABEL` ย้ายไป `components/OeeHeadline.jsx` พร้อมหัวแดชบอร์ด (27/11) */
 
 // ── OEE calculation helpers ──────────────────────────────────────
 // หมายเหตุ: A/P/Q/OEE คำนวณและบันทึกไว้แล้วใน production_sessions (oee_a/oee_p/oee_q/oee)
@@ -128,24 +129,41 @@ function aggregateByProduct({ sessions, ordersBySession, downtimes, defects, pro
     for (const g of R.byProduct) {
       const cur = acc.get(g.key) || { key: g.key, name: g.name, pNo: g.pNo, matNos: new Set(),
         netAvailMin: 0, runMin: 0, stdMin: 0, pcs: 0, good: 0, ngQty: 0, qBasePcs: 0, shifts: 0,
-        overlap: false, lines: new Set() };
+        overlap: false, lines: new Set(), byDay: new Map() };
       g.matNos.forEach(m => cur.matNos.add(m));
       cur.name ||= g.name; cur.pNo ||= g.pNo;
       cur.netAvailMin += g.netAvailMin; cur.runMin += g.runMin; cur.stdMin += g.stdMin;
       cur.pcs += g.pcs; cur.good += g.good; cur.ngQty += g.ngQty; cur.qBasePcs += g.qBasePcs || 0;
       cur.shifts += 1; cur.overlap = cur.overlap || g.overlap;
       cur.lines.add(sess.line_name);
+      /* 📅 สะสม "ตัวตั้ง/ตัวหาร" รายวันไว้ด้วย — หัวแดชบอร์ดของแท็บนี้ต้องวาดเทรนด์รายวันของพาร์ทที่เลือก
+         🔴 เก็บเป็นตัวตั้ง/ตัวหาร **ห้ามเก็บ %** แล้วมาเฉลี่ยทีหลัง (mean-of-means — กฎเดียวกับข้างล่าง) */
+      const dk = sess.work_date;
+      if (dk) {
+        const d = cur.byDay.get(dk) || { netAvailMin: 0, runMin: 0, stdMin: 0, good: 0, ngQty: 0, qBasePcs: 0 };
+        d.netAvailMin += g.netAvailMin; d.runMin += g.runMin; d.stdMin += g.stdMin;
+        d.good += g.good; d.ngQty += g.ngQty; d.qBasePcs += g.qBasePcs || 0;
+        cur.byDay.set(dk, d);
+      }
       acc.set(g.key, cur);
     }
   }
-  const rows = [...acc.values()].map(r => {
+  /* 🔴 สูตรเดียวกันทั้ง "ทั้งช่วง" และ "รายวัน" — เขียนที่เดียวแล้วเรียกซ้ำ ห้ามก๊อป */
+  const apqOf = (r) => {
     const A = r.netAvailMin > 0 ? Math.min(1, r.runMin / r.netAvailMin) : null;
     const P = r.runMin > 0 ? Math.min(1, r.stdMin / r.runMin) : null;
     /* 🔴 %Q = งานดี ÷ **ยอดผลิต** ผ่านสูตรกลาง `qRatio` (oee.js §7.2.2) ห้ามคิดเองที่นี่ —
        `qBasePcs` = ฐานที่ `computeSessionOee` คิดมาแล้วรายพาร์ท (ตัดงานทดลองออก) */
     const Q = qRatio(Math.max(r.qBasePcs, r.good + r.ngQty), r.ngQty);
-    return { ...r, matNos: [...r.matNos], lines: [...r.lines], A, P, Q,
-      oee: (A != null && P != null && Q != null) ? A * P * Q : null };
+    return { A, P, Q, oee: (A != null && P != null && Q != null) ? A * P * Q : null };
+  };
+  const rows = [...acc.values()].map(r => {
+    /* เทรนด์รายวันของพาร์ทนี้ (เรียงวัน) — หัวแดชบอร์ดเอาไปวาดแท่ง A/P/Q
+       🔴 ไม่เติมวันที่ไม่มีกะ: "ไม่ได้ผลิต" ≠ "ผลิตแล้วได้ 0" (MiniTrend วาดตอเทาให้เองถ้าค่าเป็น null) */
+    const days = [...r.byDay.entries()].sort((x, y) => x[0].localeCompare(y[0]))
+      .map(([date, d]) => ({ date, ...apqOf(d) }));
+    const { byDay, ...rest } = r;    // eslint-disable-line no-unused-vars -- Map ไม่ต้องไหลออกไปที่จอ
+    return { ...rest, matNos: [...r.matNos], lines: [...r.lines], days, ...apqOf(r) };
   }).sort((a, b) => (a.oee == null) - (b.oee == null) || (a.oee ?? 0) - (b.oee ?? 0));
   return { rows, overlap, sessions: nSess, unknownQty, failed };
 }
@@ -292,66 +310,8 @@ const OEETooltip = ({ active, payload, label }) => {
   );
 };
 
-// ── Gauge ring (SVG, no deps) ─────────────────────────────────────
-function GaugeRing({ value, size = 168, stroke = 15, color = 'var(--green)' }) {
-  const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const pct = value == null ? 0 : Math.max(0, Math.min(100, value));
-  const offset = c * (1 - pct / 100);
-  return (
-    <svg width={size} height={size}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
-        strokeDasharray={c} strokeDashoffset={offset} strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: 'stroke-dashoffset 0.6s ease' }} />
-    </svg>
-  );
-}
-
-// ── Mini sparkline bar (under A/P/Q kpi) ──────────────────────────
-// Tooltip ย่อของ sparkline — แตะ/ชี้แท่งเพื่อดูวัน + ค่าจริง (จอทัชแตะได้)
-function MiniTrendTip({ active, payload, label, dataKey, metric }) {
-  if (!active || !payload?.length) return null;
-  const v = payload.find(p => p.dataKey === dataKey)?.value;
-  return (
-    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 8px', fontSize: 11, boxShadow: 'var(--shadow-float)' }}>
-      <div style={{ color: 'var(--muted)' }}>{label}</div>
-      <div style={{ fontWeight: 800 }}>{metric} {v != null ? `${v}%` : trI18n("ไม่มีข้อมูล")}</div>
-    </div>
-  );
-}
-
-// Sparkline เทรนด์ 10 วันล่าสุดต่อ metric (A/P/Q) — มี caption + แกนวัน + tooltip ให้อ่านออกโดยไม่ต้องเดา
-// (กฎ UI-CONVENTIONS §กราฟแท่งรายวัน: ต้องมี caption อธิบายความหมาย + แกนวันต่อเนื่อง + วันว่าง = ตอเทา)
-function MiniTrend({ data, dataKey, color, target, metric }) {
-  const hasData = data.some(d => d[dataKey] != null);
-  if (!hasData) return <div style={{ height: 72, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>{trI18n('ไม่มีข้อมูล 10 วันล่าสุด')}</div>;
-  // วันไม่มีข้อมูล = ตอเทาเตี้ย (ไม่ปล่อยว่างจนดูเหมือนวันหาย) + tooltip บอก "ไม่มีข้อมูล"
-  const rows = data.map(d => ({ ...d, _stub: d[dataKey] == null ? 2 : null }));
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>{trI18n('เทรนด์ 10 วันล่าสุด')}</div>
-      {/* ⚠️ ต้องมีแกน Y + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) — เดิม YAxis hide + ไม่มี label
-          ทำให้อ่านค่าไม่ได้เลยถ้าไม่ hover (จอ TV/จอทัชไม่มี hover) */}
-      <ResponsiveContainer width="100%" height={96}>
-        <BarChart data={rows} margin={{ top: 14, right: 4, left: 0, bottom: 0 }} barCategoryGap={1}>
-          <ReferenceLine y={target} stroke={color} strokeDasharray="3 3" strokeOpacity={0.7} />
-          <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} interval="preserveStartEnd" axisLine={false} tickLine={false} height={16} />
-          <YAxis domain={[0, 100]} width="auto" ticks={[0, 50, 100]} tickFormatter={(v) => `${v}%`}
-            tick={{ fontSize: 11, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-          <Tooltip cursor={{ fill: 'var(--bg3)', opacity: 0.4 }} content={<MiniTrendTip dataKey={dataKey} metric={metric} />} />
-          <Bar dataKey="_stub" stackId="v" fill="var(--border)" radius={[2, 2, 0, 0]} {...chartAnim()} />
-          <Bar {...chartAnim()} dataKey={dataKey} stackId="v" fill={color} radius={[2, 2, 0, 0]} opacity={0.85}>
-            <LabelList dataKey={dataKey} position="top" offset={4}
-              formatter={(v) => (v == null ? '' : Math.round(v))}
-              style={{ fontSize: 11, fontWeight: 700, fill: 'var(--text2)' }} />
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
+/* 📊 GaugeRing · MiniTrend · หัวแดชบอร์ด OEE ย้ายไป `src/components/OeeHeadline.jsx` (27/11)
+   — แท็บ "รายพาร์ท" ใช้ก้อนเดียวกัน ⇒ ของกลาง (CLAUDE.md 26/11 · UI §0.1) */
 
 // ── Vertical metric bar (Live session card) ───────────────────────
 function MetricColumn({ label, value, target, color }) {
@@ -464,6 +424,10 @@ export default function OEEAnalytics() {
   const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
   /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
+  /* 🔎 ช่องกรอง "ชิ้นงาน" ของแท็บรายพาร์ท (27/11 · คำสั่ง user "สามารถกรองชิ้นงานที่ผลิตรายนั้นได้")
+     ว่าง = ยังไม่เลือก ⇒ หัวแดชบอร์ดเลือกพาร์ทที่เดินเครื่องนานสุดให้เอง (เขียนบนจอว่าเลือกตัวไหน)
+     🔴 เก็บเป็น `key` ของกลุ่มพาร์ท (จาก `byProduct.key`) ไม่ใช่ MAT เดี่ยว — 1 สินค้าอาจมีหลาย MAT */
+  const [selPart,    setSelPart]    = useState(() => urlParams.get('part') || '');
   /* 👥 ลิสต์ทีมจากผัง (`useOrgTeams` · ผังยังไม่มีทีม = A/B/C) — 05/11 audit dropdown เดิม hardcode A/B/C
      `?team=` รับตามลิงก์ · ค่าที่ไม่อยู่ในผังยังโชว์ในช่อง (ติดป้าย) ไม่ทิ้งเงียบ */
   const orgTeams = useOrgTeams();
@@ -1286,6 +1250,28 @@ export default function OEEAnalytics() {
     prods: pbProds, kstds: pbKstds, breakPols, flowByLine, affectsLn,
   }), [pbSessions, pbOrdersBy, pbDowntimes, pbDefects, pbProds, pbKstds, breakPols, flowByLine, affectsLn]);
 
+  /* ── 📊 หัวแดชบอร์ดของแท็บรายพาร์ท — "พาร์ทไหนที่กำลังดูอยู่" ───────────────────────────
+     🔴 **ห้ามรวมทุกพาร์ทเป็นหัวเดียว** — `byProduct` มีกฎ `overlap` (ไลน์เดินหลายพาร์ทพร้อมกัน
+        นาทีหยุด 1 นาทีถูกคิดให้ทุกพาร์ทที่คาบเวลากัน) ⇒ **บวกเป็นภาพรวมไลน์ไม่ได้** (oee.js §byProduct)
+        ⇒ หัวแดชบอร์ดโชว์ **ทีละพาร์ท** เสมอ · ไม่เลือก = หยิบพาร์ทที่ "เดินเครื่องนานสุด" ให้
+        (= ตัวที่มีน้ำหนักกับไลน์มากสุด) แล้ว**เขียนบนจอว่ากำลังดูตัวไหน** ห้ามเงียบ */
+  const partOptions = useMemo(
+    () => [...pbByProduct.rows].sort((a, b) => (b.runMin - a.runMin) || (b.pcs - a.pcs)),
+    [pbByProduct.rows]);
+  const partPick = useMemo(
+    () => partOptions.find(r => r.key === selPart) || partOptions[0] || null,
+    [partOptions, selPart]);
+  /* เลือกพาร์ทค้างไว้แล้วเปลี่ยนไลน์/ช่วงจนพาร์ทนั้นหลุดขอบเขต = ต้องบอก ไม่ใช่สลับเงียบ */
+  const partPickFallback = !!selPart && partPick?.key !== selPart;
+  /* เทรนด์รายวันของพาร์ทที่เลือก — รูปแบบเดียวกับ `tdHistoryGrouped` ที่ `<OeeHeadline>` รับ
+     (ค่าเป็น % 0..100 หรือ null · วันที่ไม่มีกะจะไม่มีแท่ง = ตอเทา) */
+  const partTrend = useMemo(() => (partPick?.days || []).map(d => ({
+    label: bucketLabel(d.date, 'day'),   // ป้ายแกนวันชุดเดียวกับเทรนด์ของแท็บวันนี้ (utils/timeRange)
+    a: d.A == null ? null : +(d.A * 100).toFixed(1),
+    p: d.P == null ? null : +(d.P * 100).toFixed(1),
+    q: d.Q == null ? null : +(d.Q * 100).toFixed(1),
+  })), [partPick]);
+
   /* กะที่ยังไม่ปิดอยู่ในช่วง = ค่าสด (ยังขยับได้) — ต้องเขียนบนจอ ไม่ใช่ปนเงียบ */
   const pbLiveCount = useMemo(
     () => pbSessions.filter(x => x.status === 'open' || x.status === 'pending_close').length,
@@ -1683,36 +1669,17 @@ export default function OEEAnalytics() {
             {/* ย่อรูปแบบ ไม่ย่อความจริง — "มีค่าสดผสมอยู่ N กะ" ต้องอยู่บนจอ (ไม่งั้นอ่านเลขผิดว่าเป็นของปิดกะแล้ว)
                 ส่วนขยาย (ค่าจริงยืนยันตอนปิดกะ · OOE/TEEP นับเฉพาะกะปิด) พับไป tooltip · user 18/11
                 🔴 คอมเมนต์ต้องอยู่ "ก่อน" `{cond && (` — วางข้างในกลายเป็น 2 node = จอขาว (พลาดมาแล้ว 3 รอบ) */}
-            {tdLiveCount > 0 && (
-              <div
-                style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 8px' }}
-                title={LIVE_MIX_NOTE}
-              >
-                🟢 {trI18n("รวมค่าสดของ")} {tdLiveCount} {trI18n("กะที่ยังไม่ปิด")} <MoreMark text={LIVE_MIX_NOTE} />
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ position: 'relative', width: 168, height: 168, flexShrink: 0 }}>
-                <GaugeRing value={tdKpi.oee} color={oeeColor(tdKpi.oee ?? 0)} />
-                <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('OEE รวมวันนี้')}</div>
-                  <div style={{ fontSize: 34, fontWeight: 900, color: tdKpi.oee != null ? oeeColor(tdKpi.oee) : 'var(--muted)' }}>{tdKpi.oee ?? '—'}{tdKpi.oee != null ? '%' : ''}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }} title={tdTarget.configured ? trI18n('เป้าจากการตั้งค่ารายกรุ๊ป (section = เฉลี่ยของกรุ๊ป)') : trI18n('ค่ามาตรฐาน — ยังไม่ตั้ง target กรุ๊ปใน scope นี้')}>
-                    TARGET {tdTarget.oee}%{tdTarget.configured ? '' : ' *'}
-                  </div>
+            {/* 📊 วงแหวน + A/P/Q = ของกลาง `<OeeHeadline>` (แท็บ "รายพาร์ท" ใช้ก้อนเดียวกัน · 27/11) */}
+            <OeeHeadline
+              oee={tdKpi.oee} a={tdKpi.a} p={tdKpi.p} q={tdKpi.q}
+              target={tdTarget} trend={tdHistoryGrouped} centerLabel={trI18n('OEE รวมวันนี้')}
+              targetTitle={tdTarget.configured ? trI18n('เป้าจากการตั้งค่ารายกรุ๊ป (section = เฉลี่ยของกรุ๊ป)') : trI18n('ค่ามาตรฐาน — ยังไม่ตั้ง target กรุ๊ปใน scope นี้')}
+              note={tdLiveCount > 0 ? (
+                <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 8px' }} title={LIVE_MIX_NOTE}>
+                  🟢 {trI18n("รวมค่าสดของ")} {tdLiveCount} {trI18n("กะที่ยังไม่ปิด")} <MoreMark text={LIVE_MIX_NOTE} />
                 </div>
-              </div>
-              {['a', 'p', 'q'].map(k => (
-                <div key={k} style={{ flex: 1, minWidth: 160 }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{METRIC_LABEL[k]}</div>
-                  {/* 🚦 เทียบ `tdTarget[k]` = เป้าเดียวกับเส้นประในกราฟและข้อความใต้กราฟ (23/09)
-                      เดิมใช้ `METRIC_COLOR_FN` เกณฑ์ตายตัว ⇒ ตัวเลขเขียวทั้งที่ยังไม่ถึงเส้นประข้างๆ */}
-                  <div style={{ fontSize: 26, fontWeight: 900, color: statusColor(statusOf(tdKpi[k], tdTarget[k])) }}>{tdKpi[k] ?? '—'}{tdKpi[k] != null ? '%' : ''}</div>
-                  <MiniTrend data={tdHistoryGrouped} dataKey={k} color={METRIC_COLOR[k]} target={tdTarget[k]} metric={k.toUpperCase()} />
-                  <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'right' }}><span style={{ color: METRIC_COLOR[k] }}>╌╌</span> {trI18n("เส้นประ = เป้า")} {tdTarget[k]}%</div>
-                </div>
-              ))}
-            </div>
+              ) : null}
+            />
 
             {/* ── OOE / TEEP วันนี้ — ต่างจาก OEE ที่ "ฐานเวลา" (2026-08-04) ── */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
@@ -2174,12 +2141,68 @@ export default function OEEAnalytics() {
         >
           <LineSelect lines={linesFull} value={selLine} onChange={setSelLine} placeholder={ALL.line}
             extraGroups={[{ label: 'นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
+          {/* 🔎 ช่องกรอง "ชิ้นงาน" (27/11 · คำสั่ง user) — ตัวเลือกคือพาร์ทที่ "ผลิตจริงในไลน์+ช่วงที่เลือก"
+              ไม่ใช่ทะเบียนสินค้าทั้งโรงงาน ⇒ เปลี่ยนไลน์แล้วลิสต์แคบลงตาม · เรียงตามเวลาเดินเครื่อง */}
+          <select value={partPick?.key || ''} onChange={e => setSelPart(e.target.value)}
+            disabled={!partOptions.length} title={trI18n('เลือกชิ้นงานที่จะดูภาพรวม')}>
+            {!partOptions.length && <option value="">{trI18n('ยังไม่มีชิ้นงานในช่วงนี้')}</option>}
+            {partOptions.map(r => (
+              <option key={r.key} value={r.key}>
+                {r.matNos[0]}{r.name ? ` — ${r.name}` : ''}{r.matNos.length > 1 ? ` (+${r.matNos.length - 1} MAT)` : ''}
+              </option>
+            ))}
+          </select>
           <Segmented value={selShift} onChange={setSelShift} options={SHIFT_OPTIONS} label={trI18n('กะ')} />
         </TimeRangeBar>
 
+        {/* 📊 หัวแดชบอร์ดของพาร์ทที่เลือก — ก้อนเดียวกับแท็บ "ภาพรวมวันนี้" (`<OeeHeadline>` · 27/11)
+            user: *"OEE รายพาร์ท ต้องโชว์เป็น dashboard แบบนี้สิ ... แค่กรองด้วยฟิลเตอร์"* */}
+        {partPick && (
+          <div className="card" style={{ padding: 14, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+              {/* ชื่อพาร์ทยาวได้มาก — ต้องตัดในกล่องตัวเอง ไม่งั้นดันการ์ดล้นจอมือถือ (mobilesweep จับ) */}
+              <b title={`${partPick.matNos.join(' · ')}${partPick.name ? ` — ${partPick.name}` : ''}`}
+                style={{ fontSize: 15, minWidth: 0, maxWidth: '100%',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <MatLabel mat={partPick.matNos[0]} name={partPick.name} oneLine />
+              </b>
+              {/* ไลน์ที่ผลิตพาร์ทนี้อาจมีหลายสิบ ⇒ โชว์ตัวแรก + นับที่เหลือ (ชื่อเต็มอยู่ใน title)
+                  ไม่งั้นบรรทัดนี้ยาวจนดันหัวการ์ดเป็น 2-3 บรรทัด */}
+              <span style={{ fontSize: 12, color: 'var(--muted)' }} title={partPick.lines.join('\n')}>
+                {partPick.lines[0]}{partPick.lines.length > 1 ? ` +${partPick.lines.length - 1} ${trI18n('ไลน์')}` : ''}
+                {' · '}{partPick.shifts} {trI18n('กะ')} ·{' '}
+                {trI18n('เดิน')} {Math.round(partPick.runMin).toLocaleString()} {trI18n('น.')} ·{' '}
+                {trI18n('ยอดผลิต')} {Math.round(partPick.pcs).toLocaleString()} {trI18n('ชิ้น')}
+                {partPick.ngQty ? ` · ${trI18n('เสีย')} ${Math.round(partPick.ngQty).toLocaleString()}` : ''}
+              </span>
+            </div>
+            {/* เลือกพาร์ทไว้แล้วพาร์ทนั้นหลุดขอบเขต = บอก ห้ามสลับเงียบ (กฎจอซื่อสัตย์) */}
+            {partPickFallback && (
+              <NoticeBar tone="info">
+                {trI18n('ชิ้นงานที่เลือกไว้ไม่มีในไลน์/ช่วงนี้ — แสดงชิ้นงานที่เดินเครื่องนานสุดแทน')}
+              </NoticeBar>
+            )}
+            <OeeHeadline
+              oee={partPick.oee == null ? null : +(partPick.oee * 100).toFixed(1)}
+              a={partPick.A == null ? null : +(partPick.A * 100).toFixed(1)}
+              p={partPick.P == null ? null : +(partPick.P * 100).toFixed(1)}
+              q={partPick.Q == null ? null : +(partPick.Q * 100).toFixed(1)}
+              target={trTarget} trend={partTrend.length > 1 ? partTrend : null}
+              trendCaption={trI18n('เทรนด์รายวันของชิ้นงานนี้')}
+              centerLabel={trI18n('OEE ของชิ้นงานนี้')}
+              targetTitle={trI18n('เป้าเดียวกับขอบเขตที่เลือก (ยังไม่มีเป้ารายชิ้นงาน)')}
+              note={partPick.overlap ? (
+                <div style={{ fontSize: 11, color: 'var(--amber)', margin: '-4px 0 8px' }}>
+                  ⚠️ {trI18n('ไลน์เดินหลายพาร์ทพร้อมกันในช่วงนี้ — %A ของชิ้นงานนี้รวมนาทีหยุดที่คาบกับพาร์ทอื่น')}
+                </div>
+              ) : null}
+            />
+          </div>
+        )}
+
         <div className="card" style={{ padding: 14, display: 'grid', gap: 10, alignContent: 'start' }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-            <b style={{ fontSize: 15 }}>{trI18n('OEE รายพาร์ท')}</b>
+            <b style={{ fontSize: 15 }}>{trI18n('เทียบทุกชิ้นงานในขอบเขตนี้')}</b>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               {partWin.from === partWin.to ? fmtThaiDate(partWin.from) : `${fmtThaiDate(partWin.from)} – ${fmtThaiDate(partWin.to)}`}
               {partWin.days ? ` (${partWin.days} ${trI18n('วัน')})` : ''}
@@ -2249,7 +2272,10 @@ export default function OEEAnalytics() {
                   {pbByProduct.rows.map(r => {
                     const cell = (v) => v == null ? <span style={{ color: 'var(--muted)' }}>—</span> : `${(v * 100).toFixed(1)}`;
                     return (
-                      <tr key={r.key} style={{ borderBottom: '1px solid var(--line)', textAlign: 'right' }}>
+                      <tr key={r.key} onClick={() => setSelPart(r.key)}
+                        title={trI18n('คลิกเพื่อดูภาพรวมของชิ้นงานนี้ด้านบน')}
+                        style={{ borderBottom: '1px solid var(--line)', textAlign: 'right', cursor: 'pointer',
+                          background: r.key === partPick?.key ? 'var(--accent-dim)' : undefined }}>
                         {/* ชื่อพาร์ทยาวได้มาก — ต้องตัดในช่องตัวเอง ไม่งั้นล้นไปทับคอลัมน์ไลน์ */}
                         <td title={`${r.matNos.join(' · ')}${r.name ? ` — ${r.name}` : ''}`}
                           style={{ textAlign: 'left', padding: '6px 8px', maxWidth: 260,
