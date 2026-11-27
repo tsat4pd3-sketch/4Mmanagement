@@ -27,9 +27,10 @@ import { lazy, Suspense } from 'react';
 import { defectUnitCost, fmtBaht, lineCostCenter, rateFor, ratePerHour, RATE_COMPONENTS } from '../utils/costSaving';
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { qRatio, computeSessionOee, computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, dtLineMin, laneBySessionId, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
-import { statusColor, statusOf } from '../utils/statusTone';
+import { statusColor, statusOf, toneVar } from '../utils/statusTone';
 import OeeHeadline, { GaugeRing, METRIC_COLOR, oeeColor } from '../components/OeeHeadline';
-import LineLensMap from '../components/LineLensMap';   // 🗺️ ผังเครื่องจักรของไลน์ (ของกลางตัวเดียวกับ /factory-map)
+import LineLensMap from '../components/LineLensMap';     // 🗺️ ผังเครื่องจักรของไลน์ (ของกลางตัวเดียวกับ /factory-map)
+import FactoryMiniMap from '../components/FactoryMiniMap'; // 🏭 ผังรวมโรงงานแบบอ่านอย่างเดียว (ข้อมูลกรอบชุดเดียวกับ /factory-map)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -888,6 +889,26 @@ export default function OEEAnalytics() {
      เดิมถอยไปใช้ไลน์ของกะที่กำลังเดินให้เอง ⇒ จอบอก "ทั้งโรงงาน" แต่โชว์ผังไลน์เดียวโดยไม่บอกว่าทำไม
      (27/11 · user ทัก) — กฎจอซื่อสัตย์: เลือกแทนคนได้ แต่ต้องเขียนบนจอ ที่นี่ "ให้คนเลือก" ตรงกว่า */
   const tdMapLine = tdLine || (tdMapPick && tdMapLineOptions.includes(tdMapPick) ? tdMapPick : null);
+
+  /* 🏭 ผังรวมโรงงานต้องระบายสีว่าไลน์ไหนเป็นยังไง — OEE ของวันนี้รายไลน์
+     🔴 รวมหลายกะของไลน์เดียวด้วย `wavg(..., wLoad)` ของกลาง **ห้ามเฉลี่ยธรรมดา**
+        (กะที่ผลิตน้อยจะถ่วงเท่ากะที่ผลิตเยอะ — กฎเดียวกับทุกจอที่รวม OEE)
+     · กะที่ยังไม่ปิดใช้ค่าสด (`tdLiveRows`) เหมือนการ์ด/เทรนด์ด้านบน */
+  const tdOeeByLine = useMemo(() => {
+    const by = {};
+    tdRows.forEach(r => { (by[r.line_name] ||= []).push({ ...r, _oee: tdLiveRows[r.id]?.calcOEE ?? r.calcOEE }); });
+    const out = {};
+    Object.entries(by).forEach(([n, rows]) => { out[n] = wavg(rows, i => i._oee, wLoad); });
+    return out;
+  }, [tdRows, tdLiveRows]);
+  /* สัญญาของ `<FactoryMiniMap>`: คืน `null` = ไม่มีข้อมูล (เทาจาง) · มี `label` = "ผิดปกติ" (ป้ายเด่น)
+     ⇒ ไลน์ที่ถึงเป้าไม่ต้องมีป้าย (จออ่านเร็ว เห็นเฉพาะตัวที่ต้องไปดู) */
+  const tdMapStateOf = useCallback((name) => {
+    const v = tdOeeByLine[name];
+    if (v == null) return null;
+    const tone = statusOf(v, tdTarget.oee);
+    return { color: toneVar(tone), blink: false, label: tone === 'good' ? null : `OEE ${v}%` };
+  }, [tdOeeByLine, tdTarget.oee]);
   const tdMapFamily = useMemo(
     () => (tdMapLine ? getLineFamilyNames(linesFull, tdMapLine) : []), [linesFull, tdMapLine]);
   const tdMapParent = useMemo(
@@ -1804,8 +1825,12 @@ export default function OEEAnalytics() {
               {!tdLiveSession ? (
                 <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>{trI18n('ไม่มีข้อมูลกะในวันที่เลือก')}</div>
               ) : (
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div style={{ minWidth: 140 }}>
+                /* 📐 27/11 (user วงที่ว่างกลางการ์ดมาให้) — เดิมกล่องข้อความซ้ายยืดตามชื่อไลน์/ชื่อพาร์ทที่ยาว
+                   ดันแท่ง A/P/Q ตกบรรทัดใหม่ แล้วเหลือที่ว่างครึ่งการ์ด
+                   ⇒ `space-between` + ให้กล่องข้อความ `flex:1 1 200px minWidth:0` (ยืด/หดได้)
+                      แท่ง A/P/Q เกาะขวาเสมอ · จอแคบค่อย wrap ลงบรรทัดใหม่ตามเดิม */
+                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ flex: '1 1 200px', minWidth: 0 }}>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('ไลน์ · กะ')}</div>
                     <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>
                       {tdLiveSession.line_name} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{tdLiveSession.shift === 'night' ? trI18n('🌙 กะดึก') : trI18n('☀️ กะเช้า')}</span>
@@ -1821,7 +1846,7 @@ export default function OEEAnalytics() {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>TARGET {(liveTarget || tdTarget).oee}%</div>
                   </div>
-                  <div style={{ display: 'flex', gap: 14 }}>
+                  <div style={{ display: 'flex', gap: 14, flex: 'none' }}>
                     <MetricColumn label="A" value={tdLiveRow?.calcA} target={(liveTarget || tdTarget).a} color={METRIC_COLOR.a} />
                     <MetricColumn label="P" value={tdLiveRow?.calcP} target={(liveTarget || tdTarget).p} color={METRIC_COLOR.p} />
                     <MetricColumn label="Q" value={tdLiveRow?.calcQ} target={(liveTarget || tdTarget).q} color={METRIC_COLOR.q} />
@@ -1840,8 +1865,8 @@ export default function OEEAnalytics() {
                 {trI18n('จำนวนชิ้นงานที่ผลิตรวมของวันนี้')}{' '}
                 <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>· {tdScopeLabel}</span>
               </div>
-              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('เป้าหมาย')}</div>
                   <div style={{ fontSize: 22, fontWeight: 900, color: hasTarget ? 'var(--text)' : 'var(--muted)' }}>
                     {hasTarget ? <>{tdKpi.targetQty.toLocaleString()} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>{trI18n('ชิ้น')}</span></> : <span style={{ fontSize: 14, fontWeight: 700 }}>{trI18n('ยังไม่ตั้งเป้ากะ')}</span>}
@@ -1880,14 +1905,30 @@ export default function OEEAnalytics() {
                     <span title={tdLine} style={{ fontWeight: 600, color: 'var(--muted)', minWidth: 0,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tdLine}</span>
                   ) : (
-                    <select value={tdMapPick} onChange={e => setTdMapPick(e.target.value)}
-                      title={trI18n('เลือกไลน์ที่จะดูผัง (เฉพาะไลน์ที่มีกะในวันที่เลือก)')}
-                      style={{ fontWeight: 600, maxWidth: '100%' }}>
-                      <option value="">{trI18n('— เลือกไลน์ —')}</option>
-                      {tdMapLineOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
+                    <>
+                      <select value={tdMapLineOptions.includes(tdMapPick) ? tdMapPick : ''}
+                        onChange={e => setTdMapPick(e.target.value)}
+                        title={trI18n('เลือกไลน์ที่จะดูผัง (เฉพาะไลน์ที่มีกะในวันที่เลือก)')}
+                        style={{ fontWeight: 600, maxWidth: '100%' }}>
+                        <option value="">{trI18n('ทั้งโรงงาน (ผังรวม)')}</option>
+                        {tdMapLineOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                      {tdMapLine && (
+                        <button onClick={() => setTdMapPick('')} className="ctl-btn"
+                          style={{ fontSize: 11.5, padding: '2px 10px', borderRadius: 'var(--r-pill)',
+                            border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}>
+                          ← {trI18n('ผังรวมโรงงาน')}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
+                {/* กดกรอบไลน์บนผังรวมที่วันนั้นไม่มีกะ = ต้องบอก ห้ามกดแล้วเงียบ (กฎจอซื่อสัตย์) */}
+                {!tdLine && tdMapPick && !tdMapLineOptions.includes(tdMapPick) && (
+                  <NoticeBar tone="info">
+                    {trI18n('ไลน์')} <b>{tdMapPick}</b> {trI18n('ไม่มีกะในวันที่เลือก — ยังไม่มีผลผลิต/เวลาหยุดให้ดูผัง')}
+                  </NoticeBar>
+                )}
                 {tdMapLine ? (
                   /* หัวข้อย่อย "ผังเครื่องจักร · เครื่องหยุดวันนี้" `<LineLensMap>` เขียนให้เองแล้ว ไม่ซ้ำ */
                   <LineLensMap
@@ -1895,16 +1936,20 @@ export default function OEEAnalytics() {
                     lens="breakdown" dtRows={tdMapDt} date={tdDate}
                     height={isMobile ? '300px' : 'clamp(240px, 32vh, 420px)'}
                   />
-                ) : (
-                  <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7, padding: '18px 4px' }}>
-                    {trI18n('ขอบเขตที่เลือกคือ')} <b style={{ color: 'var(--text2)' }}>{tdScopeLabel}</b> —{' '}
-                    {trI18n('ผังเป็นของไลน์เดียว จึงรวมหลายไลน์ในผังเดียวไม่ได้')}
-                    <div style={{ marginTop: 6 }}>
-                      {trI18n('เลือกไลน์ที่ช่องด้านบน หรือกรองไลน์ที่แถบด้านบนสุดของหน้า')} ·{' '}
-                      {trI18n('วันนี้มีกะ')} <b style={{ color: 'var(--text2)' }}>{tdMapLineOptions.length}</b> {trI18n('ไลน์')}
-                    </div>
+                ) : (<>
+                  {/* 🏭 ยังไม่เจาะไลน์ = โชว์ **ผังรวมโรงงาน** (27/11 · user "ถ้าเลือกทั้งโรงงานดูเลย์เอาต์ใหญ่โรงงานได้มั้ย")
+                      🔴 ข้อมูลกรอบ/รูป = ชุดเดียวกับ `/factory-map` ผ่าน `<FactoryMiniMap>` — **ห้ามมีผังรวมชุดที่ 2**
+                      · ระบายสีด้วย OEE ของวันนี้รายไลน์ (เทียบเป้าเดียวกับหัวแดชบอร์ด) · ไม่มีกะ = เทาจาง
+                      · กดกรอบไลน์ = เจาะเข้าผังเครื่องจักรของไลน์นั้น (เปลี่ยนช่องเลือกด้านบนให้เอง) */}
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
+                    {trI18n('ผังรวมโรงงาน · ระบายสีตาม OEE วันนี้')} —{' '}
+                    {trI18n('กดกรอบไลน์เพื่อดูผังเครื่องจักรของไลน์นั้น')}
                   </div>
-                )}
+                  <FactoryMiniMap
+                    stateOf={tdMapStateOf} onPick={n => setTdMapPick(n)}
+                    height={isMobile ? 280 : 360} bottomReserve={0}
+                  />
+                </>)}
               </div>
             )}
           </div>

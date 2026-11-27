@@ -46,7 +46,10 @@ const tint = (c, lvl) => {
 /* 🎨 โหมดบอร์ด (ไม่บังคับ · 20/11 Manpower Board · ไม่ส่ง = พฤติกรรมเดิมเป๊ะ)
    `dimMap` = ผังพื้นหลังเทา/มืดลงให้สีสถานะเด่น · `focusNames` (Set) = กรอบที่ถูกชี้ (ที่เหลือจาง)
    `onHover(name|null)` = แจ้งจอแม่ตอนชี้กรอบ/เลข · `badgeOf()` คืน `pct` (0–1) = วงแหวนรอบเลข (null = วงประ "ตัดสินไม่ได้") */
-export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28, badgeOf = null, dimMap = false, focusNames = null, onHover = null }) {
+export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28, badgeOf = null, dimMap = false, focusNames = null, onHover = null,
+  /* 📐 ความสูงคงที่ (px) — สำหรับจอที่ผัง **ไม่ได้กินทั้งหน้า** เช่นการ์ดกลางหน้า `/oee-analytics`
+     ไม่ส่ง = วัดเองจากที่เหลือของจอเหมือนเดิมเป๊ะ (จอ TV/Andon ไม่กระทบ · 27/11) */
+  height = null }) {
   const K = useTvShell() ? TV_LBL_K : 1;
   const [map, setMap] = useState(null);      // { image_url }
   const [regions, setRegions] = useState([]);
@@ -84,6 +87,9 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28, ba
     const el = wrapRef.current;
     if (!el) return;
     const measure = () => {
+      /* ส่ง `height` มา = ใช้ค่านั้นตรงๆ (ผังอยู่ในการ์ด ไม่ได้กินที่เหลือของจอ)
+         ไม่ส่ง = วัดจากที่เหลือของจอเหมือนเดิม */
+      if (height != null) { setAvailH(height); return; }
       const docTop = el.getBoundingClientRect().top + window.scrollY;
       setAvailH(Math.max(220, Math.round(window.innerHeight - docTop - bottomReserve)));
     };
@@ -94,7 +100,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28, ba
     return () => { window.removeEventListener('resize', measure); ro?.disconnect(); };
     // ⚠️ ต้องมี map?.image_url ใน deps — ก่อนโหลดผังเสร็จ wrapper ยังไม่ mount (ref เป็น null)
     //    ถ้าไม่ใส่ effect จะวิ่งรอบเดียวตอน mount แล้วไม่มีวันได้วัดเลย
-  }, [bottomReserve, map?.image_url]);
+  }, [bottomReserve, height, map?.image_url]);
 
   useEffect(() => {
     let dead = false;
