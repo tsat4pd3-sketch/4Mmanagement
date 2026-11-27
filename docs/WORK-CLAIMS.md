@@ -21,12 +21,12 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- หลัก · เริ่ม 2026-11-27 15:20 · จัดแถวการ์ดแท็บ "ภาพรวมวันนี้" ของ /oee-analytics (ย่อการ์ดกะที่กำลังผลิต · ขยับการ์ดยอดผลิต · เติมผังไลน์ที่เลือกในที่ว่างขวา) · แตะ: `src/pages/OEEAnalytics.jsx` (เฉพาะแท็บ today) · อาจ import ของกลางผังไลน์แบบอ่านอย่างเดียว · ไม่มี migration ไม่แตะ DB
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-27 · หลัก · แท็บ "ภาพรวมวันนี้" `/oee-analytics` แถวการ์ดบนสุดเป็น 3 ใบ (ย่อการ์ดกะที่กำลังผลิต · การ์ดยอดผลิตเลื่อนซ้าย · ที่ว่างขวา = **ผังเครื่องจักรของไลน์ที่เลือก** ผ่านของกลาง `<LineLensMap>` เลนส์ `breakdown`) · ไลน์ = ช่องกรองไลน์ → ไม่กรอง = ไลน์ของกะที่การ์ดซ้ายโชว์ · ชี้ไลน์ไม่ได้ = กลับเป็น 2 คอลัมน์ · ไฟล์หลัก `src/pages/OEEAnalytics.jsx` `docs/modules/oee.md` · ไม่มี migration
 - 2026-11-27 · smf01 · 5S (ยกจากระบบ Core) รอบ 1 · ตาราง `act_activity` (act01–act09 ตามเมนู) · `act_strategy` · `act02_*` 9 ตาราง + วิว `act02_audit_group` · bucket `act-public` · สิทธิ์ `act_5s:manage` (หมวดคุณภาพ & วิศวกรรม — nav_groups ไม่มีหมวดกิจกรรม) · ข้อมูลปี 2026: พื้นที่ 34 · ทีม 86 · หัวข้อตรวจ 25 · แผนตรวจ 102 · หน้าใหม่ `src/pages/activity5s/**` (route /activity-5s ใน App.jsx แยกจาก Activity.jsx) · Setting: พื้นที่ · ทีม · หัวข้อตรวจ · แผนตรวจ · เกณฑ์ผ่าน · Dashboard / Edit Data = รอบ 2 · คนในทีมเก็บรหัส + ชื่อ (ไม่ FK employees: 28/62 คนไม่อยู่ใน employees) · migration `20261127_act02_5s_main.sql` `20261127b_act02_5s_seed_main.sql` (ลงแล้วผ่าน MCP)
 - 2026-11-27 · หลัก · ของที่คนกรอกค้างชนะการรีโหลด (หน้างานแจ้ง "จอชอบรีเฟรชระหว่างลงข้อมูล") + หน้าต่าง deploy ผูก `break_policies`/`company_calendar` + ร่างฟอร์มใน localStorage · ไฟล์หลัก `src/utils/pendingInput.js` `src/utils/useFormDraft.js` `src/components/DraftBar.jsx` `src/main.jsx` `src/pages/MtnRepair.jsx` `.github/workflows/scheduled-deploy.yml` · ไม่มี migration
 - 2026-11-27 · หลัก · แก้ด่าน `new-table-needs-rls` ให้อ่าน "เปิด RLS เป็นลูป dynamic SQL" ได้ — `20261127_act02_5s_main.sql` ของ smf01 **ถูกต้องอยู่แล้ว** (RLS + policy + GRANT + trigger ครบ 11 ตาราง · ตรวจ DB แล้ว `relrowsecurity=true` ทุกตัว) แต่ด่าน regex ต่อตารางมองไม่เห็น ⇒ `npm run build` บน main แดงอยู่ · แก้ที่ด่าน (`src/utils/__tests__/regressionGuards.test.mjs`) **ไม่แตะ migration ที่ smf01 จองไว้** · กฎไม่ผ่อน: ต้องมีทั้งคำสั่งเปิด RLS แบบ dynamic และชื่อตารางอยู่ในลิสต์ของลูป
