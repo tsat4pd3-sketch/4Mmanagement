@@ -59,7 +59,7 @@ export default function PushCoveragePanel() {
     if (!stat) return [];
     const m = new Map();
     for (const r of stat.noDev) {
-      const k = r.section || '— ไม่ระบุส่วนงาน';
+      const k = r.section || tr("— ไม่ระบุส่วนงาน");
       if (!m.has(k)) m.set(k, []);
       m.get(k).push(r);
     }
@@ -97,22 +97,21 @@ export default function PushCoveragePanel() {
           <div style={{ fontSize: 12.5, lineHeight: 1.7 }}>
             {stat.total === 0 ? (
               <span style={{ color: 'var(--muted)' }}>
-                ช่วง {DAYS} วันที่ผ่านมา ยังไม่มีใครได้รับแจ้งเตือนในแอปเลย — จึงยังไม่มีอะไรให้เทียบ
+                {tr("ช่วง")} {DAYS} {tr("วันที่ผ่านมา ยังไม่มีใครได้รับแจ้งเตือนในแอปเลย — จึงยังไม่มีอะไรให้เทียบ")}
               </span>
             ) : (
               <>
                 <b style={{ color: stat.pct >= 80 ? 'var(--accent)' : 'var(--accent2)' }}>
-                  มีเครื่องรับแจ้งเตือน {stat.hasDev} {tr('จาก')} {stat.total} {tr('คน (')}{stat.pct}%)
+                  {tr("มีเครื่องรับแจ้งเตือน")} {stat.hasDev} {tr('จาก')} {stat.total} {tr('คน (')}{stat.pct}%)
                 </b>
                 {stat.noDev.length > 0 && (
                   <>
                     {' · '}<b style={{ color: 'var(--accent2)' }}>{stat.noDev.length} {tr('คนมือถือไม่เคยเด้ง')}</b>
-                    {stat.noDevMtn > 0 && <> {tr('(ในนั้นได้แจ้งเตือนใบซ่อม')} {stat.noDevMtn} คน)</>}
+                    {stat.noDevMtn > 0 && <> {tr('(ในนั้นได้แจ้งเตือนใบซ่อม')} {stat.noDevMtn} {tr("คน")})</>}
                   </>
                 )}
                 <InfoMore label={tr('ตัวเลขนี้นับจากอะไร')} id="push-cov-def" size={11.5} style={{ marginTop: 3 }}>
-                  นับจาก <b>{tr('คนที่ได้รับแจ้งเตือนในแอปจริงใน')} {DAYS} {tr('วันล่าสุด')}</b> ไม่ใช่พนักงานทั้งหมด ·
-                  คนที่ไม่มีเครื่องยัง<b>{tr('เห็นกระดิ่งในแอปครบ')}</b> แต่มือถือไม่เด้ง
+                  {tr("นับจาก")} <b>{tr('คนที่ได้รับแจ้งเตือนในแอปจริงใน')} {DAYS} {tr('วันล่าสุด')}</b> {tr("ไม่ใช่พนักงานทั้งหมด · คนที่ไม่มีเครื่องยัง")}<b>{tr('เห็นกระดิ่งในแอปครบ')}</b> {tr("แต่มือถือไม่เด้ง")}
                 </InfoMore>
               </>
             )}
@@ -120,26 +119,25 @@ export default function PushCoveragePanel() {
 
           {stat.noDev.length > 0 && (
             <>
-              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
+              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)',
                             border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-                วิธีให้เขาเปิดเอง: เปิดเว็บ ESM <b>{tr('บนมือถือเครื่องนั้น')}</b> {tr('→ กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม')} <b>"เปิด"</b> ในแถบ
-                "📲 เด้งแจ้งเตือนเข้ามือถือ" → กด <b>"ทดสอบส่ง"</b> {tr('เพื่อพิสูจน์ว่าเด้งถึงจริง')}<br />
-                <b>iPhone</b> ต้องกด "แชร์ → เพิ่มไปยังหน้าจอโฮม" แล้วเปิดจากไอคอนนั้นก่อน (iOS บังคับ)
+                {tr("วิธีให้เขาเปิดเอง: เปิดเว็บ")} ESM <b>{tr('บนมือถือเครื่องนั้น')}</b> {tr('→ กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม')} <b>"{tr("เปิด")}"</b> {tr("ในแถบ \"📲 เด้งแจ้งเตือนเข้ามือถือ\" → กด")} <b>"{tr("ทดสอบส่ง")}"</b> {tr('เพื่อพิสูจน์ว่าเด้งถึงจริง')}<br />
+                <b>iPhone</b> {tr("ต้องกด \"แชร์ → เพิ่มไปยังหน้าจอโฮม\" แล้วเปิดจากไอคอนนั้นก่อน (iOS บังคับ")})
               </div>
 
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(showAll ? bySection : bySection.slice(0, 4)).map(([sec, list]) => (
                   <div key={sec}>
                     <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 3 }}>
-                      {sec} · {list.length} คน
+                      {sec} · {list.length} {tr("คน")}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {list.map(r => (
                         <span key={r.user_id}
-                          title={`แจ้งเตือนใน ${DAYS} วัน ${r.n_notif} รายการ (ใบซ่อม ${r.n_mtn}) · ยังไม่มีเครื่องผูกไว้`}
+                          title={`${tr("แจ้งเตือนใน")} ${DAYS} ${tr("วัน")} ${r.n_notif} ${tr("รายการ (ใบซ่อม")} ${r.n_mtn}) · ${tr("ยังไม่มีเครื่องผูกไว้")}`}
                           style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)',
-                                   border: '1px solid var(--border)', background: 'var(--card)', whiteSpace: 'nowrap' }}>
-                          {r.full_name || '(ไม่มีชื่อ)'}
+                                   border: '1px solid var(--border)', background: 'var(--card-surf)', whiteSpace: 'nowrap' }}>
+                          {r.full_name || tr("(ไม่มีชื่อ)")}
                           <b style={{ color: 'var(--muted)', fontWeight: 600 }}> · {r.n_notif}</b>
                         </span>
                       ))}
@@ -150,7 +148,7 @@ export default function PushCoveragePanel() {
                   <button onClick={() => setShowAll(v => !v)}
                     style={{ alignSelf: 'flex-start', fontSize: 11, color: 'var(--accent)', background: 'none',
                              border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
-                    {showAll ? 'ย่อ' : `ดูอีก ${bySection.length - 4} ส่วนงาน`}
+                    {showAll ? tr("ย่อ") : `${tr("ดูอีก")} ${bySection.length - 4} ${tr("ส่วนงาน")}`}
                   </button>
                 )}
               </div>

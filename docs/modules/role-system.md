@@ -69,6 +69,17 @@
 - **⚠️ กฎเหล็ก — เพิ่มหน้า/สิทธิ์ใหม่ ต้องลง "ทะเบียน" ด้วย ไม่งั้น admin ปรับจาก UI ไม่ได้เลย (audit 2026-08-06):** `role_permissions` เก็บ**ค่า** แต่ตัวที่ทำให้ "โผล่ให้ติ๊ก" ในหน้า `/permissions` เป็นคนละที่ — seed แถวอย่างเดียวไม่พอ:
   - **หน้าใหม่** → เพิ่ม `{ key: 'page:/xxx', label: '...' }` ใน **`PAGE_GROUPS`** (`src/pages/PermissionsManagement.jsx`) **ในคอมมิทเดียวกับที่เพิ่ม route** · ไม่เพิ่ม = สิทธิ์ล็อกตามที่ seed ไว้ ปรับไม่ได้ (audit 2026-08-06 เจอค้าง 8 หน้า: `/qr-labels` `/dept-dashboard` `/group-overview` `/adoption-outlook` `/energy` `/pe-docs` `/vsm` `/die-registry` — เปิดให้ทุก role แต่ปิดไม่ได้)
   - **action ใหม่** → insert แถวใน **`permission_catalog`** ด้วย · ไม่ insert = ไม่ขึ้นในตาราง (เคยตกหล่น 8 key: `lpa:*` 3 · `ojt:*` 2 · `doc_forms:manage` · `pm_coord:manage` · `transport:manage` — แก้แล้ว migration `20260806_permission_catalog_gaps.sql`)
+  - 🔴 **หลุดซ้ำรอบ 2 (audit 18/11 · คำสั่ง user "เหมือนไม่ได้อัพเดทตาม project"):** 5 คีย์ที่โค้ดใช้จริงแต่ไม่มี catalog
+    (`monitoring:manage` · `production_plan:write` · `mtn_repair:spare_master` · `ppe:manage` · `org:manage` — ตัวหลังถูกถอด 06/08
+    ว่า "ไม่มีโค้ดเรียก" แล้ว 02/11 แผงมอบหมายรักษาการกลับมาใช้) · สาเหตุร่วม = migration seed แถว `role_permissions` แล้วเขียนว่า
+    "role อื่น seed false ให้โผล่ในจอ" — **จอไม่ได้อ่านจาก role_permissions** · เก็บด้วย `20261118_permission_catalog_sync_main.sql`
+    (เติม catalog อย่างเดียว ไม่แตะค่าสิทธิ์) · **ด่าน build `src/utils/__tests__/permissionCatalogCoverage.test.mjs`**: คีย์ที่
+    `can()`/`canSeeded()`/`hasPermission()` เรียกแบบ literal + คีย์ที่ seed ใน role_permissions ต้องมี insert `permission_catalog`
+    ใน migration (อ่านซอร์สเป็นข้อความ · คีย์ปลดระวางอยู่ใน `RETIRED_SEEDED` พร้อมเหตุผล — เติมลิสต์นั้นได้เฉพาะคีย์ที่ถอดจากโค้ดแล้ว)
+  - 🖱️ **แท็บภาพรวม (matrix) คลิกสลับค่าได้แล้ว (18/11)** — ผ่าน `toggle()` ตัวเดียวกับ 2 แท็บเดิม (ด่าน `permissions:manage` ·
+    ถามยืนยันตอนปิดสิทธิ์ · นับแถวหลัง upsert) · ยังแสดง 3 สถานะ ✓/·/– และเขียนไม่ติดต้องคืน "–" ไม่ใช่ "·" (ตัวแปร `existed`)
+    · แถว `role_permissions` ที่ไม่มี catalog วันนี้ (18/11): `manage_master_data` · `mtn_repair:close_cost` · `mtn_repair:mtn_head` ·
+    `users:manage` = ปลดระวาง เก็บไว้เผื่อ rollback ไม่โผล่ในจอ (ตั้งใจ)
     - ⚠️ **คอลัมน์คือ `resource` + `action` แยกกัน ไม่ใช่ `permission_key`** (key ที่โค้ดเช็คคือ `resource:action` ที่ประกอบขึ้นตอน runtime) · เขียน insert ผิดคอลัมน์ = error 42703
     - ⚠️ **`group_name` ต้องเป็นชื่อหมวดตาม `NAV_GROUP_ORDER` เท่านั้น + `sort` ตามช่วงของหมวด** (**ช่วงต่อหมวดอยู่ในตาราง `nav_groups` — `select name, sort_lo, sort_hi from nav_groups order by seq`** · ณ 2026-09-07: ภาพรวม 100-149 · จอแสดงผล 150-199 · ฝ่ายผลิต 2xx · วิเคราะห์ & รายงาน 3xx · พนักงาน & ทักษะ 4xx · Logistic ขาเข้า 500-519 / ขาออก 520-539 / แผนงาน 540-599 · ซ่อมบำรุง 6xx · คุณภาพ & วิศวกรรม 7xx · ตั้งค่า 900-949 · ผู้บริหาร & เดโม 950-999 · 8xx ว่าง — เลือกเลขที่ยังว่าง ห้ามซ้ำ · เช็คหลัง seed: `select * from v_permission_catalog_sort_drift` ต้องว่าง) · **ตั้งแต่ 2026-09-07 `permission_catalog.group_name` มี FK → `nav_groups(name)`** (migration `20260907_nav_groups_registry.sql` **apply แล้ว**) — seed ด้วยชื่อหมวดที่ไม่มีในทะเบียน = migration **error ทันที** ไม่ใช่ warning · **เปลี่ยน/เพิ่มหมวดเมนู = แก้ `NAV_GROUP_ORDER` + เขียน migration ใหม่ชื่อ `*_nav_groups_*.sql` (upsert ทั้งชุด) ในคอมมิทเดียวกัน** — เทส `src/utils/__tests__/navGroupsRegistry.test.mjs` อ่านไฟล์ตัวล่าสุดเทียบ App.jsx ไม่ตรง = build ไม่ผ่าน · เปลี่ยนชื่อหมวด: update `nav_groups.name` แถวเดียว catalog ตามเอง (on update cascade) — พิมพ์ชื่อหมวดเอง = หมวดกำพร้าโผล่กลางตาราง (audit 2026-08-19 เจอ 'ซ่อมบำรุง'/'ประชุมแถวเช้า' เป็นหมวดเดี่ยว + sort ชนกัน 8 คู่ → จัดใหม่ทั้งตารางด้วย migration `20260819_permission_catalog_regroup.sql` **apply แล้ว 2026-08-19** — cosmetic ล้วน ไม่แตะ role_permissions · ผลตรวจ: 9 หมวด 89 แถว ตรงเป๊ะ) · **⚠️ แล้วยังหลุดอีกรอบ:** `20260818_org_divisions.sql` seed `org:manage_divisions` ด้วย `group_name='ตั้งค่า/ฐานข้อมูล'` (ชื่อผิด) แต่ถูก apply **หลัง** audit รอบนั้น จึงตกสำรวจ → เก็บด้วย `20260824_permission_catalog_org_divisions_group.sql` (**apply แล้ว 2026-08-24** · ผลตรวจ: 9 หมวด 94 แถว · หมวดตั้งค่าฯ sort ถึง 940) — **บทเรียน: migration ที่ seed catalog แล้ว apply ทีหลัง ต้องตรวจ group_name ซ้ำเสมอ audit รอบเก่าไม่ครอบให้** · **`PAGE_GROUPS` ใน PermissionsManagement.jsx ต้อง mirror `NAV_ITEMS` เสมอ** (หมวด/ลำดับ/ชื่อ — เพิ่มหน้าใหม่แก้ 2 ที่ให้ตรงกัน) · QC checklist ข้อ C6
   - **ลงทะเบียนแล้วยังไม่จบ** — กับดัก `enum_range` (ดูย่อหน้าถัดไป) ทำให้ role ที่เพิ่มทีหลังไม่มีแถว ต้องไปติ๊กที่ `/permissions` เองอยู่ดี
@@ -168,7 +179,7 @@ manager 3 · doc_control 2 · display 1 · planner_store 1 — ที่เห�
 >
 > #### ⚠️ กฎเหล็ก — "เห็นได้ทั้งโรงงาน แต่แก้ได้เฉพาะส่วนงานตัวเอง" ห้ามใช้ `profiles.sections` ทำ (2026-08-17)
 > **`sections` เป็น scope ระดับทั้งระบบ ไม่ใช่ตัวกรองเฉพาะหน้าพนักงาน** — หน่วยงานสนับสนุน (คลัง/สโตร์ = section `Planning&Store`) **ไม่มีไลน์ผลิตสังกัดอยู่เลย** → ตั้ง `sections=['Planning&Store']` เมื่อไหร่ หน้าที่กรองด้วย section (**StoreMonitor · Dashboard · Report** — ตรวจโค้ดซ้ำ 2026-08-24: `PlannerSales`/`RundownStock` **ไม่ได้อ่าน `sections` เลย** จึงไม่กระทบ ที่เคยเขียนไว้ว่ากระทบด้วยคือผิด) เหลือ **0 แถวทันที** = พังงานประจำวันของเขาเอง แลกกับการซ่อนรายชื่อพนักงานฝ่ายผลิต
-> - **กลไกที่ถูก: คีย์ `employees:edit_all_sections`** (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
+> - ~~**กลไกที่ถูก: คีย์ `employees:edit_all_sections`**~~ **13/11: คีย์นี้ถูกถอดแล้ว** — "แก้คนของหน่วยไหนได้" ตัดสินที่ `canWriteUnit()` (บ้าน · CC · มอบหมาย · ใบผ่านรายคน) + DB `app_can_write_unit(section)` (📄 `permission-scope-audit.md` §16) · ประวัติ: (migration `20260817_sale_role_employee_management.sql`) — role ที่ **มี** = แก้ได้ทุกส่วนงาน (พฤติกรรมเดิม) · **ไม่มี** = ปุ่ม ✏️/🚫 + แผงระดับทักษะ เปิดเฉพาะแถวที่ `employees.section` ตรงกับ **`profiles.section` (คอลัมน์เดี่ยว)** ของผู้ใช้ แถวอื่นขึ้น 🔒
 > - **ใช้ `profiles.section` เดี่ยว ไม่ใช่ `sections[]` โดยตั้งใจ** — `effectiveSections()` ข้อ 5 บอกว่า "role อื่นที่มีแค่ section เดี่ยว → ไม่จำกัด" → **scope ทั้งระบบคงเดิมเป๊ะ** ได้ค่า "ส่วนงานของฉัน" มาใช้ฟรีๆ · **ห้ามเผลอย้ายค่านี้ไปใส่ `sections[]`**
 > - seed = ทุก role ที่เคยแก้ได้ `true` → **พฤติกรรมเดิมไม่เปลี่ยนสำหรับใครเลย** · UI เช็คผ่าน `isActionSeeded()` → ก่อน apply migration ทุก role แก้ได้หมดเหมือนเดิม (pattern เดียวกับ `canDelete()`)
 > - **role ใหม่ที่ยังไม่มีแถว = ถูกจำกัดตามส่วนงาน (fail-safe ฝั่งแคบกว่า)** — ถ้า role ใหม่ต้องแก้ข้ามส่วนงาน ต้องติ๊กที่ `/permissions`
@@ -874,7 +885,7 @@ migration `20261012d_rls_round7_attendance_shift_main.sql` (**apply แล้ว
 | ตาราง | cmd | predicate | ปุ่มเจ้าของ |
 |---|---|---|---|
 | `employees` | INSERT | `employees:register` **or** `page:/add-user` | Register.jsx · AddUser.jsx |
-| `employees` | UPDATE | OR 7 คีย์ (`employees:edit`/`:deactivate`/`:edit_all_sections` · `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
+| `employees` | UPDATE | (`employees:edit` ∨ `:deactivate`) **∧ `app_can_write_unit(section)`** · หรือ `line_setup:edit` · `org:manage_divisions`/`:manage_own_unit` · `storage_maintain:run` (13/11 · เลิก `edit_all_sections`) | operator.jsx · LineSetup · OrgSetup · ImageSqueezePanel |
 | `employees` | DELETE | `employees:deactivate` | **ไม่มีจอไหนลบ** — ของจริงคือ soft-delete `is_active=false` |
 | `workstations` | ALL | `line_setup:edit` | LineSetup.jsx |
 | `station_requirements` | ALL | `line_setup:edit` **or** `skills:delete` | LineSetup · operator.jsx:748 |
@@ -1160,3 +1171,10 @@ migration `20261014_rls_round10_tier_b_final_main.sql` (**apply แล้ว 202
   `section` เดิม ⇒ ไม่มีใครแคบลง · รายละเอียด `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4.8
 - ด่าน `assignment-overlay-widen-only` (regressionGuards) — ห้ามเขียนกฎวันที่เองใน App.jsx · ห้ามให้ overlay แตะ DB
 - ⚠️ งานข้อมูลที่เหลือ: 21 คนที่ตำแหน่ง HR ต่ำกว่าสิทธิ์ยังไม่มีแถวมอบหมาย — ลงที่ `/org-setup › มอบหมายหน่วย` (ใส่วันสิ้นสุด)
+
+## 🧪 มาตรฐาน role ฝ่าย QA/QC (2026-11-25 · คำสั่ง user)
+
+ทุกคนในฝ่าย QA = role `qa` + ใบผ่าน `all_units` · หัวหน้า = `qa` + ติ๊กแอดมินหน่วยงาน (`is_dept_admin`) · ผจก. = `manager` (+ `qa:bin_decide`) ·
+**ห้ามตั้ง role ผลิต (leader/supervisor) หรือ admin ให้คน QA เพื่อ "ให้แก้ได้"** — ขาดคีย์ไหนให้เติมที่ role `qa` ใน /permissions
+· เคสจริง + คีย์ที่เสีย/ได้ + วิธีย้อน → `permission-scope-audit.md` §16.3 · migration `20261125_qa_roles_standard_main.sql`
+

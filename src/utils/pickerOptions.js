@@ -17,6 +17,7 @@ export const sameName = (a, b) => normName(a).toLowerCase() === normName(b).toLo
 export function personOptions({
   profiles = [], employees = [], source = 'profiles', lines, lineIds, section, roles, teams, strict = false,
   posLabel = (v) => String(v || ''), roleLabel = (v) => String(v || ''),
+  levels, levelOf = () => null,   // 24/11: ระดับตำแหน่ง (POSITION_LEVELS key) ที่ควรขึ้นก่อน — ช่องผู้ตรวจ LPA · ไม่ตัดคนอื่น
 } = {}) {
   const prefLines = new Set((lines || []).map(up).filter(Boolean));
   const prefLineIds = new Set((lineIds || []).filter(x => x != null && x !== '').map(Number));
@@ -25,13 +26,15 @@ export function personOptions({
   // ทีมช่าง (mtn_teams ของ profile / mtn_team ของ employee) — 06/10 คอมเมนต์ทีม DIE: หัวหน้าช่างที่เป็น "พนักงาน" ไม่มี role
   // ⇒ prefer ด้วย roles อย่างเดียวไม่มีวันขึ้น 🎯 · ส่ง teams=[ทีมของใบ] ให้คนในทีมขึ้นก่อน (ไม่ตัดคนอื่น)
   const prefTeams = new Set((teams || []).filter(Boolean).map(String));
-  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size || prefTeams.size);
+  const prefLevels = new Set((levels || []).filter(Boolean).map(String));
+  const hasPref = !!(prefLines.size || prefLineIds.size || prefSection || prefRoles.size || prefTeams.size || prefLevels.size);
   const prefer = (o) =>
     (prefLineIds.size && o.line_id != null && prefLineIds.has(Number(o.line_id))) ||
     (prefLines.size && o.line_name && prefLines.has(up(o.line_name))) ||
     (prefSection && o.section && up(o.section) === prefSection) ||
     (prefRoles.size && o.role && prefRoles.has(String(o.role))) ||
-    (prefTeams.size && (o.mtn_teams || []).some(t => prefTeams.has(String(t)))) || false;
+    (prefTeams.size && (o.mtn_teams || []).some(t => prefTeams.has(String(t)))) ||
+    (prefLevels.size && o.position && prefLevels.has(String(levelOf(o.position) || ''))) || false;
 
   const out = [];
   const byName = new Map();

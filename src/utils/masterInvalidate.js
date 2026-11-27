@@ -99,6 +99,7 @@ export const KEYS_BY_TABLE = {
   die_press_lines:   ['die_press_lines:master'],
   suppliers:         ['suppliers:master'],
   cost_centers:      ['cost_centers:master'],
+  companies:         ['companies:master'],   // 🏢 ทะเบียนบริษัทในกลุ่ม (25/11 · useCompanies.js)
   qa_instruments:    ['qa_instruments:picker'],
   parts_master:      ['part_registry:main', 'parts_master:matlabel'],   // matlabel = useChildParts (ป้ายชื่อพาร์ทลูก)
   profiles:          ['people:profiles:v2', 'people:profiles'],         // :v2 = ที่ใช้จริง · ตัวไม่มี :v2 = ของค้าง

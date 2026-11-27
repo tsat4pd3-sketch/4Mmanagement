@@ -7,6 +7,7 @@ import { supabase } from '../supabaseClient';
    ซึ่งเป็นบั๊กคลาสเดียวกับที่เพิ่งแก้ไป 13/10 (ไลน์ลูกไม่ตกทอดกะจากไลน์แม่) */
 import { staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '../utils/staffKind';
 import { UserContext } from '../App';
+import { canWriteLine } from '../utils/writeScope';   // 🔐 ชั้น ③ ตอนบันทึกกะ (13/11)
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
@@ -23,7 +24,7 @@ import PageHeader from '../components/PageHeader';
 import NoticeBar from '../components/NoticeBar';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
@@ -44,7 +45,7 @@ function toDateStr(d) {
 }
 
 export default function ShiftOrganize() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection, scopeIdx } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection, scopeIdx, allUnits, respCostCenters, writeUnits } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
   // 🏢 แก้ตารางกะ "หน่วยงานสนับสนุน" แยกคีย์ได้ — หัวหน้าทีมช่างตั้งกะแผนกตัวเองได้
   // โดยไม่ได้สิทธิ์แตะกะไลน์ผลิต/override รายคน/ยุบกะ (migration 20260820_shift_schedule_edit_dept)
@@ -297,6 +298,17 @@ export default function ShiftOrganize() {
       const pid = parentIdOf(l.id);
       if (pid != null && !manualOf(l.id) && pending[pid] !== undefined) affected.add(l.id);
     });
+    /* 🔐 ชั้น ③ (13/11 · audit P1-5): "เห็นไลน์" ≠ "ตั้งกะไลน์นั้นได้" — เขียนเฉพาะไลน์ในขอบเขตรายคน
+       (บ้าน · CC · มอบหมาย · ใบผ่าน) · ไลน์ที่ถูกตัดต้องเขียนบนจอ ห้ามเงียบ (ฝั่ง DB ยังเป็น has_perm อย่างเดียว = known gap) */
+    const wCtx = { role, section: mySection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits };
+    const blockedLines = [];
+    [...affected].forEach(id => {
+      const l = lines.find(x => Number(x.id) === Number(id));
+      if (!canWriteLine(wCtx, l?.name, lines).ok) { affected.delete(id); blockedLines.push(l?.name || `#${id}`); }
+    });
+    if (blockedLines.length) {
+      toast.error(`${tr("ไม่บันทึกกะของ")} ${blockedLines.length} ${tr("ไลน์ที่อยู่นอกส่วนงานที่คุณดูแล")}: ${blockedLines.slice(0, 4).join(' · ')}${blockedLines.length > 4 ? ' …' : ''} (${tr("ดูได้ แต่ตั้งกะไม่ได้")})`);
+    }
     // Apply the same team to every day of the selected week
     const rows = [];
     affected.forEach(id => {
@@ -326,7 +338,7 @@ export default function ShiftOrganize() {
     let failed = false;
     if (rows.length) {
       const { error } = await supabase.from('shift_schedules').upsert(rows, { onConflict: 'work_date,line_id' });
-      if (error) { failed = true; toast.error('บันทึกกะไลน์ผลิตไม่สำเร็จ: ' + error.message); }
+      if (error) { failed = true; toast.error((tr('บันทึกกะไลน์ผลิตไม่สำเร็จ') + ': ') + error.message); }
     }
     if (deptRowsToSave.length) {
       const { error } = await supabase.from('shift_schedules').upsert(deptRowsToSave, { onConflict: 'work_date,dept_name' });
@@ -335,7 +347,7 @@ export default function ShiftOrganize() {
         // 42703 = ยังไม่ได้ apply migration 20260811_shift_schedule_department — ต้องบอกให้ชัด ห้ามเงียบ
         toast.error(error.code === '42703'
           ? 'ยังตั้งกะระดับหน่วยงานไม่ได้ — ยังไม่ได้ apply migration 20260811_shift_schedule_department (แจ้ง admin)'
-          : 'บันทึกกะหน่วยงานไม่สำเร็จ: ' + error.message);
+          : (tr('บันทึกกะหน่วยงานไม่สำเร็จ') + ': ') + error.message);
       }
     }
     if (!failed) fetchSchedules();
@@ -352,7 +364,7 @@ export default function ShiftOrganize() {
       reason:      ovrReason || null,
       created_by:  userData?.user?.id,
     }], { onConflict: 'work_date,employee_id' });
-    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) toast.error((tr('เกิดข้อผิดพลาด') + ': ') + error.message);
     else { setShowOvrModal(false); setOvrEmpId(''); setOvrReason(''); fetchOverrides(); }
   };
 
@@ -392,7 +404,7 @@ export default function ShiftOrganize() {
       created_by:   userData?.user?.id,
     };
     const { error } = await supabase.from('shift_merge_events').insert([payload]);
-    if (error) toast.error('เกิดข้อผิดพลาด: ' + error.message);
+    if (error) toast.error((tr('เกิดข้อผิดพลาด') + ': ') + error.message);
     else {
       setShowMergeModal(false);
       setMrgSection(''); setMrgLineId(''); setMrgReason('');
@@ -465,7 +477,7 @@ export default function ShiftOrganize() {
   const nextWeek = () => { const d = new Date(weekRef); d.setDate(d.getDate() + 7); setWeekRef(d); };
   const goToday  = () => setWeekRef(new Date());
 
-  const fmtDate = (d) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
+  const fmtDate = (d) => d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short' });
 
   return (
     <Page>
@@ -475,7 +487,7 @@ export default function ShiftOrganize() {
           <button type="button" className="pg-btn primary"
             onClick={handleSave}
             disabled={isSaving}>
-            {isSaving ? 'กำลังบันทึก...' : `บันทึก (${pendingCount} รายการ)`}
+            {isSaving ? tr("กำลังบันทึก...") : `${tr("บันทึก")} (${pendingCount} ${tr("รายการ")})`}
           </button>
         ) : null} />
 
@@ -485,16 +497,15 @@ export default function ShiftOrganize() {
            คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
       {!canEdit && canEditDept && (
         <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
-          🏢 <b>{tr('บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”')}</b>{myUnit ? <> {tr('— เฉพาะหน่วยงาน')} <b>{mySection}</b></> : ''} (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
+          🏢 <b>{tr('บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”')}</b>{myUnit ? <> {tr('— เฉพาะหน่วยงาน')} <b>{mySection}</b></> : ''} ({tr("ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว")}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
-            {!myUnit && <>ยังไม่ได้ตั้ง “หน่วยงาน” ให้บัญชีนี้ → แก้ได้ทุกหน่วยงานที่เห็น ·
-              ถ้าต้องการจำกัดเฉพาะหน่วยงานตัวเอง ให้ admin ตั้งช่องส่วนงานที่ <b>/add-user</b><br /></>}
-            ถ้าต้องแก้กะไลน์ผลิต/override รายคน/ยุบกะด้วย ให้ admin เปิดสิทธิ์{' '}
-            <code>shift_schedule:edit</code> {tr('ให้ role')} <b>{roleLabel(role)}</b> เพิ่ม
+            {!myUnit && <>{tr("ยังไม่ได้ตั้ง “หน่วยงาน” ให้บัญชีนี้ → แก้ได้ทุกหน่วยงานที่เห็น · ถ้าต้องการจำกัดเฉพาะหน่วยงานตัวเอง ให้ admin ตั้งช่องส่วนงานที่")} <b>/add-user</b><br /></>}
+            {tr("ถ้าต้องแก้กะไลน์ผลิต/override รายคน/ยุบกะด้วย ให้ admin เปิดสิทธิ์")}{' '}
+            <code>shift_schedule:edit</code> {tr('ให้ role')} <b>{roleLabel(role)}</b> {tr("เพิ่ม")}
           </div>
         </div>
       )}
-      <ReadOnlyNote show={!canEditDept} role={role} what="แก้ตารางกะ"
+      <ReadOnlyNote show={!canEditDept} role={role} what={tr("แก้ตารางกะ")}
         permKey="shift_schedule:edit, shift_schedule:edit_dept"
         hint={tr('ค่าตั้งต้นของระบบให้เฉพาะ ผู้ดูแลระบบ / สิทธิ์ทั้งฝ่าย / สิทธิ์ระดับส่วน — role ที่เพิ่มเข้าระบบทีหลัง (เช่น ซ่อมบำรุง) จะยังไม่มีสิทธิ์นี้จนกว่าจะติ๊กเปิดเอง · edit_dept = แก้ได้เฉพาะตารางหน่วยงานสนับสนุน ไม่แตะกะไลน์ผลิต')} />
       {/* ── ตารางกะไลน์ผลิต ── */}
@@ -504,10 +515,10 @@ export default function ShiftOrganize() {
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={prevWeek}>‹</button>
         <button type="button" className="pg-btn sm" onClick={goToday} >{tr('วันนี้')}</button>
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={nextWeek}>›</button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border2)' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('สัปดาห์')}</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-            จ. {fmtDate(weekDates[0])} {tr('— อา.')} {fmtDate(weekDates[6])}
+            {tr("จ.")} {fmtDate(weekDates[0])} {tr('— อา.')} {fmtDate(weekDates[6])}
           </span>
         </div>
         {/* เติมกะล่วงหน้าจากรอบสลับที่ตั้งไว้จริง — ระบบเสนอ คนกดยืนยัน (ดู ShiftAutoFillModal) */}
@@ -545,14 +556,14 @@ export default function ShiftOrganize() {
             {noShiftLines.map(l => (
               <span key={l.id} style={{
                 padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11.5, fontWeight: 700,
-                background: 'var(--bg3)', border: '1px solid var(--border)',
+                background: 'var(--bg3-surf)', border: '1px solid var(--border)',
                 color: l.n ? 'var(--red)' : 'var(--muted)',
-              }}>{l.name}{l.n ? ` · ${l.n} คน` : ' · ไม่มีพนักงาน'}</span>
+              }}>{l.name}{l.n ? ` · ${l.n} ${tr("คน")}` : tr(" · ไม่มีพนักงาน")}</span>
             ))}
           </div>
           <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
-            กด <b>{tr('+ กำหนด')}</b> {tr('ที่แถวนั้น หรือ')} <b>{tr('เติมกะล่วงหน้า')}</b> — ไลน์ที่สร้างใหม่หลังเติมตารางไปแล้ว จะไม่มีแถวของตัวเอง
-            {' '}{tr('· ไลน์ลูกที่ขึ้น')} <b>{tr('↳ ตามไลน์แม่')}</b> ถือว่ามีกะแล้ว ไม่อยู่ในลิสต์นี้
+            {tr("กด")} <b>{tr('+ กำหนด')}</b> {tr('ที่แถวนั้น หรือ')} <b>{tr('เติมกะล่วงหน้า')}</b> — {tr("ไลน์ที่สร้างใหม่หลังเติมตารางไปแล้ว จะไม่มีแถวของตัวเอง")}
+            {' '}{tr('· ไลน์ลูกที่ขึ้น')} <b>{tr('↳ ตามไลน์แม่')}</b> {tr("ถือว่ามีกะแล้ว ไม่อยู่ในลิสต์นี้")}
           </div>
         </div>
       )}
@@ -581,13 +592,13 @@ export default function ShiftOrganize() {
                 <tr key={line.id}>
                   <td style={{ fontWeight: 600, fontSize: 14 }}>
                     {line.name}
-                    {following && team && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title={`ตามไลน์แม่ (${parentName})`}>{tr('↳ ตามไลน์แม่')}</span>}
+                    {following && team && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title={`${tr("ตามไลน์แม่")} (${parentName})`}>{tr('↳ ตามไลน์แม่')}</span>}
                     {isChild && !following && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--amber)' }} title={tr('ตั้งกะเอง ไม่ตามไลน์แม่')}>{tr('✎ แก้เอง')}</span>}
                     {/* 🔴 ไม่มีกะ + มีคนอยู่ = คนกลุ่มนั้นกะไม่ขึ้นทั้งใบเช็คชื่อ/กำลังคน — ต้องเห็นที่แถว ไม่ใช่แค่ขีด — */}
                     {!team && (empCountByLine[line.id] || 0) > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: 'var(--red)' }}
                         title={tr('ไลน์นี้ยังไม่มีกะในสัปดาห์นี้ และไม่มีไลน์แม่ให้ตกทอด ⇒ พนักงานกลุ่มนี้จะไม่มีกะ')}>
-                        ⚠️ ไม่มีกะ · {empCountByLine[line.id]} คน
+                        ⚠️ {tr("ไม่มีกะ")} · {empCountByLine[line.id]} {tr("คน")}
                       </span>
                     )}
                   </td>
@@ -656,8 +667,8 @@ export default function ShiftOrganize() {
       {canEdit && (
         <InfoMore size={11} style={{ marginBottom: 24, padding: '0 4px' }} id="so_help"
           lead={<>{tr('กด ⇄ สลับ แล้วกด 💾 บันทึก — มีผลทุกวันในสัปดาห์ (จันทร์–อาทิตย์)')}</>}>
-          <b>{tr('ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ')}</b> (↳ ตามไลน์แม่)
-          <br />สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) · กด "↳ ตามแม่" เพื่อกลับไปตามไลน์แม่
+          <b>{tr('ตั้งกะที่ไลน์แม่แล้วไลน์ลูกวิ่งตามอัตโนมัติ')}</b> (↳ {tr("ตามไลน์แม่")})
+          <br />{tr("สลับกะที่ไลน์ลูกเอง = ✎ แก้เอง (ไม่ตามแม่แล้ว) · กด \"↳ ตามแม่\" เพื่อกลับไปตามไลน์แม่")}
         </InfoMore>
       )}
 
@@ -668,9 +679,9 @@ export default function ShiftOrganize() {
             {tr('หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)')}
           </h3>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, padding: '0 2px' }}>
-            พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
+            {tr("พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก")}
             {deptNoLineTotal > 0 && <> {tr('· ตอนนี้มี')} <b style={{ color: 'var(--amber)' }}>{deptNoLineTotal} {tr('คน')}</b> {tr('ที่ยังไม่มีกะเพราะไม่ได้ผูกไลน์')}</>}
-            {' '}{tr('· คนที่ไม่หมุนกะให้ตั้งเป็น')} <b>Team C</b> (เข้ากะเช้าตลอด)
+            {' '}{tr('· คนที่ไม่หมุนกะให้ตั้งเป็น')} <b>Team C</b> ({tr("เข้ากะเช้าตลอด")})
             {!canEdit && canEditDept && myUnit && <> · <b style={{ color: 'var(--green)' }}>{tr('บัญชีนี้แก้ได้เฉพาะ 🏠')} {mySection}</b> {tr('หน่วยงานอื่นดูได้อย่างเดียว')}</>}
           </div>
           <div className="card table-sticky" style={{ marginBottom: 24, overflowX: 'auto' }}>
@@ -696,14 +707,14 @@ export default function ShiftOrganize() {
                         {d.inOrg === undefined && (
                           <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}
                             title={tr('ชื่อแผนกนี้ไม่มีในผังองค์กร — พนักงานกรอกไว้เอง (ตั้งกะได้ปกติ แต่ควรจัดให้ตรงผังที่ /org-setup)')}>
-                            ⚠ นอกผัง
+                            ⚠ {tr("นอกผัง")}
                           </span>
                         )}
                         {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title={tr('แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต')}>{tr('ขึ้นตรงฝ่าย')}</span>}
                         {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--green)' }} title={tr('หน่วยงานที่บัญชีนี้ดูแล')}>{tr('หน่วยงานของฉัน')}</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>
-                        {d.total} คน
+                        {d.total} {tr("คน")}
                         {d.noLine > 0 && <span style={{ color: 'var(--amber)', fontWeight: 600 }}> {tr('· ไม่ผูกไลน์')} {d.noLine}</span>}
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -730,8 +741,8 @@ export default function ShiftOrganize() {
                         <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                           {!canEditDeptRow(d) ? (
                             <span style={{ fontSize: 11, color: 'var(--muted)' }}
-                              title={`หน่วยงานนี้ไม่ใช่ของคุณ — บัญชีนี้ตั้งหน่วยงานไว้เป็น "${mySection}"`}>
-                              ของหน่วยงานอื่น
+                              title={`${tr("หน่วยงานนี้ไม่ใช่ของคุณ — บัญชีนี้ตั้งหน่วยงานไว้เป็น")} "${mySection}"`}>
+                              {tr("ของหน่วยงานอื่น")}
                             </span>
                           ) : (
                           <button onClick={() => toggleDept(d.name)}
@@ -759,13 +770,12 @@ export default function ShiftOrganize() {
           เหตุที่พบจริง: ถูกตั้ง profiles.sections ไว้ → แผนกขึ้นตรงฝ่าย (MTN/JIG/DIE) หลุด scope */}
       {deptRows.length === 0 && canEditDept && role !== 'leader' && (
         <NoticeBar tone="warn" style={{ marginBottom: 24 }}><b>{tr('ยังไม่มีหน่วยงานให้ตั้งกะ')}</b>
-          <InfoMore label={tr('ทำไม')}>ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง
+          <InfoMore label={tr('ทำไม')}>{tr("ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง")}
           {scopeSecs.length > 0
-            ? <> {tr('· บัญชีนี้ถูกจำกัดส่วนงาน (')}<b>{scopeSecs.join(', ')}</b>) จึงเห็นเฉพาะแผนกใต้ส่วนงานนั้น —
+            ? <> {tr('· บัญชีนี้ถูกจำกัดส่วนงาน (')}<b>{scopeSecs.join(', ')}</b>) {tr("จึงเห็นเฉพาะแผนกใต้ส่วนงานนั้น")} —
                 <b> {tr('แผนกที่ขึ้นตรงฝ่าย (MTN / JIG MTN / DIE MTN / QA) จะไม่โผล่')}</b>
                 {myUnit
-                  ? <> {tr('· ตั้งหน่วยงานไว้เป็น')} <b>{mySection}</b> แต่ยังไม่มีพนักงานคนไหนกรอกแผนกนี้ไว้ —
-                      ตรวจที่ <b>{tr('ฐานข้อมูลพนักงาน (/operator)')}</b></>
+                  ? <> {tr('· ตั้งหน่วยงานไว้เป็น')} <b>{mySection}</b> {tr("แต่ยังไม่มีพนักงานคนไหนกรอกแผนกนี้ไว้ — ตรวจที่")} <b>{tr('ฐานข้อมูลพนักงาน (/operator)')}</b></>
                   : <> {tr('ให้ admin ตั้งช่อง “ส่วนงาน” ของบัญชีนี้เป็นหน่วยงานที่ดูแล (เช่น MTN / QA) ที่หน้า')} <b>/add-user</b></>}</>
             : <> {tr('· ตรวจว่าพนักงานในแผนกกรอกช่อง “แผนก” ไว้แล้วหรือยัง ที่หน้า')} <b>{tr('ฐานข้อมูลพนักงาน (/operator)')}</b></>}</InfoMore>
         </NoticeBar>
@@ -802,7 +812,7 @@ export default function ShiftOrganize() {
             {overrides.length === 0 && (
               <tr>
                 <td colSpan={canEdit ? 6 : 5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
-                  ไม่มีรายการพิเศษในสัปดาห์นี้
+                  {tr("ไม่มีรายการพิเศษในสัปดาห์นี้")}
                 </td>
               </tr>
             )}
@@ -817,7 +827,7 @@ export default function ShiftOrganize() {
                     background: o.shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
                     color: o.shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                   }}>
-                    {o.shift === 'day' ? '☀️ เช้า' : '🌙 ดึก'}
+                    {o.shift === 'day' ? tr("☀️ เช้า") : tr("🌙 ดึก")}
                   </span>
                 </td>
                 <td style={{ fontSize: 12, color: 'var(--muted)' }}>{o.reason || '—'}</td>
@@ -862,21 +872,21 @@ export default function ShiftOrganize() {
             {visibleMergeEvents.length === 0 && (
               <tr>
                 <td colSpan={canEdit ? 6 : 5} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
-                  ไม่มีเหตุการณ์ยุบกะที่ใช้งานอยู่
+                  {tr("ไม่มีเหตุการณ์ยุบกะที่ใช้งานอยู่")}
                 </td>
               </tr>
             )}
             {visibleMergeEvents.map(evt => {
               const cnt = affectedCount(evt);
               const scopeLabel = evt.line_id
-                ? `ไลน์ ${lines.find(l => l.id === evt.line_id)?.name || evt.line_id}`
+                ? `${tr("ไลน์")} ${lines.find(l => l.id === evt.line_id)?.name || evt.line_id}`
                 : `Section ${evt.section}`;
               const isActive = evt.start_date <= toDateStr(new Date()) && evt.end_date >= toDateStr(new Date());
               return (
                 <tr key={evt.id}>
                   <td>
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{scopeLabel}</span>
-                    {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} คน)</span>}
+                    {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} {tr("คน")})</span>}
                     {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-xs)', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>{tr('กำลังใช้งาน')}</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.start_date}</td>
@@ -887,7 +897,7 @@ export default function ShiftOrganize() {
                       background: evt.target_shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
                       color: evt.target_shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                     }}>
-                      {evt.target_shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
+                      {evt.target_shift === 'day' ? tr("☀️ กะเช้า") : tr("🌙 กะดึก")}
                     </span>
                   </td>
                   <td style={{ fontSize: 12, color: 'var(--muted)' }}>{evt.reason || '—'}</td>
@@ -903,7 +913,7 @@ export default function ShiftOrganize() {
         </table>
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 24, padding: '0 4px' }}>
-        เหตุการณ์ยุบกะจะ override ตาราง A/B ปกติ แต่ shift override รายบุคคลจะยังมีสิทธิ์สูงสุด
+        {tr("เหตุการณ์ยุบกะจะ override ตาราง A/B ปกติ แต่ shift override รายบุคคลจะยังมีสิทธิ์สูงสุด")}
       </div>
 
       {/* Merge Event Modal */}
@@ -960,7 +970,7 @@ export default function ShiftOrganize() {
               <div>
                 <label style={labelSt}>{tr('เปลี่ยนทุกคนใน scope นี้เป็น')}</label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  {[['day', '☀️ กะเช้า'], ['night', '🌙 กะดึก']].map(([val, label]) => (
+                  {[['day', tr("☀️ กะเช้า")], ['night', '🌙 กะดึก']].map(([val, label]) => (
                     <button key={val} onClick={() => setMrgShift(val)}
                       style={{
                         flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
@@ -981,10 +991,10 @@ export default function ShiftOrganize() {
                 <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-dim)', fontSize: 12 }}>
                   <strong>{tr('ผลกระทบ:')}</strong>{' '}
                   {mrgScope === 'section'
-                    ? `พนักงานทุกคนใน ${mrgSection} (${employees.filter(e => e.production_lines?.section === mrgSection).length} คน)`
-                    : `พนักงานใน ${lines.find(l => String(l.id) === String(mrgLineId))?.name} (${employees.filter(e => String(e.line_id) === String(mrgLineId)).length} คน)`
+                    ? `${tr("พนักงานทุกคนใน")} ${mrgSection} (${employees.filter(e => e.production_lines?.section === mrgSection).length} ${tr("คน")})`
+                    : `${tr("พนักงานใน")} ${lines.find(l => String(l.id) === String(mrgLineId))?.name} (${employees.filter(e => String(e.line_id) === String(mrgLineId)).length} ${tr("คน")})`
                   }{' '}
-                  จะถูกย้ายเป็น{mrgShift === 'day' ? 'กะเช้า' : 'กะดึก'} {tr('ตั้งแต่')} {mrgStart} {tr('ถึง')} {mrgEnd}
+                  {tr("จะถูกย้ายเป็น")}{mrgShift === 'day' ? tr("กะเช้า") : tr("กะดึก")} {tr('ตั้งแต่')} {mrgStart} {tr('ถึง')} {mrgEnd}
                 </div>
               )}
 
@@ -1023,7 +1033,7 @@ export default function ShiftOrganize() {
                   options={employees.map(emp => {
                     /* 🔧🗂️ ติดป้ายกลุ่มให้คนที่ไม่ใช่หน้างาน — จอนี้เห็นครบทุกกลุ่มแล้ว (ไม่กรอง) ⇒ ต้องแยกออกด้วยตา */
                     const g = staffGroupOf(emp);
-                    const tag = g === STAFF_SHOPFLOOR ? '' : ` · ${STAFF_KINDS.find(k => k.key === g)?.label || ''}`;
+                    const tag = g === STAFF_SHOPFLOOR ? '' : ` · ${tr(STAFF_KINDS.find(k => k.key === g)?.label) || ''}`;
                     return { id: String(emp.id), label: `${emp.employee_id_code} — ${emp.name}${tag}`, keywords: emp.employee_id_code };
                   })}
                   onChange={({ id }) => setOvrEmpId(id)} />

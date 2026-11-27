@@ -45,3 +45,24 @@ test('🛡️ pm-daily-scan ต้องตัดสินรายเครื�
   assert.match(src, /select\('session_id, opened_at, confirmed_at, machine_no'\)/, '\n❌ ไม่ได้ดึง machine_no ของใบผลิต — ตัดสินรายเครื่องไม่ได้\n');
   assert.match(src, /amTargetsByRun\(/);
 });
+
+import { stationMateKeysFn } from '../../lib/pmDailyStatus.js';
+test('🧩 สถานี AM: กฎเพื่อนร่วมสถานีของตัวเตือน = ของจอ', () => {
+  const st = { stations: [{ id: 's', is_active: true }, { id: 'off', is_active: false }],
+    members: [{ station_id: 's', jig_id: 'j2' }, { station_id: 's', jig_id: 'j3' }, { station_id: 'off', jig_id: 'j4' }] };
+  const no = { j1: 'SW-10', j2: 'SW11', j3: null, j4: 'NF86' };
+  const sMates = stationMateKeysFn(st, id => no[id]);
+  const eMates = edge.stationMateKeysFn(st, id => no[id]);
+  for (const id of ['j1', 'j2', 'j3', 'j4']) assert.deepEqual(eMates(id), sMates(id), id);
+  assert.equal(edge.stationMateKeysFn(null, () => null), stationMateKeysFn(null, () => null));
+  const lines = [{ id: 'L', name: 'L1', parent_line_name: null }];
+  for (const [name, orders] of Object.entries(CASES)) {
+    const screenRun = runningMachinesByLine(lines, orders.map(o => ({ ...o, line_name: 'L1' })))['L1'];
+    assert.deepEqual(edge.amTargetsByRun(TG, edge.runOfOrders(orders), { mateKeysOf: eMates }),
+      amTargetsByRun(TG, screenRun, { mateKeysOf: sMates }), `split+station: ${name}`);
+  }
+  // j3 (ไม่มีเลขเครื่อง) อยู่สถานีเดียวกับ j2 → ใบผลิต SW11 ⇒ j3 ต้องตรวจผ่านสถานี
+  const r = amTargetsByRun(TG, { orders: 1, noMno: 0, keys: { SW11: null } }, { mateKeysOf: sMates });
+  assert.ok(r.required.some(t => t.jig_id === 'j3' && t.viaStation));
+  assert.ok(r.notRunning.some(t => t.jig_id === 'j1'));
+});

@@ -31,7 +31,12 @@ import { rangeDays } from '../utils/timeRange';
 import FilterBar from '../components/FilterBar';
 import { ALL, allOf } from '../utils/filterLabels';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
+import { LINE_STOCK_TABS } from '../utils/navSubTabs';
+import { useNavSubItems } from '../utils/navSubItems';
+import { useSearchParams } from 'react-router-dom';
 import WipBetweenSteps from '../components/WipBetweenSteps';
+import SapViewConsumption from '../components/SapViewConsumption';
+import LineRequestHistory from '../components/LineRequestHistory';   // 🧾 ประวัติเบิก-ส่ง (27/11)
 import StockCountSheet from '../components/StockCountSheet';
 import StorageZonePanel from '../components/StorageZonePanel';
 import StorageLocPanel from '../components/StorageLocPanel';
@@ -60,7 +65,7 @@ import { sapEquivalent } from '../utils/sapView';   // 🔩 มุม SAP (09/11
 import { loadProductsMaster } from '../utils/useProducts';
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { directSheetRows } from '../utils/bomTree';   // 🌳 ลูกตรงแบบ SAP (19/11)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import { askConfirm } from '../utils/askConfirm';
@@ -154,7 +159,14 @@ function StockTab({ role, scope }) {
   const [scopePickLines, setScopePickLines] = useState(null);
   /* 🔎 09/11 (คำสั่ง user "แยกพื้นที่แบบกางทุกกลุ่มมันรก — ควรมี dropdown เลือกพื้นที่ + ค้นหา MAT / Part No / ชื่อ")
      areaFilter = key ของกลุ่มพื้นที่ SAP ('' = ทุกพื้นที่) · stockQ = คำค้น */
-  const [areaFilter, setAreaFilter] = useState('');
+  /* 🗂️ 24/11 (คำสั่ง user "S401… อยู่ Detail Bar ใต้ breadcrumb · กดแล้วกรองเหลือพื้นที่นั้น") — พื้นที่ที่เลือกอยู่ใน URL `?area=`
+     ⇒ Detail Bar พามาที่พื้นที่ได้ · ช่องเลือกบนจอกับ Detail Bar เป็นค่าเดียวกัน · `replace` = ไม่สะสมประวัติย้อนกลับทีละพื้นที่ */
+  const [lsSp] = useSearchParams();
+  const setLsParams = useMergeParams();
+  const areaFilter = lsSp.get('area') || '';
+  const setAreaFilter = useCallback((v) => setLsParams({ area: v || null }, { replace: true }), [setLsParams]);
+  // เปิดมาด้วย ?area= แต่จำโหมด "ตามไลน์" ไว้ = สลับเป็นตามพื้นที่ (ไม่งั้นตัวกรองไม่มีผลเงียบๆ)
+  useEffect(() => { if (areaFilter && groupBy !== 'sloc') pickGroupBy('sloc'); }, [areaFilter]);   // eslint-disable-line react-hooks/exhaustive-deps
   const [stockQ, setStockQ] = useState('');
   const [partNoMap, setPartNoMap] = useState({});
   // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
@@ -229,7 +241,7 @@ function StockTab({ role, scope }) {
   const bad = [['ยอดสต็อกในไลน์', stkRes], ['ทะเบียนไลน์', { error: lnErr }],
     ['สูตร BOM', bomRes], ['สินค้า', prodRes], ['ค่ามาตรฐานคัมบัง', ksRes], ['ทะเบียนพาร์ท', pmRes]]
       .filter(([, r]) => r.error || r.truncated).map(([n]) => n);
-    if (bad.length) toast.error(`⚠ โหลดไม่ครบ: ${bad.join(' · ')} — ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช`);
+    if (bad.length) toast.error(`⚠ ${tr("โหลดไม่ครบ")}: ${bad.join(' · ')} — ${tr("ตัวเลข/ข้อเสนอบางส่วนอาจขาด ลองรีเฟรช")}`);
     setLines(ln || []);
     setStock(stkRes.rows || []);
     setProducts(prods || []);
@@ -263,9 +275,9 @@ function StockTab({ role, scope }) {
   const stockStatus = useCallback((qty, mat_no) => {
     const min = ksMap[mat_no]?.min;
     if (qty <= 0) return { label: 'หมด/ติดลบ', color:'var(--red)', bg:'var(--red-dim)', low:true };
-    if (min != null && qty <= min) return { label:`🟡 ต่ำกว่า min (${min})`, color:'var(--amber)', bg:'var(--amber-dim)', low:true };
+    if (min != null && qty <= min) return { label:`🟡 ${tr("ต่ำกว่า")} min (${min})`, color:'var(--amber)', bg:'var(--amber-dim)', low:true };
     if (min == null && qty < 10)   return { label: 'เหลือน้อย', color:'var(--amber)', bg:'var(--amber-dim)', low:true };
-    return { label: 'ปกติ', color:'var(--green)', bg:'var(--green-dim)', low:false };
+    return { label: tr("ปกติ"), color:'var(--green)', bg:'var(--green-dim)', low:false };
   }, [ksMap]);
 
   // on-hand ปัจจุบันของ line+mat (จาก stock ที่โหลดมา) — ใช้โชว์ในฟอร์ม + กันติดลบ
@@ -287,7 +299,7 @@ function StockTab({ role, scope }) {
   const txnReq = useRef(0);
   const loadTxns = useCallback(async () => {
     const my = ++txnReq.current;   // กันผลรอบเก่าทับรอบใหม่ (กฎเหล็ก DB ข้อ 4)
-    if (txnDays > TXN_MAX_DAYS) { setTxns([]); setTxnErr(`ช่วงที่เลือก ${txnDays} วัน เกินเพดาน ${TXN_MAX_DAYS} วัน — เลือกช่วงให้สั้นลง (หรือกรองไลน์) แล้วค่อย export ทีละช่วง`); return; }
+    if (txnDays > TXN_MAX_DAYS) { setTxns([]); setTxnErr(`${tr("ช่วงที่เลือก")} ${txnDays} ${tr("วัน เกินเพดาน")} ${TXN_MAX_DAYS} ${tr("วัน — เลือกช่วงให้สั้นลง (หรือกรองไลน์) แล้วค่อย export ทีละช่วง")}`); return; }
     setTxnLoading(true);
     const { data, error } = await fetchAllRows(supabaseDR, 'line_stock_transactions', TXN_COLS, q => {
       let x = q.gte('work_date', txnTr.from).lte('work_date', txnTr.to).order('created_at', { ascending: false }).order('id');
@@ -296,7 +308,7 @@ function StockTab({ role, scope }) {
     });
     if (my !== txnReq.current) return;
     setTxnLoading(false);
-    if (error) { setTxnErr(`โหลดประวัติไม่ครบ: ${error.message}`); setTxns(data || []); return; }
+    if (error) { setTxnErr(`${tr("โหลดประวัติไม่ครบ")}: ${error.message}`); setTxns(data || []); return; }
     setTxnErr(''); setTxns(data || []); setTxnShow(TXN_PAGE);
   }, [lineFilter, txnTr.from, txnTr.to, txnDays]);
 
@@ -344,20 +356,20 @@ function StockTab({ role, scope }) {
     if (!qty || qty <= 0) { toast.error('จำนวนต้องมากกว่า 0'); return; }
     const matUpper = form.mat_no.trim().toUpperCase();
     if (form.type === 'issue' && isFgMat(matUpper)) {
-      toast.error(`MAT ${matUpper} ขึ้นต้นด้วย 1 = FG งานสำเร็จ — ไม่ต้องจ่ายเข้าไลน์ ระบบหักให้อัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า 🚚 Delivery (แก้ยอดใช้ 🔧 ปรับยอด)`);
+      toast.error(`MAT ${matUpper} ${tr("ขึ้นต้นด้วย 1 = FG งานสำเร็จ — ไม่ต้องจ่ายเข้าไลน์ ระบบหักให้อัตโนมัติเมื่อกด \"ส่งแล้ว\" ที่หน้า 🚚 Delivery (แก้ยอดใช้ 🔧 ปรับยอด")})`);
       return;
     }
     const isAdjustDown = form.type === 'adjust' && form.dir === 'down';
     // กันสร้างของผี: MAT ที่ไม่มีในฐาน (Product Master / parts master / BOM) = ค่าที่พิมพ์เองใน picker ต้องยืนยันก่อน
     // (2026-09-07: MAT ที่เลือกจาก Product Master ไม่ต้องยืนยันซ้ำ — picker ยืนยันทะเบียนให้แล้ว)
     if (!knownMats.has(matUpper) && !bomMap[matUpper] && !drMats.has(matUpper)) {
-      if (!await askConfirm(`MAT ${matUpper} ไม่มีในฐานข้อมูล (Parts Master / BOM)\nยืนยันสร้างรายการ stock ใหม่?`)) return;
+      if (!await askConfirm(`MAT ${matUpper} ${tr("ไม่มีในฐานข้อมูล (Material Master / BOM)\\nยืนยันสร้างรายการ stock ใหม่")}?`)) return;
     }
     // กัน stock ติดลบเงียบๆ สำหรับรายการที่หักออก (คืน Store / ปรับลด)
     if (form.type === 'return' || isAdjustDown) {
       const cur = onHandOf(form.line_name, matUpper);
       const after = cur - qty;
-      if (after < 0 && !await askConfirm(`คงเหลือปัจจุบัน ${cur.toLocaleString()} ชิ้น — ทำรายการนี้แล้วจะติดลบ (${after.toLocaleString()})\nยืนยันดำเนินการ?`)) return;
+      if (after < 0 && !await askConfirm(`${tr("คงเหลือปัจจุบัน")} ${cur.toLocaleString()} ${tr("ชิ้น — ทำรายการนี้แล้วจะติดลบ")} (${after.toLocaleString()})\n${tr("ยืนยันดำเนินการ")}?`)) return;
     }
     // ประเภทที่ต้อง review → บันทึกเป็น pending (ยังไม่มีผลต่อ on-hand จนกว่าจะอนุมัติ)
     const needsReview = REVIEW_TYPES.includes(form.type);
@@ -376,7 +388,7 @@ function StockTab({ role, scope }) {
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     toast[needsReview ? 'info' : 'success'](
-      needsReview ? `${TYPE_LABEL[form.type]} — ส่งคำขอแล้ว รออนุมัติ` : `${TYPE_LABEL[form.type]} — บันทึกแล้ว`);
+      needsReview ? `${TYPE_LABEL[form.type]} — ${tr("ส่งคำขอแล้ว รออนุมัติ")}` : `${TYPE_LABEL[form.type]} — ${tr("บันทึกแล้ว")}`);
     setShowForm(false);
     setForm(EMPTY_FORM);
     setBomProduct('');
@@ -419,8 +431,8 @@ function StockTab({ role, scope }) {
   const signedQty = (t) => { const q = parseFloat(t.qty) || 0; return (t.type === 'consume' || t.type === 'return') ? -Math.abs(q) : q; };
   const exportTxns = () => {
     if (!txnRows.length) { toast.info('ไม่มีรายการให้ export'); return; }
-    const head = ['วันที่งาน', 'เวลาบันทึก', 'ไลน์/คลัง', 'Part Name', 'MAT', 'ประเภท', 'จำนวน', 'สถานะ', 'หมายเหตุ', 'โดย'];
-    const body = txnRows.map(t => [t.work_date, t.created_at ? new Date(t.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : '',
+    const head = ['วันที่งาน', 'เวลาบันทึก', 'ไลน์/คลัง', 'Part Name', 'MAT', 'ประเภท', 'จำนวน', 'สถานะ', tr("หมายเหตุ"), 'โดย'];
+    const body = txnRows.map(t => [t.work_date, t.created_at ? new Date(t.created_at).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok' }) : '',
       t.line_name, t.part_name || '', t.mat_no, TYPE_LABEL[t.type] || t.type, signedQty(t), STATUS_LABEL[t.status] || t.status || '', t.note || '', t.created_by || '']
       .map(csvCell).join(','));
     // CSV = เอกสาร ⇒ ชื่อไฟล์ผ่านทะเบียน /doc-forms (csv_line_stock_txn)
@@ -492,6 +504,9 @@ function StockTab({ role, scope }) {
   /* กลุ่มที่โชว์จริง = เลือกพื้นที่ (โหมดพื้นที่เท่านั้น) → ค้นหา MAT / Part No / ชื่อพาร์ท
      ⚠️ ตัวเลือกพื้นที่ทำจาก `groups` (ก่อนค้นหา) — ค้นหาแล้วพื้นที่ใน dropdown ต้องไม่หาย */
   const areaActive = groupMode === 'sloc' && areaFilter && groups.some(g => g.key === areaFilter) ? areaFilter : '';
+  // 📍 ประกาศรายชื่อพื้นที่ให้ Detail Bar ใต้ breadcrumb (PageHeader) — ชุดเดียวกับช่องเลือกพื้นที่บนจอ
+  const areaNav = useMemo(() => (groupMode === 'sloc' ? groups.map(g => ({ key: g.key, label: g.title })) : null), [groupMode, groups]);
+  useNavSubItems('/line-stock', 'stock', 'area', areaNav);
   const stockNeedle = stockQ.trim().toLowerCase();
   const shownGroups = useMemo(() => {
     let gs = areaActive ? groups.filter(g => g.key === areaActive) : groups;
@@ -542,7 +557,7 @@ function StockTab({ role, scope }) {
 
   return (
     <>
-      <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
+      <ReadOnlyNote show={!canIssue} role={role} what={tr("จ่าย/รับของเข้าสโตร์")}
         permKey="line_stock:issue" hint={tr('ยังดูยอดคงเหลือ/ประวัติได้ตามปกติ')} />
       {/* UI-STANDARD 2026-09-24 — แถบกรองเดียว ใต้แท็บทันที: ไลน์/คลัง (ขอบเขต) → ฝั่งงาน → ปุ่มคำสั่งชิดขวา (UI-STANDARD §2.1) */}
       <FilterBar>
@@ -558,7 +573,7 @@ function StockTab({ role, scope }) {
             setLineFilter('');
             setScopePickLines(kind === 'all' ? null : (info?.lines || []));
           }} />
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ"
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit={tr("รายการ")}
           labels={{ inbound: 'ของป้อนไลน์ (2xx·3xx·5xx)', outbound: 'FG รอส่ง (1xx)' }} />
         {!showTxn && groupMode === 'sloc' && (
           <select value={areaActive} onChange={e => setAreaFilter(e.target.value)} aria-label={tr('เลือกพื้นที่ SAP')}>
@@ -567,7 +582,7 @@ function StockTab({ role, scope }) {
           </select>
         )}
         {!showTxn && (
-          <SearchInput value={stockQ} onChange={setStockQ} fields="MAT / Part No. / ชื่อพาร์ท" ariaLabel="ค้นหาพาร์ทในสต็อก" grow={false} />
+          <SearchInput value={stockQ} onChange={setStockQ} fields={tr("MAT / Part No. / ชื่อพาร์ท")} ariaLabel={tr("ค้นหาพาร์ทในสต็อก")} grow={false} />
         )}
         <span className="spacer" />
         {(pendingMine.length > 0 || canApprove) && (
@@ -584,7 +599,7 @@ function StockTab({ role, scope }) {
         </button>
         {canIssue && (
           <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('var(--accent)')}>
-            + จ่ายพาร์ทเข้าไลน์
+            + {tr("จ่ายพาร์ทเข้าไลน์")}
           </button>
         )}
         {/* 16/11 — ถอดป้าย "สโตร์ กับ จัดส่ง ต่างกันยังไง" · ชื่อชิปบอกเองแล้วว่านับเลข MAT กลุ่มไหน */}
@@ -607,14 +622,14 @@ function StockTab({ role, scope }) {
                 {' '}{tr('· ซ่อน')} {pendingHidden} {tr('ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)')}</span>}
             </div>
             <div style={{ fontSize:11, color:'var(--muted)' }}>
-              {canApprove ? 'อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ' : 'เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้'}
+              {canApprove ? tr("อนุมัติแล้วจึงมีผลต่อ stock คงเหลือ") : tr("เฉพาะผู้มีสิทธิ์ (admin/manager) อนุมัติได้")}
             </div>
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
+                  {['วันที่',tr("ไลน์"),'ชิ้นงาน','ประเภท','จำนวน',tr("หมายเหตุ"),'โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                   ))}
                 </tr>
@@ -645,7 +660,7 @@ function StockTab({ role, scope }) {
                             style={{ ...btn('var(--bg)', 'var(--red)'), border:'1px solid var(--red)40', padding:'4px 10px', fontSize:11 }}>{tr('ปฏิเสธ')}</button>
                         </div>
                       ) : (
-                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{tr(STATUS_LABEL.pending)}</span>
                       )}
                     </td>
                   </tr>
@@ -671,13 +686,13 @@ function StockTab({ role, scope }) {
         {/* 📏 ตัวเลขต้องมีหน่วย + ฐานเทียบ (UI §6.18 ข้อ 4) — "1" เฉยๆ ตอบไม่ได้ว่ามากหรือน้อย
             "Stock หมด" เป็นส่วนหนึ่งของ "รายการพาร์ท" จึงบอกสัดส่วนของยอดรวมกำกับ */}
         {[
-          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, unit:'ไลน์', icon:'🏭' },
-          { label:'รายการพาร์ท', value: filteredStock.length, unit:'รายการ', icon:'🔩',
-            sub: lineFilter ? `เฉพาะ ${lineFilter}`
-                 : scopePickLines ? `${scopePick.label} · ${scopePickLines.length} ไลน์`
-                 : scopeNames ? `${scopeNames.length} ไลน์ในขอบเขตของคุณ + คลัง` : 'ทุกไลน์/คลัง' },
-          { label:'Stock หมด / ติดลบ', value: totalLow, unit:'รายการ', icon:'⚠️', warn: totalLow > 0,
-            sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
+          { label:'ไลน์ที่มี stock', value: Object.keys(stockByLine).length, unit:tr("ไลน์"), icon:'🏭' },
+          { label:'รายการพาร์ท', value: filteredStock.length, unit:tr("รายการ"), icon:'🔩',
+            sub: lineFilter ? `${tr("เฉพาะ")} ${lineFilter}`
+                 : scopePickLines ? `${scopePick.label} · ${scopePickLines.length} ${tr("ไลน์")}`
+                 : scopeNames ? `${scopeNames.length} ${tr("ไลน์ในขอบเขตของคุณ + คลัง")}` : tr("ทุกไลน์/คลัง") },
+          { label:'Stock หมด / ติดลบ', value: totalLow, unit:tr("รายการ"), icon:'⚠️', warn: totalLow > 0,
+            sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ${tr("ของ")} ${filteredStock.length} ${tr("รายการ")}` : 'ยังไม่มีรายการ' },
         ].map(c => (
           <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'var(--red-line)' : 'var(--border)' }}>
             <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {tr(c.label)}</div>
@@ -699,8 +714,7 @@ function StockTab({ role, scope }) {
             <span>{tr('· ซ่อนไลน์นอกขอบเขต')} <b>{stockScoped.hidden.toLocaleString()}</b> {tr('รายการ')}</span>
           )}
           {stockScoped.offRegistry.length > 0 && (
-            <span>· <b>{stockScoped.offRegistry.join(' / ')}</b> ไม่ใช่ไลน์ในทะเบียน
-              (ตรวจขอบเขตไม่ได้ จึงยังโชว์อยู่)</span>
+            <span>· <b>{stockScoped.offRegistry.join(' / ')}</b> {tr("ไม่ใช่ไลน์ในทะเบียน (ตรวจขอบเขตไม่ได้ จึงยังโชว์อยู่")})</span>
           )}
         </div>
       )}
@@ -713,7 +727,7 @@ function StockTab({ role, scope }) {
         return (
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, flexWrap:'wrap' }}>
             <Segmented value={groupMode} onChange={pickGroupBy}
-              options={[{ value:'sloc', label: 'ตามพื้นที่ SAP' }, { value:'line', label: 'ตามไลน์' }]} />
+              options={[{ value:'sloc', label: tr("ตามพื้นที่ SAP") }, { value:'line', label: tr("ตามไลน์") }]} />
             {keys.length > 1 && !forceOpen && (
               <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
                 style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
@@ -721,20 +735,19 @@ function StockTab({ role, scope }) {
               </button>
             )}
             <span style={{ fontSize:11, color:'var(--muted)' }}>
-              {keys.length} {groupMode === 'sloc' ? 'พื้นที่' : 'ไลน์/คลัง'}
-              {forceOpen ? ` · แสดง ${shownPartCount.toLocaleString()} จาก ${allPartCount.toLocaleString()} รายการ` : ' · แตะหัวกลุ่มเพื่อย่อ-กาง'}
-              {groupMode === 'sloc' && ' · ยอดในพื้นที่เดียวกันรวมข้ามไลน์แล้ว (MIN/MAX เป็นค่าต่อ MAT ระดับพื้นที่)'}
+              {keys.length} {groupMode === 'sloc' ? tr("พื้นที่") : tr("ไลน์/คลัง")}
+              {forceOpen ? ` · ${tr("แสดง")} ${shownPartCount.toLocaleString()} ${tr("จาก")} ${allPartCount.toLocaleString()} ${tr("รายการ")}` : tr(" · แตะหัวกลุ่มเพื่อย่อ-กาง")}
+              {groupMode === 'sloc' && tr("· ยอดในพื้นที่เดียวกันรวมข้ามไลน์แล้ว (MIN/MAX เป็นค่าต่อ MAT ระดับพื้นที่)")}
             </span>
             {groupMode === 'sloc' && homeSloc.error && (
               <span style={{ fontSize:11, color:'var(--red)', fontWeight:700 }}>
-                {homeSloc.error === 'not_ready' ? 'ยังไม่มีช่องที่จัดเก็บหลักในฐานข้อมูล' : `โหลดที่จัดเก็บหลักไม่สำเร็จ (${homeSloc.error})`} — ยอดในสโตร์/คลังจะอยู่กลุ่ม "ยังไม่ตั้ง"
+                {homeSloc.error === 'not_ready' ? tr("ยังไม่มีช่องที่จัดเก็บหลักในฐานข้อมูล") : `${tr("โหลดที่จัดเก็บหลักไม่สำเร็จ")} (${homeSloc.error})`} — {tr("ยอดในสโตร์/คลังจะอยู่กลุ่ม \"ยังไม่ตั้ง")}"
               </span>
             )}
             {/* ทะเบียนใช้ไม่ได้ = ต้องบอกว่าทำไมปุ่มพื้นที่ไม่ทำงาน ห้ามเงียบ */}
             {!slocUsable && (
               <span style={{ fontSize:11, color:'var(--amber)', fontWeight:700 }}>
-                {slocReg.failed ? 'โหลดทะเบียนรหัสคลังไม่สำเร็จ' : 'ยังไม่มีรหัสคลังที่ผูกไลน์ไว้'} — แสดงตามไลน์ไปก่อน
-                (ตั้งที่แท็บ 🏬 โซนคลัง)
+                {slocReg.failed ? tr("โหลดทะเบียนรหัสคลังไม่สำเร็จ") : tr("ยังไม่มีรหัสคลังที่ผูกไลน์ไว้")} — {tr("แสดงตามไลน์ไปก่อน (ตั้งที่แท็บ 🏬 โซนคลัง")})
               </span>
             )}
           </div>
@@ -751,11 +764,11 @@ function StockTab({ role, scope }) {
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
           {shownGroups.length === 0 && groups.length > 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
-              ไม่พบพาร์ทที่ตรงกับ “{stockQ.trim()}”{areaActive ? ' ในพื้นที่ที่เลือก' : ''} {tr('— มีทั้งหมด')} {allPartCount.toLocaleString()} รายการที่ถูกกรองออก
+              {tr("ไม่พบพาร์ทที่ตรงกับ")} “{stockQ.trim()}”{areaActive ? tr(" ในพื้นที่ที่เลือก") : ''} {tr('— มีทั้งหมด')} {allPartCount.toLocaleString()} {tr("รายการที่ถูกกรองออก")}
             </div>
           ) : groups.length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
-              ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
+              {tr("ยังไม่มีข้อมูล")} Stock{lineFilter ? ` ${tr("ในไลน์")} ${lineFilter}` : ''} — {tr("กด \"+ จ่ายพาร์ทเข้าไลน์\" เพื่อเริ่ม")}
             </div>
           ) : (
             shownGroups.map((g, gi) => {
@@ -785,9 +798,9 @@ function StockTab({ role, scope }) {
                       )}
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} {tr('รายการหมด')}</span>}
                       {noLvParts.length > 0 && (
-                        <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
+                        <span title={`${tr("ยังไม่ได้ตั้ง")} MIN/MAX ${noLvParts.length} ${tr("พาร์ท — แถวนั้นขึ้น \"—\" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ")} 🎴 Kanban Std`}
                           style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
-                          {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
+                          {noLvParts.length} {tr("พาร์ทยังไม่ตั้ง")} MIN/MAX
                         </span>
                       )}
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} {tr('พาร์ท')}</span>
@@ -845,15 +858,15 @@ function StockTab({ role, scope }) {
                               {canIssue && (
                                 <td style={{ padding:'8px 14px', borderTop:'1px solid var(--border)' }}>
                                   {isFgMat(p.mat_no) ? (
-                                    <span title='FG งานสำเร็จ — หักอัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า Delivery ไม่ต้องจ่ายเข้าไลน์'
+                                    <span title={tr("FG งานสำเร็จ — หักอัตโนมัติเมื่อกด \"ส่งแล้ว\" ที่หน้า Delivery ไม่ต้องจ่ายเข้าไลน์")}
                                       style={{ fontSize:11, fontWeight:700, color:'var(--muted)', whiteSpace:'nowrap' }}>
-                                      หักผ่าน Delivery
+                                      {tr("หักผ่าน")} Delivery
                                     </span>
                                   ) : (
-                                    <button title={oneLine ? `จ่ายเข้า ${oneLine}` : 'พาร์ทนี้อยู่หลายไลน์ในพื้นที่เดียวกัน — เลือกไลน์ปลายทางในฟอร์ม'}
+                                    <button title={oneLine ? `${tr("จ่ายเข้า")} ${oneLine}` : tr("พาร์ทนี้อยู่หลายไลน์ในพื้นที่เดียวกัน — เลือกไลน์ปลายทางในฟอร์ม")}
                                       onClick={() => { setForm({ ...EMPTY_FORM, line_name: oneLine, mat_no: p.mat_no, part_name: name || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
                                       style={{ ...btn('var(--green-dim)', 'var(--green)'), padding:'4px 10px', fontSize:11, border:'1px solid var(--green-line)' }}>
-                                      + จ่าย
+                                      + {tr("จ่าย")}
                                     </button>
                                   )}
                                 </td>
@@ -870,12 +883,12 @@ function StockTab({ role, scope }) {
                     if (!sv.ops.length) return null;
                     return (
                       <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', background:'var(--blue-dim)' }}>
-                        <div style={{ fontSize:12.5, fontWeight:800, color:'var(--text)' }}>🔩 มุม SAP
+                        <div style={{ fontSize:12.5, fontWeight:800, color:'var(--text)' }}>🔩 {tr("มุม")} SAP
                           <span style={{ fontWeight:400, fontSize:11.5, color:'var(--muted)' }}> {tr('· ชิ้นผ่านขั้น OP ยังไม่ถูกแม่ใช้ ⇒ ใน SAP ยังเป็นของที่ขั้นกิน (SAP ตัดตอนคอนเฟิร์มแม่)')}</span>
                         </div>
-                        {opInputs.error && <div style={{ fontSize:11.5, color:'var(--red)', marginTop:4 }}>{tr('⚠ อ่านสูตรขั้น OP ไม่ได้ (')}{opInputs.error}) — ตัวเลขมุม SAP ด้านล่างอาจไม่ครบ</div>}
+                        {opInputs.error && <div style={{ fontSize:11.5, color:'var(--red)', marginTop:4 }}>{tr('⚠ อ่านสูตรขั้น OP ไม่ได้ (')}{opInputs.error}) — {tr("ตัวเลขมุม SAP ด้านล่างอาจไม่ครบ")}</div>}
                         <div style={{ fontSize:11.5, color:'var(--text2)', marginTop:4 }}>
-                          ชิ้นผ่านขั้นในพื้นที่: {sv.ops.map(o => `${o.mat_no} ${Number(o.qty).toLocaleString()}${o.unmapped ? ' (ขั้นยังไม่ผูกว่ากินอะไร — แปลงไม่ได้)' : ''}`).join(' · ')}
+                          {tr("ชิ้นผ่านขั้นในพื้นที่")}: {sv.ops.map(o => `${o.mat_no} ${Number(o.qty).toLocaleString()}${o.unmapped ? tr(' (ขั้นยังไม่ผูกว่ากินอะไร — แปลงไม่ได้)') : ''}`).join(' · ')}
                         </div>
                         {sv.rows.length > 0 && (
                           <table style={{ marginTop:6, borderCollapse:'collapse', fontSize:12 }}>
@@ -906,8 +919,8 @@ function StockTab({ role, scope }) {
         <div style={{ ...card, padding:0, overflow:'hidden' }}>
           <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ fontWeight:700, fontSize:14 }}>
-              ประวัติ Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? 'กำลังโหลด…' : `${txnRows.length.toLocaleString()} รายการ`}
-              {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> {tr('(ซ่อน')} {(txnScoped.rows.length - txnRows.length).toLocaleString()} ที่ไม่ตรงคำค้น)</span> : null}
+              {tr("ประวัติ")} Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? tr("กำลังโหลด…") : `${txnRows.length.toLocaleString()} ${tr("รายการ")}`}
+              {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> {tr('(ซ่อน')} {(txnScoped.rows.length - txnRows.length).toLocaleString()} {tr("ที่ไม่ตรงคำค้น")})</span> : null}
             </div>
             {canIssue && (
               <div style={{ display:'flex', gap:6 }}>
@@ -923,7 +936,7 @@ function StockTab({ role, scope }) {
           <div style={{ padding:'10px 16px', borderBottom:'1px solid var(--border)' }}>
             <TimeRangeBar scale={txnTr.scale} from={txnTr.from} to={txnTr.to} today={txnTr.today} scales={null}
               onFrom={txnTr.setFrom} onTo={txnTr.setTo} onPreset={txnTr.setPreset} onReload={loadTxns} loading={txnLoading}>
-              <SearchInput value={txnQ} onChange={setTxnQ} fields="MAT / ชื่อพาร์ท / ไลน์ / หมายเหตุ / ผู้บันทึก" ariaLabel="ค้นหาประวัติ transaction" />
+              <SearchInput value={txnQ} onChange={setTxnQ} fields={tr("MAT / ชื่อพาร์ท / ไลน์ / หมายเหตุ / ผู้บันทึก")} ariaLabel={tr("ค้นหาประวัติ transaction")} />
               <button onClick={exportTxns} disabled={!txnRows.length} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>Export CSV</button>
             </TimeRangeBar>
             {txnErr && <div style={{ marginTop:8, fontSize:12.5, color:'var(--red)', fontWeight:700 }}>{txnErr}</div>}
@@ -932,7 +945,7 @@ function StockTab({ role, scope }) {
             <table style={{ width:'100%', borderCollapse:'collapse' }}>
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
-                  {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
+                  {[tr("วันที่"),tr("ไลน์"),tr("ชิ้นงาน"),tr("ประเภท"),tr("จำนวน"),tr("หมายเหตุ"),tr("โดย")].map(h => (
                     <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                   ))}
                 </tr>
@@ -966,7 +979,7 @@ function StockTab({ role, scope }) {
           </div>
           {txnRows.length > txnShow && (
             <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', fontSize:12.5, color:'var(--muted)' }}>
-              แสดง {txnShow.toLocaleString()} {tr('จาก')} {txnRows.length.toLocaleString()} รายการ
+              {tr("แสดง")} {txnShow.toLocaleString()} {tr('จาก')} {txnRows.length.toLocaleString()} {tr("รายการ")}
               <button onClick={() => setTxnShow(n => n + TXN_PAGE)} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>{tr('แสดงเพิ่ม')} {Math.min(TXN_PAGE, txnRows.length - txnShow).toLocaleString()}</button>
               <span>{tr('· Export CSV ได้ครบทุกแถว')}</span>
             </div>
@@ -977,7 +990,7 @@ function StockTab({ role, scope }) {
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
         <div style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--bg3-surf)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
             </div>
@@ -1005,7 +1018,7 @@ function StockTab({ role, scope }) {
                   <LineSelect
                     lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder={tr('เลือกไลน์...')}
                     onChange={v => setForm(f => ({ ...f, line_name: v }))}
-                    extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+                    extraGroups={[{ label: tr("คลัง"), options: warehouseNames.map(n => ({ value: n })) }]}
                   />
                   {/* ⚠️ ไลน์แม่ = ระดับแผนก งานผลิตเปิดกะที่ไลน์ลูก — ของที่ฝากไว้ที่ไลน์แม่
                       จะถูกหักตอนปิดใบผลิตไม่ได้เลย (backflush หาด้วยชื่อไลน์ที่เปิดกะ)
@@ -1013,8 +1026,8 @@ function StockTab({ role, scope }) {
                   {childLinesOf[form.line_name]?.length > 0 && (
                     <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
                       ⚠️ <b>{form.line_name}</b> {tr('เป็นไลน์ระดับแผนก (มีไลน์ลูก')} {childLinesOf[form.line_name].join(' · ')})
-                      — ของที่จ่ายเข้าที่นี่ <b>{tr('ระบบจะหักตอนปิดใบผลิตไม่ได้')}</b> เพราะงานเปิดกะที่ไลน์ลูก
-                      <br />{tr('แนะนำให้เลือก')}<b>{tr('ไลน์ลูก')}</b>ที่ใช้พาร์ทนี้จริงแทน
+                      — {tr("ของที่จ่ายเข้าที่นี่")} <b>{tr('ระบบจะหักตอนปิดใบผลิตไม่ได้')}</b> {tr("เพราะงานเปิดกะที่ไลน์ลูก")}
+                      <br />{tr('แนะนำให้เลือก')}<b>{tr('ไลน์ลูก')}</b>{tr("ที่ใช้พาร์ทนี้จริงแทน")}
                     </div>
                   )}
                   {/* 🔴 ปิดที่ต้นเหตุ — วัตถุดิบ/งาน blank ถูกจ่ายเข้าไลน์ขั้นถัดไป คือที่มาของ
@@ -1077,7 +1090,7 @@ function StockTab({ role, scope }) {
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>MAT SAP *</label>
                 <ProductSelect value={form.mat_no} allowFree extraOptions={matExtraOptions} history={txnMatHist}
                   lines={form.line_name ? [form.line_name] : undefined}
-                  placeholder={tr('ค้น MAT / ชื่อพาร์ท…')} freeHint="MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก"
+                  placeholder={tr('ค้น MAT / ชื่อพาร์ท…')} freeHint={tr("MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก")}
                   inputStyle={{ fontWeight:700 }}
                   onChange={({ mat_no, name }) => setForm(f => ({ ...f, mat_no, part_name: name || bomMap[mat_no] || f.part_name }))} />
               </div>
@@ -1132,7 +1145,7 @@ function StockTab({ role, scope }) {
       {/* ── Reject reason modal ── (ฟอร์มมี input → ไม่ปิดจาก backdrop click ตาม UI-CONVENTIONS §5) */}
       {rejectTx && (
         <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(420px,100%)' }}>
+          <div style={{ background: 'var(--bg3-surf)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>{tr('❌ ปฏิเสธคำขอ')}</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
               {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'var(--blue)' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
@@ -1318,7 +1331,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
 
       {Object.keys(grouped).length === 0 ? (
         <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
-          ยังไม่มีรอบจัดส่ง{lineFilter ? ` สำหรับไลน์ ${lineFilter}` : ''} — กด "+ เพิ่มรอบจัดส่ง" เพื่อเริ่ม
+          {tr("ยังไม่มีรอบจัดส่ง")}{lineFilter ? ` ${tr("สำหรับไลน์")} ${lineFilter}` : ''} — {tr("กด \"+ เพิ่มรอบจัดส่ง\" เพื่อเริ่ม")}
         </div>
       ) : (
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
@@ -1332,7 +1345,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 <table style={{ width:'100%', borderCollapse:'collapse' }}>
                   <thead>
                     <tr style={{ background:'var(--bg2)' }}>
-                      {['กะ','รอบที่','ตัดยอด','เตรียม','ส่ง','จุด','เสร็จ~','หมายเหตุ'].map(h => (
+                      {[tr("กะ"),tr("รอบที่"),tr("ตัดยอด"),tr("เตรียม"),tr("ส่ง"),tr("จุด"),tr("เสร็จ~"),tr("หมายเหตุ")].map(h => (
                         <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                       ))}
                       {canEdit && <th style={{ padding:'8px 14px', width:100 }}></th>}
@@ -1355,13 +1368,13 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                           {r.cutoff_time?.slice(0,5) || '—'}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--muted)' }}>
-                          {r.prep_minutes || 60} น.
+                          {r.prep_minutes || 60} {tr("น.")}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:14, fontWeight:700, color:'var(--accent)' }}>
                           {r.delivery_time?.slice(0,5) || '—'}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text2)', textAlign:'center' }}>
-                          {r.points_count || 1}×{r.time_per_point_min || 10}น.
+                          {r.points_count || 1}×{r.time_per_point_min || 10}{tr("น.")}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'var(--amber)', fontWeight:700 }}>
                           {addMins(r.delivery_time?.slice(0,5), (r.points_count||1)*(r.time_per_point_min||10))}
@@ -1390,9 +1403,9 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
       {/* Modal */}
       {showModal && (
         <div style={{ position:'fixed', inset:0, background:'var(--scrim)', WebkitBackdropFilter:'var(--scrim-blur)', backdropFilter:'var(--scrim-blur)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--bg3-surf)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
-              ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
+              ⏰ {editId ? tr("แก้ไขรอบจัดส่ง") : tr("เพิ่มรอบจัดส่งใหม่")}
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <div>
@@ -1419,7 +1432,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                     <option value="night">{tr('กะดึก (night)')}</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-                    กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
+                    {tr("กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้")}
                   </div>
                 </div>
                 <div>
@@ -1442,7 +1455,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               </div>
 
               {/* Shipping time chart */}
-              <div style={{ background:'var(--bg2)', borderRadius: 'var(--r-md)', padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ background: 'var(--bg2-surf)', borderRadius: 'var(--r-md)', padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
                 <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>⏰ Shipping Time Chart</div>
                 <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                   <div>
@@ -1493,8 +1506,8 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 </div>
                 {form.delivery_time && (
                   <div style={{ fontSize:12, color:'var(--amber)', fontWeight:700 }}>
-                    เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
-                    {' '}({form.points_count||1} {tr('จุด ×')} {form.time_per_point_min||10} น.)
+                    {tr("เสร็จประมาณ")} {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
+                    {' '}({form.points_count||1} {tr('จุด ×')} {form.time_per_point_min||10} {tr("น.")})
                   </div>
                 )}
               </div>
@@ -1583,7 +1596,7 @@ function DeliveryTimeBoardTab() {
     rounds.forEach(r => { (byLine[r.line_name] = byLine[r.line_name] || []).push(r); });
     return Object.keys(byLine).sort(lineNameCompare).map(lnName => ({
       key: lnName, label: lnName,
-      sub: `${byLine[lnName].length} รอบ · ✔️ ${byLine[lnName].filter(r => dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`]).length} ยืนยันแล้ว`,
+      sub: `${byLine[lnName].length} ${tr("รอบ")} · ✔️ ${byLine[lnName].filter(r => dlvMap[`${r.line_name}|${r.shift}|${r.round_no}`]).length} ${tr("ยืนยันแล้ว")}`,
       items: byLine[lnName]
         .filter(r => frameMin((r.delivery_time || '').slice(0, 5)) != null)
         .map(r => {
@@ -1591,7 +1604,7 @@ function DeliveryTimeBoardTab() {
           return {
             id: r.id, timeMin: frameMin(r.delivery_time.slice(0, 5)), color: st.color,
             text: `${r.shift === 'night' ? '🌙' : '☀️'}${r.round_no}·${r.delivery_time.slice(0, 5)}`,
-            title: `${lnName} รอบ ${r.round_no} (${r.shift === 'night' ? 'กะดึก' : 'กะเช้า'}) · ตัดยอด ${(r.cutoff_time || '').slice(0, 5) || '—'} · ส่ง ${r.delivery_time.slice(0, 5)} · ${st.label}`,
+            title: `${lnName} ${tr("รอบ")} ${r.round_no} (${r.shift === 'night' ? tr('กะดึก') : tr('กะเช้า')}) · ${tr("ตัดยอด")} ${(r.cutoff_time || '').slice(0, 5) || '—'} · ${tr("ส่ง")} ${r.delivery_time.slice(0, 5)} · ${st.label}`,
             data: r,
           };
         }),
@@ -1602,7 +1615,7 @@ function DeliveryTimeBoardTab() {
   return (
     <>
       <InternalTimeBoard
-        title={`บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
+        title={`${tr("บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต")}`}
         hint={tr('ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง')}
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
@@ -1616,7 +1629,7 @@ function DeliveryTimeBoardTab() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3-surf)', border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -1625,8 +1638,8 @@ function DeliveryTimeBoardTab() {
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>{r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
-                  ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} {tr('→ ส่ง')} {(r.delivery_time || '').slice(0, 5)}<br />
-                  {r.points_count || 1} {tr('จุด ×')} {r.time_per_point_min || 10} {tr('นาที · เตรียม')} {r.prep_minutes || 60} นาที
+                  {tr("ตัดยอด")} {(r.cutoff_time || '').slice(0, 5) || '—'} {tr('→ ส่ง')} {(r.delivery_time || '').slice(0, 5)}<br />
+                  {r.points_count || 1} {tr('จุด ×')} {r.time_per_point_min || 10} {tr('นาที · เตรียม')} {r.prep_minutes || 60} {tr("นาที")}
                 </div>
                 {st.d?.confirmed_by && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>{tr('✓ ส่งโดย')} {st.d.confirmed_by}</div>}
                 {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? 'var(--green)' : 'var(--amber)' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} {tr('รับโดย')} {st.d.received_by}</div>}
@@ -1690,13 +1703,13 @@ function InflowRulesTab({ canEdit }) {
     if (!mv) { toast.error(form.match_type === 'prefix' ? 'กรอกเลขขึ้นต้น MAT เช่น 1 หรือ 2' : 'กรอก MAT No.'); return; }
     // MAT ตรงตัวนอก Product Master → ถามยืนยัน (2026-09-07 เดิมบล็อกแข็ง) — trigger เทียบตรงตัว พิมพ์ผิดตัวเดียวของไปกองผิดคลังเงียบๆ จึงเตือนชัด
     if (form.match_type === 'mat' && !products.some(p => String(p.mat_no || '').toUpperCase() === mv)
-      && !await askConfirm(`MAT ${mv} ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่?`)) return;
+      && !await askConfirm(`MAT ${mv} ${tr("ไม่มีใน Product Master — กฎจะ match เฉพาะเลขนี้ตรงตัว · ใช้ค่านี้ต่อหรือไม่")}?`)) return;
     if (!dest) { toast.error('เลือกปลายทาง เช่น FG WAREHOUSE / STORE'); return; }
     setSaving(true);
     const ok = checkWriteRows(await supabaseDR.from('stock_inflow_rules').upsert({ match_type: form.match_type, match_value: mv, dest_line_name: dest, is_active: true, updated_at: new Date().toISOString() }, { onConflict: 'match_type,match_value' }).select('id'), 'บันทึกกฎ');
     setSaving(false);
     if (!ok) return;
-    toast.success(`✓ ${form.match_type === 'prefix' ? `MAT ขึ้นต้น ${mv}` : mv} → ${dest}`);
+    toast.success(`✓ ${form.match_type === 'prefix' ? `MAT ${tr("ขึ้นต้น")} ${mv}` : mv} → ${dest}`);
     setForm(f => ({ ...f, match_value: '', dest_line_name: '' }));
     load();
   };
@@ -1707,9 +1720,9 @@ function InflowRulesTab({ canEdit }) {
     if (noPerm()) return;
     if (modeKey === inflowModeOf(r)) return;
     if (modeKey === 'off' && !await askConfirm(
-      `ปิดกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
+      `${tr("ปิดกฎ")} "${r.match_type === 'prefix' ? `MAT ${tr("ขึ้นต้น")} ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?\n\n`
       + '⚠️ ปิดแล้ว ใบผลิตที่ปิดต่อจากนี้จะ "ไม่เข้าคลังนี้เลย" และไม่มีคิวให้ใครกดรับ\n'
-      + 'ถ้าต้องการให้คนนับของก่อนรับ ให้เลือก 🟡 ต้องยืนยันรับ แทน')) return;
+      + tr('ถ้าต้องการให้คนนับของก่อนรับ ให้เลือก 🟡 ต้องยืนยันรับ แทน'))) return;
     /* 🔴🔴 27/10 — ออกจากโหมด 🔧 ตอนยังมีใบล็อตค้างที่ไลน์ = **ของหายจากบัญชี**
        โหมด 🔧 ทำให้ trigger `fn_post_confirmed_output` ข้าม ⇒ ใบผลิตที่ปิดไปแล้วช่วงนั้นไม่มี
        `stock_receipts` รองรับเลย · ทางเข้าคลังทางเดียวคือปุ่มปิดล็อตบนบอร์ดสโตร์ ซึ่งพอสลับโหมด
@@ -1720,12 +1733,12 @@ function InflowRulesTab({ canEdit }) {
       const { count, error: eLot } = await supabaseDR.from('child_lot_requests')
         .select('id', { count: 'exact', head: true })
         .eq('child_mat_no', String(r.match_value ?? '').trim()).eq('status', 'producing');
-      if (eLot) { toast.error(`เช็คใบล็อตค้างไม่ได้ (${eLot.message}) — ยังไม่สลับโหมด`); return; }
+      if (eLot) { toast.error(`${tr("เช็คใบล็อตค้างไม่ได้")} (${eLot.message}) — ${tr("ยังไม่สลับโหมด")}`); return; }
       if (count && !await askConfirm(
-        `${r.match_value} ยังมีใบล็อตค้างที่ไลน์ผลิต ${count} ใบ\n\n`
+        `${r.match_value} ${tr("ยังมีใบล็อตค้างที่ไลน์ผลิต")} ${count} ${tr("ใบ")}\n\n`
         + '⚠️ สลับโหมดตอนนี้ = ของบนใบพวกนั้น "ไม่เข้าคลังเลย"\n'
         + '(ปุ่มปิดล็อตจะเลิกลงสต็อก และใบผลิตเก่าก็ไม่มีใบ "รอรับเข้า" รองรับ)\n\n'
-        + 'ให้สโตร์ปิดใบล็อตที่ค้างให้หมดก่อน แล้วค่อยสลับ — กด OK ถ้ารู้อยู่แล้วและจะไปลงยอดมือเอง')) return;
+        + tr('ให้สโตร์ปิดใบล็อตที่ค้างให้หมดก่อน แล้วค่อยสลับ — กด OK ถ้ารู้อยู่แล้วและจะไปลงยอดมือเอง'))) return;
     }
     const { data, error } = await supabaseDR.from('stock_inflow_rules')
       .update({ ...inflowPatchFor(modeKey, r), updated_at: new Date().toISOString() }).eq('id', r.id).select('id');
@@ -1737,7 +1750,7 @@ function InflowRulesTab({ canEdit }) {
 
   const deleteRule = async (r) => {
     if (noPerm()) return;
-    if (!await askConfirm(`ลบกฎ "${r.match_type === 'prefix' ? `MAT ขึ้นต้น ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?`)) return;
+    if (!await askConfirm(`${tr("ลบกฎ")} "${r.match_type === 'prefix' ? `MAT ${tr("ขึ้นต้น")} ${r.match_value}` : r.match_value} → ${r.dest_line_name}"?`)) return;
     if (!checkWriteRows(await supabaseDR.from('stock_inflow_rules').delete().eq('id', r.id).select('id'), 'ลบกฎ')) return;
     toast.success('ลบกฎแล้ว');
     load();
@@ -1748,13 +1761,13 @@ function InflowRulesTab({ canEdit }) {
       <div style={card}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('รับงานเข้า stock เมื่อปิดออเดอร์')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
-          สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
+          {tr("สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์")}
           <br />{tr('แต่ละกฎเลือกได้:')} <b>{tr(INFLOW_MODES.auto.label)}</b> = {tr(INFLOW_MODES.auto.hint)} ·
-          {' '}<b>{tr(INFLOW_MODES.confirm.label)}</b> = {tr(INFLOW_MODES.confirm.hint)} (แท็บ 📥 รอรับเข้า) ·
+          {' '}<b>{tr(INFLOW_MODES.confirm.label)}</b> = {tr(INFLOW_MODES.confirm.hint)} ({tr("แท็บ 📥 รอรับเข้า")}) ·
           {' '}<b style={{ color: 'var(--red)' }}>{tr(INFLOW_MODES.off.label)}</b> = {tr(INFLOW_MODES.off.hint)}
-          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{tr(INFLOW_MODES.lot.label)}</b> (เฉพาะกฎ MAT ตรงตัว) = {tr(INFLOW_MODES.lot.hint)}
-          · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
-          <br />{tr('กฎแบบ')} <strong>{tr('MAT ตรงตัว')}</strong> {tr('ชนะแบบ')} <strong>{tr('ขึ้นต้นด้วย')}</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
+          <br /><b style={{ color: INFLOW_MODES.lot.color }}>{tr(INFLOW_MODES.lot.label)}</b> ({tr("เฉพาะกฎ MAT ตรงตัว")}) = {tr(INFLOW_MODES.lot.hint)}
+          · {tr("ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่")}
+          <br />{tr('กฎแบบ')} <strong>{tr('MAT ตรงตัว')}</strong> {tr('ชนะแบบ')} <strong>{tr('ขึ้นต้นด้วย')}</strong> · {tr("รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก")} = auto)
         </div>
       </div>
 
@@ -1762,7 +1775,7 @@ function InflowRulesTab({ canEdit }) {
        <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'วิธีรับเข้า', ''].map(h => (
+            {[tr("เงื่อนไข MAT No."), tr("ปลายทาง (line_name)"), tr("วิธีรับเข้า"), ''].map(h => (
               <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
@@ -1830,7 +1843,7 @@ function InflowRulesTab({ canEdit }) {
                   พิมพ์ผิด = "ไลน์ผี" ที่มีของแต่ไม่มีใครเห็น → เลือกจากทะเบียนไลน์ + คลังกลางเท่านั้น (2026-09-07 · บั๊กคลาสเดียวกับรอบจัดส่ง) */}
               <LineSelect lines={lines} value={form.dest_line_name} onChange={v => setForm(f => ({ ...f, dest_line_name: v }))} {...scope}
                 placeholder={tr('— เลือกปลายทาง —')} style={{ ...inputSt, width: 240 }}
-                extraGroups={[{ label: 'คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
+                extraGroups={[{ label: tr("คลัง"), options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
               {saving ? '...' : tr('บันทึก')}
@@ -1840,7 +1853,7 @@ function InflowRulesTab({ canEdit }) {
       )}
       {!canEdit && (
         <div style={{ ...card, borderColor: 'var(--amber-line)', fontSize: 12, color: 'var(--amber)' }}>
-          โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์)
+          {tr("โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์")})
         </div>
       )}
     </div>
@@ -1853,6 +1866,7 @@ function InflowRulesTab({ canEdit }) {
 /* 🏬🛒 04/11 (คำสั่ง user) — งานที่ขยับยอดของสโตร์ย้ายมาที่นี่ · /heijunka เหลือดูสัญญาณ Kanban อย่างเดียว
    ฝังหน้าเดิมทั้งดุ้นแบบ /equipment (โหมด ops) — กฎ/ปุ่ม/ด่านเดิมทุกตัว ไม่เขียนใหม่ · `?view=`/`?store=` ไม่ชน `?tab=` */
 const HeijunkaKanban = lazy(() => import('./HeijunkaKanban'));
+const SapStockCompare = lazy(() => import('../components/SapStockCompare'));   // 📊 เทียบยอด MB52 (20/11)
 /* 📉 16/11 (คำสั่ง user "รวมสต๊อกในไลน์กับ Monitoring แผน-สต๊อกเป็นหน้าเดียว") — ฝังหน้าเดิมทั้งดุ้นใน <Hub>
    หน้าลูกใช้ `?mon=` แทน `?tab=` (UI §6.8 ข้อ 2.4 · Monitoring.jsx อ่าน HubContext) */
 const Monitoring = lazy(() => import('./Monitoring'));
@@ -1869,18 +1883,8 @@ const SETTING_TABS = [
 ];
 /* แท็บหลัก — 16/11: Stock ขึ้นแท็บแรก + เปิดหน้ามาเจอ (user "default อยู่ tab ที่ 4 แปลกๆ")
    `perm` = สิทธิ์หน้าเดิมของแท็บนั้น (หน้ารวม piggyback 2 คีย์ใน canAccessPage) */
-const TABS = [
-  { key:'stock',      label: 'Stock',                  perm: 'page:/line-stock' },
-  /* 16/11 (คำสั่ง user) เลิกคำ ขาออก/ขาเข้า — คน W/H อ่านกลับด้าน · key out/in คงเดิม */
-  { key:'out',        label: 'ส่งของเข้าไลน์',          perm: 'page:/line-stock' },
-  { key:'in',         label: 'รับของเข้าคลัง',          perm: 'page:/line-stock' },
-  { key:'monitoring', label: 'Monitoring แผน-สต๊อก',    perm: 'page:/monitoring' },
-  { key:'count',      label: 'ตรวจนับ/เฟิร์มยอด',       perm: 'page:/line-stock' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
-  { key:'sap',        label: 'ค้างตัด SAP',             perm: 'page:/line-stock' },   // ใบที่ส่งถึงไลน์แล้วแต่ตัดจ่ายใน SAP ไม่ได้ (04/11)
-  { key:'diff',       label: 'คลังพัก/ผลต่าง',          perm: 'page:/line-stock' },   // รับไม่ครบ = ส่วนที่ขาดพักไว้ (05/11)
-  { key:'wip',        label: 'WIP ค้างระหว่างขั้น',      perm: 'page:/line-stock' },   // คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
-  { key:'settings',   label: 'ตั้งค่า',                 perm: 'page:/line-stock' },
-];
+/* 24/11 — ลิสต์แท็บย้ายไปทะเบียนกลาง (แผงเมนูวาดเป็นข้อย่อย) · `src/utils/navSubTabs.js` */
+const TABS = LINE_STOCK_TABS;
 
 function SettingsTab({ canEdit, fullName, scope }) {
   const [sub, setSub] = useTabParam(SETTING_TABS.map(t => t.key), SETTING_TABS[0].key, 'set');
@@ -1915,7 +1919,7 @@ export default function LineStock() {
   const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
   return (
-    <Page>
+    <Page top="flush">
       <PageHeader
         title={tr('Stock Management')} icon="📦"
         sub={tr('ยอดคงเหลือ · ส่งของเข้าไลน์ · รับของเข้าคลัง · แผน-สต๊อก · ตรวจนับเทียบ SAP')}
@@ -1925,6 +1929,7 @@ export default function LineStock() {
       {(activeTab === 'out' || activeTab === 'in') && (
         <Hub>
           <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>
+            {/* 🧾 20/11 — ไลน์ใช้ของแล้วแต่สโตร์ยังไม่ลงจ่าย (ไม่มีรายการ = ไม่แสดง) */}
             {/* key แยก = state ตู้ของ 2 แท็บไม่ปนกัน */}
             <HeijunkaKanban key={activeTab} mode="ops" direction={activeTab}
               opsStores={activeTab === 'out' ? OPS_STORES_OUT : OPS_STORES_IN} />
@@ -1935,7 +1940,10 @@ export default function LineStock() {
       {activeTab === 'diff'      && <StockDiscrepancyReport />}
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
+      {activeTab === 'reqlog'    && <LineRequestHistory />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
+      {activeTab === 'sapview'   && <SapViewConsumption />}
+      {activeTab === 'sapstock'  && <Suspense fallback={null}><SapStockCompare /></Suspense>}
       {activeTab === 'monitoring' && (
         <Hub>
           <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>

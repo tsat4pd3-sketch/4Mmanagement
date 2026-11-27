@@ -71,7 +71,7 @@ function SparePanel({ view }) {
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await fetchAllRows(supabaseDR, 'mtn_spare_parts', '*', q => q.eq('is_active', true).order('sort_order').order('id'));
-    if (error) toast.error('โหลดทะเบียนอะไหล่ไม่สำเร็จ: ' + (error.message || error));
+    if (error) toast.error((tr('โหลดทะเบียนอะไหล่ไม่สำเร็จ') + ': ') + (error.message || error));
     setParts(data || []);
     setLoading(false);
   }, []);
@@ -105,13 +105,13 @@ export default function EquipmentHub() {
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) — เดิมวาดเอง ทำให้ 3 แท็บหน้าตาคนละแบบ (ภาพ user 22/09) */}
         <PageHeader title={tr('ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)')} icon="🧰"
           sub={tr(cur?.hint) || tr('เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว')}
-          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
+          tabs={available.map(t => ({ key: t.key, label: tr(t.label) }))} tab={active} onTab={setActive} />
         {/* ไม่มีสิทธิ์สักแท็บ = ต้องบอกว่าทำไม ห้ามปล่อยจอว่าง (UI-CONVENTIONS §6.9) */}
         {!available.length && (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-            บัญชีนี้ยังไม่มีสิทธิ์เข้าทะเบียนอุปกรณ์ตัวไหนเลย — ให้ admin เปิดสิทธิ์หน้า
+            {tr("บัญชีนี้ยังไม่มีสิทธิ์เข้าทะเบียนอุปกรณ์ตัวไหนเลย — ให้ admin เปิดสิทธิ์หน้า")}
             <b style={{ color: 'var(--text2)' }}> {tr('ฐานข้อมูลเครื่องจักร / ทะเบียนแม่พิมพ์ / Fixture / แจ้งซ่อม MTN')} </b>
-            ที่ <b style={{ color: 'var(--text2)' }}>/permissions</b>
+            {tr("ที่")} <b style={{ color: 'var(--text2)' }}>/permissions</b>
           </div>
         )}
       <Hub>

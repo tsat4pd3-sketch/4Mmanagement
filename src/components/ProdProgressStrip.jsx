@@ -108,7 +108,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
   // ⚠️ โหลดไม่ได้ = บอก ห้ามโชว์ว่างเปล่าเหมือนไม่มีงาน
   if (err) return (
     <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px solid #ef444466', background: '#ef444414', fontSize: 11.5, color: '#ef4444', marginBottom: 12 }}>
-      🔴 โหลดความคืบหน้าการผลิตไม่ได้ — {err}
+      🔴 {tr("โหลดความคืบหน้าการผลิตไม่ได้")} — {err}
     </div>
   );
   if (!d) return null;
@@ -124,14 +124,14 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
   const behind = d.lines.filter(l => l.behind).length;
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12 }}>
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12 }}>
       <div onClick={toggle} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', cursor: 'pointer', marginBottom: open && d.lines.length ? 8 : 0 }}>
         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>
-          {open ? '▾' : '▸'} 🏭 ยอดผลิตวันนี้ เทียบใบสั่งผลิต
+          {open ? '▾' : '▸'} 🏭 {tr("ยอดผลิตวันนี้ เทียบใบสั่งผลิต")}
         </span>
         {totPct != null && (
           <span style={{ fontSize: 12, fontWeight: 800, color: totColor }}>
-            ทำได้ {fmt(tot.made)} {tr('จากเป้าทั้งกะ')} {fmt(tot.target)} {tr('ชิ้น (')}{totPct.toFixed(0)}%)
+            {tr("ทำได้")} {fmt(tot.made)} {tr('จากเป้าทั้งกะ')} {fmt(tot.target)} {tr('ชิ้น (')}{totPct.toFixed(0)}%)
           </span>
         )}
         {/* บอกตรงๆ ว่าทำไมยังไม่มีสีแดง/เขียว — ไม่งั้นคนอ่าน % ต่ำตอนเช้าว่า "ตามหลัง" (12/10) */}
@@ -142,9 +142,9 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
           <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444' }}>{tr('· ตามหลัง')} {behind} {tr('ไลน์')}</span>
         )}
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-          วันงาน {workDate}
-          {d.noShift ? ' · ยังไม่มีไลน์ไหนเปิดกะ'
-            : open ? ' · กดชื่อไลน์เพื่อเปิดบอร์ดจริงของไลน์นั้น' : ` · แตะดูรายไลน์ (${d.lines.length})`}
+          {tr("วันงาน")} {workDate}
+          {d.noShift ? tr(" · ยังไม่มีไลน์ไหนเปิดกะ")
+            : open ? tr(" · กดชื่อไลน์เพื่อเปิดบอร์ดจริงของไลน์นั้น") : ` · ${tr("แตะดูรายไลน์")} (${d.lines.length})`}
         </span>
       </div>
 
@@ -157,11 +157,11 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
             <div key={l.line}
               onClick={() => onOpenLine?.(l.line)}
               title={l.target > 0
-                ? `${l.line} · ใบสั่งผลิต ${l.cnt} ใบ (ยังเปิดอยู่ ${l.open}) · เป้าทั้งกะ ${fmt(l.target)} ชิ้น · ทำได้ ${fmt(l.made)} ชิ้น · ${l.note}`
-                : `${l.line} · เปิดกะแล้วแต่ยังไม่มีใบสั่งผลิต`}
+                ? `${l.line} · ${tr("ใบสั่งผลิต")} ${l.cnt} ${tr("ใบ (ยังเปิดอยู่")} ${l.open}) · ${tr("เป้าทั้งกะ")} ${fmt(l.target)} ${tr("ชิ้น · ทำได้")} ${fmt(l.made)} ${tr("ชิ้น")} · ${l.note}`
+                : `${l.line} · ${tr("เปิดกะแล้วแต่ยังไม่มีใบสั่งผลิต")}`}
               style={{
                 cursor: onOpenLine ? 'pointer' : 'default', minWidth: 150, flex: '0 1 auto',
-                background: 'var(--bg2)', border: `1px solid ${l.pct == null ? 'var(--border)' : `${l.color}55`}`,
+                background: 'var(--bg2-surf)', border: `1px solid ${l.pct == null ? 'var(--border)' : `${l.color}55`}`,
                 borderRadius: 9, padding: '7px 11px',
               }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{l.line}</div>
@@ -174,7 +174,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
                   <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                     <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: l.color }} />
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · {l.cnt} {tr('ใบ')}{l.open > 0 ? ` (ค้าง ${l.open})` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · {l.cnt} {tr('ใบ')}{l.open > 0 ? ` (${tr("ค้าง")} ${l.open})` : ''}</div>
                 </>
               ) : (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต')}</div>

@@ -22,9 +22,11 @@ import { loadAffectsLanes, affectsLanesLoadFail } from '../utils/affectsLanes';
 import { QBIN_EMBED } from '../utils/oee';
 import { dtOpenKind } from '../utils/downtimeRules';
 import { OPEN_MO_STATUSES } from '../utils/mtnStepPerm';
+import { canAccessPage } from '../utils/permissions';
 import {
   INTENTS, parseQuestion, defaultPeriod, matchSubject, oeeSummary, downtimeTop, productionTotals,
-  rankLinesByOee, openDowntimeList, moOpenSummary, fourMPendingSummary, defectTop, attendanceSummary,
+  rankLinesByOee, openDowntimeList, moOpenSummary, fourMPendingSummary, defectTop, attendanceSummary, makeShiftOf, applyHelpers,
+  scrapReportSummary, SCRAP_STATUS_LABEL,
   fmtInt, fmtPct, ASK_HINTS,
 } from '../utils/askBot';
 
@@ -49,9 +51,10 @@ function visibleSet(ctx, lines) {
 
 async function closedAndOpen(period, lineNames, cols) {
   const run = (statusFilter) => fetchAllPages(() => {
-    let q = supabaseDR.from('production_sessions').select(cols)
+    let q = supabaseDR.from('production_sessions').select(period.shift && !/\bshift\b/.test(cols) ? `${cols}, shift` : cols)
       .gte('work_date', period.from).lte('work_date', period.to);
     q = statusFilter(q);
+    if (period.shift) q = q.eq('shift', period.shift);      // กะเช้า/กะดึก/กะนี้ (20/11)
     if (lineNames) q = q.in('line_name', lineNames);
     return q;
   }, { orderBy: ['work_date', 'id'] });
@@ -65,12 +68,15 @@ async function closedAndOpen(period, lineNames, cols) {
     const ok = new Set(lineNames);
     for (const r of [closed, open]) r.rows = r.rows.filter(x => !('line_name' in x) || ok.has(x.line_name));
   }
+  if (period.shift) for (const r of [closed, open]) r.rows = r.rows.filter(x => !('shift' in x) || x.shift === period.shift);
   return { closed, open };
 }
 
 /* คอลัมน์ downtime ชุดเดียวของแชท — `started_at/ended_at` ให้ตัดช่วงพักได้ · `planned_cap_min` ให้เพดานหยุดตามแผนทำงาน */
 const DT_COLS = 'id, session_id, started_at, ended_at, duration_min, machine_no, description, dr_downtime_types(name_th, category, planned_cap_min)';
 
+/* ยอดผลิต: กะที่ยังเปิดถูกรวมแล้ว แต่ยอดยังขยับได้ — ต้องบอก */
+const liveNote = (n) => (n ? `🟢 รวมกะที่กำลังเดิน ${n} กะ — ยอดยังเพิ่มได้` : null);
 const openNote = (n) => (n ? `⏳ มีกะที่ยังไม่ปิด ${n} กะในช่วงนี้ — ยังไม่นับ` : null);
 
 /* ── เครื่องมือ 1: OEE ไลน์ ───────────────────────────────────────────── */
@@ -134,17 +140,19 @@ async function toolProduction({ pick, period, all, vis, products }) {
     const names = selfAndDescendants(all, pick.name).filter(n => !vis.names || vis.names.has(n));
     const { closed, open } = await closedAndOpen(period, names, 'id, line_name');
     if (closed.error || open.error) return fail('กะผลิต', closed.error || open.error);
-    const od = await fetchByIds(closed.rows.map(s => s.id), c => supabaseDR.from('prod_orders')
+    /* 🔴 ยอดผลิต = ยอดสะสม ⇒ รวมกะที่กำลังเดินด้วย (user ทัก 20/11: "daily report มียอดเพิ่มเรื่อยๆ แต่แชทตอบ 0")
+       ต่างจาก OEE/downtime/ของเสียที่เป็นอัตรา/ค่าตอนปิดกะ — ยังนับเฉพาะกะที่ปิดแล้วเหมือนเดิม */
+    const od = await fetchByIds([...closed.rows, ...open.rows].map(s => s.id), c => supabaseDR.from('prod_orders')
       .select('id, session_id, mat_no, status, qty, qty_ok, qty_actual').in('session_id', c));
     if (od.error || od.truncated) return fail('ใบผลิต', od.error || 'ข้อมูลเยอะเกินเพดาน — ลองช่วงสั้นลง');
     const t = productionTotals(od.rows, opMap);
     const kids = names.length > 1 ? ` (รวมไลน์ลูก ${names.length - 1} ไลน์)` : '';
     return {
-      source: `ยอดผลิต ไลน์ ${pick.name}${kids} · ${period.label} · กะที่ปิดแล้ว ${closed.rows.length} กะ`,
+      source: `ยอดผลิต ไลน์ ${pick.name}${kids} · ${period.label} · ${closed.rows.length + open.rows.length} กะ`,
       text: `รวม ${fmtInt(t.total)} ชิ้น` + (t.rows.length ? '\n' + t.rows.slice(0, 5)
         .map(r => `· ${r.mat_no}${nameOf[r.mat_no] ? ` ${nameOf[r.mat_no]}` : ''} — ${fmtInt(r.produced)} ชิ้น`).join('\n') : '')
         + (t.rows.length > 5 ? `\n· อีก ${t.rows.length - 5} พาร์ท` : ''),
-      notes: [openNote(open.rows.length), t.noMat ? `ใบผลิตไม่ระบุ MAT ${fmtInt(t.noMat)} ชิ้น (รวมในยอดแล้ว)` : null,
+      notes: [liveNote(open.rows.length), t.noMat ? `ใบผลิตไม่ระบุ MAT ${fmtInt(t.noMat)} ชิ้น (รวมในยอดแล้ว)` : null,
         'นับเป็น "ชิ้น" — งานคู่ RH/LH นับแยกทั้ง 2 ข้าง'].filter(Boolean),
       link: '/oee-analytics',
     };
@@ -154,9 +162,10 @@ async function toolProduction({ pick, period, all, vis, products }) {
   const mats = pick.mats;
   const base = (st) => fetchAllPages(() => {
     let q = supabaseDR.from('prod_orders')
-      .select('id, mat_no, status, qty, qty_ok, qty_actual, production_sessions!inner(work_date, status, line_name)')
+      .select('id, mat_no, status, qty, qty_ok, qty_actual, production_sessions!inner(work_date, status, line_name, shift)')
       .in('mat_no', mats)
       .gte('production_sessions.work_date', period.from).lte('production_sessions.work_date', period.to);
+    if (period.shift) q = q.eq('production_sessions.shift', period.shift);
     return st(q);
   });
   const [cl, op] = await Promise.all([
@@ -164,19 +173,23 @@ async function toolProduction({ pick, period, all, vis, products }) {
     base(q => q.in('production_sessions.status', SESSION_STATUSES_LIVE)),
   ]);
   if (cl.error || op.error || cl.truncated) return fail('ใบผลิต', cl.error || op.error || 'ข้อมูลเยอะเกินเพดาน');
-  const inScope = (o) => !vis.names || vis.names.has(o.production_sessions?.line_name);
-  const rows = cl.rows.filter(inScope);
-  const hidden = cl.rows.length - rows.length;
+  const inScope = (o) => (!vis.names || vis.names.has(o.production_sessions?.line_name))
+    && (!period.shift || o.production_sessions?.shift === period.shift);
+  /* รวมกะที่กำลังเดิน (ยอดสะสม · 20/11) */
+  const all2 = [...cl.rows, ...op.rows];
+  const rows = all2.filter(inScope);
+  const hidden = all2.length - rows.length;
   const byMat = {}; let total = 0;
   rows.forEach(o => { const q = productionTotals([o]).total; byMat[o.mat_no] = (byMat[o.mat_no] || 0) + q; total += q; });
   const lineSet = new Set(rows.map(o => o.production_sessions?.line_name).filter(Boolean));
   const openSess = new Set(op.rows.filter(inScope).map(o => `${o.production_sessions?.line_name}|${o.production_sessions?.work_date}`));
+  const madeMats = mats.filter(m => byMat[m]);   // MAT ที่ไม่มียอดในช่วงนี้ = ไม่ต้องโชว์ทีละบรรทัด (รก) แต่บอกจำนวน
   return {
     source: `ยอดผลิต พาร์ท ${pick.label}${pick.p_no ? ` (${pick.p_no})` : ''} · ${period.label} · ${lineSet.size} ไลน์`,
-    text: `รวม ${fmtInt(total)} ชิ้น` + (mats.length > 1 ? '\n' + mats.map(m => `· ${m} — ${fmtInt(byMat[m] || 0)} ชิ้น`).join('\n') : ''),
-    notes: [openSess.size ? `⏳ มีใบผลิตของพาร์ทนี้ในกะที่ยังไม่ปิด — ยังไม่นับ` : null,
+    text: `รวม ${fmtInt(total)} ชิ้น` + (madeMats.length > 1 ? '\n' + madeMats.map(m => `· ${m} — ${fmtInt(byMat[m])} ชิ้น`).join('\n') : ''),
+    notes: [liveNote(openSess.size),
       hidden ? `ซ่อน ${hidden} ใบผลิตที่อยู่ไลน์นอกขอบเขตของคุณ` : null,
-      mats.length > 1 ? `สินค้าเดียวกัน ${mats.length} MAT (คนละลูกค้า) รวมให้แล้ว` : null].filter(Boolean),
+      mats.length > 1 ? `สินค้าเดียวกัน ${mats.length} MAT (คนละลูกค้า) รวมให้แล้ว${madeMats.length < mats.length ? ` · ไม่มียอดในช่วงนี้ ${mats.length - madeMats.length} MAT` : ''}` : null].filter(Boolean),
     link: '/product-history',
   };
 }
@@ -317,20 +330,82 @@ async function toolAttendance({ lineName, period, all, vis }) {
   const names = scopeNames(all, vis, lineName);
   const nameSet = names ? new Set(names) : null;
   const idToName = Object.fromEntries(all.map(l => [l.id, l.name]));
-  const [emps, logs] = await Promise.all([
-    fetchAllPages(() => supabase.from('employees').select('id, line_id').eq('is_active', true)),
-    fetchAllPages(() => supabase.from('daily_production_logs').select('id, employee_id, is_present').eq('work_date', period.to)),
+  const d = period.to;
+  /* แยกกะ (20/11 · คำสั่ง user): กะของแต่ละคนใช้ข้อมูล 3 ชุดเดียวกับจอเช็คชื่อ — ตารางกะ · สลับกะรายคน · รวมกะ */
+  const [emps, logs, hlp, sch, ovr, mrg] = await Promise.all([
+    fetchAllPages(() => supabase.from('employees').select('id, line_id, team, department').eq('is_active', true)),
+    fetchAllPages(() => supabase.from('daily_production_logs').select('id, employee_id, is_present').eq('work_date', d)),
+    /* ยืมคนข้ามไลน์ — นับที่ไลน์ปลายทางเหมือน /checkin (20/11) · ระบุกะ = เฉพาะแถวของกะนั้น */
+    supabase.from('line_helpers').select('employee_id, to_line_id, shift').eq('work_date', d),   // ทั้งวัน — applyHelpers กรองกะเอง
+    period.shift ? supabase.from('shift_schedules').select('line_id, dept_name, day_team').eq('work_date', d) : null,
+    period.shift ? supabase.from('shift_overrides').select('employee_id, shift').eq('work_date', d) : null,
+    period.shift ? supabase.from('shift_merge_events').select('line_id, section, target_shift').lte('start_date', d).gte('end_date', d) : null,
   ]);
   if (emps.error || logs.error || emps.truncated || logs.truncated) return fail('ข้อมูลพนักงาน/เช็คชื่อ', emps.error || logs.error || 'ข้อมูลเยอะเกินเพดาน');
-  const r = attendanceSummary(emps.rows, logs.rows, (id) => { const n = idToName[id]; return n && (!nameSet || nameSet.has(n)) ? n : null; });
+  /* อ่านตารางกะไม่ได้ ≠ "ไม่มีใครเข้ากะนี้" — ห้ามตอบเป็น 0 คน */
+  const shErr = period.shift && (sch.error || ovr.error || mrg.error);
+  if (shErr) return fail('ตารางกะ', shErr.message || shErr);
+  /* อ่านทะเบียนยืมคนไม่ได้ = นับที่ต้นสังกัดทั้งหมด + เขียนบอก (ห้ามเงียบ · ไม่บล็อกคำตอบ) */
+  const hp = hlp.error ? { emps: emps.rows, moved: 0, split: 0, otherShift: new Set() } : applyHelpers(emps.rows, hlp.data || [], { shift: period.shift || null });
+  const shiftOf = period.shift ? makeShiftOf({ schedules: sch.data || [], overrides: ovr.data || [], merges: mrg.data || [], lines: all }) : null;
+  const lineOf = (id) => { const n = idToName[id]; return n && (!nameSet || nameSet.has(n)) ? n : null; };
+  const r = attendanceSummary(hp.emps, logs.rows, lineOf, { shift: period.shift || null, shiftOf });
+  /* คนที่ถูกยืมเฉพาะอีกกะ แต่ตารางกะต้นสังกัดให้อยู่กะนี้ = ถูกนับในกะนี้ด้วย (เหมือน /checkin) — นับเฉพาะที่อยู่ในคำตอบนี้จริง */
+  const dupOther = period.shift ? hp.emps.filter(e => hp.otherShift.has(e.id) && lineOf(e.line_id) && shiftOf(e) === period.shift).length : 0;
   const source = `เช็คชื่อ · ${whoText(lineName, vis)} · ${period.label}`;
-  if (!r.head) return { source, text: 'ไม่พบพนักงานที่ผูกกับไลน์ในขอบเขตนี้', link: '/checkin' };
+  const shiftNotes = period.shift ? [
+    r.unknownShift ? `⚠️ ยังไม่รู้กะของพนักงาน ${r.unknownShift} คน (ไลน์ยังไม่ตั้งตารางกะ/ทีมไม่รู้กติกา) — ไม่นับในกะนี้${r.unknownIn ? ` · ในนี้เช็คชื่อมาแล้ว ${r.unknownIn} คน` : ''}` : null,
+  ] : [];
+  const helperNotes = [
+    hlp.error ? '⚠️ อ่านข้อมูลยืมคนข้ามไลน์ไม่ได้ — คนที่ถูกยืมยังนับที่ไลน์ต้นสังกัด' : null,
+    hp.moved ? `นับคนที่ถูกยืมไปช่วย ${hp.moved} คน ที่ไลน์ปลายทาง (เหมือนหน้าเช็คชื่อ)` : null,
+    hp.split ? `${hp.split} คนถูกยืมไปคนละไลน์ในแต่ละกะ — ทั้งวันนับที่ไลน์ต้นสังกัด (ระบุกะเพื่อดูไลน์ที่ไปช่วย)` : null,
+    dupOther ? `ในนี้มี ${dupOther} คนที่ถูกยืมไปช่วยอีกกะ — ยังนับในกะนี้ตามตารางกะต้นสังกัด (เหมือนหน้าเช็คชื่อ) ⇒ กะเช้า+กะดึกอาจรวมเกินยอดทั้งวัน` : null,
+  ];
+  if (!r.head) return { source, text: period.shift ? `ไม่พบพนักงานที่เข้า${period.shift === 'day' ? 'กะเช้า' : 'กะดึก'}ในขอบเขตนี้` : 'ไม่พบพนักงานที่ผูกกับไลน์ในขอบเขตนี้', notes: [...shiftNotes, ...helperNotes].filter(Boolean), link: '/checkin' };
   return {
     source,
     text: `พนักงาน ${r.head} คน — มา ${r.in} · แจ้งว่าไม่มา ${r.out} · ยังไม่ได้เช็ค ${r.none}`
       + (!lineName && r.lines.length > 1 ? '\n' + r.lines.slice(0, 6).map(l => `· ${l.line} — มา ${l.in}/${l.head}${l.out ? ` · ไม่มา ${l.out}` : ''}${l.none ? ` · ยังไม่เช็ค ${l.none}` : ''}`).join('\n') : ''),
-    notes: ['"ยังไม่ได้เช็ค" ≠ ขาดงาน — อาจเป็นคนกะดึกที่ยังไม่เข้ากะ'],
+    notes: [period.shift ? null : '"ยังไม่ได้เช็ค" ≠ ขาดงาน — อาจเป็นคนกะดึกที่ยังไม่เข้ากะ', ...shiftNotes, ...helperNotes].filter(Boolean),
     link: '/checkin',
+  };
+}
+
+/* ── 🧾 ใบรายงานของเสีย ("ใบสแครป" · /scrap-report · 20/11) — ตัวเลขตามใบ ไม่ใช่รายงานผลิต ── */
+async function toolScrapReport({ lineName, period, all, vis, role }) {
+  /* จอนี้มีสิทธิ์ของตัวเอง (page:/scrap-report) — แชทต้องไม่เปิดทางลัดให้คนที่เข้าหน้านั้นไม่ได้ */
+  if (!canAccessPage('/scrap-report', role)) return { text: 'บัญชีนี้ไม่มีสิทธิ์ดูใบรายงานของเสีย (/scrap-report) — ถาม "ของเสียสูงสุด" เพื่อดูของเสียจากรายงานผลิตแทน' };
+  const names = scopeNames(all, vis, lineName);
+  const rep = await fetchAllPages(() => {
+    let q = supabaseDR.from('scrap_reports').select('id, report_date, line_name, status, doc_no')
+      .gte('report_date', period.from).lte('report_date', period.to);
+    if (lineName) q = q.in('line_name', names || []);
+    return q;
+  });
+  if (rep.error || rep.truncated) return fail('ใบรายงานของเสีย', rep.error || 'ใบเยอะเกินเพดาน — ลองช่วงสั้นลง');
+  const rows = rep.rows.filter(r => inNames(names)(r.line_name));
+  const hidden = rep.rows.length - rows.length;
+  const it = await fetchByIds(rows.map(r => r.id), c => supabaseDR.from('scrap_report_items')
+    .select('id, report_id, mat_no, part_no, part_name, qty, confirm_qty').in('report_id', c));
+  if (it.error || it.truncated) return fail('รายการในใบรายงานของเสีย', it.error || 'ข้อมูลเยอะเกินเพดาน');
+  const r = scrapReportSummary(rows, it.rows, 5);
+  /* ใบเป็นรายวัน ไม่แยกกะ ⇒ ป้ายช่วงตัดคำว่า "· กะ…" ออก (answerQuestion เขียนโน้ตบอกแล้ว) */
+  const source = `ใบรายงานของเสีย (FM-PD2-002) · ${whoText(lineName, vis)} · ${period.label.replace(/ · กะ.*$/, '')} · ${r.reports} ใบ`;
+  const st = Object.entries(r.byStatus).map(([k, v]) => `${SCRAP_STATUS_LABEL[k]} ${v}`).join(' · ');
+  const notes = [
+    hidden ? `ซ่อน ${hidden} ใบที่อยู่ไลน์นอกขอบเขต` : null,
+    r.unknownStatus ? `ใบสถานะที่ระบบไม่รู้จัก ${r.unknownStatus} ใบ (รวมในยอดแล้ว)` : null,
+    r.confirmDiffers ? `ยอดช่อง "ยืนยัน" รวม ${fmtInt(r.confirm)} ชิ้น ไม่เท่ากับ Q'TY` : null,
+    'ตัวเลขตามใบ — รวมชิ้นที่ QA เบิกทดสอบ + พาร์ทย่อยที่คีย์เพิ่ม · ไม่ใช่ตัวเลขเดียวกับ "ของเสียสูงสุด" (รายงานผลิต)',
+  ].filter(Boolean);
+  if (!r.reports) return { source, text: 'ยังไม่มีใบรายงานของเสียในช่วงนี้', notes, link: '/scrap-report' };
+  return {
+    source,
+    text: `${r.reports} ใบ (${st || '—'}) · รวม ${fmtInt(r.total)} ชิ้น`
+      + (r.top.length ? '\n' + r.top.map((e, i) => `${i + 1}. ${e.key}${e.name && e.name !== e.key ? ` ${e.name}` : ''} — ${fmtInt(e.qty)} ชิ้น`).join('\n') : '')
+      + (r.parts > r.top.length ? `\n· อีก ${r.parts - r.top.length} พาร์ท` : ''),
+    notes, link: '/scrap-report',
   };
 }
 
@@ -341,16 +416,19 @@ async function toolAttendance({ lineName, period, all, vis }) {
  * @param {string} today วันทำงาน (`getWorkDate()`) — ส่งเข้ามาเพื่อให้เทสตรึงได้
  * @param {object} [forced] ตัวเลือกที่คนกดเลือกจากรอบก่อน (ไลน์/พาร์ท) — ข้ามขั้นค้นชื่อ
  */
-export async function answerQuestion(text, ctx, today, forced = null) {
-  const q = parseQuestion(text, today);
+export async function answerQuestion(text, ctx, today, forced = null, { shiftNow = null } = {}) {
+  const q = parseQuestion(text, today, { shiftNow });
   if (!q.intent) return NOT_UNDERSTOOD();
   if (q.error) return { text: q.error };
   const meta = INTENTS.find(i => i.key === q.intent);
   /* คำถาม "สถานะตอนนี้" (เครื่องหยุด/MO/4M) ไม่มีช่วงเวลา — พิมพ์ช่วงมาก็ไม่ใช้ แต่ต้องบอก */
   const timeless = !meta.defaultPeriod;
-  const period = timeless ? null : (q.period || defaultPeriod(q.periodDefault, today));
-  const periodNote = timeless ? (q.period ? 'คำถามนี้ดูสถานะ ณ ตอนนี้ — ไม่ได้ใช้ช่วงเวลาที่ระบุ' : null)
-    : (q.period ? null : `ไม่ได้ระบุช่วงเวลา — ใช้ "${period.label}"`);
+  const basePeriod = timeless ? null : (q.period || defaultPeriod(q.periodDefault, today));
+  /* กะติดไปกับช่วง: ป้ายบอก "· กะเช้า" ทุกคำตอบ + closedAndOpen กรอง shift ให้ */
+  const period = basePeriod && q.shift
+    ? { ...basePeriod, label: `${basePeriod.label} · ${q.shift.label}`, shift: q.shift.key } : basePeriod;
+  const periodNote = timeless ? ((q.period || q.shift) ? 'คำถามนี้ดูสถานะ ณ ตอนนี้ — ไม่ได้ใช้ช่วงเวลา/กะที่ระบุ' : null)
+    : (q.period ? null : `ไม่ได้ระบุช่วงเวลา — ใช้ "${basePeriod.label}"`);
 
   let all, products = [];
   try { all = await loadProductionLines(); } catch (e) { return fail('ทะเบียนไลน์', e); }
@@ -394,11 +472,14 @@ export async function answerQuestion(text, ctx, today, forced = null) {
       case 'mo_open':       ans = await toolMoOpen({ lineName, all, vis, nowMs }); break;
       case 'fourm_pending': ans = await toolFourM({ lineName, all, vis, today }); break;
       case 'defect_top':    ans = await toolDefect({ lineName, period, all, vis }); break;
+      case 'scrap_report':  ans = await toolScrapReport({ lineName, period, all, vis, role: ctx.role }); break;
       case 'attendance':    ans = await toolAttendance({ lineName, period, all, vis }); break;
       default:              ans = await toolProduction({ pick, period, all, vis, products });
     }
   } catch (e) { return fail('ข้อมูล', e); }
   const notes = [...(ans.notes || []), periodNote,
+    q.viaScrap ? 'ℹ️ "สแครป" = ของเสียจากรายงานผลิต · ตัวเลขตามใบ scrap report พิมพ์ "ใบสแครป"' : null,
+    q.shift && q.intent === 'scrap_report' ? 'ใบรายงานของเสียเป็นรายวัน ไม่แยกกะ — แสดงทั้งวัน' : null,
     vis.unsure ? '⚠️ ระบบตัดขอบเขตไลน์ของบัญชีนี้ได้ไม่ชัด — ตัวเลขอาจรวมไลน์นอกขอบเขต' : null].filter(Boolean);
   return { ...ans, notes };
 }

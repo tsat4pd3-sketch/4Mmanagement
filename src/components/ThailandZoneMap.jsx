@@ -139,11 +139,11 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
 
           {/* จังหวัด/เมือง */}
           {CITIES.map(c => (
-            <g key={c.n}>
+            <g key={tr(c.n)}>
               <circle cx={px(c.lon)} cy={py(c.lat)} r={c.big ? 5 : 3.5} fill="#94a3b8" opacity="0.85" />
               <text x={px(c.lon) + (c.anchor === 'end' ? -8 : 8)} y={py(c.lat) + 5 + (c.dy || 0)}
                 textAnchor={c.anchor === 'end' ? 'end' : 'start'}
-                fill="#9fb0c0" fontSize={c.big ? 17 : 14} fontWeight={c.big ? 700 : 500}>{c.n}</text>
+                fill="#9fb0c0" fontSize={c.big ? 17 : 14} fontWeight={c.big ? 700 : 500}>{tr(c.n)}</text>
             </g>
           ))}
 
@@ -198,7 +198,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
           <div style={{
             position: 'absolute', left: `${px(hover.lon) / 1000 * 100}%`, top: `${py(hover.lat) / H * 100}%`,
             transform: 'translate(-50%, calc(-100% - 26px))', pointerEvents: 'none', zIndex: 5,
-            background: 'var(--card)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 'var(--r-md)',
+            background: 'var(--card-surf)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 'var(--r-md)',
             padding: '8px 11px', minWidth: 190, boxShadow: 'var(--shadow-float)',
           }}>
             <div style={{ fontSize: 14, fontWeight: 800 }}>{hover.flag} {hover.code}</div>
@@ -218,10 +218,10 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
 
       {/* legend — สีหมุด = สถานะ · ไอคอนในหมุด = กลุ่มธุรกิจ (2 มิติในหมุดเดียว) */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-        <span><b>{tr('สี:')}</b> <b style={{ color: '#22c55e' }}>●</b> {tr('ตามเป้า')} <b style={{ color: '#f59e0b' }}>●</b> {tr('เฝ้าระวัง')} <b style={{ color: '#ef4444' }}>●</b> {tr('ต้องแก้')}</span>
+        <span><b>{tr('สี:')}</b> <b style={{ color: 'var(--green)' }}>●</b> {tr('ตามเป้า')} <b style={{ color: 'var(--amber)' }}>●</b> {tr('เฝ้าระวัง')} <b style={{ color: 'var(--red)' }}>●</b> {tr('ต้องแก้')}</span>
         <span><b>{tr('ไอคอน:')}</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>
-        <span>★ = บริษัทเรา (ข้อมูลจริง)</span>
-        <span>คลิกหมุด = ดูรายไลน์ · คลิกกรอบโซน = ดูบริษัทในโซน</span>
+        <span>★ = {tr("บริษัทเรา (ข้อมูลจริง")})</span>
+        <span>{tr("คลิกหมุด = ดูรายไลน์ · คลิกกรอบโซน = ดูบริษัทในโซน")}</span>
       </div>
     </div>
     </div>

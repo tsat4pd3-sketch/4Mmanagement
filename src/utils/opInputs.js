@@ -37,3 +37,43 @@ export function parentKidsAfterOps(parentKids = [], opKidLists = []) {
   const eaten = new Set(opKidLists.flat().map(x => k(x?.mat_no)).filter(Boolean));
   return (parentKids || []).filter(x => !eaten.has(k(x?.mat_no)));
 }
+
+/** แม่ของโซ่ OP ที่ FG ตัวนี้ใช้ (20/11 · คู่กับ SQL `fn_op_parent_resolve` — ตรรกะต้องตรงกัน)
+ * มี OP ของตัวเอง = ตัวเอง · ไม่มีเลย = แม่ "ตัวเดียว" ในกลุ่มเดียวกัน (`opFamilyKey`) ที่มีขั้นแบบก่อนประกอบ ·
+ * เจอ 0 หรือ >1 ตัว = ตัวเอง (พฤติกรรมเดิม · ห้ามเดา)
+ * @param {string} fg
+ * @param {{ opsOf: Map<string,string[]>, familyOf: (mat:string)=>string, isPre: (op:string, par:string)=>boolean }} a */
+export function resolveOpParent(fg, { opsOf, familyOf, isPre }) {
+  const f = k(fg);
+  if ((opsOf.get(f) || []).length) return f;
+  const fam = familyOf(f);
+  if (!fam) return f;
+  const pars = [...opsOf.keys()].filter(p => p !== f && familyOf(p) === fam && (opsOf.get(p) || []).some(op => isPre(op, p)));
+  return pars.length === 1 ? pars[0] : f;
+}
+
+/** ⚠️ นำเข้า CS12 แล้ว "ขั้น OP กินของที่ BOM SAP ใหม่ของแม่ไม่มีแล้ว" (20/11 · คำสั่ง user)
+ * เช่น SAP เปลี่ยนเบอร์ท่อ 501 → เบอร์ใหม่ แต่ BOM ของขั้น OP ยังกิน 501 ⇒ ถ้าไม่เตือน OP จะตัดเบอร์เก่าต่อเงียบๆ
+ * ตรวจเฉพาะขั้นที่ผูก BOM เอง (`auto_single` ตามแม่ไปเองอยู่แล้ว) · ข้ามชิ้นจากขั้นก่อนหน้าในโซ่
+ * @param {{ sheets: Array<{mat:string, rows:Array<{mat_no}>}>, opsOf: Map<string,string[]>,
+ *           familyOf: (mat:string)=>string, opKidsOf: Map<string,Array<{mat_no}>>, isOpMat: (m:string)=>boolean }} a
+ * @returns {Array<{ sheet:string, parent:string, op:string, mat:string }>} */
+export function opDriftAgainstSap({ sheets = [], opsOf, familyOf, opKidsOf, isOpMat = () => false }) {
+  const out = [];
+  const isPre = (op, p) => !(opKidsOf.get(op) || []).some(x => k(x?.mat_no) === p);
+  for (const sh of sheets) {
+    const P = k(sh.mat);
+    const par = resolveOpParent(P, { opsOf, familyOf, isPre });
+    const ops = (opsOf.get(par) || []).filter(op => isPre(op, par));
+    if (!ops.length) continue;
+    const have = new Set((sh.rows || []).map(r => k(r?.mat_no)));
+    for (const op of ops) {
+      for (const kid of opKidsOf.get(op) || []) {
+        const m = k(kid?.mat_no);
+        if (!m || isOpMat(m) || have.has(m)) continue;
+        out.push({ sheet: P, parent: par, op, mat: m });
+      }
+    }
+  }
+  return out;
+}

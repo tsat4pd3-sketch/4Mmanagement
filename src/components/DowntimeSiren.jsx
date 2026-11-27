@@ -64,8 +64,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
      "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
   const kindOf = (d) => (d.call_mtn && !d.call_mtn_ack_at ? 'call' : 'open')
   const META = {
-    call: { ackField: 'call_mtn_ack_at', label: 'เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
-    open: { ackField: 'open_ack_at',     label: 'เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
+    call: { ackField: 'call_mtn_ack_at', label: 'เรียกช่าง MTN เข้าหน้างาน', color: 'var(--red)', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
+    open: { ackField: 'open_ack_at',     label: 'เครื่องหยุดเกินกำหนด',      color: 'var(--amber)', icon: '🚨' },
   }
   /* 🔴 แถบเตือน "เรียกช่าง" ต้องบอกทีมที่ถูกเรียก (06/10 · ทีม MTN: "จะรู้ได้ยังไงว่าเค้าเรียกเรา")
      ไม่ระบุทีม = เขียนตรงๆ ว่าไม่ระบุ ห้ามเดาให้ */
@@ -73,7 +73,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
     const m = META[mode === 'call_mtn' ? 'call' : mode === 'open_15min' ? 'open' : kindOf(d)]
     if (m !== META.call) return m
     const ct = teamKeyOf(d?.call_mtn_team)
-    return { ...m, label: ct ? `📞 เรียก ${deptNameOf(ct)} เข้าหน้างาน` : '📞 เรียกช่าง MTN เข้าหน้างาน (ไม่ระบุทีม)' }
+    return { ...m, label: ct ? `📞 ${tr("เรียก")} ${deptNameOf(ct)} ${tr("เข้าหน้างาน")}` : '📞 เรียกช่าง MTN เข้าหน้างาน (ไม่ระบุทีม)' }
   }
 
   const fetchAlerts = useCallback(async () => {
@@ -173,8 +173,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
       <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
                     display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(28,10,10,0.95)',
                     border: '1px solid rgba(239,68,68,0.6)', borderRadius: 'var(--r-md)', padding: '7px 11px',
-                    fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' }}>
-        ⚠️ อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่
+                    fontSize: 11.5, fontWeight: 800, color: 'var(--red)', boxShadow: 'var(--shadow-lg)' }}>
+        ⚠️ {tr("อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่")}
       </div>
     )
     if (!muted) {
@@ -182,9 +182,9 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
       /* เครื่องหยุดของไลน์นอกขอบเขตจอนี้ — ไม่ดัง แต่ต้องบอกว่ามี (ห้ามเงียบ) · ชิปเทานิ่ง ไม่ใช่ alarm */
       return (
         <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
-                      background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
+                      background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
                       padding: '7px 11px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', boxShadow: 'var(--shadow-sm)' }}>
-          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
+          {tr("ไม่ดัง")} {outScope} {tr("เครื่องหยุดของไลน์นอกขอบเขตจอนี้")}
         </div>
       )
     }
@@ -193,8 +193,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
         style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
                  border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)', padding: '7px 11px',
-                 fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>
-        เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+                 fontSize: 11.5, fontWeight: 800, color: 'var(--amber)', boxShadow: 'var(--shadow-lg)' }}>
+        {tr("เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง")}
       </div>
     )
   }
@@ -209,14 +209,14 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
           <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{tr(m.label)}</div>
             <div style={{ fontSize: 12, color: '#f0c9c2' }}>
-              <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || 'ไม่ระบุเครื่อง'} · {a.dr_downtime_types?.name_th || 'Downtime'}
+              <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || tr("ไม่ระบุเครื่อง")} · {a.dr_downtime_types?.name_th || 'Downtime'}
               {a.description ? ` — ${a.description}` : ''}
             </div>
           </div>
           {muted && (
             <span onClick={unlockNow}
-              title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ')} style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
-              แตะเพื่อเปิดเสียง
+              title={tr('เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ')} style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: 'var(--amber)', cursor: 'pointer' }}>
+              {tr("แตะเพื่อเปิดเสียง")}
             </span>
           )}
           <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>{tr('รับทราบ · หยุดเสียง')}</button>
@@ -226,15 +226,15 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
       {isMobile && alerts.length > 1 && (
         /* 🎨 สีจาก token เท่านั้น (ด่าน colorRatchet · UI §6.17) — ไฟล์นี้ยังมีสีดิบเก่าค้างอยู่
            แต่ของใหม่ห้ามเพิ่ม */
-        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--red-line)',
+        <div style={{ pointerEvents: 'auto', background: 'var(--card-surf)', border: '1px solid var(--red-line)',
           borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
-          + อีก {alerts.length - 1} เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน
+          + {tr("อีก")} {alerts.length - 1} {tr("เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน")}
         </div>
       )}
       {outScope > 0 && (
-        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--border2)',
+        <div style={{ pointerEvents: 'auto', background: 'var(--card-surf)', border: '1px solid var(--border2)',
           borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>
-          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
+          {tr("ไม่ดัง")} {outScope} {tr("เครื่องหยุดของไลน์นอกขอบเขตจอนี้")}
         </div>
       )}
     </div>

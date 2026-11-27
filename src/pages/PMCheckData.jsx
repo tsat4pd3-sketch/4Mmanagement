@@ -5,6 +5,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
+import { loadDeptFrames } from '../utils/jigFrames'   // รูปเครื่องแยกตามแผนก (26/11)
 import { UserContext } from '../App'
 import { lineScope } from '../utils/sectionScope'   // 🔒 แท็บ AM เห็นเฉพาะไลน์ของตัวเอง (11/11)
 import { can, isActionSeeded } from '../utils/permissions'
@@ -30,12 +31,17 @@ import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam, splitInspByTeam, inspTeamLabel } from '../utils/pmTeams'
 import { carryNgReason, ngReasonCheck, okWhileMoOpen } from '../utils/ngReason'   // 🚩 NG ต้องมีเหตุผล (19/11)
 import { loadNgHistory } from '../lib/ngHistory'
+import { buildStationIndex } from '../utils/amStations'   // 🧩 สถานี AM (23/11)
+import { canWriteLine, writeBlockText } from '../utils/writeScope'   // 🔐 A4 (24/11): อนุมัติใบ AM = ไลน์ในขอบเขตตัวเอง
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import NoticeBar from '../components/NoticeBar';
-import { tr } from '../utils/i18n';
+import EquipSpcModal from '../components/EquipSpcModal'   // 📈 SPC อุปกรณ์ (26/11)
+import { tr, dateLocale } from '../utils/i18n';
 import { getWorkDate } from '../utils/workDate'
-import { amShiftInfo, AM_MO_COLS } from '../lib/dailyAmBoard'
+import { amShiftInfo, AM_MO_COLS, loadAmCpLastDone } from '../lib/dailyAmBoard'
+import { splitDueCps, AM_FREQ_META } from '../utils/amCheckFreq'   // 🗓️ รอบตรวจรายหัวข้อ AM (26/11)
+import { amSlotOf } from '../lib/amMonthly'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
 import { recordShimEvent } from '../utils/fixtureShimApi'
 import Page from '../components/Page'
@@ -54,6 +60,7 @@ import { loadEmployeeSigners, signatureOfPerson, resolveEmployeeSigner, inspecto
 import InspectorCodeField from '../components/InspectorCodeField'   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)   // ✍️ ลายเซ็นในฐานพนักงาน (C1 · 03/11)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import { askConfirm } from '../utils/askConfirm';
+import { confirmSign } from '../utils/signConfirm';
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -79,7 +86,7 @@ function fmt(v, digits = 3) {
   return Number(v).toFixed(digits).replace(/\.?0+$/, '')
 }
 function formatDate(iso) {
-  return new Date(iso).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return new Date(iso).toLocaleString(dateLocale(), { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 function computeAvg(v1, v2, v3) {
   if (v1 === '' || v2 === '' || v3 === '' || v1 == null || v2 == null || v3 == null) return null
@@ -265,14 +272,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
          ⚠️ `compact` = โหมดแถบติดบนจอแคบ — รูปเตี้ยลงและตัดบรรทัดอธิบายออก เพื่อไม่ให้กินจอ
             เกินครึ่ง (ที่เหลือต้องเป็นของรายการตรวจ) · คำอธิบายเดิมยังอยู่ครบในโหมดปกติ */}
       <div ref={boxRef} onPointerDown={pointerDown}
-        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
+        style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2-surf)' }}>
         <img ref={imgRef} src={shownUrl} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
         {/* ป้ายบอกว่ากำลังดูรูปอะไรอยู่ + ทางกลับ — ไม่งั้นคนแยกไม่ออกว่ารูปนี้ของเครื่องหรือของจุด */}
         {onCpPhoto && (
           <div style={{ position: 'absolute', left: 8, top: 8, display: 'flex', gap: 6, alignItems: 'center', zIndex: 3 }}>
             <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 999,
                            background: 'var(--accent)', color: 'var(--accent-ink)' }}>
-              🔍 รูปของข้อ {(cpIndex[activeCp.id] ?? 0) + 1}
+              🔍 {tr("รูปของข้อ")} {(cpIndex[activeCp.id] ?? 0) + 1}
             </span>
             {frames.length > 0 && (
               <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(false)}
@@ -304,7 +311,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
                   offX={c.label_dx} offY={c.label_dy}
                   label={cpIndex[c.id] + 1} color={col} selected={active} hollow={!st}
                   badge={c.image_path ? '🔍' : null}
-                  title={`${cpIndex[c.id] + 1}. ${c.name} — ${st ? st.toUpperCase() : 'ยังไม่ตรวจ'}${c.image_path ? ' · แตะเพื่อดูรูปซูมจุดนี้' : ''}`}
+                  title={`${cpIndex[c.id] + 1}. ${c.name} — ${st ? st.toUpperCase() : tr('ยังไม่ตรวจ')}${c.image_path ? tr(' · แตะเพื่อดูรูปซูมจุดนี้') : ''}`}
                   onClick={e => {
                     e.stopPropagation()
                     onPinClick?.(c.id)
@@ -317,7 +324,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             {frameShimPins.map(sp => (
               <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                 label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false} hollow={!sp.done}
-                title={`จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                title={`${tr("จุดชิม")} ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? tr('กรอกค่าแล้ว') : tr('ยังไม่วัด')}${sp.point.current_shim_mm != null ? ` · ${tr("ชิมรวม")} ${sp.point.current_shim_mm} mm` : ''}`}
                 onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
             ))}
           </div>
@@ -329,19 +336,19 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
           <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? tr('หยุดหมุน') : tr('หมุนอัตโนมัติ')}
-            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             {playing ? tr('หยุด') : tr('หมุนเอง')}
           </button>
           <div style={{ display: 'flex', gap: 5 }}>
             {frames.map((f, i) => (
-              <button key={f.id} onClick={() => { setShowCpPhoto(false); setFrameIdx(i) }} title={`เฟรม ${i + 1}`}
+              <button key={f.id} onClick={() => { setShowCpPhoto(false); setFrameIdx(i) }} title={`${tr("เฟรม")} ${i + 1}`}
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
             ))}
           </div>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {onCpPhoto
-              ? 'กำลังดูรูปของข้อที่เลือก — กดจุดด้านบนเพื่อกลับไปรูปเครื่อง'
-              : `${frameIdx + 1}/${frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน`}
+              ? tr("กำลังดูรูปของข้อที่เลือก — กดจุดด้านบนเพื่อกลับไปรูปเครื่อง")
+              : `${frameIdx + 1}/${frames.length} · ${tr("ลากซ้าย-ขวาบนรูปเพื่อหมุน")}`}
           </span>
         </div>
       )}
@@ -361,7 +368,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
       {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
-          หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
+          {tr("หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น")}
         </div>
       )}
       {zoomCp && <CpZoom cp={zoomCp} idx={cpIndex[zoomCp.id]} onClose={() => setZoomCp(null)} />}
@@ -380,7 +387,7 @@ function CpImage({ cp }) {
 }
 
 // ─── Variable Row ───────────────────────────────────────────────────────────
-function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
+function VariableRow({ cp, idx, r, onChange, methodIndex, calcText, onSpc = null }) {
   const avg = computeAvg(r.v1, r.v2, r.v3)
   const status = getSpcStatus(avg, cp)
   const c = status ? STATUS_COLOR[status] : null
@@ -396,10 +403,11 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
         {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 4px' }}>{cp.axis}</span>}</p>
         <CpImage cp={cp} />
+        {onSpc && cp.spc_enabled !== false && <button type="button" onClick={onSpc} title={tr('ดูกราฟ SPC ของข้อนี้')} aria-label={tr('ดูกราฟ SPC ของข้อนี้')} style={{ fontSize: 13, padding: '1px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}>📈</button>}
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       {calcText && (
-        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>ค่า = {calcText} {tr('· ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก')}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>{tr("ค่า")} = {calcText} {tr('· ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก')}</div>
       )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
@@ -418,8 +426,8 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
         {cp.unit && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{cp.unit}</span>}
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
           {cp.nominal != null && <>N:{fmt(cp.nominal)} </>}
-          {cp.lsl != null && <span style={{ color: '#e05c4a' }}>L:{fmt(cp.lsl)} </span>}
-          {cp.usl != null && <span style={{ color: '#e05c4a' }}>U:{fmt(cp.usl)}</span>}
+          {cp.lsl != null && <span style={{ color: 'var(--red)' }}>L:{fmt(cp.lsl)} </span>}
+          {cp.usl != null && <span style={{ color: 'var(--red)' }}>U:{fmt(cp.usl)}</span>}
         </span>
       </div>
     </div>
@@ -434,7 +442,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
   // 📱 มือถือ: แตะปุ่มเดิมซ้ำ (ถุงมือแตะเบิ้ล) = ล้างคำตอบเงียบๆ ⇒ ถามก่อน · จอคอมเหมือนเดิม (2026-10-20)
   const isMobile = useIsMobile()
   const pickAttr = async (v) => {
-    if (v === value) { if (isMobile && !await askConfirm(`ล้างคำตอบ ${v.toUpperCase()} ของข้อนี้?`)) return; onChangeAttr(''); return }
+    if (v === value) { if (isMobile && !await askConfirm(`${tr("ล้างคำตอบ")} ${v.toUpperCase()} ${tr("ของข้อนี้")}?`)) return; onChangeAttr(''); return }
     onChangeAttr(v)
   }
   return (
@@ -497,7 +505,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
 }
 
 // ─── Measure Row (ค่าวัดเครื่องจักร — อ่านค่าเดียว auto OK/NG) ─────────────────
-function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
+function MeasureRow({ cp, idx, r, onChange, methodIndex, onSpc = null }) {
   const status = measureStatus(r.mval, cp) // 'pass'|'fail'|null
   const c = status ? STATUS_COLOR[status] : null
   const method = methodIndex?.[cp.checking_method]
@@ -512,6 +520,7 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
         {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
+        {onSpc && cp.spc_enabled !== false && <button type="button" onClick={onSpc} title={tr('ดูกราฟ SPC ของข้อนี้')} aria-label={tr('ดูกราฟ SPC ของข้อนี้')} style={{ fontSize: 13, padding: '1px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', cursor: 'pointer', flexShrink: 0 }}>📈</button>}
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '● OK' : '✕ NG'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -564,7 +573,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
   if (done) {
     return (
-      <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border)', padding: '8px 12px' }}>
+      <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border)', padding: '8px 12px' }}>
         <p style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>Action taken</p>
         {result.action_text && <p style={{ fontSize: 12, color: 'var(--text)', margin: '2px 0' }}>{result.action_text}</p>}
         {cp.type === 'variable' && result.recheck_avg != null && (
@@ -580,11 +589,11 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
   if (!canRecord) {
     return (
       <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
-        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ยังไม่มี action')}</p>
+        <p style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ยังไม่มี action')}</p>
         <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
           {deptWrite && !deptWrite.ok
             ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
-            : 'บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้'}
+            : tr("บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้")}
         </p>
       </div>
     )
@@ -592,7 +601,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
   return (
     <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ต้องการ action')}</p>
+      <p style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ต้องการ action')}</p>
       <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder={tr('อธิบายการแก้ไข...')} />
       {cp.type === 'variable' && (
         <div>
@@ -615,12 +624,111 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 }
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
-function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false,
-  isAm = false, inspectorPosition = null, myPosition = null, inspectorIsSelf = null, isShared = false }) {
+/* ═══ ของกลางของการบันทึกใบตรวจ (23/11 · ยกออกจาก handleSave ให้ "ใบรวมสถานี AM" ใช้สูตรเดียวกัน) ═══
+   🔴 ห้ามแตกสูตรชุดที่ 2 ในใบสถานี — ใบเดี่ยวกับใบรวมต้องตัดสิน/เขียนแถวเหมือนกันเป๊ะ */
+/** ข้อนี้กรอกครบหรือยัง (เกณฑ์เดียวกับปุ่มบันทึก + แถบความคืบหน้า) */
+/** ตัวอักษรบนปุ่มบันทึกสีเหลือง (ยังไม่ครบ) — ใช้ร่วมใบเดี่ยว/ใบสถานี */
+const SAVE_WARN_INK = '#1a1a1a'
+function cpFilledOf(cp, r) {
+  if (cp.type === 'variable') return r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '' && r?.v1 != null
+  if (cp.type === 'measure') return r?.mval !== '' && r?.mval != null
+  return !!r?.attr
+}
+/** ผลรวมของใบ: 'fail' (มี NG) · 'pending' (ไม่ครบ) · 'pass' */
+function overallOf(checkpoints, results) {
+  let hasFail = false, hasEmpty = false
+  for (const cp of checkpoints) {
+    const r = results[cp.id]
+    if (!r) { hasEmpty = true; continue }
+    if (cp.type === 'variable') {
+      if (r.v1 === '' || r.v2 === '' || r.v3 === '') { hasEmpty = true; continue }
+      if (getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail') hasFail = true
+    } else if (cp.type === 'measure') {
+      const st = measureStatus(r.mval, cp)
+      if (st == null) { hasEmpty = true; continue }
+      if (st === 'fail') hasFail = true
+    } else {
+      if (!r.attr) { hasEmpty = true; continue }
+      if (r.attr === 'ng') hasFail = true
+    }
+  }
+  if (hasFail) return 'fail'
+  if (hasEmpty) return 'pending'
+  return 'pass'
+}
+/** แถว inspection_results ของใบ · carryTextOf(cpId) = เหตุผลเดิมที่ยกมา (กดยืนยันแล้ว) */
+function buildResultRows(inspectionId, checkpoints, results, carryTextOf = () => '') {
+  return checkpoints.map(cp => {
+    const r = results[cp.id] ?? {}
+    if (cp.type === 'variable') {
+      const v1 = r.v1 !== '' ? Number(r.v1) : null
+      const v2 = r.v2 !== '' ? Number(r.v2) : null
+      const v3 = r.v3 !== '' ? Number(r.v3) : null
+      const avg = computeAvg(r.v1, r.v2, r.v3)
+      return { inspection_id: inspectionId, checkpoint_id: cp.id, value_1: v1, value_2: v2, value_3: v3, avg_value: avg, value_numeric: avg, status: getSpcStatus(avg, cp) ?? (avg != null ? 'pass' : null) }
+    }
+    if (cp.type === 'measure') {
+      const mv = r.mval !== '' && r.mval != null ? Number(r.mval) : null
+      return { inspection_id: inspectionId, checkpoint_id: cp.id, value_1: mv, value_numeric: mv, status: measureStatus(r.mval, cp) }
+    }
+    /* 🚩 เหตุผลที่ NG ลง `action_text` · ยกของเก่ามาแล้วกดยืนยัน = เก็บข้อความเดิมลงไปจริง */
+    const ngText = r.attr === 'ng'
+      ? (String(r.reason || '').trim() || (r.reasonAccepted ? (carryTextOf(cp.id) || '') : ''))
+      : null
+    return { inspection_id: inspectionId, checkpoint_id: cp.id, value_attribute: r.attr || null, action_text: ngText || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
+  })
+}
+/** ชื่อจุดที่ไม่ผ่าน (ใช้เปิดใบซ่อม/แจ้งเตือน) */
+function ngTopicsOf(checkpoints, results) {
+  return checkpoints.filter(cp => {
+    const r = results[cp.id]
+    if (!r) return false
+    return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail'
+      : cp.type === 'measure' ? measureStatus(r.mval, cp) === 'fail' : r.attr === 'ng'
+  }).map(cp => cp.name)
+}
+
+/** ⭐ แผน PM "วิ่งตามผลตรวจ" (2026-08-17) — ตรวจครบ (pass/fail) = ทำจริงแล้ว ⇒ stamp last_done_at + เลื่อน next_due_date
+ *  run_day ข้าม (trigger pm_refresh_plan ดูแล · 08/10) · วันนี้ stamp แล้วข้าม · วันที่ = วันทำงาน (getWorkDate)
+ *  @returns {Promise<string|null>} ข้อความผิด (best-effort — ผู้เรียกต้องบอกบนจอ ห้ามเงียบ) */
+async function stampPlansAfterCheck(checklistId) {
+  try {
+    const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
+      .select('id, plan_type, interval_days, last_done_at, cycle_basis').eq('checklist_id', checklistId).eq('is_active', true)
+    if (pErr) throw pErr
+    const done = getWorkDate()
+    for (const pl of (plans || [])) {
+      if (pl.cycle_basis === 'run_day') continue
+      if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue
+      const patch = { last_done_at: done }
+      if (pl.plan_type !== 'usage' && Number(pl.interval_days) > 0) {
+        const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pl.interval_days))
+        patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      }
+      const { error: uErr } = await supabaseDR.from('pm_plans').update(patch).eq('id', pl.id)
+      if (uErr) throw uErr
+    }
+    return null
+  } catch (e) { return e?.message || String(e) }
+}
+
+/* 🔔 ลิงก์ของแจ้งเตือนใบตรวจ (20/11 · คำสั่ง user "แจ้งเตือนใบ AM ยังพาไปหน้า PM ช่าง")
+   ใบ AM → หน้าบันทึกผลตรวจ AM ใน Daily Checker · ใบ PM → หน้าตรวจของช่าง · เปิดเครื่องนั้นให้เลย (?equip=)
+   แยกด้วย isAmTeam() (mtn_teams.kind) เท่านั้น · ไม่รู้ทีม = ไม่ส่ง link (ถอยไป map ref_table เดิม) */
+export function inspNotifLink(dept, jigId) {
+  if (!dept) return undefined
+  const q = new URLSearchParams({ dept: String(dept) })
+  if (jigId) q.set('equip', String(jigId))
+  return isAmTeam(dept) ? `/daily-checker?tab=amcheck&${q.toString()}` : `/pm?tab=check&${q.toString()}`
+}
+
+function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, lineWrite = null, canRecord = false,
+  isAm = false, deptKey = null, inspectorPosition = null, myPosition = null, inspectorIsSelf = null, isShared = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [insp, setInsp] = useState(inspection)
+  const { fullName: myFullName } = useContext(UserContext)
   const [rejecting, setRejecting] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
 
@@ -660,20 +768,40 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const verdictText = (v) => (isAm ? amApprovalText(v) : pmConfirmText(v))
   const canApprove = (isAm
     ? amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && !!amVerdict?.ok
-    : can('pm', 'approve', userRole) && !!amVerdict?.ok) && (deptWrite?.ok !== false)
+    : can('pm', 'approve', userRole) && !!amVerdict?.ok) && (deptWrite?.ok !== false) && (lineWrite?.ok !== false)
+
+  /** หลัง CAS ไม่ผ่าน — ดึงสถานะจริงของใบมาแสดง (อ่านไม่ได้ = บอก ไม่เงียบ) */
+  const reloadInspStatus = async () => {
+    const { data, error } = await supabaseDR.from('inspections').select('*').eq('id', insp.id).maybeSingle()
+    if (error) { toast.error((tr('โหลดสถานะใบล่าสุดไม่สำเร็จ') + ': ') + error.message); return }
+    if (data) setInsp(data)
+  }
 
   const handleApprove = async () => {
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (lineWrite && !lineWrite.ok) { toast.info(writeBlockText(lineWrite, { what: `ใบตรวจ AM ของไลน์ ${jig?.line_name || ''}` })); return }   // A4
     if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }   // ด่านซ้ำตอนเขียนจริง (ปุ่มซ่อนอย่างเดียวไม่พอ)
+    /* 🔴 A2 (23/11): อนุมัติ = เซ็นรับ ⇒ ถามยืนยันผ่านของกลางก่อนเขียน DB (CLAUDE.md §4M · signConfirm.js)
+       ตีกลับไม่ต้องถาม — มีด่าน "ต้องพิมพ์เหตุผล" อยู่แล้ว (ห้ามถามพร่ำเพรื่อ) */
+    if (!await confirmSign({
+      what: isAm ? 'อนุมัติผลตรวจ AM' : 'ยืนยันผลตรวจ',
+      docLabel: 'ใบตรวจ', orderNo: [jig?.name, formatDate(insp.inspected_at)].filter(Boolean).join(' — '),
+      actor: myFullName, as: isAm ? 'ผู้อนุมัติ' : 'หัวหน้าผู้ยืนยัน',
+      effect: 'ใบเปลี่ยนเป็น "อนุมัติแล้ว" · ลายเซ็นคุณขึ้นช่องผู้อนุมัติในใบพิมพ์',
+      warn: '⚠️ อนุมัติแล้ว ยกเลิกหรือเปลี่ยนเป็นตีกลับในระบบไม่ได้',
+    })) return
     setApproving(true)
+    /* 🔴 A3 (23/11): compare-and-swap — เขียนได้เฉพาะใบที่ยัง "รออนุมัติ" อยู่จริง
+       (อีกคนตีกลับ/อนุมัติไปแล้วระหว่างที่จอนี้เปิดค้าง = 0 แถว ⇒ ไม่ทับผลของเขา แล้วโหลดสถานะจริงมาโชว์) */
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
-    }).eq('id', insp.id).select().single()
-    if (error) toast.error('อนุมัติไม่สำเร็จ: ' + error.message)
+    }).eq('id', insp.id).eq('approval_status', 'pending').select().maybeSingle()
+    if (!error && !data) { toast.error(tr('ใบนี้ถูกอนุมัติหรือตีกลับไปแล้วโดยคนอื่น — โหลดสถานะล่าสุดให้แล้ว')); await reloadInspStatus(); setApproving(false); return }
+    if (error) toast.error((tr('อนุมัติไม่สำเร็จ') + ': ') + error.message)
     if (!error && data) {
       setInsp(data)
       if (data.inspector_id !== userId) {
-        createNotification(data.inspector_id, { title: 'ผลการตรวจได้รับการอนุมัติ', body: jig?.name ? `${jig.name} — ${formatDate(data.inspected_at)}` : undefined, type: 'success', refTable: 'inspections', refId: data.id }).catch(() => {})
+        createNotification(data.inspector_id, { title: 'ผลการตรวจได้รับการอนุมัติ', body: jig?.name ? `${jig.name} — ${formatDate(data.inspected_at)}` : undefined, type: 'success', refTable: 'inspections', refId: data.id, link: inspNotifLink(deptKey, jig?.id) }).catch(() => {})
       }
     }
     setApproving(false)
@@ -682,16 +810,18 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const handleReject = async () => {
     if (!rejectReason.trim()) return
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
+    if (lineWrite && !lineWrite.ok) { toast.info(writeBlockText(lineWrite, { what: `ใบตรวจ AM ของไลน์ ${jig?.line_name || ''}` })); return }   // A4
     if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
-    }).eq('id', insp.id).select().single()
-    if (error) toast.error('ตีกลับไม่สำเร็จ: ' + error.message)
+    }).eq('id', insp.id).eq('approval_status', 'pending').select().maybeSingle()   // A3: CAS เหมือนปุ่มอนุมัติ
+    if (!error && !data) { toast.error(tr('ใบนี้ถูกอนุมัติหรือตีกลับไปแล้วโดยคนอื่น — โหลดสถานะล่าสุดให้แล้ว')); setRejecting(false); await reloadInspStatus(); setApproving(false); return }
+    if (error) toast.error((tr('ตีกลับไม่สำเร็จ') + ': ') + error.message)
     if (!error && data) {
       setInsp(data); setRejecting(false); setRejectReason('')
       if (data.inspector_id !== userId) {
-        createNotification(data.inspector_id, { title: 'ผลการตรวจถูกตีกลับ', body: rejectReason.trim(), type: 'error', refTable: 'inspections', refId: data.id }).catch(() => {})
+        createNotification(data.inspector_id, { title: 'ผลการตรวจถูกตีกลับ', body: rejectReason.trim(), type: 'error', refTable: 'inspections', refId: data.id, link: inspNotifLink(deptKey, jig?.id) }).catch(() => {})
       }
     }
     setApproving(false)
@@ -715,7 +845,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
     const empSig = {}
     if (needEmp.length) {
       const er = await loadEmployeeSigners(supabase, { ids: needEmp })
-      if (er.error) toast.error(`โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ — ช่องที่ไม่มีลายเซ็นโปรไฟล์จะเว้นว่าง (${er.error})`)
+      if (er.error) toast.error(`${tr("โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ — ช่องที่ไม่มีลายเซ็นโปรไฟล์จะเว้นว่าง")} (${er.error})`)
       else if (er.sigColumnMissing) toast.info('ฐานพนักงานยังไม่เปิดช่องลายเซ็น — ผู้ที่ไม่มีลายเซ็นในโปรไฟล์จะเว้นช่องให้เซ็นมือ')
       for (const e of er.rows) empSig[e.id] = e.signature_url || null
     }
@@ -734,12 +864,14 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
     if (insp.inspector_code) {
       const signer = await resolveEmployeeSigner(supabase, insp.inspector_code)
       const who = inspectorForExport({ code: insp.inspector_code, signer })
-      if (who.note) toast.info(`ผู้ตรวจรหัส ${insp.inspector_code}: ${who.note}`)
+      if (who.note) toast.info(`${tr("ผู้ตรวจรหัส")} ${insp.inspector_code}: ${who.note}`)
       inspector = { email: who.name ?? 'Inspector', signature_data: who.signatureUrl ? await resolveSignatureDataUrl(who.signatureUrl) : null }
     } else {
       inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
     }
-    const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
+    /* 🔴 A1 (23/11): `approved_by` ถูกเขียนทั้งตอนอนุมัติและตอน "ตีกลับ" (= คนที่ตีกลับ)
+       ⇒ ช่องผู้อนุมัติในใบพิมพ์ต้องดูสถานะด้วย — ใบตีกลับ/รออนุมัติ ห้ามมีลายเซ็นผู้อนุมัติ */
+    const approver = (insp.approval_status === 'approved' && insp.approved_by) ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     // ชื่อใต้ลายเซ็น = ชื่อจริง (profiles.full_name) ไม่ใช่อีเมล — เดิมช่อง APPROVED ขึ้น "tsat4pd3" (20/10)
     const exporter = { email: profMap[userId]?.full_name ?? currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
     const categories = await fetchCategories({ includeInactive: true })
@@ -769,14 +901,14 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
       {/* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — ข้างในมีฟอร์ม NG action/re-check กันเผลอกดแล้วหาย */}
       <div style={{ position: 'absolute', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)' }} />
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }}
-        style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)' }}>
+        style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', borderRadius: 12, background: 'var(--bg2-surf)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <p style={{ fontWeight: 700, color: 'var(--text)', margin: 0, fontSize: 14 }}>{formatDate(insp.inspected_at)}</p>
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
               {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✓ อนุมัติแล้ว')}</span>}
-              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✕ ตีกลับ')}</span>}
+              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: 'var(--red)', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✕ ตีกลับ')}</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
@@ -802,7 +934,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                         </p>
                       ) : cp.type === 'measure' ? (
                         <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
-                          อ่านค่า: <strong style={{ color: 'var(--text2)' }}>{fmt(r.value_1)}</strong>{cp.unit ? ` ${cp.unit}` : ''}
+                          {tr("อ่านค่า")}: <strong style={{ color: 'var(--text2)' }}>{fmt(r.value_1)}</strong>{cp.unit ? ` ${cp.unit}` : ''}
                           <span style={{ marginLeft: 6 }}>{tr('เกณฑ์')} {measureStdText(cp)}</span>
                         </p>
                       ) : (
@@ -819,7 +951,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                   {r.evidence_path && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="var(--red)"
-                        name={`หลักฐานสภาพจริง · ${cp.name}`} />
+                        name={`${tr("หลักฐานสภาพจริง")} · ${cp.name}`} />
                       <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('หลักฐานสภาพจริง (แตะเพื่อซูม)')}</span>
                     </div>
                   )}
@@ -828,15 +960,15 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
               </div>
             )
           })}
-          {insp.notes && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{tr('หมายเหตุ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
-          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: '#e05c4a', margin: 0 }}>{tr('เหตุผลที่ตีกลับ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
+          {insp.notes && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card-surf)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{tr('หมายเหตุ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
+          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--red)', margin: 0 }}>{tr('เหตุผลที่ตีกลับ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
         </div>
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
           {insp.approval_status === 'pending' && amVerdict && (
             <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : 'var(--amber)', lineHeight: 1.6 }}>
-              {amVerdict.need ? <>{tr('รอ')} <b>{tr(amVerdict.need.label)}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
+              {amVerdict.need ? <>{tr('รอ')} <b>{tr(amVerdict.need.label)}</b> {amVerdict.need.action}</> : tr("รอผู้จัดการรับทราบ")}
               {!amVerdict.ok && <div>{verdictText(amVerdict)}</div>}
               {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: 'var(--amber)' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
             </div>
@@ -844,20 +976,20 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : (isAm ? tr('อนุมัติ') : tr('ยืนยันผลตรวจ'))}</button>
-              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('ตีกลับ')}</button>
+              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: 'var(--red)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('ตีกลับ')}</button>
             </div>
           )}
           {rejecting && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder={tr('ระบุเหตุผลที่ตีกลับ...')} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
-                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : tr('ยืนยันตีกลับ')}</button>
+                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
+                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: 'var(--red)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : tr('ยืนยันตีกลับ')}</button>
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? tr('กำลัง export...') : 'PDF'}</button>
+            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: 'var(--red)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? tr('กำลัง export...') : 'PDF'}</button>
             <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? tr('กำลัง export...') : 'Excel'}</button>
           </div>
         </div>
@@ -866,10 +998,408 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   )
 }
 
+/* 🗓️ แถบ "ข้อที่ยังไม่ถึงรอบ" ของใบ AM (26/11 · utils/amCheckFreq.js) — ใช้ทั้งใบเดี่ยวและใบรวมสถานี
+   notDue = [{ cp, freq, lastDate }] · err = อ่านประวัติไม่ได้ (ทุกข้อถึงรอบ) · กดกาง = ตรวจข้อพวกนี้เพิ่มในใบนี้ได้ (กลายเป็นข้อที่ต้องกรอก) */
+function AmNotDueBar({ notDue = [], err = '', shown = false, onToggle }) {
+  if (err) return <NoticeBar tone="warn" style={{ marginBottom: 8 }}>{tr('อ่านประวัติรอบตรวจไม่ได้ — แสดงทุกข้อให้ตรวจ (ข้อรายสัปดาห์/รายเดือนอาจซ้ำ)')} ({err})</NoticeBar>
+  if (!notDue.length) return null
+  const fmt = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '—')
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '7px 12px', marginBottom: 8, borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border)', fontSize: 12.5, color: 'var(--text2)' }}>
+      <span>🗓️ <b>{tr('ยังไม่ถึงรอบ')} {notDue.length} {tr('ข้อ')}</b> — {notDue.slice(0, 4).map(x => `${x.cp.name} (${tr(AM_FREQ_META[x.freq]?.label || x.freq)} · ${tr('ตรวจแล้ว')} ${fmt(x.lastDate)})`).join(' · ')}{notDue.length > 4 ? ' …' : ''}</span>
+      <span style={{ flex: 1 }} />
+      <button type="button" onClick={onToggle} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer' }}>
+        {shown ? tr('ซ่อนข้อที่ยังไม่ถึงรอบ') : tr('แสดงเพื่อตรวจเพิ่ม')}
+      </button>
+    </div>
+  )
+}
+
+/* 🔩 แถวกรอกค่าชิม (Shim Record) — ชิ้นเดียวใช้ร่วม ใบเดี่ยว + ใบรวมสถานี AM (26/11 แยกออกมาจากใบเดี่ยว ไม่เปลี่ยนหน้าตา)
+   points = ทุกจุดของเครื่อง (นับหัว/ถึงรอบ) · shown = จุดที่โชว์แถว · pinnedIds = จุดที่ปักบนรูปแล้ว */
+function ShimRecordSection({ points, shown, shimKinds, shimVals, setShimVals, canShim, pinnedIds, rowRefs, scrollMarginTop = 0, readOnlyNote = null }) {
+  const kindOf = (code) => shimKinds.find(k => k.code === code) || { icon: '🔩', label: code || '—' }
+  const dueN = points.filter(pt => pointDueStatus(pt, { currentShot: null }).due).length
+  return (
+    <div style={{ marginTop: 12 }}>
+      <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
+        {tr("จุดชิม")} (Shim Record) · {points.length} {tr('จุด')}{dueN ? <span style={{ color: 'var(--red)' }}> {tr('· ถึงรอบ')} {dueN}</span> : null}
+        <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
+          {tr("วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ")})
+          {pinnedIds.size < points.length && <span> · {points.length - pinnedIds.size} {tr('จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด')}</span>}
+        </div>
+      </div>
+      {!canShim && (
+        <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+          {readOnlyNote || <>{tr("บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่")} /permissions)</>}
+        </NoticeBar>
+      )}
+      {shown.map(pt => {
+        const st = shimStack(pt)
+        const due = pointDueStatus(pt, { currentShot: null })
+        const v = shimVals[pt.id] ?? { mm: '', note: '' }
+        const mm = v.mm === '' ? null : Number(v.mm)
+        const act = deriveShimAction(pt.current_shim_mm, mm)
+        const pinned = pinnedIds.has(pt.id)
+        const overMax = mm != null && pt.max_shim_mm != null && mm > Number(pt.max_shim_mm)
+        const k = kindOf(pt.kind_code)
+        return (
+          <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
+            style={{ ...S.cpRow(null), borderColor: overMax ? 'var(--red)' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? tr('ปักบนรูปแล้ว') : tr('ยังไม่ปักบนรูป')}>{pt.point_no}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {tr(k.label)}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
+                {tr("ชิมรวม")} <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> {tr('/ เพดาน')} {pt.max_shim_mm ?? tr("ไม่ตั้ง")} mm
+                {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>· {due.text}</span>}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {tr('ค่าชิมรวมที่วัดได้')}
+                <input type="number" step="0.01" inputMode="decimal" value={v.mm} disabled={!canShim} placeholder="mm"
+                  onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, mm: e.target.value } }))}
+                  style={{ width: 84, textAlign: 'center', fontFamily: 'monospace' }} />
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>mm</span>
+              </label>
+              <input value={v.note} disabled={!canShim} placeholder={tr('หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)')}
+                onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, note: e.target.value } }))}
+                style={{ flex: '1 1 160px', minWidth: 120 }} />
+              {mm != null && (
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: overMax ? 'var(--red)' : SHIM_PIN_COLOR }}>
+                  {act === 'check' ? tr("→ ยืนยันเท่าเดิม") : act === 'add' ? `→ ${tr("เพิ่ม")} +${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm` : `→ ${tr("ลด")} ${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm`}
+                  {overMax && ' · เกินเพดาน — ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วน'}
+                </span>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── PMCheckData (main) ───────────────────────────────────────────────────────
 /** มีช่องไหนในใบตรวจถูกกรอกไหม (ร่างในเครื่อง) — ค่าว่างทั้งใบ = ไม่ต้องเก็บ/ไม่ต้องถามกู้คืน */
 const pmHasInput = (results, notes) => !!(notes && String(notes).trim())
   || Object.values(results || {}).some(r => r && ['v1', 'v2', 'v3', 'attr', 'note', 'mval'].some(f => r[f] !== '' && r[f] != null))
+
+/* ═══ 🧩 ใบตรวจ AM แบบสถานี — อุปกรณ์ที่ติดตั้งคู่กันตรวจในใบเดียว กดบันทึกครั้งเดียว (2026-11-23 · คำสั่ง user) ═══
+   user: "robot + gripper (+ stationary + nut feeder) PM แยกทีม แต่ AM ที่ผลิตดูทั้งชุด — ไม่อยากเปิดทีละใบ"
+   · จุดตรวจ = ใบ AM รายอุปกรณ์เดิม (ตั้งที่ PM Setup แท็บฝ่ายผลิต) ดึงมาเรียงเป็นหัวข้อต่ออุปกรณ์
+   · บันทึก = 1 แถว inspections ต่ออุปกรณ์ (ตารางเดิม) ⇒ ประวัติ/รายงานรายเดือน/บอร์ด ใช้ของเดิมทั้งหมด
+   · กฎเดียวกับใบเดี่ยวทุกข้อ: ตรวจไม่ครบ = บันทึกไม่ได้ + เด้งไปข้อที่ขาด · NG ต้องมีเหตุผล · บัตรผู้ตรวจ (สแกนครั้งเดียว) ·
+     หัวหน้าบันทึกเอง = รับทราบรายวัน (B4) · NG → คิวเปิดใบซ่อมไป "ทีมเจ้าของ PM ของตัวนั้น" (B3)
+   · สูตรตัดสิน/เขียนแถวใช้ของกลางชุดเดียวกับใบเดี่ยว (overallOf · buildResultRows · ngTopicsOf · stampPlansAfterCheck)
+   · บันทึกล้มกลางทาง = ตัวที่บันทึกแล้วไม่บันทึกซ้ำ (savedIds) + บอกบนจอว่าล้มที่ตัวไหน
+   📄 docs/modules/pm-hub-check-setup.md §🧩 สถานี AM */
+function AmStationSheet({ station, memberJigs, amDept, methodIndex, canRecord, deptWrite, amLineWrite = null, userId, userRole, fullName, myPosition,
+  myEmployeeId, isSharedAccount, inspectorCode, setInspectorCode, checkedThisShift, ownerTeamOf, onSavedJig, onQueueMo, onOpenSingle, isMobileView = false }) {
+  const [sec, setSec] = useState({ key: '', status: 'loading', list: [], err: '' })   // list: [{ jig, checklistId, cps, ngHist }]
+  const [results, setResults] = useState({})
+  const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [savedIds, setSavedIds] = useState(() => new Set())
+  const rowRefs = useRef({})
+  /* 🖼️ รูปเครื่อง + หมุดจุดตรวจ ต่อเครื่อง (25/11 · feedback หน้างาน "ใบรวมมองไม่เห็นรูปที่จะตรวจ")
+     ตัววาดตัวเดียวกับใบเดี่ยว `JigSpinCheck` · เฟรม = jig_images (ไม่มี → image_path เป็นเฟรมเดียว)
+     อ่านรูปไม่ได้ = ใบยังตรวจ/บันทึกได้ + เขียนบอกบนจอ (ไม่ล้มทั้งใบ) */
+  const [framesByJig, setFramesByJig] = useState({ key: '', map: {}, err: '' })
+  const [activeCp, setActiveCp] = useState(null)
+  const [showNdJig, setShowNdJig] = useState(() => new Set())
+  const [spcCp, setSpcCp] = useState(null)   // 📈 หน้าต่างกราฟ SPC ของข้อ (26/11)   // 🗓️ เครื่องที่กางข้อ "ยังไม่ถึงรอบ" มาตรวจเพิ่ม
+  /* 🚫 ใบรวมสถานี = งาน AM ล้วน — ไม่มีจุดชิม (Shim Record) ไม่แตะ PM (26/11 · คำสั่ง user
+     "สถานีจะใช้แค่กับ am ไม่ยุ่งกับ pm/shim record เพราะ shim record เป็นงานของส่วนช่าง") · ห้ามเติมกลับ (มีด่าน) */
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1180px)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1180px)')
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  const memberKey = memberJigs.map(j => j.id).join(',')
+  const loadKey = `${station.id}|${memberKey}|${amDept}`
+  /* 📝 ร่างในเครื่อง (มือถือ · 23/11 · ชุดเดียวกับใบเดี่ยว utils/formDraft.js) — คีย์ = สถานี|สมาชิก|ทีม|คนกรอก
+     เก็บ savedIds ด้วย: บันทึกได้บางเครื่องแล้วแอปปิด → กู้คืนแล้วตัวที่บันทึกแล้วไม่บันทึกซ้ำ
+     จอคอมไม่โหลด/ไม่วาดแถบ (pendingDraft ตั้งเฉพาะมือถือ) */
+  const [pendingDraft, setPendingDraft] = useState(null)
+  const draftKey = isMobileView && userId ? `amst:${loadKey}:${userId}` : null
+
+  useEffect(() => {
+    let alive = true
+    setSec({ key: loadKey, status: 'loading', list: [], err: '' }); setResults({}); setSavedIds(new Set()); setShowNdJig(new Set())
+    ;(async () => {
+      try {
+        const list = []
+        for (const jig of memberJigs) {
+          const cl = await findChecklist(jig.id, 'mtn', amDept)
+          const { data, error } = cl
+            ? await supabaseDR.from('jig_checkpoints').select('*').eq('checklist_id', cl.id).order('sort_order')
+            : { data: [], error: null }
+          if (error) throw error
+          const ngHist = await loadNgHistory(jig).catch(e => ({ byCp: {}, machine: null, error: String(e?.message || e) }))
+          // 🗓️ รอบตรวจรายหัวข้อ AM (26/11) — cps = ข้อที่ถึงรอบกะนี้ · allCps = ทั้งใบ · อ่านประวัติไม่ได้ = ทุกข้อถึงรอบ + บอก
+          const all = data ?? []
+          const ld = all.length ? await loadAmCpLastDone(all) : { map: new Map(), error: null }
+          const sp = splitDueCps(all, amSlotOf(new Date()), ld.map)
+          list.push({ jig, checklistId: cl?.id ?? null, cps: sp.due, allCps: all, notDue: sp.notDue, freqErr: ld.error ? String(ld.error) : '', ngHist })
+        }
+        // รูปแยกตามแผนก (26/11 · utils/jigFrames.js) — เห็นเฉพาะชุดรูปของทีม AM นี้
+        const imgRes = await loadDeptFrames(memberJigs.map(j => j.id), amDept)
+        if (!alive) return
+        const fmap = {}
+        for (const j of memberJigs) {
+          let fr = (imgRes.rows ?? []).filter(im => im.jig_id === j.id).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
+          if (!fr.length && j.image_path) fr = [{ id: 'legacy', url: getPublicUrl(j.image_path) }]
+          fmap[j.id] = fr
+        }
+        setFramesByJig({ key: loadKey, map: fmap, err: imgRes.error ? (imgRes.error.message || String(imgRes.error)) : '' })
+        const init = {}
+        list.forEach(m => m.allCps.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '', reason: '', reasonAccepted: false } }))
+        setResults(init)
+        setSec({ key: loadKey, status: 'ok', list, err: '' })
+        const dr = draftKey ? loadDraft(draftKey) : null
+        setPendingDraft(dr && (pmHasInput(dr.data?.results, dr.data?.notes) || dr.data?.savedIds?.length) ? dr : null)
+      } catch (e) {
+        if (alive) setSec({ key: loadKey, status: 'error', list: [], err: e?.message || String(e) })   // อ่านไม่ได้ ≠ ไม่มีจุดตรวจ
+      }
+    })()
+    return () => { alive = false }
+  }, [loadKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const carryOf = (m, cpId) => { const h = m.ngHist?.byCp?.[cpId]; return h ? carryNgReason({ prev: h.prev, mo: h.mo, machine: m.ngHist.machine }) : null }
+  const okWarnOf = (m, cpId) => { const h = m.ngHist?.byCp?.[cpId]; return h ? okWhileMoOpen({ attr: 'ok', mo: h.mo, machine: m.ngHist.machine }) : null }
+  const secList = sec.list.map(m => (showNdJig.has(m.jig.id) ? { ...m, cps: m.allCps } : m))   // 🗓️ กางข้อที่ยังไม่ถึงรอบ = ตรวจเพิ่ม
+  const pendingAll = secList.filter(m => !savedIds.has(m.jig.id))
+  const pending = pendingAll.filter(m => m.cps.length > 0)            // เครื่องที่ไม่มีข้อถึงรอบกะนี้ = ไม่ต้องบันทึกใบ
+  const allCps = pending.flatMap(m => m.cps)
+  const calcRes = pmCalcResults(allCps, results)
+  const missingList = pending.flatMap(m => m.cps.map((cp, i) => (!cpFilledOf(cp, calcRes[cp.id]) ? { m, cp, no: i + 1 } : null)).filter(Boolean))
+  const noCl = pendingAll.filter(m => !m.allCps.length)
+
+  const allSavedNow = secList.length > 0 && pending.length === 0 && noCl.length === 0
+  const liveDraftKey = draftKey && sec.status === 'ok' && sec.key === loadKey ? draftKey : null
+  const stDirty = !!liveDraftKey && !pendingDraft && !allSavedNow && (pmHasInput(results, notes) || savedIds.size > 0)
+  useDraftAutosave(liveDraftKey, { results, notes, savedIds: [...savedIds] }, stDirty)
+  const restoreDraft = () => {
+    const d = pendingDraft?.data; if (!d) return
+    // เติมเฉพาะจุดตรวจที่ยังมีอยู่ (จุดที่ถูกลบออกจากเช็คลิสต์ทีหลังไม่เอากลับ) · savedIds เฉพาะสมาชิกปัจจุบัน
+    setResults(prev => { const n = { ...prev }; Object.entries(d.results || {}).forEach(([k, v]) => { if (k in n) n[k] = { ...n[k], ...v } }); return n })
+    if (d.notes) setNotes(d.notes)
+    const ids = new Set(secList.map(m => m.jig.id))
+    const sv = (d.savedIds || []).filter(id => ids.has(id))
+    if (sv.length) setSavedIds(new Set(sv))
+    setPendingDraft(null)
+  }
+  const discardDraft = () => { if (draftKey) clearDraft(draftKey); setPendingDraft(null) }
+
+  const jumpTo = (cpId) => { const el = rowRefs.current[cpId]; if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
+  const shortName = (jig) => jig.machine_no || jig.jig_no || jig.name
+
+  const save = async () => {
+    if (sec.status !== 'ok' || sec.key !== loadKey) { toast.error('ข้อมูลจุดตรวจยังโหลดไม่เสร็จ — รอสักครู่แล้วกดบันทึกใหม่'); return }
+    if (!canRecord) { toast.error('ไม่มีสิทธิ์บันทึกผลตรวจ AM'); return }
+    if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'งานตรวจของทีมนี้')); return }
+    if (noCl.length) { toast.error(`บันทึกไม่ได้ — ${noCl.map(m => m.jig.name).join(', ')} ยังไม่มีจุดตรวจ AM (ตั้งที่ PM Setup แท็บฝ่ายผลิต)`); return }
+    if (missingList.length) {
+      const txt = missingList.slice(0, 8).map(x => `${shortName(x.m.jig)} ข้อ ${x.no}`).join(', ')
+      toast.error(`บันทึกไม่ได้ — ยังไม่ได้ตรวจ ${missingList.length} จุด (${txt}${missingList.length > 8 ? ' …' : ''}) — ตรวจให้ครบทุกข้อก่อน`)
+      jumpTo(missingList[0].cp.id); return
+    }
+    {
+      const bad = []
+      pending.forEach(m => m.cps.forEach((cp, i) => {
+        if (cp.type === 'variable' || cp.type === 'measure') return
+        const r = calcRes[cp.id] ?? {}
+        const chk = ngReasonCheck({ attr: r.attr, text: r.reason, carry: carryOf(m, cp.id), accepted: !!r.reasonAccepted })
+        if (!chk.ok) bad.push({ cp, txt: `${shortName(m.jig)} ข้อ ${i + 1} ${cp.name}: ${chk.blockText}` })
+      }))
+      if (bad.length) { toast.error(`${tr('ยังบันทึกไม่ได้')} — ${bad.length} ${tr('ข้อที่ติ๊ก NG ไม่มีเหตุผล')}\n${bad.slice(0, 3).map(b => b.txt).join('\n')}`); jumpTo(bad[0].cp.id); return }
+    }
+    setSaving(true)
+    try {
+      // 🪪 บัตรผู้ตรวจ — สแกนครั้งเดียวใช้ทั้งใบ (กฎตัดสินชุดเดียวกับใบเดี่ยว `amBadgeGate`)
+      const raw = inspectorCode.trim()
+      let hits = 0, loadError = false, badgeEmp = null
+      if (normBadgeCode(raw)) {
+        const { data: rows, error: eEmp } = await supabase.from('employees')
+          .select('id, employee_id_code, name, position').in('employee_id_code', [...new Set([raw, normBadgeCode(raw)])])
+        loadError = !!eEmp
+        hits = (rows ?? []).filter(e => normBadgeCode(e.employee_id_code) === normBadgeCode(raw)).length
+        badgeEmp = findByBadge(rows ?? [], raw)
+      }
+      const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError, kind: 'AM' })
+      if (!gate.ok) { toast.error(gate.text); return }
+      const onSite = amOnSiteApproval({
+        inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
+        isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
+        canApprove: amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && deptWrite?.ok !== false && amLineWrite?.ok !== false,
+        isShared: !!isSharedAccount,
+      })
+      const approvalPatch = onSite.approve ? { approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString() } : {}
+
+      const done = []          // [{ m, insp, overall, ngTopics }]
+      let failMsg = ''
+      for (const m of pending) {
+        const overall = overallOf(m.cps, calcRes)
+        const { data: insp, error: e1 } = await supabaseDR.from('inspections').insert({
+          jig_id: m.jig.id, checklist_id: m.checklistId, inspector_id: userId, status: overall,
+          notes: [notes.trim(), `[สถานี AM: ${station.name}]`].filter(Boolean).join(' '),
+          inspector_code: raw || null, ...approvalPatch,
+        }).select().single()
+        if (e1) { failMsg = `${m.jig.name}: ${e1.message}`; break }
+        const { error: e2 } = await supabaseDR.from('inspection_results').insert(buildResultRows(insp.id, m.cps, calcRes, (id) => carryOf(m, id)?.text || ''))
+        if (e2) {
+          const { data: gone, error: eDel } = await supabaseDR.from('inspections').delete().eq('id', insp.id).select('id')
+          failMsg = `${m.jig.name}: บันทึกผลรายจุดไม่สำเร็จ ${e2.message}${(eDel || !gone?.length) ? ' — ⚠️ และลบหัวใบค้างไม่สำเร็จ แจ้ง admin' : ''}`
+          break
+        }
+        done.push({ m, insp, overall, ngTopics: ngTopicsOf(m.cps, calcRes) })
+      }
+
+      // ผลข้างเคียงรายอุปกรณ์ที่บันทึกสำเร็จ (ชุดเดียวกับใบเดี่ยว)
+      const planErrs = []
+      for (const d of done) {
+        if (d.overall === 'fail') {
+          notifyDepartment(amDept, {
+            event: 'am_inspection_ng', title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${d.m.jig.name} — ${formatDate(d.insp.inspected_at)} · สถานี ${station.name}`,
+            type: 'error', refTable: 'inspections', refId: d.insp.id, link: inspNotifLink(amDept, d.m.jig.id), lineName: d.m.jig.line_name || null,
+          }).catch(() => {})
+        }
+        if (d.overall !== 'pending' && d.m.checklistId) {
+          const pe = await stampPlansAfterCheck(d.m.checklistId)
+          if (pe) planErrs.push(`${shortName(d.m.jig)}: ${pe}`)
+        }
+        handleDailyPmSave({ jig: d.m.jig, department: amDept, overall: d.overall, ngTopics: d.ngTopics }).catch(() => {})
+        onSavedJig?.(d.m.jig.id, d.overall)
+      }
+      if (planErrs.length) toast.error(`${tr('บันทึกผลตรวจสำเร็จ แต่เลื่อนรอบแผนไม่สำเร็จ')}: ${planErrs.join(' · ')}`)
+      setSavedIds(prev => { const n = new Set(prev); done.forEach(d => n.add(d.m.jig.id)); return n })
+
+      if (failMsg) {
+        toast.error(`${tr('บันทึกแล้ว')} ${done.length}/${pending.length} ${tr('เครื่อง · ล้มที่')} ${failMsg} — ${tr('กดบันทึกอีกครั้งเพื่อบันทึกตัวที่เหลือ (ตัวที่บันทึกแล้วไม่ซ้ำ)')}`)
+      } else {
+        toast.success(onSite.approve
+          ? `${tr('บันทึกสถานี')} ${station.name} ${tr('ครบ')} ${done.length} ${tr('เครื่อง — ผู้ตรวจ')} ${badgeEmp?.name || raw} · ${fullName || tr('คุณ')} ${tr('ทวนสอบ/รับทราบแล้ว')}`
+          : `${tr('บันทึกสถานี')} ${station.name} ${tr('ครบ')} ${done.length} ${tr('เครื่อง — ผู้ตรวจ')} ${badgeEmp?.name || raw}`)
+        if (!onSite.approve && onSite.text) toast.info(onSite.text)
+        setNotes('')
+        if (draftKey) clearDraft(draftKey)
+      }
+      // 🔧 B3 — NG ทุกตัว ⇒ คิวเปิดใบซ่อม (หรือเขียนเหตุผล) ไปทีมเจ้าของ PM ของตัวนั้น
+      const ngItems = done.filter(d => d.overall === 'fail' && d.ngTopics.length)
+        .map(d => ({ insp: d.insp, ngTopics: d.ngTopics, jig: d.m.jig, team: ownerTeamOf(d.m.jig) }))
+      if (ngItems.length) onQueueMo?.(ngItems)
+    } catch (err) {
+      toast.error(err?.message || String(err))
+    } finally { setSaving(false) }
+  }
+
+  if (sec.status === 'loading' || sec.key !== loadKey) return <div style={{ padding: 24, color: 'var(--muted)', textAlign: 'center' }}>{tr('กำลังโหลดจุดตรวจของสถานี…')}</div>
+  if (sec.status === 'error') return <div style={{ padding: 16, color: 'var(--amber)' }}>{tr('อ่านจุดตรวจของสถานีไม่ได้')}: {sec.err}</div>
+
+  const totalCps = allCps.length
+  const doneCps = totalCps - missingList.length
+  const allSaved = secList.length > 0 && pending.length === 0 && noCl.length === 0
+  return (
+    <div>
+      {spcCp && <EquipSpcModal cp={spcCp.cp} jigName={spcCp.jigName} onClose={() => setSpcCp(null)} />}
+      <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', border: '1px solid var(--border2)' }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>🧩 {tr('สถานี')} {station.name}</div>
+        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+          {station.line_name} · {secList.length} {tr('เครื่อง ตรวจในใบเดียว กดบันทึกครั้งเดียว — ระบบแยกเก็บผลรายเครื่อง')}
+        </div>
+      </div>
+      <DraftRestoreBar draft={pendingDraft} what={`${tr('ใบสถานี')} ${station.name}`} onRestore={restoreDraft} onDiscard={discardDraft} />
+      {framesByJig.key === loadKey && framesByJig.err && (
+        <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>⚠ {tr('โหลดรูปเครื่องไม่สำเร็จ — ตรวจตามรายการได้ตามปกติ')} ({framesByJig.err})</div>
+      )}
+      {!allSaved && (
+        <div style={{ position: 'sticky', top: 0, zIndex: 3, background: 'var(--card)', padding: '6px 0', marginBottom: 8, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <b>{tr('ตรวจแล้ว')} {doneCps}/{totalCps}</b>
+          {missingList.length > 0 && <span style={{ color: 'var(--amber)' }}>· {tr('เหลือ')} {missingList.length}</span>}
+          {missingList.slice(0, 10).map(x => (
+            <button key={x.cp.id} type="button" onClick={() => jumpTo(x.cp.id)} title={x.cp.name}
+              style={{ height: 22, padding: '0 8px', borderRadius: 11, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              {shortName(x.m.jig)} · {x.no}
+            </button>
+          ))}
+        </div>
+      )}
+      {secList.map((m, mi) => {
+        const saved = savedIds.has(m.jig.id)
+        const shift = checkedThisShift?.[m.jig.id]
+        const owner = ownerTeamOf(m.jig)
+        return (
+          <section key={m.jig.id} style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border)', marginBottom: 8, flexWrap: 'wrap' }}>
+              <b style={{ fontSize: 13.5, color: 'var(--text)' }}>{mi + 1}. {m.jig.name}</b>
+              {owner && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {tr('PM โดย')} {deptNameOf(owner) || owner}</span>}
+              {shift && <span style={{ fontSize: 11, fontWeight: 700, color: shift === 'fail' ? 'var(--red)' : shift === 'pass' ? 'var(--green)' : 'var(--amber)' }}>· {tr('กะนี้')} {shift === 'fail' ? 'NG' : shift === 'pass' ? tr('ตรวจแล้ว') : tr('ไม่ครบ')}</span>}
+              <span style={{ flex: 1 }} />
+              {saved && <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--green)' }}>✓ {tr('บันทึกแล้ว')}</span>}
+              <button type="button" onClick={() => onOpenSingle?.(m.jig.id)} style={{ fontSize: 11.5, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ประวัติเครื่องนี้')}</button>
+            </div>
+            {m.ngHist?.error && <div style={{ fontSize: 11.5, color: 'var(--amber)', margin: '0 0 6px' }}>⚠ {tr('อ่านประวัติการตรวจครั้งก่อนไม่ได้ — ต้องพิมพ์เหตุผล NG เอง')}</div>}
+            {!saved && !m.allCps.length && <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>{tr('เครื่องนี้ยังไม่มีจุดตรวจ AM — ตั้งที่ PM Setup แท็บฝ่ายผลิต')}</div>}
+            {!saved && (m.notDue.length > 0 || m.freqErr) && (
+              <AmNotDueBar notDue={m.notDue} err={m.freqErr} shown={showNdJig.has(m.jig.id)}
+                onToggle={() => setShowNdJig(prev => { const n = new Set(prev); n.has(m.jig.id) ? n.delete(m.jig.id) : n.add(m.jig.id); return n })} />
+            )}
+            {!saved && m.allCps.length > 0 && !m.cps.length && <div style={{ fontSize: 12.5, color: 'var(--muted)', margin: '0 0 6px' }}>{tr('กะนี้ไม่มีข้อที่ถึงรอบตรวจของเครื่องนี้ — ไม่ต้องบันทึก')}</div>}
+            {(() => {
+            const frames = framesByJig.key === loadKey ? (framesByJig.map[m.jig.id] || []) : []
+            const showPhoto = !saved && m.cps.length > 0 && frames.length > 0
+            const rowsOnly = !saved && m.cps.map((cp, idx) => {
+              const r = results[cp.id] ?? {}
+              const row = cp.type === 'variable' ? (
+                <VariableRow cp={cp} idx={idx} r={calcRes[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(p => ({ ...p, [cp.id]: v }))} methodIndex={methodIndex} onSpc={() => setSpcCp({ cp, jigName: m.jig.name })}
+                  calcText={calcOf(cp) ? calcFormula(calcOf(cp), id => { const k = m.cps.findIndex(c => c.id === id); return k < 0 ? '?' : `${tr('ข้อ')} ${k + 1}` }) : null} />
+              ) : cp.type === 'measure' ? (
+                <MeasureRow cp={cp} idx={idx} r={r.mval !== undefined ? r : { mval: '' }} onChange={v => setResults(p => ({ ...p, [cp.id]: v }))} methodIndex={methodIndex} onSpc={() => setSpcCp({ cp, jigName: m.jig.name })} />
+              ) : (
+                <AttrRow cp={cp} idx={idx} methodIndex={methodIndex} value={r.attr ?? ''} note={r.note ?? ''}
+                  onChangeAttr={v => setResults(p => ({ ...p, [cp.id]: { ...p[cp.id], attr: v } }))}
+                  onChangeNote={v => setResults(p => ({ ...p, [cp.id]: { ...p[cp.id], note: v } }))}
+                  reason={r.reason ?? ''} onChangeReason={v => setResults(p => ({ ...p, [cp.id]: { ...p[cp.id], reason: v } }))}
+                  carry={carryOf(m, cp.id)} accepted={!!r.reasonAccepted}
+                  onAccept={() => setResults(p => ({ ...p, [cp.id]: { ...p[cp.id], reasonAccepted: true, reason: carryOf(m, cp.id)?.text || '' } }))}
+                  okWarn={okWarnOf(m, cp.id)} />
+              )
+              return <div key={cp.id} ref={el => { rowRefs.current[cp.id] = el }} onClickCapture={() => setActiveCp(cp.id)} style={{ scrollMarginTop: 60 }}>{row}</div>
+            })
+            const rows = rowsOnly
+            if (!showPhoto) return rows
+            const mine = activeCp && m.cps.some(c => c.id === activeCp) ? activeCp : null
+            const viewer = (
+              <JigSpinCheck frames={frames} checkpoints={m.cps} results={calcRes} activeCpId={mine}
+                onPinClick={(id) => { setActiveCp(id); jumpTo(id) }} maxH={wide ? 480 : 300} compact={!wide} />
+            )
+            /* จอกว้าง = รูปซ้ายค้างไว้ระหว่างเลื่อนรายการของเครื่องนั้น · จอแคบ = รูปอยู่บนหัวรายการ (แบบใบเดี่ยว) */
+            return wide ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 5fr) minmax(0, 6fr)', gap: 14, alignItems: 'start' }}>
+                <div style={{ position: 'sticky', top: 44 }}>{viewer}</div>
+                <div>{rows}</div>
+              </div>
+            ) : <>{viewer}{rows}</>
+            })()}
+          </section>
+        )
+      })}
+      {allSaved ? (
+        <div style={{ padding: 14, textAlign: 'center', color: 'var(--green)', fontWeight: 800 }}>✓ {tr('บันทึกครบทุกเครื่องในสถานีแล้ว')}</div>
+      ) : (<>
+        <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder={tr('หมายเหตุ (ถ้ามี)...')} style={{ marginTop: 8 }} />
+        <button onClick={save} disabled={saving || !canRecord}
+          style={{ ...S.saveBtn, background: missingList.length ? 'var(--accent2)' : 'var(--accent)', color: missingList.length ? SAVE_WARN_INK : 'var(--accent-ink)', opacity: (saving || !canRecord) ? 0.6 : 1 }}>
+          {saving ? tr('กำลังบันทึก...') : !canRecord ? tr('ไม่มีสิทธิ์บันทึกผลตรวจ AM')
+            : missingList.length ? `${tr('ยังบันทึกไม่ได้ — ยังไม่ตรวจ')} ${missingList.length} ${tr('จุด')}` : `${tr('บันทึกทั้งสถานี')} (${pending.length} ${tr('เครื่อง')})`}
+        </button>
+      </>)}
+    </div>
+  )
+}
 
 /* 🧭 mode (19/11 · คำสั่ง user "AM ต้องมีหน้าบันทึกของตัวเอง · ปนกับ PM ของช่าง")
    'pm' (ค่าเริ่ม · /pm?tab=check) = เฉพาะทีมช่าง — เปิดด้วยทีม AM จะถูกพาไป /daily-checker?tab=amcheck
@@ -894,15 +1424,21 @@ export default function PMCheckData({ mode = 'pm' }) {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount, lineId: myLineId, scopeIdx } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount, lineId: myLineId, scopeIdx, section: homeSection, respCostCenters, writeUnits } = useContext(UserContext)
   /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
      เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
      อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
      🔴 ฝั่งช่างใช้ "ทีม" เป็นแกน ไม่ใช่ส่วนงาน — ช่างซ่อมข้ามไลน์เป็นงานปกติ
      🔴 ไม่ผูกทีม = ไม่บล็อก (ไม่รู้ ≠ ปฏิเสธ) — วัด 15/10 ช่าง 16/16 ตั้งทีมแล้ว ด่านกัดจริง */
   const myTeams = useMemo(() => teamsForUser(myMtnTeams, mySections), [myMtnTeams, mySections])
-  const deptWrite = useMemo(() => canWriteTeam(myTeams, department, { allUnits, role: userRole }),
-    [myTeams, department, allUnits, userRole])
+  const deptWrite = useMemo(() => canWriteTeam(myTeams, department, { allUnits, role: userRole, respCostCenters, scopeIdx }),   // แกนทีม (CC ไม่ใช้ในด่านนี้ — ส่ง ctx ชุดเดียวกับด่านไลน์)
+    [myTeams, department, allUnits, userRole, respCostCenters, scopeIdx])
+  /* 🔴 A4 (24/11 · คำสั่ง user "อนุมัติ AM ต้องอยู่ในไลน์/ส่วนงานตัวเอง"): ใบ AM เป็นของ "ไลน์" ไม่ใช่ทีมช่าง
+     ⇒ แกนทีม (`canWriteTeam`) ปล่อยหัวหน้าฝ่ายผลิตที่ไม่มีทีม (no_team_anchor = ok) อนุมัติได้ทุกไลน์
+     ⇒ ชั้น ③ ของใบ AM = `canWriteLine` (ctx ครบ 2 แกน respCostCenters + scopeIdx) · ไม่รู้ไลน์ = บล็อก
+     · วัด 24/11: ใบ AM อนุมัติแล้ว 790 ใบ ผู้อนุมัติ 7 คน — ทุกใบอยู่ไลน์ในส่วนงานของผู้อนุมัติ (ไม่มีใครถูกตัด) */
+  const amLineCtx = useMemo(() => ({ role: userRole, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx, writeUnits }),
+    [userRole, homeSection, mySections, allUnits, respCostCenters, scopeIdx, writeUnits])
   /* 🔧 เจอ NG → เปิดใบแจ้งซ่อม MO ต่อได้เลย (2026-09-02 · feedback หน้างาน)
      ⚠️ **ระบบเสนอ คนกดยืนยัน** ห้ามเปิดใบให้อัตโนมัติ (กฎเดิมทั้งโปรเจค) —
         ใบซ่อมเป็นงานที่มีคนต้องรับผิดชอบจริง ไม่ใช่ผลข้างเคียงของการกดบันทึก */
@@ -933,7 +1469,14 @@ export default function PMCheckData({ mode = 'pm' }) {
   const [listErr, setListErr] = useState('')         // โหลดลิสต์ไม่ครบ — โชว์แถบเตือนเหนือรายการ
   const [selectedJig, setSelectedJig] = useState(null)
   const [checklistId, setChecklistId] = useState(null)
-  const [checkpoints, setCheckpoints] = useState([])
+  const [loadedCps, setCheckpoints] = useState([])   // จุดตรวจทั้งใบที่โหลดมา
+  /* 🗓️ รอบตรวจรายหัวข้อ AM (26/11 · utils/amCheckFreq.js) — ข้อรายวัน/สัปดาห์/เดือนที่ "ตรวจในรอบนี้แล้ว" ซ่อนไว้ + บอกจำนวน
+     `checkpoints` ข้างล่าง = ข้อที่ต้องตรวจกะนี้ (ตัวตั้งของ "ครบ/ขาด" · แถวผลตรวจ · หมุด) · ใบ PM ของช่างไม่ใช้ (notDue ว่างเสมอ) */
+  const [freqInfo, setFreqInfo] = useState({ key: '', notDue: new Map(), err: '' })
+  const [showNotDue, setShowNotDue] = useState(false)
+  const [spcCp, setSpcCp] = useState(null)   // 📈 หน้าต่างกราฟ SPC ของข้อ (26/11)
+  const checkpoints = useMemo(() => (showNotDue || !freqInfo.notDue.size ? loadedCps : loadedCps.filter(c => !freqInfo.notDue.has(c.id))),
+    [loadedCps, freqInfo, showNotDue])
   const [otherDepts, setOtherDepts] = useState([])   // แผนกอื่นที่ลงจุดตรวจของเครื่องนี้ไว้ (โชว์เมื่อแผนกปัจจุบันยังไม่มี)
   /* 🔴 กันคำตอบเก่าทับเครื่องใหม่ (stale-response · 2026-10-19 audit PM)
      สลับเครื่องเร็วๆ = คิวรีของเครื่องก่อนตอบทีหลัง แล้วเขียน checklistId/จุดตรวจ/รูป ของเครื่องเก่าทับ
@@ -985,12 +1528,16 @@ export default function PMCheckData({ mode = 'pm' }) {
   const [shimPoints, setShimPoints] = useState([])
   const [shimVals, setShimVals] = useState({})
   const [shimKinds, setShimKinds] = useState(DEFAULT_POINT_KINDS)
-  const canShim = can('fixture_shim', 'record', userRole)
+  /* 🔩 ใบ AM = ดูค่าชิมได้อย่างเดียว (26/11 · คำสั่ง user "shim record เป็นงานของส่วนช่าง")
+     บันทึกค่าชิมได้เฉพาะใบ PM ของทีมช่าง — กันฝั่งผลิตไปแก้ค่าชิมในทะเบียนจุดชิมของ JIG MTN (คลาสเดียวกับบั๊กรูปปน 26/11) */
+  const shimAmReadOnly = isAmTeam(department)
+  const canShim = can('fixture_shim', 'record', userRole) && !shimAmReadOnly
   // 🔎 ค้นในลิสต์เครื่อง (feedback 2026-09-08: JIG MTN มี 60+ เครื่อง ไล่เลื่อนหาเอง) — เทียบเลขเครื่อง/ชื่อ/ไลน์
   const [jigQuery, setJigQuery] = useState('')
   /* 🗂️ ลิสต์ซ้ายแท็บช่าง (PM) — จัดกลุ่มตามไลน์ + กรองขอบเขตไลน์ (20/10 audit หน้า PM ข้อ 6)
      ⚠️ กรองการดูเท่านั้น ไม่ตัดตามส่วนงานของผู้ใช้ — ช่างซ่อมข้ามไลน์เป็นงานปกติ (แกนสิทธิ์ช่าง = ทีม) */
   const { rows: lineRows } = useProductionLinesState()
+  const amLineWriteOf = (lineName) => canWriteLine(amLineCtx, lineName, lineRows, { unknownTarget: 'block' })
   const scopeLines = useMemo(() => {   // ชื่อไลน์ซ้ำในทะเบียน = key ซ้ำในตัวเลือก ⇒ ยุบด้วยชื่อ
     const seen = new Set()
     return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
@@ -1035,7 +1582,7 @@ export default function PMCheckData({ mode = 'pm' }) {
   // แผนกของแต่ละ jig จาก checklist ที่มีอยู่ (ยึด department เป็นหลักตามที่ user ยืนยัน)
   useEffect(() => {
     supabaseDR.from('checklists').select('equipment_id, department').eq('module', 'mtn').then(({ data, error }) => {
-      if (error) setListErr(e => e || `รายการตรวจของแต่ละเครื่อง: ${error.message}`)
+      if (error) setListErr(e => e || `${tr("รายการตรวจของแต่ละเครื่อง")}: ${error.message}`)
       const m = {}; (data ?? []).forEach(c => { (m[c.equipment_id] ||= new Set()).add(c.department) }); setClDeptByJig(m)
     })
   }, [])
@@ -1057,7 +1604,7 @@ export default function PMCheckData({ mode = 'pm' }) {
   useEffect(() => {
     // เลือกเฉพาะคอลัมน์ที่จอใช้ (กฎ egress ข้อ 11) · อ่านไม่ได้ต้องบอก ห้ามขึ้น "ยังไม่มีอุปกรณ์"
     supabaseDR.from('jigs').select(JIG_COLS).eq('module', 'mtn').order('name').then(({ data, error }) => {
-      if (error) setListErr(e => e || `ทะเบียนอุปกรณ์: ${error.message}`)
+      if (error) setListErr(e => e || `${tr("ทะเบียนอุปกรณ์")}: ${error.message}`)
       setJigs(data ?? [])
     })
     fetchCategories() // primes the category color cache used by categoryColor()
@@ -1087,7 +1634,7 @@ export default function PMCheckData({ mode = 'pm' }) {
       if (cancelled) return
       // อ่านไม่ได้ = ป้าย "รอตรวจ/ยังไม่ลงทะเบียน" ในลิสต์ไม่จริง — ต้องเขียนบอก
       const eAm = eTg || eCl || eIn
-      if (eAm) setListErr(e => e || `สถานะตรวจกะนี้: ${eAm.message}`)
+      if (eAm) setListErr(e => e || `${tr("สถานะตรวจกะนี้")}: ${eAm.message}`)
       const st = {}
       for (const i of insp ?? []) {
         if (!clIds.has(i.checklist_id)) continue
@@ -1124,7 +1671,7 @@ export default function PMCheckData({ mode = 'pm' }) {
   const selectJigRaw = (jig) => setParams({ equip: jig.id })
   // มือถือ: เปลี่ยนเครื่องกลางฟอร์ม = บอกว่าเก็บร่างไว้แล้ว (เดิมล้างทุกช่องเงียบๆ) · ไม่ถาม/ไม่บล็อก — กลับมาเครื่องเดิมกู้คืนได้
   const selectJig = (jig) => {
-    if (pmDirty && jig?.id !== selectedJig?.id) toast.info(`📝 เก็บร่างผลตรวจ ${selectedJig?.name || ''} ไว้ในเครื่องแล้ว — กลับมาเลือกเครื่องนี้เพื่อกู้คืน`)
+    if (pmDirty && jig?.id !== selectedJig?.id) toast.info(`📝 ${tr("เก็บร่างผลตรวจ")} ${selectedJig?.name || ''} ${tr("ไว้ในเครื่องแล้ว — กลับมาเลือกเครื่องนี้เพื่อกู้คืน")}`)
     selectJigRaw(jig)
   }
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
@@ -1145,7 +1692,7 @@ export default function PMCheckData({ mode = 'pm' }) {
     const clRes = await supabaseDR.from('checklists').select('id, department').eq('equipment_id', jigId).eq('module', 'mtn')
     if (curJigRef.current !== jigId) return // เปลี่ยนเครื่องไปแล้ว — คำตอบนี้เป็นของเครื่องก่อน
     const teamsKnown = !clRes.error
-    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ — ประวัติอาจปนทีมอื่น: ${clRes.error.message}`)
+    if (clRes.error) toast.error(`${tr("อ่านทีมของใบตรวจไม่สำเร็จ — ประวัติอาจปนทีมอื่น")}: ${clRes.error.message}`)
     const clRows = clRes.data ?? []
     setClDeptById(Object.fromEntries(clRows.map(c => [c.id, c.department])))
     const mineIds = clRows.filter(c => c.department === department).map(c => c.id)
@@ -1157,7 +1704,7 @@ export default function PMCheckData({ mode = 'pm' }) {
     if (!teamsKnown) ({ data, error: eH } = await base().eq('jig_id', jigId))
     else if (mineIds.length) ({ data, error: eH } = await base().in('checklist_id', mineIds))
     if (curJigRef.current !== jigId) return
-    if (eH) toast.error(`โหลดประวัติการตรวจไม่สำเร็จ: ${eH.message}`)
+    if (eH) toast.error(`${tr("โหลดประวัติการตรวจไม่สำเร็จ")}: ${eH.message}`)
     setInspections(data ?? [])
 
     /* ③ นับใบของทีมอื่น + ใบที่ชี้ทีมไม่ได้ (ไม่ดึงเนื้อถ้าไม่กดดู) — ตัวเลขต้องขึ้นจอ ห้ามเงียบ
@@ -1190,9 +1737,9 @@ export default function PMCheckData({ mode = 'pm' }) {
       codes.length ? supabase.from('employees').select('id, employee_id_code, position').in('employee_id_code', codes) : Promise.resolve({ data: [] }),
     ])
     if (curJigRef.current !== jigId) return
-    if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
+    if (pRes.error) toast.error(`${tr("อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ")}: ${pRes.error.message}`)
     setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
-    if (eRes.error) toast.error(`อ่านตำแหน่งผู้ตรวจตามบัตรไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${eRes.error.message}`)
+    if (eRes.error) toast.error(`${tr("อ่านตำแหน่งผู้ตรวจตามบัตรไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ")}: ${eRes.error.message}`)
     setInspEmpByCode(Object.fromEntries((data ?? []).filter(i => i.inspector_code).map(i => {
       const e = findByBadge(eRes.data ?? [], i.inspector_code)
       return [normBadgeCode(i.inspector_code), e ? { id: e.id, position: e.position || null } : null]
@@ -1221,7 +1768,7 @@ export default function PMCheckData({ mode = 'pm' }) {
     const { data, error } = await supabaseDR.from('inspections').select('*')
       .in('checklist_id', ids).order('inspected_at', { ascending: false }).limit(30)
     if (curJigRef.current !== jigId) return
-    if (error) { toast.error(`โหลดใบของทีมอื่นไม่สำเร็จ: ${error.message}`); return }
+    if (error) { toast.error(`${tr("โหลดใบของทีมอื่นไม่สำเร็จ")}: ${error.message}`); return }
     setHistOther(data ?? [])
     setShowOther(true)
   }
@@ -1233,7 +1780,42 @@ export default function PMCheckData({ mode = 'pm' }) {
     ? (teamForEquipmentKind(selectedJig?.equipment_type) || 'maintenance')
     : (teamKeyOf(department) || 'maintenance'))
 
-  const openMoPrompt = (insp, ngTopics) => { setMoTeam(defaultMoTeam()); setMoWaiving(false); setMoWaiveReason(''); setMoPrompt({ insp, ngTopics }) }
+  /* 🧩 23/11 สถานี AM: ใบรวมบันทึกหลายอุปกรณ์ทีเดียว ⇒ prompt ต้องรู้ "อุปกรณ์ของใบนี้" (ไม่ใช่ selectedJig เสมอ)
+     + ทีมเจ้าของ PM ของตัวนั้น (gripper → JIG MTN · robot → MTN) · NG หลายตัว = ต่อคิวเปิดทีละใบ */
+  const [moQueue, setMoQueue] = useState([])
+  /* 🧩 สถานี AM (23/11) — โหมด AM เท่านั้น · อ่านไม่ได้ = ใช้ใบเดี่ยวเหมือนเดิม + บอกบนจอ (ไม่บล็อกการตรวจ) */
+  const [amSt, setAmSt] = useState({ stations: [], members: [], err: '' })
+  const [singleJigId, setSingleJigId] = useState(null)   // กด "ประวัติเครื่องนี้" จากใบสถานี = ดูใบเดี่ยวของเครื่องนั้น
+  useEffect(() => {
+    if (!amMode) return undefined
+    let alive = true
+    Promise.all([
+      supabaseDR.from('am_stations').select('id, name, line_name, is_active, sort_order').eq('is_active', true),
+      supabaseDR.from('am_station_members').select('station_id, jig_id, sort_order'),
+    ]).then(([a, b]) => {
+      if (!alive) return
+      if (a.error || b.error) { setAmSt(p => ({ ...p, err: (a.error || b.error).message })); return }
+      setAmSt({ stations: a.data || [], members: b.data || [], err: '' })
+    })
+    return () => { alive = false }
+  }, [amMode])
+  const stationIx = useMemo(() => buildStationIndex(amSt.stations, amSt.members), [amSt])
+  const station = (amMode && selectedJig && singleJigId !== selectedJig.id) ? (stationIx.byJig.get(selectedJig.id) || null) : null
+  const stationJigs = useMemo(() => (station ? stationIx.membersOf(station.id).map(id => jigs.find(j => j.id === id)).filter(Boolean) : []),
+    [station, stationIx, jigs])
+  /** ทีมเจ้าของ PM ของอุปกรณ์ (ทีมช่างที่มีใบตรวจของตัวนี้) — ใบซ่อมจาก NG ในใบสถานีวิ่งไปทีมนี้ (gripper → JIG MTN) */
+  const ownerTeamOf = (jig) => [...(clDeptByJig[jig?.id] || [])].find(d => !isAmTeam(d))
+    || teamForEquipmentKind(jig?.equipment_type) || 'maintenance'
+  const openMoPrompt = (insp, ngTopics, jig = null, team = null) => {
+    setMoTeam(team || defaultMoTeam()); setMoWaiving(false); setMoWaiveReason('')
+    setMoPrompt({ insp, ngTopics, jig: jig || selectedJig })
+  }
+  useEffect(() => {
+    if (moPrompt || !moQueue.length) return
+    const [next, ...rest] = moQueue
+    setMoQueue(rest)
+    openMoPrompt(next.insp, next.ngTopics, next.jig, next.team)
+  }, [moPrompt, moQueue]) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* 🔧 B3 (02/11) — AM เจอผิดปกติ ⇒ ต้องเปิด MO **หรือ** เขียนเหตุผลว่าทำไมไม่เปิด (บอร์ด AM เห็นทั้งคู่)
      🔴 ยังไม่ apply migration (ไม่มีคอลัมน์ mo_waived_reason) = ข้ามไม่ได้ ต้องเปิด MO (fail-closed + บอกบนจอ) */
@@ -1241,7 +1823,7 @@ export default function PMCheckData({ mode = 'pm' }) {
   const waiveMo = async () => {
     if (!moPrompt) return
     const reason = moWaiveReason.trim()
-    if (!amWaiverReasonValid(reason)) { toast.error(`เขียนเหตุผลอย่างน้อย ${AM_WAIVER_MIN_LEN} ตัวอักษร`); return }
+    if (!amWaiverReasonValid(reason)) { toast.error(`${tr("เขียนเหตุผลอย่างน้อย")} ${AM_WAIVER_MIN_LEN} ${tr("ตัวอักษร")}`); return }
     setMoSaving(true)
     try {
       const res = await supabaseDR.from('inspections')
@@ -1268,7 +1850,8 @@ export default function PMCheckData({ mode = 'pm' }) {
   }
 
   const createMoFromInspection = async () => {
-    if (!moPrompt || !selectedJig) return
+    const moJig = moPrompt?.jig || selectedJig   // 🧩 ใบสถานี: อุปกรณ์ของใบนี้ ไม่ใช่ตัวที่เปิดอยู่
+    if (!moPrompt || !moJig) return
     const { insp, ngTopics } = moPrompt
     setMoSaving(true)
     try {
@@ -1279,16 +1862,16 @@ export default function PMCheckData({ mode = 'pm' }) {
       const payload = {
         status: 'pending', current_step: 1, report_at: now.toISOString(), work_date: workDate,
         repair_scope: 'in_line',
-        line_name: selectedJig.line_name || null,
+        line_name: moJig.line_name || null,
         mtn_dept: teamKeyOf(moTeam) || 'maintenance',
-        machine_no: selectedJig.machine_no || selectedJig.jig_no || null,
+        machine_no: moJig.machine_no || moJig.jig_no || null,
         /* 🔴 อาการ/กลุ่ม = หัวข้อที่ตรวจไม่ผ่านจริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
            บั๊กคลาสเดียวกับใบที่เปิดจากดาวน์ไทม์ — เขียน 'อื่นๆ' ทับทั้งที่ `ngTopics`
            บอกอยู่แล้วว่าไม่ผ่านข้อไหน ⇒ ใบพวกนี้ไปกองรวมในถังขยะของพาเรโต
            มีด่าน regressionGuards กฎ no-hardcoded-other-category */
         problem_characteristic: ngTopics[0] || 'อื่นๆ',
         problem_group: 'ผลตรวจ PM/AM ไม่ผ่าน',
-        report_note: `[จากผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}] ${selectedJig.name} — จุดที่ไม่ผ่าน: ${ngTopics.join(', ')}`,
+        report_note: `[${tr("จากผลตรวจ")} ${isAmTeam(department) ? 'AM' : 'PM'}] ${moJig.name} — ${tr("จุดที่ไม่ผ่าน")}: ${ngTopics.join(', ')}`,
         // reported_by_uid: ให้ edge แจ้งกลับ "ผู้แจ้ง" ได้ทุกขั้น — เดิมหน้านี้ไม่เคยส่ง ⇒ ใบที่เปิดจากผลตรวจ PM/AM
         //   ไม่มีใครถูกเด้งตอนใบถึงคิวตัวเอง (เหตุผลเดียวกับที่ MtnRepair แก้ไปแล้ว 2026-09-14)
         reporter_prod: fullName || null, reported_by_name: fullName || null, reported_by_uid: userId || null,
@@ -1312,7 +1895,7 @@ export default function PMCheckData({ mode = 'pm' }) {
       }).catch(() => {})
       setMoByInsp(prev => ({ ...prev, [insp.id]: data }))
       setMoPrompt(null)
-      toast.success(`📝 เปิดใบแจ้งซ่อมแล้ว → แจ้งถึงทีม ${deptNameOf(moTeam) || 'MTN'} — ติดตามต่อที่หน้าแจ้งซ่อม MTN`)
+      toast.success(`📝 ${tr("เปิดใบแจ้งซ่อมแล้ว → แจ้งถึงทีม")} ${deptNameOf(moTeam) || 'MTN'} — ${tr("ติดตามต่อที่หน้าแจ้งซ่อม")} MTN`)
     } finally {
       setMoSaving(false)
     }
@@ -1332,12 +1915,13 @@ export default function PMCheckData({ mode = 'pm' }) {
     // จุดชิมของ fixture นี้ (ทะเบียน /fixture) — ไม่มี machine_id = ไม่ใช่ fixture ที่ผูกกับ machines → ไม่มีจุด
     if (selectedJig.machine_id) {
       supabaseDR.from('fixture_points').select('*').eq('machine_id', selectedJig.machine_id).eq('is_active', true).order('sort_order')
-        .then(({ data, error }) => { if (!live()) return; if (error) toast.error(`โหลดจุดชิมไม่สำเร็จ: ${error.message}`); setShimPoints(data ?? []) })
+        .then(({ data, error }) => { if (!live()) return; if (error) toast.error(`${tr("โหลดจุดชิมไม่สำเร็จ")}: ${error.message}`); setShimPoints(data ?? []) })
     } else setShimPoints([])
     // เฟรมรูป 360° (ถ้าไม่มี jig_images → ใช้รูปหลัก image_path เป็นเฟรมเดียว)
-    supabaseDR.from('jig_images').select('id, image_path, sort').eq('jig_id', selectedJig.id).order('sort').then(({ data, error }) => {
+    // รูปแยกตามแผนก (26/11 · utils/jigFrames.js) — เห็นเฉพาะชุดรูปของแผนกที่กำลังตรวจ
+    loadDeptFrames([selectedJig.id], department).then(({ rows: data, error }) => {
       if (!live()) return
-      if (error) toast.error(`โหลดรูปเครื่องไม่สำเร็จ: ${error.message}`)
+      if (error) toast.error(`${tr("โหลดรูปเครื่องไม่สำเร็จ")}: ${error.message}`)
       let fr = (data ?? []).map(im => ({ id: im.id, url: getPublicUrl(im.image_path) }))
       if (!fr.length && selectedJig.image_path) fr = [{ id: 'legacy', url: getPublicUrl(selectedJig.image_path) }]
       setFrames(fr)
@@ -1359,7 +1943,15 @@ export default function PMCheckData({ mode = 'pm' }) {
         if (live()) setCpLoad({ key, status: 'error', msg: e?.message || String(e) })
         return
       }
+      // 🗓️ ใบ AM: ข้อไหนถึงรอบกะนี้ (อ่านประวัติไม่ได้ = ทุกข้อถึงรอบ + เขียนบอก)
+      let fInfo = { key, notDue: new Map(), err: '' }
+      if (isAmTeam(department) && cps.length) {
+        const ld = await loadAmCpLastDone(cps)
+        const sp = splitDueCps(cps, amSlotOf(new Date()), ld.map)
+        fInfo = { key, notDue: new Map(sp.notDue.map(x => [x.cp.id, x])), err: ld.error ? String(ld.error) : '' }
+      }
       if (!live()) return
+      setFreqInfo(fInfo); setShowNotDue(false)
       setChecklistId(cl?.id ?? null)
       setCheckpoints(cps)
       setCpLoad({ key, status: 'ok', msg: '' })
@@ -1409,41 +2001,16 @@ export default function PMCheckData({ mode = 'pm' }) {
 
   /* ข้อนี้กรอกครบหรือยัง — เกณฑ์เดียวกับที่ปุ่มบันทึกใช้นับ "ยังไม่ครบกี่จุด"
      ⚠️ แก้ที่นี่ต้องแก้ปุ่มบันทึกด้วย ไม่งั้นแถบความคืบหน้ากับปุ่มตอบคนละเลข */
-  const cpFilled = (cp) => {
-    const r = results[cp.id]
-    if (cp.type === 'variable') return r?.v1 !== '' && r?.v2 !== '' && r?.v3 !== '' && r?.v1 != null
-    if (cp.type === 'measure') return r?.mval !== '' && r?.mval != null
-    return !!r?.attr
-  }
+  const cpFilled = (cp) => cpFilledOf(cp, results[cp.id])
 
-  const computeOverall = () => {
-    let hasFail = false, hasEmpty = false
-    for (const cp of checkpoints) {
-      const r = results[cp.id]
-      if (!r) { hasEmpty = true; continue }
-      if (cp.type === 'variable') {
-        if (r.v1 === '' || r.v2 === '' || r.v3 === '') { hasEmpty = true; continue }
-        if (getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail') hasFail = true
-      } else if (cp.type === 'measure') {
-        const s = measureStatus(r.mval, cp)
-        if (s == null) { hasEmpty = true; continue }
-        if (s === 'fail') hasFail = true
-      } else {
-        if (!r.attr) { hasEmpty = true; continue }
-        if (r.attr === 'ng') hasFail = true
-      }
-    }
-    if (hasFail) return 'fail'
-    if (hasEmpty) return 'pending'
-    return 'pass'
-  }
+  const computeOverall = () => overallOf(checkpoints, results)
 
   /* 🔴 ตรวจไม่ครบ = บันทึกไม่ได้ (19/11) — บอกเลขข้อที่ขาด (ลำดับเดียวกับชิป "ยังไม่ตรวจ") + พาไปข้อแรก */
   const blockIncomplete = () => {
     const miss = checkpoints.filter(cp => !cpFilled(cp))
     if (!miss.length) return false
     const nos = miss.map(cp => checkpoints.indexOf(cp) + 1)
-    toast.error(`บันทึกไม่ได้ — ยังไม่ได้ตรวจ ${miss.length} จุด (ข้อ ${nos.slice(0, 10).join(', ')}${nos.length > 10 ? ' …' : ''}) — ตรวจให้ครบทุกข้อก่อน`)
+    toast.error(`${tr("บันทึกไม่ได้ — ยังไม่ได้ตรวจ")} ${miss.length} ${tr("จุด (ข้อ")} ${nos.slice(0, 10).join(', ')}${nos.length > 10 ? ' …' : ''}) — ${tr("ตรวจให้ครบทุกข้อก่อน")}`)
     setActiveShimId(null); setActiveCpId(miss[0].id)
     return true
   }
@@ -1484,9 +2051,9 @@ export default function PMCheckData({ mode = 'pm' }) {
         if (cp.type === 'variable' || cp.type === 'measure') return   // ค่าที่วัดมา ตัวเลขคือคำอธิบาย
         const r = results[cp.id] ?? {}
         const chk = ngReasonCheck({ attr: r.attr, text: r.reason, carry: ngCarryOf(cp.id), accepted: !!r.reasonAccepted })
-        if (!chk.ok) bad.push(`ข้อ ${i + 1} ${cp.name}: ${chk.blockText}`)
+        if (!chk.ok) bad.push(`${tr("ข้อ")} ${i + 1} ${cp.name}: ${chk.blockText}`)
       })
-      if (bad.length) { toast.error(`ยังบันทึกไม่ได้ — ${bad.length} ข้อที่ติ๊ก NG ไม่มีเหตุผล\n${bad.slice(0, 3).join('\n')}`); return }
+      if (bad.length) { toast.error(`${tr("ยังบันทึกไม่ได้")} — ${bad.length} ${tr("ข้อที่ติ๊ก NG ไม่มีเหตุผล")}\n${bad.slice(0, 3).join('\n')}`); return }
     }
     setSaving(true)
     try {
@@ -1515,7 +2082,8 @@ export default function PMCheckData({ mode = 'pm' }) {
         onSite = amOnSiteApproval({
           inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
           isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
-          canApprove: amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && deptWrite?.ok !== false,
+          canApprove: amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && deptWrite?.ok !== false
+            && amLineWriteOf(selectedJig?.line_name).ok,   // A4: อนุมัติหน้าเครื่อง = ไลน์ในขอบเขตเท่านั้น (ไม่ผ่าน = บันทึกเป็นรออนุมัติ)
           isShared: !!isSharedAccount,
         })
         if (onSite.approve) approvalPatch = { approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString() }
@@ -1527,26 +2095,7 @@ export default function PMCheckData({ mode = 'pm' }) {
       }).select().single()
       if (e1) throw e1
 
-      const rows = checkpoints.map(cp => {
-        const r = results[cp.id] ?? {}
-        if (cp.type === 'variable') {
-          const v1 = r.v1 !== '' ? Number(r.v1) : null
-          const v2 = r.v2 !== '' ? Number(r.v2) : null
-          const v3 = r.v3 !== '' ? Number(r.v3) : null
-          const avg = computeAvg(r.v1, r.v2, r.v3)
-          return { inspection_id: insp.id, checkpoint_id: cp.id, value_1: v1, value_2: v2, value_3: v3, avg_value: avg, value_numeric: avg, status: getSpcStatus(avg, cp) ?? (avg != null ? 'pass' : null) }
-        }
-        if (cp.type === 'measure') {
-          const mv = r.mval !== '' && r.mval != null ? Number(r.mval) : null
-          return { inspection_id: insp.id, checkpoint_id: cp.id, value_1: mv, value_numeric: mv, status: measureStatus(r.mval, cp) }
-        }
-        /* 🚩 เหตุผลที่ NG ลง `action_text` (ช่องนี้มีอยู่แล้ว แต่ถูกใช้ 1 จาก 43 จุด)
-           ยกของเก่ามาแล้วกดยืนยัน = เก็บข้อความเดิมลงไปจริง ไม่ใช่ปล่อยว่างแล้วอ้างว่ายกมา */
-        const ngText = r.attr === 'ng'
-          ? (String(r.reason || '').trim() || (r.reasonAccepted ? (ngCarryOf(cp.id)?.text || '') : ''))
-          : null
-        return { inspection_id: insp.id, checkpoint_id: cp.id, value_attribute: r.attr || null, action_text: ngText || null, status: r.attr === 'ng' ? 'fail' : r.attr === 'ok' ? 'pass' : null }
-      })
+      const rows = buildResultRows(insp.id, checkpoints, results, (id) => ngCarryOf(id)?.text || '')
       const { error: e2 } = await supabaseDR.from('inspection_results').insert(rows)
       if (e2) {
         /* 🔴 หัวใบตรวจถูกสร้างไปแล้วแต่ผลรายจุดเข้าไม่ได้ ⇒ ลบหัวใบทิ้ง (QC 05/10)
@@ -1568,8 +2117,8 @@ export default function PMCheckData({ mode = 'pm' }) {
             if (res.ok) okN++; else warns.push(`${pt.point_no}: ${res.error}`)
             if (res.warn) warns.push(res.warn)
           }
-          if (okN) toast.success(`บันทึกค่าชิม ${okN} จุดลงประวัติแล้ว`)
-          if (warns.length) toast.error(`ชิมบางจุดไม่สำเร็จ: ${[...new Set(warns)].join(' · ')}`)
+          if (okN) toast.success(`${tr("บันทึกค่าชิม")} ${okN} ${tr("จุดลงประวัติแล้ว")}`)
+          if (warns.length) toast.error(`${tr("ชิมบางจุดไม่สำเร็จ")}: ${[...new Set(warns)].join(' · ')}`)
         }
       }
 
@@ -1578,12 +2127,15 @@ export default function PMCheckData({ mode = 'pm' }) {
            เดิมยิง 83 คนข้าม 12 ส่วนงาน · คนกดเองถูกตัดออกที่ edge แล้ว (actor_id) ไม่ต้องส่ง excludeUserId
            🔴 ทีมใหญ่เกิน 20 คน = รายชื่อช่างถูกตัด ⇒ ต้องเขียนบนจอ ห้ามเงียบ */
         notifyDepartment(department, {
-          event: 'pm_inspection_ng',
+          /* 🔔 25/11 (คำสั่ง user "เพิ่ม leader ในการ์ด AM แดง"): ใบ AM แยกกติกาเป็น `am_inspection_ng`
+             (ผู้รับ + leader) ⇒ ใบ PM ของช่างยังใช้ `pm_inspection_ng` ผู้รับเดิมเป๊ะ — ปรับ 2 เรื่องแยกกันได้ที่ /notification-config */
+          event: isAmTeam(department) ? 'am_inspection_ng' : 'pm_inspection_ng',
           title: 'พบผลตรวจไม่ผ่าน (NG)',
           body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`,
           type: 'error', refTable: 'inspections', refId: insp.id,
+          link: inspNotifLink(department, selectedJig.id),   // 🔔 20/11: ใบ AM → หน้า AM · ใบ PM → หน้าช่าง
           lineName: selectedJig.line_name || null,
-        }).then(r => { if (r?.ownersCapped) toast.error(`⚠ ทีม ${deptNameOf(department)} มีช่าง ${r.owners} คน — แจ้งเตือนส่งถึงได้ 20 คนแรกเท่านั้น`) })
+        }).then(r => { if (r?.ownersCapped) toast.error(`⚠ ${tr("ทีม")} ${deptNameOf(department)} ${tr("มีช่าง")} ${r.owners} ${tr("คน — แจ้งเตือนส่งถึงได้ 20 คนแรกเท่านั้น")}`) })
           .catch(() => {})
       }
 
@@ -1592,47 +2144,22 @@ export default function PMCheckData({ mode = 'pm' }) {
       //   ที่ stamp ให้ ทำให้ PM Forecast/ผังเครื่องจักร/Dashboard เห็นแผนค้างทั้งที่ตรวจไปแล้ว
       //   'pending' (ตรวจไม่ครบ) ไม่นับว่าทำ PM จบ — ไม่เลื่อนรอบ · best-effort ห้ามทำ save หลักพัง แต่ห้ามเงียบ
       if (overall !== 'pending' && checklistId) {
-        try {
-          const { data: plans, error: pErr } = await supabaseDR.from('pm_plans')
-            .select('id, plan_type, interval_days, last_done_at, cycle_basis').eq('checklist_id', checklistId).eq('is_active', true)
-          if (pErr) throw pErr
-          // วันที่ทำ PM = "วันทำงาน" (ก่อน 08:00 = วันก่อนหน้า) — เดิมใช้วันปฏิทินเครื่อง ⇒ กะดึกตรวจตี 2
-          // ได้วันถัดไป แผนเลื่อนรอบเกินจริง 1 วัน + ข้ามด่าน "วันนี้ stamp แล้ว" (QC 05/10)
-          const done = getWorkDate()
-          for (const pl of (plans || [])) {
-            if (pl.cycle_basis === 'run_day') continue   // 🔴 run_day ไม่มีวันครบกำหนดแบบปฏิทิน — trigger pm_refresh_plan ดูแลเอง ห้ามเขียน next_due_date ทับ (08/10)
-            if (pl.last_done_at && String(pl.last_done_at).slice(0, 10) >= done) continue // วันนี้ stamp ไปแล้ว (ตรวจซ้ำ/AM รายกะ) — ไม่เขียนซ้ำ
-            const patch = { last_done_at: done }
-            // ตามรอบเวลา (time/hybrid) → เลื่อน next_due = วันทำ + interval_days · usage → forecast คำนวณเองจาก last_done_at
-            if (pl.plan_type !== 'usage' && Number(pl.interval_days) > 0) {
-              const d = new Date(done + 'T00:00:00'); d.setDate(d.getDate() + Number(pl.interval_days))
-              patch.next_due_date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-            }
-            const { error: uErr } = await supabaseDR.from('pm_plans').update(patch).eq('id', pl.id)
-            if (uErr) throw uErr
-          }
-        } catch (e) {
-          toast.error('บันทึกผลตรวจสำเร็จ แต่เลื่อนรอบแผน PM ไม่สำเร็จ: ' + (e?.message || e))
-        }
+        const pErr = await stampPlansAfterCheck(checklistId)
+        if (pErr) toast.error((tr('บันทึกผลตรวจสำเร็จ แต่เลื่อนรอบแผน PM ไม่สำเร็จ') + ': ') + pErr)
       }
 
       // Daily PM line alarm (green when the line is complete & all pass, red on NG).
-      const ngTopics = checkpoints.filter(cp => {
-        const r = results[cp.id]
-        if (!r) return false
-        return cp.type === 'variable' ? getSpcStatus(computeAvg(r.v1, r.v2, r.v3), cp) === 'fail'
-          : cp.type === 'measure' ? measureStatus(r.mval, cp) === 'fail' : r.attr === 'ng'
-      }).map(cp => cp.name)
+      const ngTopics = ngTopicsOf(checkpoints, results)
       handleDailyPmSave({ jig: selectedJig, department, overall, ngTopics }).catch(() => {})
       // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
       if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
       if (onSite?.approve) {
-        toast.success(`บันทึกแล้ว — ผู้ตรวจ ${badgeEmp?.name || inspectorCode.trim()} · ${fullName || 'คุณ'} ทวนสอบ/รับทราบแล้ว`)
+        toast.success(`${tr("บันทึกแล้ว — ผู้ตรวจ")} ${badgeEmp?.name || inspectorCode.trim()} · ${fullName || tr('คุณ')} ${tr("ทวนสอบ/รับทราบแล้ว")}`)
         const note = amApprovalAssumptionText(onSite.verdict?.assumed)
         if (note) toast.info(note)
       } else {
-        toast.success(badgeEmp ? `บันทึกผลการตรวจสำเร็จ — ผู้ตรวจ ${badgeEmp.name}` : 'บันทึกผลการตรวจสำเร็จ')
+        toast.success(badgeEmp ? `${tr("บันทึกผลการตรวจสำเร็จ — ผู้ตรวจ")} ${badgeEmp.name}` : 'บันทึกผลการตรวจสำเร็จ')
         if (onSite) toast.info(onSite.text)
       }
       if (pmDraftKey) clearDraft(pmDraftKey)
@@ -1708,7 +2235,7 @@ export default function PMCheckData({ mode = 'pm' }) {
     {!deptWrite.ok && (
       <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid var(--amber)',
         background: 'var(--card)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
-        {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
+        {teamBlockText(deptWrite, `${tr("งานตรวจของทีม")} "${deptNameOf(department) || department}"`)}
       </div>
     )}
     <div style={S.page}>
@@ -1725,14 +2252,14 @@ export default function PMCheckData({ mode = 'pm' }) {
           <MoreMark text={tr(teamKind(department).desc)} />
         </div>
         <div style={{ padding: '0 16px 8px', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <SearchInput value={jigQuery} onChange={setJigQuery} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาเครื่อง"
+          <SearchInput value={jigQuery} onChange={setJigQuery} fields={tr("เลขเครื่อง / ชื่อ / ไลน์")} ariaLabel={tr("ค้นหาเครื่อง")}
             style={{ flex: 1, minWidth: 0 }} />
           {/* 📷 สแกนป้ายที่ติดเครื่อง → เปิดใบตรวจของเครื่องนั้นเลย (2026-10-02 · คำสั่ง user)
               เดิมหน้าพิมพ์ป้ายโฆษณาว่า "สแกนเลือกอุปกรณ์ได้ทันทีใน … ตรวจ PM" แต่หน้านี้ไม่มีปุ่มสแกน
               ⚠️ ป้ายเครื่องจักรเข้ารหัสด้วย machines.id — resolveJig เด้งไป "แถวเงา" ใน jigs ให้เอง */}
           <button onClick={() => setScanOpen(true)} title={tr('สแกน QR ที่ติดเครื่อง')}
             style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 'var(--r-md)',
-              background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
+              background: 'var(--bg3-surf)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
         {!amTab && (
           <div style={{ padding: '0 16px 8px' }}>
@@ -1742,14 +2269,14 @@ export default function PMCheckData({ mode = 'pm' }) {
         )}
         {!amTab && (qWords.length > 0 || jigScope.names?.length) && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>
-            พบ {deptJigs.length} {tr('จาก')} {deptJigsAll.length} เครื่อง
+            {tr("พบ")} {deptJigs.length} {tr('จาก')} {deptJigsAll.length} {tr("เครื่อง")}
             {jigDropped > 0 && <span style={{ color: 'var(--amber)' }}> {tr('· อีก')} {jigDropped} {tr('เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)')}</span>}
           </div>
         )}
         {listErr && (
           <div role="alert" style={{ margin: '0 16px 8px', padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.5,
             background: 'rgba(224,92,74,0.12)', border: '1px solid rgba(224,92,74,0.4)', color: 'var(--text)' }}>
-            ⚠️ โหลดข้อมูลไม่ครบ — รายการ/ป้ายสถานะด้านล่างอาจไม่จริง<br />
+            ⚠️ {tr("โหลดข้อมูลไม่ครบ — รายการ/ป้ายสถานะด้านล่างอาจไม่จริง")}<br />
             <span style={{ color: 'var(--muted)' }}>{listErr}</span>{' '}
             <span onClick={() => window.location.reload()} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('โหลดใหม่')}</span>
           </div>
@@ -1773,8 +2300,8 @@ export default function PMCheckData({ mode = 'pm' }) {
             const scopeNote = (amScopeSet || amScope.unsure) && (
               <div style={{ padding: '0 4px 6px', fontSize: 11, color: amScope.unsure ? 'var(--amber)' : 'var(--muted)', lineHeight: 1.5 }}>
                 {amScope.unsure
-                  ? '⚠ ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานในโปรไฟล์ไม่ตรงทะเบียน) — ตรวจโปรไฟล์ที่ /add-user'
-                  : `เฉพาะไลน์ในขอบเขตของคุณ${hiddenLines.size ? ` · ซ่อนอีก ${hiddenLines.size} ไลน์` : ''}`}
+                  ? tr("⚠ ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานในโปรไฟล์ไม่ตรงทะเบียน) — ตรวจโปรไฟล์ที่ /add-user")
+                  : `${tr("เฉพาะไลน์ในขอบเขตของคุณ")}${hiddenLines.size ? ` · ${tr("ซ่อนอีก")} ${hiddenLines.size} ${tr("ไลน์")}` : ''}`}
               </div>
             )
             const lineNames = Object.keys(byLine).sort(lineNameCompare)
@@ -1787,21 +2314,21 @@ export default function PMCheckData({ mode = 'pm' }) {
               <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px dashed var(--amber)55', background: 'var(--amber-dim)' }}>
                 <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--amber)' }}>{tr('⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน ·')} {pendingReg.length} {tr('เครื่อง')}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 6px', lineHeight: 1.5 }}>
-                  ลงจุดตรวจไว้ที่ PM Setup แล้ว แต่ยังไม่ถูกติ๊กว่า “ต้องตรวจทุกต้นกะ” จึงยังไม่ขึ้นให้ตรวจที่นี่
+                  {tr("ลงจุดตรวจไว้ที่ PM Setup แล้ว แต่ยังไม่ถูกติ๊กว่า “ต้องตรวจทุกต้นกะ” จึงยังไม่ขึ้นให้ตรวจที่นี่")}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto' }}>
                   {pendingReg.map(j => <div key={j.id}>· {j.machine_no || j.name}{j.line_name ? ` (${j.line_name})` : ''}</div>)}
                 </div>
                 <Link to="/daily-checker?tab=pm" style={{ display: 'inline-block', marginTop: 6, fontSize: 11.5, color: 'var(--amber)', fontWeight: 800 }}>
-                  ไปลงทะเบียนที่แท็บ AM →
+                  {tr("ไปลงทะเบียนที่แท็บ")} AM →
                 </Link>
               </div>
             )
             if (!lineNames.length) return (<>
               {scopeNote}
               <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
-                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ${amScopeSet && !amScopeSet.has(lineParam) ? ' (หรืออยู่นอกขอบเขตของคุณ)' : ''}`
-                  : hiddenLines.size ? 'ไลน์ในขอบเขตของคุณยังไม่มีเครื่องที่ลงทะเบียน AM' : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
+                {lineParam ? `${tr("ไลน์")} ${lineParam} ${tr("ยังไม่ได้ลงทะเบียนเครื่องตรวจ")}${amScopeSet && !amScopeSet.has(lineParam) ? tr(' (หรืออยู่นอกขอบเขตของคุณ)') : ''}`
+                  : hiddenLines.size ? tr("ไลน์ในขอบเขตของคุณยังไม่มีเครื่องที่ลงทะเบียน AM") : tr("ยังไม่มีเครื่องที่ลงทะเบียน AM")}<br />
                 <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ไปลงทะเบียนที่แท็บ AM →')}</Link>
               </p>
               {pendingBlock}
@@ -1810,7 +2337,7 @@ export default function PMCheckData({ mode = 'pm' }) {
               {scopeNote}
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
-                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ดูทุกไลน์')}</span>
+                  {tr("กรองเฉพาะไลน์")} {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ดูทุกไลน์')}</span>
                 </div>
               )}
               {lineNames.map(ln => (
@@ -1827,10 +2354,14 @@ export default function PMCheckData({ mode = 'pm' }) {
                             background: st === 'fail' ? 'rgba(224,92,74,0.15)' : st ? 'rgba(61,214,92,0.15)' : 'var(--amber-dim)',
                             color: st === 'fail' ? '#e05c4a' : st ? '#3dd65c' : '#f59e0b',
                           }}>
-                            {st === 'fail' ? '✗ NG' : st ? '✓ ตรวจแล้ว' : 'รอตรวจ'}
+                            {st === 'fail' ? '✗ NG' : st ? tr("✓ ตรวจแล้ว") : tr("รอตรวจ")}
                           </span>
                         </div>
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
+                        {/* 🧩 อยู่สถานี AM — กดตัวไหนก็ได้ = ใบรวมทั้งชุด (23/11) */}
+                        {stationIx.byJig.get(jig.id) && (
+                          <p style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, margin: '2px 0 0' }}>🧩 {tr('สถานี')} {stationIx.byJig.get(jig.id).name}</p>
+                        )}
                         {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
                         {!hasAmChecklist(jig.id) && (
                           <p style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, margin: '2px 0 0' }}>{tr('⚠ ยังไม่มีจุดตรวจ AM')}</p>
@@ -1844,7 +2375,7 @@ export default function PMCheckData({ mode = 'pm' }) {
             </>)
           })() : (<>
             {deptJigs.length === 0 && ((qWords.length || jigScope.names?.length)
-              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ไม่พบเครื่องที่ตรงกับ')}{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ล้างตัวกรอง')}</span></p>
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ไม่พบเครื่องที่ตรงกับ')}{jigQuery.trim() ? ` “${jigQuery.trim()}”` : tr("ตัวกรอง")}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ล้างตัวกรอง')}</span></p>
               : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ยังไม่มีอุปกรณ์ในทีมนี้')}<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
             {/* จัดกลุ่มตามไลน์ (ทะเบียน ส่วนงาน→แม่→ลูก · ไม่ระบุไลน์ท้ายสุด) — เดิมเรียงตามชื่อยาวเหยียดเป็นแถวเดียว */}
             {jigGroups.map(g => (
@@ -1876,9 +2407,9 @@ export default function PMCheckData({ mode = 'pm' }) {
           <>
             <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
               {isNarrow && (
-                <button onClick={clearJig} title={tr('กลับไปเลือกอุปกรณ์')} style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
+                <button onClick={clearJig} title={tr('กลับไปเลือกอุปกรณ์')} style={{ flexShrink: 0, background: 'var(--bg3-surf)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
               )}
-              {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
+              {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2-surf)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h1 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{selectedJig.name}</h1>
                 <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{selectedJig.jig_no && `No: ${selectedJig.jig_no}`}{selectedJig.process && ` · ${selectedJig.process}`}</p>
@@ -1893,11 +2424,30 @@ export default function PMCheckData({ mode = 'pm' }) {
             </div>
 
             <div style={{ ...S.body, ...(isNarrow ? { padding: 12 } : null) }}>
-              {tab === 'record' && (
-                <DraftRestoreBar draft={pendingDraft} what={`ใบตรวจ ${selectedJig?.name || 'เครื่องนี้'}`} onRestore={restorePmDraft}
+              {/* 🧩 สถานี AM — อุปกรณ์นี้อยู่ในสถานี ⇒ ใบรวมทั้งชุด (23/11) */}
+              {tab === 'record' && station && (
+                <AmStationSheet station={station} memberJigs={stationJigs} amDept={department} methodIndex={methodIndex}
+                  canRecord={canRecord} deptWrite={deptWrite} amLineWrite={amLineWriteOf(station.line_name)} userId={userId} userRole={userRole} fullName={fullName}
+                  myPosition={myPosition} myEmployeeId={myEmployeeId} isSharedAccount={isSharedAccount}
+                  inspectorCode={inspectorCode} setInspectorCode={setInspectorCode} checkedThisShift={checkedThisShift}
+                  ownerTeamOf={ownerTeamOf} isMobileView={isMobileView}
+                  onSavedJig={(id, overall) => setCheckedThisShift(prev => ({ ...prev, [id]: overall }))}
+                  onQueueMo={(items) => setMoQueue(prev => [...prev, ...items])}
+                  onOpenSingle={(id) => { setSingleJigId(id); setParams({ equip: id }); setTab('history') }} />
+              )}
+              {/* ดูใบเดี่ยวของเครื่องในสถานีอยู่ — บอกทางกลับ */}
+              {amMode && selectedJig && singleJigId === selectedJig.id && stationIx.byJig.get(selectedJig.id) && (
+                <div style={{ marginBottom: 10, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ color: 'var(--muted)' }}>{tr('เครื่องนี้อยู่สถานี')} "{stationIx.byJig.get(selectedJig.id).name}"</span>
+                  <button type="button" className="tbtn" onClick={() => { setSingleJigId(null); setTab('record') }} style={{ padding: '3px 10px', fontSize: 12 }}>🧩 {tr('กลับไปใบสถานี')}</button>
+                </div>
+              )}
+              {amMode && amSt.err && <div style={{ marginBottom: 8, fontSize: 12, color: 'var(--amber)' }}>{tr('อ่านรายการสถานี AM ไม่ได้ — ตรวจทีละเครื่องตามปกติ')} ({amSt.err})</div>}
+              {tab === 'record' && !station && (
+                <DraftRestoreBar draft={pendingDraft} what={`${tr("ใบตรวจ")} ${selectedJig?.name || tr('เครื่องนี้')}`} onRestore={restorePmDraft}
                   onDiscard={() => { if (pmDraftKey) clearDraft(pmDraftKey); setPendingDraft(null) }} />
               )}
-              {tab === 'record' && (() => {
+              {tab === 'record' && !station && (() => {
                 /* ⚠️ ไม่มีจุดตรวจของแผนกนี้ = ห้ามโชว์รูปหมุน (2026-08-11 · user ทัก "ทำไมรูปยังค้างอยู่")
                    รูปหลายมุมเป็นของ "ตัวเครื่อง" (ของกลางทุกแผนก) แต่ "หมุดจุดตรวจ" ผูกกับ
                    checklist ของแต่ละแผนก และ**ปักอยู่คนละมุม (frame) กัน** — AM อาจตรวจด้านหน้า
@@ -1942,28 +2492,35 @@ export default function PMCheckData({ mode = 'pm' }) {
                       maxH={twoCol ? 560 : (isNarrow ? 300 : 320)} compact={stackCompact} />
                   : null
 
+                const notDueN = freqInfo.key === `${selectedJig.id}|${department}` ? freqInfo.notDue.size : 0
+                const freqBanner = cpLoad.status === 'ok' && freqInfo.key === `${selectedJig.id}|${department}` && (notDueN > 0 || freqInfo.err) ? (
+                  <AmNotDueBar notDue={[...freqInfo.notDue.values()]} err={freqInfo.err} shown={showNotDue} onToggle={() => setShowNotDue(v => !v)} />
+                ) : null
                 const formNode = (
                   <>
+                  {freqBanner}
                   {cpLoad.status === 'loading' ? (
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px' }}>{tr('กำลังโหลดรายการตรวจ…')}</div>
                   ) : cpLoad.status === 'error' ? (
                     <div style={{ textAlign: 'center', color: 'var(--red)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
-                      ⚠️ โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่
+                      ⚠️ {tr("โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่")}
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{cpLoad.msg}</div>
-                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ลองใหม่')}</button>
+                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ลองใหม่')}</button>
                     </div>
+                  ) : checkpoints.length === 0 && notDueN > 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '24px 12px' }}>{tr('กะนี้ไม่มีข้อที่ถึงรอบตรวจ — ข้อรายวัน/รายสัปดาห์/รายเดือนตรวจในรอบนี้ไปแล้ว')}</div>
                   ) : checkpoints.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
-                      เครื่องนี้ยังไม่มีรายการตรวจของ <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
+                      {tr("เครื่องนี้ยังไม่มีรายการตรวจของ")} <b style={{ color: deptColor }}>{(teams.find(t => t.key === department) || {}).label || department}</b>
                       <br />
                       <span style={{ fontSize: 12 }}>
-                        1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ)
-                        <br />{tr('จุดตรวจของแต่ละแผนก')}<b>{tr('ปักอยู่คนละมุมของเครื่องได้')}</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
+                        1 {tr("เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ")})
+                        <br />{tr('จุดตรวจของแต่ละแผนก')}<b>{tr('ปักอยู่คนละมุมของเครื่องได้')}</b> — {tr("จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้")}
                       </span>
                       {otherDepts.length > 0 && (
-                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
+                        <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
-                            เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
+                            {tr("เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู")}
                           </div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {otherDepts.map(d => {
@@ -1972,21 +2529,21 @@ export default function PMCheckData({ mode = 'pm' }) {
                                 <button key={d.department} onClick={() => setDept(d.department)}
                                   style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                                     border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
-                                  {t?.icon || ''} {tr(t?.label) || d.department} · {d.checkpointCount} จุด
+                                  {t?.icon || ''} {tr(t?.label) || d.department} · {d.checkpointCount} {tr("จุด")}
                                 </button>)
                             })}
                           </div>
                         </div>
                       )}
                       <div style={{ fontSize: 12, marginTop: 14 }}>
-                        ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่ <b>PM Setup</b> (ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น)
+                        {tr("ยังไม่ได้ลงจุดตรวจของแผนกนี้จริง → ตั้งที่")} <b>PM Setup</b> ({tr("ถ้าลงผิดแผนก ย้ายข้ามแผนกได้ที่นั่น")})
                       </div>
                       {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
                       {shimPoints.length > 0 && (
                         <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
-                          เครื่องนี้มีจุดชิม {shimPoints.length} {tr('จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่')}{' '}
+                          {tr("เครื่องนี้มีจุดชิม")} {shimPoints.length} {tr('จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่')}{' '}
                           <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>{tr('ทะเบียนจิ๊ก → 🔧 บันทึกชิม')}</Link>
-                          {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
+                          {' '}({tr("ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่")})
                         </div>
                       )}
                     </div>
@@ -2002,7 +2559,7 @@ export default function PMCheckData({ mode = 'pm' }) {
                           borderBottom: '1px solid var(--border)', padding: '7px 0 8px', marginBottom: 8,
                           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
-                            ตรวจแล้ว {doneN}/{checkpoints.length}
+                            {tr("ตรวจแล้ว")} {doneN}/{checkpoints.length}
                             {todo.length > 0 && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> {tr('· เหลือ')} {todo.length}</span>}
                           </span>
                           {!showPhoto ? null : (
@@ -2012,12 +2569,12 @@ export default function PMCheckData({ mode = 'pm' }) {
                                 style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
                                   border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
                                   background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
-                                {pinFocus ? (allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ') : 'ทุกข้อ'}
+                                {pinFocus ? (allPinned ? tr("เฉพาะจุดที่แตะ") : tr("ทีละข้อ")) : tr("ทุกข้อ")}
                               </button>
                               {/* ปักไม่ครบ = ยังใช้โหมดทีละข้อได้ แค่แตะหมุดบนรูปเลือกข้อไม่ได้ — บอกตามจริง ห้ามเงียบ */}
                               {!allPinned && (
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                                  (ปักหมุดบนรูปแล้ว {pinnedCps.length}/{checkpoints.length} — ปักครบจะแตะหมุดเลือกข้อได้ · ปักที่ PM Setup)
+                                  ({tr("ปักหมุดบนรูปแล้ว")} {pinnedCps.length}/{checkpoints.length} — {tr("ปักครบจะแตะหมุดเลือกข้อได้ · ปักที่")} PM Setup)
                                 </span>
                               )}
                             </>
@@ -2040,7 +2597,7 @@ export default function PMCheckData({ mode = 'pm' }) {
                                 <button onClick={() => setChipsAll(v => !v)}
                                   style={{ height: 22, padding: '0 8px', borderRadius: 11, cursor: 'pointer', fontSize: 11, fontWeight: 700,
                                     border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--text2)' }}>
-                                  {chipsAll ? 'ย่อ ▴' : `+${todo.length - CHIP_CAP} `}
+                                  {chipsAll ? tr("ย่อ ▴") : `+${todo.length - CHIP_CAP} `}
                                 </button>
                               )}
                             </div>
@@ -2050,10 +2607,10 @@ export default function PMCheckData({ mode = 'pm' }) {
                       {/* ยังไม่ได้แตะหมุด = บอกให้แตะ + ปุ่มลัดไปข้อแรกที่ยังไม่ตรวจ (ห้ามปล่อยจอว่างเฉยๆ) */}
                       {focusOn && !activeCpId && !activeShimId && (
                         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '22px 12px', lineHeight: 1.8,
-                          border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', background: 'var(--bg3)' }}>
-                          {allPinned ? 'แตะหมุดบนรูปเพื่อตรวจจุดนั้น' : 'เลือกข้อที่จะตรวจจากชิปเลขด้านบน'}
+                          border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', background: 'var(--bg3-surf)' }}>
+                          {allPinned ? tr("แตะหมุดบนรูปเพื่อตรวจจุดนั้น") : tr("เลือกข้อที่จะตรวจจากชิปเลขด้านบน")}
                           <div style={{ fontSize: 11.5, marginTop: 2 }}>
-                            ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “{allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ'}” เพื่อสลับ
+                            {tr("ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม")} “{allPinned ? tr("เฉพาะจุดที่แตะ") : tr("ทีละข้อ")}” {tr("เพื่อสลับ")}
                           </div>
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
@@ -2088,15 +2645,15 @@ export default function PMCheckData({ mode = 'pm' }) {
                               Item {groupNo[g]} — {g}
                             </div>
                           ) : (!g && prevG ? (
-                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--bg3)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
-                              อื่นๆ
+                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--bg3-surf)', border: '1px solid var(--border)', fontSize: 12.5, fontWeight: 800, color: 'var(--muted)' }}>
+                              {tr("อื่นๆ")}
                             </div>
                           ) : null))
                           const row = cp.type === 'variable' ? (
-                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex}
-                              calcText={calcOf(cp) ? calcFormula(calcOf(cp), id => { const k = checkpoints.findIndex(c => c.id === id); return k < 0 ? '?' : `ข้อ ${k + 1}` }) : null} />
+                            <VariableRow cp={cp} idx={idx} r={results[cp.id] ?? { v1: '', v2: '', v3: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} onSpc={() => setSpcCp({ cp, jigName: selectedJig?.name || '' })}
+                              calcText={calcOf(cp) ? calcFormula(calcOf(cp), id => { const k = checkpoints.findIndex(c => c.id === id); return k < 0 ? '?' : `${tr("ข้อ")} ${k + 1}` }) : null} />
                           ) : cp.type === 'measure' ? (
-                            <MeasureRow cp={cp} idx={idx} r={results[cp.id] ?? { mval: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} />
+                            <MeasureRow cp={cp} idx={idx} r={results[cp.id] ?? { mval: '' }} onChange={v => setResults(prev => ({ ...prev, [cp.id]: v }))} methodIndex={methodIndex} onSpc={() => setSpcCp({ cp, jigName: selectedJig?.name || '' })} />
                           ) : (
                             <AttrRow cp={cp} idx={idx} methodIndex={methodIndex}
                               value={results[cp.id]?.attr ?? ''} note={results[cp.id]?.note ?? ''}
@@ -2139,67 +2696,13 @@ export default function PMCheckData({ mode = 'pm' }) {
                           </div>
                         )
                       })()}
-                      {shimPoints.length > 0 && (!focusOn || activeShimId) && (() => {
-                        const kindOf = (code) => shimKinds.find(k => k.code === code) || { icon: '🔩', label: code || '—' }
-                        const dueN = shimPoints.filter(pt => pointDueStatus(pt, { currentShot: null }).due).length
-                        return (
-                          <div style={{ marginTop: 12 }}>
-                            <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
-                              จุดชิม (Shim Record) · {shimPoints.length} {tr('จุด')}{dueN ? <span style={{ color: 'var(--red)' }}> {tr('· ถึงรอบ')} {dueN}</span> : null}
-                              <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
-                                วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ)
-                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} {tr('จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด')}</span>}
-                              </div>
-                            </div>
-                            {!canShim && (
-                              <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
-                                บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
-                              </NoticeBar>
-                            )}
-                            {shimPoints.filter(pt => !focusOn || pt.id === activeShimId).map(pt => {
-                              const st = shimStack(pt)
-                              const due = pointDueStatus(pt, { currentShot: null })
-                              const v = shimVals[pt.id] ?? { mm: '', note: '' }
-                              const mm = v.mm === '' ? null : Number(v.mm)
-                              const act = deriveShimAction(pt.current_shim_mm, mm)
-                              const pinned = shimPins.some(x => x.point.id === pt.id)
-                              const overMax = mm != null && pt.max_shim_mm != null && mm > Number(pt.max_shim_mm)
-                              const k = kindOf(pt.kind_code)
-                              return (
-                                <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
-                                  style={{ ...S.cpRow(null), borderColor: overMax ? 'var(--red)' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? tr('ปักบนรูปแล้ว') : tr('ยังไม่ปักบนรูป')}>{pt.point_no}</span>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {tr(k.label)}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
-                                    <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
-                                      ชิมรวม <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> {tr('/ เพดาน')} {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
-                                      {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>· {due.text}</span>}
-                                    </span>
-                                  </div>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                    <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      {tr('ค่าชิมรวมที่วัดได้')}
-                                      <input type="number" step="0.01" inputMode="decimal" value={v.mm} disabled={!canShim} placeholder="mm"
-                                        onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, mm: e.target.value } }))}
-                                        style={{ width: 84, textAlign: 'center', fontFamily: 'monospace' }} />
-                                      <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>mm</span>
-                                    </label>
-                                    <input value={v.note} disabled={!canShim} placeholder={tr('หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)')}
-                                      onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, note: e.target.value } }))}
-                                      style={{ flex: '1 1 160px', minWidth: 120 }} />
-                                    {mm != null && (
-                                      <span style={{ fontSize: 11.5, fontWeight: 700, color: overMax ? 'var(--red)' : SHIM_PIN_COLOR }}>
-                                        {act === 'check' ? '→ ยืนยันเท่าเดิม' : act === 'add' ? `→ เพิ่ม +${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm` : `→ ลด ${(mm - Number(pt.current_shim_mm)).toFixed(2)} mm`}
-                                        {overMax && ' · เกินเพดาน — ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วน'}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        )
-                      })()}
+                      {shimPoints.length > 0 && (!focusOn || activeShimId) && (
+                        <ShimRecordSection points={shimPoints} shown={shimPoints.filter(pt => !focusOn || pt.id === activeShimId)}
+                          shimKinds={shimKinds} shimVals={shimVals} setShimVals={setShimVals} canShim={canShim}
+                          pinnedIds={new Set(shimPins.map(x => x.point.id))} rowRefs={rowRefs}
+                          scrollMarginTop={(stackCompact ? viewerH : 0) + progH + 12}
+                          readOnlyNote={shimAmReadOnly ? tr('ใบ AM ดูค่าชิมได้อย่างเดียว — บันทึกค่าชิมเป็นงานของทีมช่าง (ใบ PM)') : null} />
+                      )}
                       <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder={tr('หมายเหตุ (ถ้ามี)...')} style={{ marginTop: 8 }} />
                       {/* 🔴 ตรวจไม่ครบ = บันทึกไม่ได้ (19/11 · คำสั่ง user — มาตรฐานเดียวกับใบตรวจ QA)
@@ -2212,9 +2715,9 @@ export default function PMCheckData({ mode = 'pm' }) {
                       }} disabled={saving || !canRecord}
                         style={{ ...S.saveBtn,
                           background: isFormReady ? 'var(--accent)' : 'var(--accent2)',
-                          color: isFormReady ? 'var(--accent-ink)' : '#1a1a1a',
+                          color: isFormReady ? 'var(--accent-ink)' : SAVE_WARN_INK,
                           opacity: (saving || !canRecord) ? 0.6 : 1 }}>
-                        {saving ? 'กำลังบันทึก...' : !canRecord ? `ไม่มีสิทธิ์บันทึกผลตรวจ ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? 'บันทึกผลการตรวจ' : `ยังบันทึกไม่ได้ — ยังไม่ตรวจ ${nMissing} จุด`}
+                        {saving ? tr("กำลังบันทึก...") : !canRecord ? `${tr("ไม่มีสิทธิ์บันทึกผลตรวจ")} ${isAmTeam(department) ? 'AM' : 'PM'}` : isFormReady ? tr("บันทึกผลการตรวจ") : `${tr("ยังบันทึกไม่ได้ — ยังไม่ตรวจ")} ${nMissing} ${tr("จุด")}`}
                       </button>
                     </>
                   )}
@@ -2239,10 +2742,10 @@ export default function PMCheckData({ mode = 'pm' }) {
                         {viewerOpen && viewerNode}
                         <button onClick={toggleViewer} style={{
                           display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                          fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                          fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)',
                         }}>
                           {/* พับแล้วต้องยังบอกว่าซ่อนอะไรไว้ + กางคืนได้ ห้ามหายเงียบ */}
-                          {viewerOpen ? 'ซ่อนรูปเครื่อง' : 'แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)'}
+                          {viewerOpen ? tr("ซ่อนรูปเครื่อง") : tr("แสดงรูปเครื่อง (ดูว่าจุดอยู่ตรงไหน)")}
                         </button>
                       </div>
                     )}
@@ -2262,13 +2765,13 @@ export default function PMCheckData({ mode = 'pm' }) {
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {histMeta && !histMeta.teamsKnown && (
                     <p style={{ margin: 0, padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 600,
-                                border: '1px solid var(--amber)', background: 'var(--bg3)', color: 'var(--amber)' }}>
-                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>{tr('ทุกทีม')}</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
+                                border: '1px solid var(--amber)', background: 'var(--bg3-surf)', color: 'var(--amber)' }}>
+                      ⚠️ {tr("อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ")}<b>{tr('ทุกทีม')}</b>{tr("ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร")}
                     </p>
                   )}
                   {histMeta?.teamsKnown && otherN === null && (
                     <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
-                      ⚠️ นับใบของทีมอื่นไม่ได้ — อาจมีใบของทีมอื่นบนเครื่องนี้ที่ยังไม่ได้แสดง
+                      ⚠️ {tr("นับใบของทีมอื่นไม่ได้ — อาจมีใบของทีมอื่นบนเครื่องนี้ที่ยังไม่ได้แสดง")}
                     </p>
                   )}
                   {!!otherN && (
@@ -2276,21 +2779,21 @@ export default function PMCheckData({ mode = 'pm' }) {
                       <span>{tr('🔀 เครื่องนี้มีใบของทีมอื่นอีก')} <b>{otherN}</b> {tr('ใบ (')}{(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
                       <button type="button" onClick={toggleOtherHist} style={{
                         padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
-                        border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                        border: '1px dashed var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)',
                       }}>{showOther ? tr('ซ่อนใบของทีมอื่น') : tr('ดูใบของทีมอื่นด้วย')}</button>
                     </div>
                   )}
                   {!!histMeta?.unknownN && (
                     <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
-                      ⚠️ อีก <b>{histMeta.unknownN}</b> ใบของเครื่องนี้ชี้ทีมเจ้าของไม่ได้ (ใบไม่ผูกจุดตรวจของเครื่องนี้) — ไม่ได้แสดงในลิสต์
+                      ⚠️ {tr("อีก")} <b>{histMeta.unknownN}</b> {tr("ใบของเครื่องนี้ชี้ทีมเจ้าของไม่ได้ (ใบไม่ผูกจุดตรวจของเครื่องนี้) — ไม่ได้แสดงในลิสต์")}
                     </p>
                   )}
                   {grp.mine.length === 0 && grp.others.length === 0 && grp.unknown.length === 0 ? (
                     <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>
-                      {otherN ? 'ทีมนี้ยังไม่เคยตรวจเครื่องนี้ — มีแต่ใบของทีมอื่น (กดดูได้ด้านบน)' : 'ยังไม่มีประวัติการตรวจ'}
+                      {otherN ? tr("ทีมนี้ยังไม่เคยตรวจเครื่องนี้ — มีแต่ใบของทีมอื่น (กดดูได้ด้านบน)") : tr("ยังไม่มีประวัติการตรวจ")}
                     </p>
                   ) : [...grp.mine, ...grp.others, ...grp.unknown].map(insp => (
-                    <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card-surf)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{formatDate(insp.inspected_at)}</p>
                         <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
@@ -2298,23 +2801,23 @@ export default function PMCheckData({ mode = 'pm' }) {
                           {/* 🔀 ใบที่ไม่ใช่ของทีมที่กำลังดู ต้องติดป้ายว่าของใคร — ไม่งั้นปนกันแล้วแยกไม่ออก */}
                           {(clDeptById[insp.checklist_id] ?? null) !== department && (
                             <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
-                                           border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                                           border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)' }}>
                               {inspTeamLabel(clDeptById[insp.checklist_id])}
                             </span>
                           )}
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>{isAmTeam(clDeptById[insp.checklist_id] ?? department) ? tr('✓ อนุมัติแล้ว') : tr('✓ หัวหน้ายืนยันแล้ว')}</span>}
-                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>{tr('✕ ตีกลับ')}</span>}
+                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: 'var(--red)' }}>{tr('✕ ตีกลับ')}</span>}
                           {insp.approval_status === 'pending' && (() => {
                             // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
                             const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
                             const nx = am ? amNextApprover(positionRank(inspectorOf(insp).position)) : null
                             // ใบช่าง (PM) = รอหัวหน้าผู้ตรวจยืนยัน (ขั้น 2 · 11/11)
-                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : `รอ${PM_HEAD_STEP.label}ยืนยัน`}</span>
+                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `${tr("รอ")}${nx.step.label}` : tr("รอผู้จัดการรับทราบ")) : `${tr("รอ")}${tr(PM_HEAD_STEP.label)}${tr("ยืนยัน")}`}</span>
                           })()}
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
                           {moByInsp[insp.id] && (
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
-                              ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'} · {moStatusLabel(moByInsp[insp.id])}
+                              {tr("ใบซ่อม")} {moByInsp[insp.id].mo_no || tr("(รอออกเลข)")} · {moStatusLabel(moByInsp[insp.id])}
                             </span>
                           )}
                           {insp.status === 'fail' && !moByInsp[insp.id] && insp.mo_waived_reason && (
@@ -2346,11 +2849,14 @@ export default function PMCheckData({ mode = 'pm' }) {
       </div>
       )}
 
+      {spcCp && <EquipSpcModal cp={spcCp.cp} jigName={spcCp.jigName} onClose={() => setSpcCp(null)} />}
       <AnimatePresence>
         {viewInspection && (
-          <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
+          <HistoryModal inspection={viewInspection} checkpoints={loadedCps} jig={selectedJig}
             userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
             isAm={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department)}
+            lineWrite={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department) ? amLineWriteOf(selectedJig?.line_name) : null}
+            deptKey={clDeptById[viewInspection.checklist_id] ?? department}
             inspectorPosition={inspectorOf(viewInspection).position} inspectorIsSelf={inspectorOf(viewInspection).isSelf} myPosition={myPosition}
             isShared={!!isSharedAccount}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
@@ -2362,12 +2868,12 @@ export default function PMCheckData({ mode = 'pm' }) {
              ตอนที่คนยังอยู่หน้าเครื่องและรู้ว่าเสียยังไง (ยังกลับมาเปิดจากประวัติได้ แต่คนละจังหวะ) */}
       {moPrompt && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 3100, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>{tr('⚠ พบผลตรวจไม่ผ่าน')} {moPrompt.ngTopics.length} {tr('จุด')}</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{selectedJig?.name}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--red)' }}>{tr('⚠ พบผลตรวจไม่ผ่าน')} {moPrompt.ngTopics.length} {tr('จุด')}</div>
+              <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{(moPrompt.jig || selectedJig)?.name}{moQueue.length ? ` · ${tr('ต่อคิวอีก')} ${moQueue.length} ${tr('เครื่อง')}` : ''}</div>
             </div>
-            <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
+            <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
               {moPrompt.ngTopics.map((n, i) => <div key={i}>• {n}</div>)}
             </div>
             <div>
@@ -2384,7 +2890,7 @@ export default function PMCheckData({ mode = 'pm' }) {
               {/* AM เจอ NG ส่งกลับให้ผลิตซ่อมเองไม่ได้ — ต้องบอกว่าทีมตั้งต้นมาจากการเดา ให้เลือกทับได้ */}
               {isAmTeam(department) && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
-                  ผลตรวจนี้เป็น AM (ผลิตตรวจเอง) — ระบบเดาทีมช่างจากชนิดอุปกรณ์ให้ก่อน เลือกใหม่ได้ถ้าไม่ตรง
+                  {tr("ผลตรวจนี้เป็น AM (ผลิตตรวจเอง) — ระบบเดาทีมช่างจากชนิดอุปกรณ์ให้ก่อน เลือกใหม่ได้ถ้าไม่ตรง")}
                 </div>
               )}
             </div>
@@ -2400,19 +2906,19 @@ export default function PMCheckData({ mode = 'pm' }) {
               {!isAmPrompt && (
                 <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                  border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)',
                 }}>{tr('ไว้ก่อน')}</button>
               )}
               {isAmPrompt && !moWaiving && (
                 <button onClick={() => setMoWaiving(true)} disabled={moSaving} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                  border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)',
                 }}>{tr('ไม่เปิดใบ (ระบุเหตุผล)')}</button>
               )}
               {isAmPrompt && moWaiving && (<>
                 <button onClick={() => setMoWaiving(false)} disabled={moSaving} style={{
                   padding: '9px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
-                  border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
+                  border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--muted)',
                 }}>{tr('กลับ')}</button>
                 <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
@@ -2430,9 +2936,9 @@ export default function PMCheckData({ mode = 'pm' }) {
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
               {isAmPrompt
                 ? (can('mtn_repair', 'report', userRole)
-                  ? 'ผลตรวจ AM ที่ผิดปกติต้องเปิดใบแจ้งซ่อม หรือระบุเหตุผลที่ไม่เปิด — บอร์ด AM จะติดตามใบซ่อมจนกว่าจะปิด'
-                  : 'บัญชีนี้เปิดใบแจ้งซ่อมไม่ได้ — ระบุเหตุผล (เช่น แจ้งหัวหน้าแล้ว) หรือให้หัวหน้าเปิดจากแท็บ 🕐 ประวัติ')
-                : 'กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้'}
+                  ? tr("ผลตรวจ AM ที่ผิดปกติต้องเปิดใบแจ้งซ่อม หรือระบุเหตุผลที่ไม่เปิด — บอร์ด AM จะติดตามใบซ่อมจนกว่าจะปิด")
+                  : tr("บัญชีนี้เปิดใบแจ้งซ่อมไม่ได้ — ระบุเหตุผล (เช่น แจ้งหัวหน้าแล้ว) หรือให้หัวหน้าเปิดจากแท็บ 🕐 ประวัติ"))
+                : tr("กด “ไว้ก่อน” ได้ — เปิดทีหลังจากแท็บ 🕐 ประวัติ ของเครื่องนี้")}
             </div>
             {/* ปิดหน้าต่างได้ (ไม่ขังคนไว้ในโมดัล) แต่รายการ "ยังไม่จบ" — ค้างเป็น ⚠ บนบอร์ด AM + แท็บประวัติจนกว่าจะเปิดใบ/ให้เหตุผล */}
             {isAmPrompt && (
@@ -2453,7 +2959,7 @@ export default function PMCheckData({ mode = 'pm' }) {
         onScan={(parsed) => {
           const j = resolveJig(parsed, jigs)
           if (!j) return 'ไม่พบอุปกรณ์นี้ในทะเบียน PM — ลงทะเบียนที่แท็บ ⚙️ ตั้งค่าจุดตรวจก่อน'
-          if (!deptJigsAll.some(x => x.id === j.id)) return `${j.jig_no || j.name || 'อุปกรณ์นี้'} อยู่คนละแผนกกับแท็บที่เปิดอยู่ — สลับแผนกด้านบนก่อน`
+          if (!deptJigsAll.some(x => x.id === j.id)) return `${j.jig_no || j.name || tr('อุปกรณ์นี้')} ${tr("อยู่คนละแผนกกับแท็บที่เปิดอยู่ — สลับแผนกด้านบนก่อน")}`
           selectJig(j)
           setScanOpen(false)
         }}

@@ -110,9 +110,9 @@ export default function PmCoordination() {
      (หน้างาน PD1 แจ้ง "MO ไม่มีให้เลือกไลน์" ทั้งที่ฐานข้อมูลมีครบ) · เก็บผลทั้งก้อนไว้อ่าน error ได้ */
   const ln = lnRes?.error ? null : lnRes.data;
     const errs = [];
-    if (plRes.error) errs.push(`แผนประสานงาน: ${plRes.error.message || plRes.error}`);
-    if (plansRes.error || plansRes.truncated) errs.push(`แผน PM: ${plansRes.error || 'อ่านได้ไม่ครบ'}`);
-    if (clsRes.error || clsRes.truncated) errs.push(`รายการตรวจ: ${clsRes.error || 'อ่านได้ไม่ครบ'}`);
+    if (plRes.error) errs.push(`${tr("แผนประสานงาน")}: ${plRes.error.message || plRes.error}`);
+    if (plansRes.error || plansRes.truncated) errs.push(`${tr("แผน")} PM: ${plansRes.error || tr('อ่านได้ไม่ครบ')}`);
+    if (clsRes.error || clsRes.truncated) errs.push(`${tr("รายการตรวจ")}: ${clsRes.error || tr('อ่านได้ไม่ครบ')}`);
     const pl = plRes.data || [];
     // ผูกแผน PM → อุปกรณ์ (checklist_id → checklists.equipment_id) · equipment เป็น jig (รวม shadow) หรือ machine
     const clById = {}; (clsRes.rows || []).forEach(c => { clById[c.id] = c; });
@@ -123,8 +123,8 @@ export default function PmCoordination() {
       fetchByIds(pl.map(p => p.id), ids => supabaseDR.from('pm_coordination_tasks').select(TASK_COLS).in('plan_id', ids)),
     ]);
     if (req !== reqRef.current) return;
-    if (jigRes.error || jigRes.truncated) errs.push(`ทะเบียนอุปกรณ์: ${jigRes.error || 'อ่านได้ไม่ครบ'}`);
-    if (tkRes.error || tkRes.truncated) errs.push(`งานในแผน: ${tkRes.error || 'อ่านได้ไม่ครบ'}`);
+    if (jigRes.error || jigRes.truncated) errs.push(`${tr("ทะเบียนอุปกรณ์")}: ${jigRes.error || tr('อ่านได้ไม่ครบ')}`);
+    if (tkRes.error || tkRes.truncated) errs.push(`${tr("งานในแผน")}: ${tkRes.error || tr('อ่านได้ไม่ครบ')}`);
     const jigById = {}; (jigRes.rows || []).forEach(j => { jigById[j.id] = j; });
     const upcoming = (plansRes.rows || []).map(p => {
       const cl = clById[p.checklist_id]; if (!cl) return null;
@@ -154,7 +154,7 @@ export default function PmCoordination() {
       const d = JSON.parse(raw);
       setEditing({ _new: true, title: d.title || (d.machine_name ? `PM ${d.machine_name}` : ''), pm_plan_id: d.pm_plan_id || '',
         machine_id: d.machine_id || '', machine_no: d.machine_no || '', machine_name: d.machine_name || '', line_name: d.line_name || '',
-        tasks: d.next_due_date ? [{ task_date: d.next_due_date, team: d.department || '', description: d.checklist_name ? `PM ตามแผน: ${d.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }] : [] });
+        tasks: d.next_due_date ? [{ task_date: d.next_due_date, team: d.department || '', description: d.checklist_name ? `PM ${tr("ตามแผน")}: ${d.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }] : [] });
     } catch { /* ignore */ }
   }, [loading, canManage]);
 
@@ -211,7 +211,7 @@ export default function PmCoordination() {
 
   return (
     <Page>
-      <ReadOnlyNote show={!canManage} role={role} what="สร้าง/แก้แผนประสานงาน PM"
+      <ReadOnlyNote show={!canManage} role={role} what={tr("สร้าง/แก้แผนประสานงาน PM")}
         permKey="pm_coord:manage" hint={tr('ฝ่ายผลิตดูแผนที่ถูกนัดและพิมพ์ใบได้ตามปกติ (ตั้งใจให้เห็นทุก role)')} />
       <PageHeader title={tr('แผนประสานงาน PM / งานเครื่องจักร')} icon="🗓️"
         sub={tr('งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า')}
@@ -220,20 +220,20 @@ export default function PmCoordination() {
       {/* UI-STANDARD 2026-09-24 — ตัวเลือกสถานะ 4 ตัว = Segmented · "ทุกสถานะ" ซ้ายสุด (state 'all' เดิม) */}
       <FilterBar>
         <Segmented value={fStatus} onChange={setFStatus} label={tr('สถานะแผน')} options={[
-          { value: 'all', label: ALL.status }, { value: 'active', label: 'กำลังดำเนินการ' },
-          { value: 'notified', label: 'แจ้งแล้ว' }, { value: 'done', label: 'เสร็จ' },
+          { value: 'all', label: ALL.status }, { value: 'active', label: tr("กำลังดำเนินการ") },
+          { value: 'notified', label: tr("แจ้งแล้ว") }, { value: 'done', label: tr("เสร็จ") },
         ]} />
         <LineScopeSelect lines={scopeLineList} section={fScope.section} line={fScope.line}
           onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
-        <SearchInput value={fQ} onChange={setFQ} fields="ชื่อแผน / เครื่อง / ไลน์ / งาน" />
+        <SearchInput value={fQ} onChange={setFQ} fields={tr("ชื่อแผน / เครื่อง / ไลน์ / งาน")} />
         <span className="spacer" />
-        <span className="filter-count">{shown.length} {tr('แผน')}{noLineHidden ? ` · ซ่อนแผนไม่ระบุไลน์ ${noLineHidden}` : ''}</span>
+        <span className="filter-count">{shown.length} {tr('แผน')}{noLineHidden ? ` · ${tr("ซ่อนแผนไม่ระบุไลน์")} ${noLineHidden}` : ''}</span>
         <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>{tr('รีเฟรช')}</button>
       </FilterBar>
 
       {loadErr && (
         <div role="alert" style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5, fontWeight: 700 }}>
-          ⚠️ โหลดข้อมูลไม่ครบ ({loadErr}) — รายการ/ตัวนับด้านล่าง<u>{tr('อาจขาด')}</u> ไม่ได้แปลว่าไม่มีแผน · กด 🔄 รีเฟรช
+          ⚠️ {tr("โหลดข้อมูลไม่ครบ")} ({loadErr}) — {tr("รายการ/ตัวนับด้านล่าง")}<u>{tr('อาจขาด')}</u> {tr("ไม่ได้แปลว่าไม่มีแผน · กด 🔄 รีเฟรช")}
         </div>
       )}
 
@@ -257,13 +257,13 @@ export default function PmCoordination() {
           แถวแดง = มีงานเลยวันแล้วยังไม่ติ๊ก (แผนที่ยังไม่ปิด) */}
       {!shown.length ? (
         <div style={{ color: 'var(--muted)', padding: 24, textAlign: 'center' }}>
-          {plans.length ? 'ไม่มีแผนที่ตรงกับตัวกรอง' : loadErr ? 'อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน' : 'ยังไม่มีแผน'}
+          {plans.length ? tr("ไม่มีแผนที่ตรงกับตัวกรอง") : loadErr ? tr("อ่านข้อมูลไม่ได้ — ดูแถบแดงด้านบน") : tr("ยังไม่มีแผน")}
         </div>
       ) : (
         <div className="table-sticky" style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table className="rec-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
-              <tr>{['แผน', 'เครื่อง', 'ไลน์', 'ช่วงวันที่', 'งานถัดไป', 'ความคืบหน้า', 'สถานะ', ''].map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{tr(h)}</th>)}</tr>
+              <tr>{[tr("แผน"), tr("เครื่อง"), tr("ไลน์"), tr("ช่วงวันที่"), tr("งานถัดไป"), tr("ความคืบหน้า"), tr("สถานะ"), ''].map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{tr(h)}</th>)}</tr>
             </thead>
             <tbody>
               {shown.map(({ p, sum }) => (
@@ -308,12 +308,12 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
       const ok = checkWriteRows(await supabaseDR.from('pm_coordination_plans').update({ status: 'notified', updated_at: new Date().toISOString() }).eq('id', p.id).select('id'), 'ส่งแจ้งเตือนแล้ว แต่ตั้งสถานะ "แจ้งแล้ว"');
       if (ok) toast.success('แจ้ง Production แล้ว');
       onReload();
-    } catch (e) { toast.error('แจ้งไม่สำเร็จ: ' + (e.message || e)); }
+    } catch (e) { toast.error((tr('แจ้งไม่สำเร็จ') + ': ') + (e.message || e)); }
   };
   const setStatus = async (status) => {
     if (!planWrite.ok) { toast.info(writeBlockText(planWrite, { what: 'แผน PM ของไลน์นี้' })); return; }
     const { error: wErr215 } = await supabaseDR.from('pm_coordination_plans').update({ status, updated_at: new Date().toISOString() }).eq('id', p.id);
-    if (wErr215) { toast.error('เปลี่ยนสถานะแผนไม่สำเร็จ: ' + wErr215.message); return; }
+    if (wErr215) { toast.error((tr('เปลี่ยนสถานะแผนไม่สำเร็จ') + ': ') + wErr215.message); return; }
     // ผูกแผน PM เดิม + ปิดเป็น "เสร็จ" → ถามว่าจะ stamp วันทำล่าสุดในระบบแผน PM ด้วยไหม (เลื่อนรอบถัดไป)
     if (status === 'done' && p.pm_plan_id && pmPlan) {
       if (await askConfirm('PM ของเครื่องนี้ทำเสร็จจริงแล้ว?\nกด OK เพื่ออัพเดท "วันทำล่าสุด" ในระบบแผน PM (เลื่อนรอบถัดไปให้อัตโนมัติ)')) {
@@ -328,7 +328,7 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
         }
         // RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error ⇒ นับแถว (กฎเขียน DB ข้อ 2)
         const { data: upd, error } = await supabaseDR.from('pm_plans').update(patch).eq('id', p.pm_plan_id).select('id');
-        if (error) toast.error('อัพเดทแผน PM ไม่สำเร็จ: ' + error.message);
+        if (error) toast.error((tr('อัพเดทแผน PM ไม่สำเร็จ') + ': ') + error.message);
         else if (!upd?.length) toast.error('อัพเดทแผน PM ไม่สำเร็จ — ไม่มีสิทธิ์หรือแผนถูกลบไปแล้ว');
         else toast.success('อัพเดทวันทำล่าสุดในระบบแผน PM แล้ว');
       }
@@ -465,10 +465,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
     if (!pp) { setF(v => ({ ...v, pm_plan_id: '' })); return; }
     setF(v => ({ ...v, pm_plan_id: pp.plan_id, machine_id: pp.machine_id || '', machine_no: pp.machine_no || '',
       machine_name: pp.machine_name || '', line_name: pp.line_name || v.line_name,
-      title: v.title.trim() || (pp.machine_name ? `PM ${pp.machine_name}` : 'แผน PM') }));
+      title: v.title.trim() || (pp.machine_name ? `PM ${pp.machine_name}` : tr("แผน PM")) }));
     if (pp.next_due_date) setTasks(ts => {
       const has = ts.some(t => t.task_date === pp.next_due_date);
-      return has ? ts : [{ task_date: pp.next_due_date, team: pp.department || '', description: pp.checklist_name ? `PM ตามแผน: ${pp.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }, ...ts.filter(t => t.description || t.task_date !== todayStr())];
+      return has ? ts : [{ task_date: pp.next_due_date, team: pp.department || '', description: pp.checklist_name ? `PM ${tr("ตามแผน")}: ${pp.checklist_name}` : 'PM ตามแผน', time_from: '', time_to: '', is_support: false }, ...ts.filter(t => t.description || t.task_date !== todayStr())];
     });
   };
   const setTask = (i, k, val) => setTasks(ts => ts.map((t, j) => j === i ? { ...t, [k]: val } : t));
@@ -483,11 +483,11 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       if (!srcWrite.ok) return toast.info(writeBlockText(srcWrite, { what: 'แผน PM ของไลน์นี้' }));
     }
     const dstWrite = canWriteLine(wctx, f.line_name, lines);
-    if (!dstWrite.ok) return toast.info(writeBlockText(dstWrite, { what: `แผน PM ของไลน์ "${f.line_name}"` }));
+    if (!dstWrite.ok) return toast.info(writeBlockText(dstWrite, { what: `${tr("แผน PM ของไลน์")} "${f.line_name}"` }));
     // เลขเครื่องที่ไม่ผูกทะเบียน = ผังเครื่อง/Andon หาไม่เจอ — ถามเฉพาะแผนใหม่หรือเมื่อเพิ่งเปลี่ยนเลข (แผนเก่าที่ค้างมาก่อนยังแก้ส่วนอื่นได้)
     // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็นยืนยัน — เก็บเป็น text (machine_id null) ไม่ทำข้อมูลอื่นเสีย
     if (f.machine_no && !f.machine_id && (plan._new || f.machine_no !== (plan.machine_no || ''))
-      && !await askConfirm(`เครื่อง ${f.machine_no} ไม่มีในทะเบียน /machines — ผังเครื่อง/Andon จะหาแผนนี้ไม่เจอ · ใช้ค่านี้ต่อหรือไม่?`)) return;
+      && !await askConfirm(`${tr("เครื่อง")} ${f.machine_no} ${tr("ไม่มีในทะเบียน /machines — ผังเครื่อง/Andon จะหาแผนนี้ไม่เจอ · ใช้ค่านี้ต่อหรือไม่")}?`)) return;
     setBusy(true);
     const nowIso = new Date().toISOString();
     const head = { title: f.title.trim(), machine_id: f.machine_id || null, machine_no: f.machine_no || null,
@@ -509,7 +509,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       const { error } = await supabaseDR.from('pm_coordination_plans').update(head).eq('id', planId);
       if (error) { setBusy(false); return toast.error(error.message); }
       const { data: olds, error: eOld } = await supabaseDR.from('pm_coordination_tasks').select('id').eq('plan_id', planId);
-      if (eOld) { setBusy(false); return toast.error('อ่านรายการงานเดิมไม่สำเร็จ (ยังไม่แก้รายการงาน): ' + eOld.message); }
+      if (eOld) { setBusy(false); return toast.error((tr('อ่านรายการงานเดิมไม่สำเร็จ (ยังไม่แก้รายการงาน') + '): ') + eOld.message); }
       oldIds = (olds || []).map(r => r.id);
     }
     const rows = tasks.filter(t => t.description?.trim() || t.task_date).map((t, i) => ({
@@ -520,12 +520,12 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       const { error } = await supabaseDR.from('pm_coordination_tasks').insert(rows);
       if (error) {
         setBusy(false);   // คงหน้าต่างไว้ — รายการที่พิมพ์ไม่หาย กดบันทึกซ้ำได้
-        return toast.error(`บันทึกรายการงานไม่สำเร็จ${isNew ? ' (หัวแผนสร้างแล้ว — กดบันทึกอีกครั้งเพื่อเพิ่มรายการงาน)' : ' (รายการเดิมยังอยู่)'}: ${error.message}`);
+        return toast.error(`${tr("บันทึกรายการงานไม่สำเร็จ")}${isNew ? tr(' (หัวแผนสร้างแล้ว — กดบันทึกอีกครั้งเพื่อเพิ่มรายการงาน)') : tr(' (รายการเดิมยังอยู่)')}: ${error.message}`);
       }
     }
     if (oldIds.length) {
       const { error: eDel } = await supabaseDR.from('pm_coordination_tasks').delete().in('id', oldIds);
-      if (eDel) { setBusy(false); toast.error(`บันทึกรายการใหม่แล้ว แต่ลบรายการเดิมไม่สำเร็จ — แผนนี้อาจมีงานซ้ำ ลบแถวเกินออกเอง: ${eDel.message}`); onSaved(); return; }
+      if (eDel) { setBusy(false); toast.error(`${tr("บันทึกรายการใหม่แล้ว แต่ลบรายการเดิมไม่สำเร็จ — แผนนี้อาจมีงานซ้ำ ลบแถวเกินออกเอง")}: ${eDel.message}`); onSaved(); return; }
     }
     setBusy(false); toast.success('บันทึกแล้ว'); onSaved();
   };
@@ -536,14 +536,14 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
       {/* data-align-ok: ฟอร์มกรอก — ช่องกว้างตามชนิดข้อมูล + มีกล่องย่อย (แผนรายวัน) ที่มี padding ของตัวเอง
           ไม่ใช่ลิสต์ทะเบียนที่ต้องอ่านลงมาเป็นคอลัมน์ ⇒ บอก audit/alignsweep.mjs ให้ข้าม (UI §6.28) */}
       <div onClick={e => e.stopPropagation()} data-align-ok="ฟอร์มกรอก — ช่องกว้างตามชนิดข้อมูล ไม่ใช่ลิสต์ทะเบียน"
-        style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', width: 'min(760px, 100%)', padding: 18 }}>
+        style={{ background: 'var(--card-surf)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', width: 'min(760px, 100%)', padding: 18 }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{plan._new ? tr('➕ สร้างแผนประสานงาน') : tr('✏️ แก้ไขแผน')}</div>
 
         {plan._new && pmPlans.length > 0 && (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
             <label style={{ ...lbl, color: '#4a90e0' }}>{tr('สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)')}</label>
             <SearchSelect value={String(f.pm_plan_id || '')} placeholder={tr('— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์')} inputStyle={inp}
-              options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
+              options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ${tr("ครบ")} ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
               onChange={({ id }) => fromPmPlan(id)} />
           </div>
         )}
@@ -631,7 +631,7 @@ function printPlan(p, tasks) {
   const logoSrc = docFormSync('pm_coordination', {}).logo_url || tsLogoUrl;
   const beD = (s) => beDate(s);
   const rows = (tasks || []).map(t => {
-    const time = (t.time_from || t.time_to) ? ` (${t.time_from || ''}${t.time_to ? '–' + t.time_to : ''} น.)` : '';
+    const time = (t.time_from || t.time_to) ? ` (${t.time_from || ''}${t.time_to ? '–' + t.time_to : ''} ${tr("น.")})` : '';
     const team = t.team ? `<b>[${teamLabelOf(t.team)}]</b> ` : '';
     return `<li style="margin:6px 0;${t.is_support ? 'color:#c00;font-weight:600;' : ''}">
       <b>${beD(t.task_date)}</b>${time} — ${team}${t.description || ''}</li>`;

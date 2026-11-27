@@ -54,7 +54,7 @@ export default function MachineSelect({ scan,
   };
   return (
     <SearchSelect value={sel ? sel.id : ''} text={text} options={options} onChange={emit}
-      scan={scan === false ? undefined : (scan || 'เครื่องจักร/อุปกรณ์')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
+      scan={scan === false ? undefined : (scan || tr("เครื่องจักร/อุปกรณ์"))}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint}
       emptyText={failed ? tr('โหลดทะเบียนเครื่องไม่สำเร็จ') : tr('ไม่พบเครื่องที่ค้นหา — เพิ่มได้ที่ /machines')}
       disabled={disabled} inputStyle={inputStyle} style={style} wrapRows={wrapRows} maxRows={maxRows} />

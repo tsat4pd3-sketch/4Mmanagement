@@ -128,7 +128,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           .eq('mat_no', mat).select('mat_no'), 'เอาออกจากทะเบียนของลม');
         if (!ok) return;
       }
-      toast.success(on ? `${mat} = ของลม — ลูกของมันจะถูกตัดที่ชั้นแม่` : `${mat} = ของจริง — ใบของมันตัดลูกเอง`);
+      toast.success(on ? `${mat} = ${tr("ของลม — ลูกของมันจะถูกตัดที่ชั้นแม่")}` : `${mat} = ${tr("ของจริง — ใบของมันตัดลูกเอง")}`);
       await load();
     } finally { setBusy(''); }
   };
@@ -140,13 +140,13 @@ export default function BomPhantomPanel({ onOpenSheet }) {
       const ok = checkWriteRows(await supabaseDR.from('bom_phantom_mats')
         .update({ seeded: false }).eq('mat_no', mat).select('mat_no'), 'ยืนยันของลม');
       if (!ok) return;
-      toast.success(`ยืนยัน ${mat} เป็นของลมแล้ว`);
+      toast.success(`${tr("ยืนยัน")} ${mat} ${tr("เป็นของลมแล้ว")}`);
       await load();
     } finally { setBusy(''); }
   };
 
   const Card = ({ n, label, color }) => (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                   padding: '8px 12px', minWidth: 104 }}>
       <div style={{ fontSize: 19, fontWeight: 800, color: color || 'var(--text)' }}>{n}</div>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
@@ -159,20 +159,18 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           คำอธิบาย 3 ย่อหน้าพับเป็น ⓘ ท้ายแถบกรอง · การ์ดสรุป/โซ่ขาด อยู่ใต้แถบกรอง (โซ่ขาดยังโชว์เสมอ ห้ามซ่อน) */}
       <FilterBar style={{ marginBottom: 12 }}>
         <Segmented label={tr('สถานะ')} value={filter} onChange={setFilter} options={[
-          { value: 'all',       label: `ทั้งหมด (${counts.total})` },
-          { value: 'gap',       label: `🔴 โซ่ขาด (${counts.gap})` },
-          { value: 'seeded',    label: `🟡 รอยืนยัน (${counts.seeded})` },
-          { value: 'confirmed', label: `ของลม (${counts.confirmed})` },
-          { value: 'real',      label: `ของจริง (${counts.real})` },
+          { value: 'all',       label: `${tr("ทั้งหมด")} (${counts.total})` },
+          { value: 'gap',       label: `🔴 ${tr("โซ่ขาด")} (${counts.gap})` },
+          { value: 'seeded',    label: `🟡 ${tr("รอยืนยัน")} (${counts.seeded})` },
+          { value: 'confirmed', label: `${tr("ของลม")} (${counts.confirmed})` },
+          { value: 'real',      label: `${tr("ของจริง")} (${counts.real})` },
         ]} />
-        <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อพาร์ท" />
+        <SearchInput value={search} onChange={setSearch} fields={tr("MAT / ชื่อพาร์ท")} />
         <span className="spacer" />
         <span className="filter-count">{shown.length} {tr('รายการ')}</span>
         <InfoMore label={tr('กฎการตัดสต็อก / ของลมคืออะไร')} id="bom_phantom_help">
-          <b>{tr('กฎการตัดสต็อก')}</b> {tr('— คอนเฟิมใบไหน ตัด')}<b>{tr('ลูกที่ติดตัวใบนั้น')}</b>{tr('เท่านั้น ·')} <b>{tr('ลูกมีหน้าที่ไปตัดหลาน')}</b>เมื่อใบของลูกถูกคอนเฟิม ·
-          ผัง BOM สร้าง<b>{tr('ใบเดียว')}</b> ลูก/หลานไม่ต้องมีใบแยก
-          <div style={{ marginTop: 4 }}><b>{tr('ของลม (phantom)')}</b> = <b>{tr('ข้อยกเว้น')}</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
-            ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ)</div>
+          <b>{tr('กฎการตัดสต็อก')}</b> {tr('— คอนเฟิมใบไหน ตัด')}<b>{tr('ลูกที่ติดตัวใบนั้น')}</b>{tr('เท่านั้น ·')} <b>{tr('ลูกมีหน้าที่ไปตัดหลาน')}</b>{tr("เมื่อใบของลูกถูกคอนเฟิม · ผัง BOM สร้าง")}<b>{tr('ใบเดียว')}</b> {tr("ลูก/หลานไม่ต้องมีใบแยก")}
+          <div style={{ marginTop: 4 }}><b>{tr('ของลม (phantom)')}</b> = <b>{tr('ข้อยกเว้น')}</b> {tr("สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง — ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ")})</div>
           <div style={{ marginTop: 4 }}>{tr('จอนี้แก้ได้แค่ทะเบียนของลม —')} <b>{tr('ไม่แก้ BOM ให้')}</b> {tr('(PE เป็นเจ้าของข้อมูล)')}</div>
         </InfoMore>
       </FilterBar>
@@ -193,10 +191,10 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
       {/* 🔴 โซ่ขาด = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดมันเลย — ต้องโชว์ ห้ามซ่อน (กฎความซื่อสัตย์ของจอ) */}
       {gaps.length > 0 && (
-        <div style={{ background: 'var(--card)', border: `1px solid ${BAD}`, borderRadius: 'var(--r-md)',
+        <div style={{ background: 'var(--card-surf)', border: `1px solid ${BAD}`, borderRadius: 'var(--r-md)',
                       padding: '8px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
-          🔴 <b style={{ color: BAD }}>{tr('โซ่ขาด')} {gaps.length} {tr('รายการ')}</b> — อยู่ใน BOM แต่
-          <b> {tr('ไม่มีใบผลิตไหนตัดมันไปใช้เลย')}</b> (กฎ: ตัดลูกตรง · ลูกไปตัดหลาน ⇒ โซ่ต้องเดินถึงทุกชั้น)
+          🔴 <b style={{ color: BAD }}>{tr('โซ่ขาด')} {gaps.length} {tr('รายการ')}</b> — {tr("อยู่ใน BOM แต่")}
+          <b> {tr('ไม่มีใบผลิตไหนตัดมันไปใช้เลย')}</b> ({tr("กฎ: ตัดลูกตรง · ลูกไปตัดหลาน ⇒ โซ่ต้องเดินถึงทุกชั้น")})
           <div style={{ overflowX: 'auto', marginTop: 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
@@ -225,7 +223,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
       {hidden > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '6px 2px' }}>
-          ซ่อนอยู่ {hidden} {tr('รายการจากตัวกรอง (ทั้งหมด')} {list.length})
+          {tr("ซ่อนอยู่")} {hidden} {tr('รายการจากตัวกรอง (ทั้งหมด')} {list.length})
         </div>
       )}
 
@@ -233,7 +231,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', padding: 12 }}>{tr('กำลังโหลด…')}</div>
       ) : shown.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--muted)', padding: 12 }}>
-          {loadFail ? 'อ่านข้อมูลไม่ได้ — ไม่ใช่ว่าไม่มีรายการ' : 'ไม่มีรายการตามตัวกรองนี้'}
+          {loadFail ? tr("อ่านข้อมูลไม่ได้ — ไม่ใช่ว่าไม่มีรายการ") : tr("ไม่มีรายการตามตัวกรองนี้")}
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -262,7 +260,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                       </span>
                       {onOpenSheet && r.has_own_sheet && (
                         <button onClick={() => onOpenSheet(r.mat_no)}
-                          title={`เปิดใบ BOM ของ ${r.mat_no}`}
+                          title={`${tr("เปิดใบ BOM ของ")} ${r.mat_no}`}
                           style={{ marginLeft: 6, fontSize: 11, background: 'none', border: 'none',
                                    color: 'var(--accent)', cursor: 'pointer', padding: 0 }}>↗</button>
                       )}
@@ -288,14 +286,14 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                           {r.verdict === 'seeded' && (
                             <button onClick={() => confirmSeeded(r.mat_no)} disabled={busy === r.mat_no}
                               style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
-                                       border: `1px solid ${OK}`, color: OK, background: 'var(--card)', cursor: 'pointer' }}>
-                              ✓ ยืนยัน
+                                       border: `1px solid ${OK}`, color: OK, background: 'var(--card-surf)', cursor: 'pointer' }}>
+                              ✓ {tr("ยืนยัน")}
                             </button>
                           )}
                           <button onClick={() => setPhantom(r.mat_no, !isPhantom)} disabled={busy === r.mat_no}
                             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
                                      border: '1px solid var(--border)', color: 'var(--text)',
-                                     background: 'var(--card)', cursor: 'pointer' }}>
+                                     background: 'var(--card-surf)', cursor: 'pointer' }}>
                             {isPhantom ? tr('ไม่ใช่ของลม') : tr('ติ๊กเป็นของลม')}
                           </button>
                         </span>

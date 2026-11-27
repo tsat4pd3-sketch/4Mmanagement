@@ -11,6 +11,7 @@
 import { getDocForm, fullCode, withDocFoot, sigAt } from '../utils/docForms';
 import tsLogoUrl from '../assets/TS logo.png';
 import { MARKS, markGlyph } from '../utils/bbsMarks';
+import { dateLocale } from '../utils/i18n';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -37,8 +38,11 @@ async function urlToDataUrl(url) {
  * @param {object} p.rowNotes   { [empId]: 'หมายเหตุท้ายแถว' } — คอลัมน์สุดท้ายของใบกระดาษ
  * @param {Array}  p.agreements [{ seq, text, auto_source }]
  * @param {number} p.autoCount  จำนวนข้อที่ระบบเติมให้ได้ (มี auto_source)
+ * @param {object|null} p.signoff ลายเซ็นรอบนี้จาก e-Workflow (`loadRoundSignoff` · 25/11)
+ *        มี = ช่องเซ็นตามขั้นของใบงาน (ออกโดย/ตรวจสอบโดย/อนุมัติโดย) แทนช่อง "ผู้ตรวจสอบ" เดิม
+ *        null = ไม่มีใบงานผูก BBS → ช่องเซ็นเดิมจากทะเบียน /doc-forms
  */
-export async function printBbsSheet({ sheet, days, employees = [], cells = {}, rowNotes = {}, agreements = [], autoCount = 0 }) {
+export async function printBbsSheet({ sheet, days, employees = [], cells = {}, rowNotes = {}, agreements = [], autoCount = 0, signoff = null }) {
   const df = await getDocForm('bbs_observation', {
     title: 'แบบฟอร์มสังเกตพฤติกรรมความปลอดภัย (BBS)',
     sig_blocks: ['ผู้ตรวจสอบ'],
@@ -48,6 +52,20 @@ export async function printBbsSheet({ sheet, days, employees = [], cells = {}, r
   const sigImg = await urlToDataUrl(sheet?.inspector_sig_url);
   const code = fullCode(df);
   const sig0 = sigAt(df, 0);
+  const wfRows = signoff?.rows?.length ? signoff.rows : null;
+  const wfImgs = wfRows ? await Promise.all(wfRows.map(r => urlToDataUrl(r.sigUrl))) : [];
+  const fmtAt = (s) => (s ? new Date(s).toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
+  const sigHtml = wfRows
+    ? wfRows.map((r, i) => `<div class="sig">
+    <div style="font-size:8.5px">${esc(r.label)}</div>
+    <div class="im">${wfImgs[i] ? `<img src="${wfImgs[i]}" alt="">` : ''}</div>
+    <div class="ln">${esc(r.name || '')}${r.at ? ` · ${esc(fmtAt(r.at))}` : ''}</div>
+  </div>`).join('')
+    : `<div class="sig">
+    <div style="font-size:8.5px">${esc(sig0.label || 'ผู้ตรวจสอบ')}</div>
+    <div class="im">${sigImg ? `<img src="${sigImg}" alt="">` : ''}</div>
+    <div class="ln">${esc(sheet?.inspector_name || sig0.name || '')}</div>
+  </div>`;
 
   const dayCols = Array.from({ length: days }, (_, i) => i + 1);
   const shiftLabel = sheet?.shift === 'day' ? 'กะเช้า' : sheet?.shift === 'night' ? 'กะดึก' : 'ทั้งวัน';
@@ -110,7 +128,7 @@ export async function printBbsSheet({ sheet, days, employees = [], cells = {}, r
   .ag { font-size: 8px; line-height: 1.45; }
   .au { color: #15803d; }
   .lg { display: inline-block; margin-right: 10px; font-size: 8.5px; }
-  .sig { width: 190px; text-align: center; border: 1px solid #000; padding: 4px; }
+  .sig { width: 150px; flex: none; text-align: center; border: 1px solid #000; padding: 4px; }
   .sig .im { height: 34px; display: flex; align-items: center; justify-content: center; }
   .sig .im img { max-height: 34px; max-width: 100%; }
   .sig .ln { border-top: 1px dotted #555; margin-top: 2px; padding-top: 2px; font-size: 8.5px; }
@@ -151,12 +169,9 @@ export async function printBbsSheet({ sheet, days, employees = [], cells = {}, r
     <h4>สัญลักษณ์</h4>
     ${legend}
   </div>
-  <div class="sig">
-    <div style="font-size:8.5px">${esc(sig0.label || 'ผู้ตรวจสอบ')}</div>
-    <div class="im">${sigImg ? `<img src="${sigImg}" alt="">` : ''}</div>
-    <div class="ln">${esc(sheet?.inspector_name || sig0.name || '')}</div>
-  </div>
+  ${sigHtml}
 </div>
+${wfRows && signoff?.status !== 'approved' ? `<div class="warn">ใบนี้ยังเซ็นไม่ครบตามสายเซ็น (${esc(signoff?.defName || '')}${signoff?.docNo ? ` · ${esc(signoff.docNo)}` : ' · ยังไม่เปิดรอบเซ็น'}) — ช่องที่ว่าง = ยังไม่มีผู้เซ็น</div>` : ''}
 
 <div class="warn">
   ◆ = ข้อที่ระบบเติมให้อัตโนมัติจาก<b>ผลตรวจ PPE รายวัน</b> (${autoCount} ข้อ จากทั้งหมด ${agreements.length} ข้อ)

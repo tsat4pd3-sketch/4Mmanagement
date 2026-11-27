@@ -497,7 +497,7 @@ const closeRow = (id, d) => ({
   line_name: 'LASER-345', mtn_dept: 'production', work_date: d,
 });
 
-test('✍️ ใบรอเราเซ็น ≥2 ใบ ⇒ มีบรรทัดสรุปบนสุด + ลิงก์กรอง ?wait=', () => {
+test('✍️ ใบรอเราเซ็น ≥2 ใบ ⇒ มีบรรทัดสรุปบนสุด + ลิงก์กรอง ?sign=', () => {
   const q = buildQueue({
     mo: [closeRow('a', '2026-09-20'), closeRow('b', '2026-09-22'), closeRow('c', '2026-09-24')],
     sessions: [], fourM: [], actions: [], bins: [], summaries: [],
@@ -505,7 +505,10 @@ test('✍️ ใบรอเราเซ็น ≥2 ใบ ⇒ มีบรร�
   const top = q.mine[0];
   assert.ok(top?.rollup, 'บรรทัดสรุปต้องอยู่บนสุดของชั้น mine');
   assert.match(top.title, /รอคุณเซ็น 3 ใบ/);
-  assert.match(top.to, /\/mtn-repair\?tab=list&wait=close/, 'ต้องพาไปหน้า MO ที่กรองขั้นที่รอเราแล้ว');
+  /* 🔴 27/11 — ต้องเป็น `?sign=` ไม่ใช่ `?wait=`
+     `?wait=<stage>` = "ใบที่ค้างขั้นนี้" เฉยๆ (ไม่รู้จักกฎ "รอเราจริง" และกฎลูป PR)
+     ⇒ หน้างานแจ้ง: ป้ายบอก 4 ใบ กดเข้าไปเจอ 14 ปนใบที่กดอนุมัติไม่ได้ */
+  assert.match(top.to, /\/mtn-repair\?tab=list&sign=close/, 'ต้องพาไปตัวกรองที่ใช้กฎเดียวกับป้าย');
   assert.match(top.to, /&from=/, 'ต้องถอยขอบวันที่ให้ครอบใบเก่าสุด ไม่งั้นตัวกรอง default ซ่อนใบค้าง');
   // 🔴 badge นับ "ใบ" จริง ไม่บวกบรรทัดสรุปเข้าไปอีก
   assert.equal(q.counts.mine, 3, 'counts.mine ต้องเท่าจำนวนใบ ไม่นับ rollup');
@@ -741,4 +744,38 @@ test('ใบที่จบแล้วยังต้องไม่มีเ�
     const q = buildQueue({ mo: [row] }, ME, NOW);
     assert.equal(q.mine.length + q.unit.length, 0, `${status} ห้ามเข้าคิว`);
   }
+});
+
+test('✍️ ใบตรวจ AM รออนุมัติ (A5 · 24/11) — บรรทัดเดียวต่อไลน์ · กรองขอบเขต · ไม่ขึ้น badge · ไม่มีสิทธิ์ = ไม่โหลด', () => {
+  const now = new Date('2026-11-24T03:00:00Z');
+  const base = { mo: [], moAll: [], sessions: [], fourM: [], actions: [], summaries: [], bins: [], redBins: [] };
+  const amPending = [
+    { id: 1, inspected_at: '2026-11-20T01:00:00Z', line_name: 'HDF1', section: 'PD3' },
+    { id: 2, inspected_at: '2026-11-10T01:00:00Z', line_name: 'HDF1', section: 'PD3' },
+    { id: 3, inspected_at: '2026-11-22T01:00:00Z', line_name: 'Line D3', section: 'PD2' },
+    { id: 4, inspected_at: '2026-11-22T01:00:00Z', line_name: 'ไม่มีในทะเบียน', section: undefined },
+  ];
+  const q = buildQueue({ ...base, amPending }, { sections: ['PD3'], canAmApprove: true }, now);
+  const rows = q.unit.filter(x => x.key.startsWith('amappr:'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].count, 2); assert.equal(rows[0].age, 14); assert.equal(rows[0].to, '/daily-checker?tab=amcheck');
+  assert.equal(q.mine.some(x => x.key.startsWith('amappr:')), false);
+  assert.equal(buildQueue({ ...base }, { sections: [], canAmApprove: false }, now).missing.includes('amPending'), false);
+  assert.ok(buildQueue({ ...base }, { sections: [], canAmApprove: true }, now).missing.includes('amPending'));
+  assert.ok(buildQueue({ ...base, amPending, amPendingTruncated: true }, { sections: [], canAmApprove: true }, now).missing.includes('am_pending_truncated'));
+});
+
+test('✍️ งาน e-Workflow ที่รอฉัน (25/11) — บรรทัดเดียวต่อใบงาน · unit · ไม่ขึ้น badge · ไม่ส่ง = ไม่ partial', () => {
+  const now = new Date('2026-11-25T03:00:00Z');
+  const base = { mo: [], moAll: [], sessions: [], fourM: [], actions: [], summaries: [], bins: [], redBins: [] };
+  const wfTasks = [
+    { id: 1, created_at: '2026-11-24T01:00:00Z', def: 'Poka-Yoke · รับทราบรายวัน', bound: true },
+    { id: 2, created_at: '2026-11-20T01:00:00Z', def: 'Poka-Yoke · รับทราบรายวัน', bound: true },
+  ];
+  const q = buildQueue({ ...base, wfTasks }, { uid: 'u1', sections: [] }, now);
+  const rows = q.unit.filter(x => x.key.startsWith('wf:'));
+  assert.equal(rows.length, 1); assert.equal(rows[0].count, 2); assert.equal(rows[0].age, 5);
+  assert.equal(q.mine.some(x => x.key.startsWith('wf:')), false);
+  assert.equal(buildQueue({ ...base }, { uid: 'u1', sections: [] }, now).missing.includes('wfTasks'), false);
+  assert.ok(buildQueue({ ...base, wfTasks: null }, { uid: 'u1', sections: [] }, now).missing.includes('wfTasks'));
 });

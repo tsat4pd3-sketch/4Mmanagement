@@ -5,6 +5,7 @@ import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
+import { canWriteUnit, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้น ③ ตอนลบไลน์ (13/11)
 import { invalidateTable } from '../utils/masterInvalidate';
 import { can, canDelete } from '../utils/permissions';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
@@ -70,7 +71,7 @@ const POINT_H = 46;
 export default function LineSetup({ embedded = false } = {}) {
   // embedded=true เมื่อฝังในแท็บ "ผลิต" ของ /layout-setup — ปรับ height/padding ให้พอดีในกรอบแท็บ (ไม่ใช้ 100vh)
   // สิทธิ์แก้ไข — role ที่ไม่มี line_setup:edit เห็นหน้าแบบอ่านอย่างเดียว (ดูผัง/รายการได้ แก้ไม่ได้)
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx, section: homeSection, allUnits, respCostCenters, writeUnits } = useContext(UserContext);
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
@@ -206,7 +207,7 @@ export default function LineSetup({ embedded = false } = {}) {
       for (const [tbl, rows, fields] of [['workstations', st.upd, ST_F], ['station_requirements', sr.upd, SR_F], ['machine_points', mp.upd, MP_F], ['machine_flow_links', fl.upd, FL_F]]) {
         for (const r of rows) { const { error } = await supabase.from(tbl).update(pickF(r, fields)).eq('id', r.id); if (error) throw error; }
       }
-    } catch (err) { toast.error('ย้อนไม่สำเร็จ: ' + err.message); await fetchLineData(); return false; }
+    } catch (err) { toast.error((tr('ย้อนไม่สำเร็จ') + ': ') + err.message); await fetchLineData(); return false; }
     await fetchLineData();
     return true;
   };
@@ -257,7 +258,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const selectLine = async (name) => {
     if (name === selectedLine) return;
     if (mpDirty && !await askConfirm(
-      `⚙️ "ตั้งค่าไลน์" ของ ${selectedLine} ยังมีการแก้ไขที่ยังไม่ได้กด 💾 บันทึก\n\nเปลี่ยนไปไลน์ ${name} ตอนนี้ = ค่าที่แก้ไว้หายไป\n\nเปลี่ยนไลน์ต่อไหม?`
+      `⚙️ "${tr("ตั้งค่าไลน์\" ของ")} ${selectedLine} ${tr("ยังมีการแก้ไขที่ยังไม่ได้กด 💾 บันทึก\\n\\nเปลี่ยนไปไลน์")} ${name} ${tr("ตอนนี้ = ค่าที่แก้ไว้หายไป\\n\\nเปลี่ยนไลน์ต่อไหม")}?`
     )) return;
     setSelectedLine(name); setTempPos(null); setFormData({ id: null, name: '', requirements: {} });
   };
@@ -365,7 +366,7 @@ export default function LineSetup({ embedded = false } = {}) {
   const handleToggleRetire = async (retire) => {
     const lineObj = lines.find(l => l.name === selectedLine);
     if (!lineObj) return;
-    if (retire && !await askConfirm(`ปลดระวางไลน์ "${lineObj.name}" ?\n\nไลน์จะไม่โผล่ใน dropdown ให้เลือกใหม่ทุกหน้า\nแต่ข้อมูลเก่าที่อ้างชื่อไลน์นี้ยังอ่านได้ครบ (ไม่ใช่การลบ)`)) return;
+    if (retire && !await askConfirm(`${tr("ปลดระวางไลน์")} "${lineObj.name}" ?\n\n${tr("ไลน์จะไม่โผล่ใน dropdown ให้เลือกใหม่ทุกหน้า\\nแต่ข้อมูลเก่าที่อ้างชื่อไลน์นี้ยังอ่านได้ครบ (ไม่ใช่การลบ")})`)) return;
     const { data, error } = await supabase.from('production_lines')
       .update({ is_active: !retire }).eq('id', lineObj.id).select('id');
     if (error) {
@@ -376,7 +377,7 @@ export default function LineSetup({ embedded = false } = {}) {
     }
     // ⚠️ RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่ error → ต้องนับแถวเสมอ (กฎ CLAUDE.md)
     if (!data?.length) { toast.error('ไม่มีแถวถูกแก้ — ตรวจสิทธิ์การแก้ทะเบียนไลน์'); return; }
-    toast.success(retire ? `⏸ ปลดระวาง ${lineObj.name} แล้ว` : `▶ คืนสถานะ ${lineObj.name} แล้ว`);
+    toast.success(retire ? `⏸ ${tr("ปลดระวาง")} ${lineObj.name} ${tr("แล้ว")}` : `▶ ${tr("คืนสถานะ")} ${lineObj.name} ${tr("แล้ว")}`);
     invalidateProductionLines();   // ให้หน้าอื่นเห็นทันที ไม่ต้องรอ cache หมดอายุ
     fetchLines();
   };
@@ -425,7 +426,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleUpdateParent = async (line, parentName) => {
     // เปลี่ยนโครงสร้าง master (ไลน์แม่) — ยืนยันก่อน กันแตะ dropdown พลาด · ยกเลิก = revert หน้าจอ
-    if (!await askConfirm(`เปลี่ยน "ไลน์แม่" ของ ${line.name} เป็น "${parentName || '(ไม่มี — เป็นไลน์หลัก)'}" ?\n\nกระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม`)) { await fetchLines(); return; }
+    if (!await askConfirm(`${tr("เปลี่ยน \"ไลน์แม่\" ของ")} ${line.name} ${tr("เป็น")} "${parentName || tr('(ไม่มี — เป็นไลน์หลัก)')}" ?\n\n${tr("กระทบการรวมเครื่อง/ผัง/กำลังผลิตของทั้งกลุ่ม")}`)) { await fetchLines(); return; }
     /* นับแถว — ไม่มีสิทธิ์/แถวหาย = 0 แถวไม่มี error แล้ว fetchLines() วาดค่าเดิมกลับมาเหมือนจอค้าง
        (เปลี่ยนโครงสร้างไลน์กระทบการรวมเครื่อง/ผัง/กำลังผลิตทั้งกลุ่ม · กฎเขียน DB ข้อ 2) */
     checkWriteRows(await supabase.from('production_lines').update({ parent_line_name: parentName || null }).eq('id', line.id).select('id'), 'ตั้งไลน์แม่');
@@ -437,7 +438,7 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!name) return;
     // ไลน์ใหม่ของ user ที่ถูก scope ต้องอยู่ในส่วนงานตัวเองเท่านั้น (ไม่งั้นสร้างเสร็จตัวเองก็มองไม่เห็น)
     if (scopeSecs.length && !inSectionScope(scopeSecs, newLineSection)) {
-      toast.error(`ต้องเลือก Section ในขอบเขตส่วนงานของคุณ (${scopeSecs.join(', ')})`);
+      toast.error(`${tr("ต้องเลือก Section ในขอบเขตส่วนงานของคุณ")} (${scopeSecs.join(', ')})`);
       return;
     }
     setIsAddingLine(true);
@@ -456,14 +457,19 @@ export default function LineSetup({ embedded = false } = {}) {
   };
 
   const handleDeleteLine = async (line) => {
+    /* 🔐 ชั้น ③ (13/11 · audit P1-7): `line_setup:delete` บอกแค่ "กดปุ่มเป็น" — ลบไลน์ของส่วนงานอื่นไม่ได้
+       ไลน์ที่ยังไม่ระบุส่วนงาน = ของกลาง ⇒ เฉพาะผู้ถือใบผ่าน (block) */
+    const wDel = canWriteUnit({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, writeUnits },
+      line.section, { unknownTarget: 'block' });
+    if (!wDel.ok) { toast.error(writeBlockText(wDel, { what: `${tr("ไลน์")} ${line.name}`, unit: line.section || '' })); return; }
     const childCount = lines.filter(l => l.parent_line_name === line.name).length;
-    const warn = childCount > 0 ? `\n\nไลน์นี้เป็นไลน์หลักของ ${childCount} ไลน์ลูก — ลูกจะถูกเปลี่ยนเป็น standalone อัตโนมัติ` : '';
-    if (!await askConfirm(`ลบไลน์ "${line.name}" ?\n\nจุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย${warn}`)) return;
+    const warn = childCount > 0 ? `\n\n${tr("ไลน์นี้เป็นไลน์หลักของ")} ${childCount} ${tr("ไลน์ลูก — ลูกจะถูกเปลี่ยนเป็น standalone อัตโนมัติ")}` : '';
+    if (!await askConfirm(`${tr("ลบไลน์")} "${line.name}" ?\n\n${tr("จุดงานและผังไลน์ทั้งหมดในไลน์นี้จะถูกลบด้วย")}${warn}`)) return;
     /* 🔗 ทะเบียน AM รายวัน (DR · จับคู่ด้วยชื่อไลน์ ไม่มี FK) — มีจุดตรวจ active อยู่ = ห้ามลบ ให้เอาออกที่จอ AM ก่อน
        (กฎ "ทะเบียนที่จับคู่ด้วยข้อความ นับไม่ครบ = ห้ามลบ" · 08/10 audit: เดิมลบไลน์แล้วทะเบียนค้าง บอร์ด AM สร้างการ์ดให้ไลน์ที่ไม่มีแล้ว) */
     const { count: amCount, error: amErr } = await supabaseDR.from('pm_daily_line_targets').select('id', { count: 'exact', head: true }).eq('line_name', line.name).eq('is_active', true);
-    if (amErr || amCount == null) { toast.error('ตรวจทะเบียน AM รายวันของไลน์ไม่สำเร็จ — ยังลบไม่ได้ (กันทะเบียนค้าง): ' + (amErr?.message || '')); return; }
-    if (amCount > 0) { toast.error(`ไลน์นี้มีจุดตรวจ AM รายวันลงทะเบียนอยู่ ${amCount} รายการ — เอาออกที่ /daily-checker?tab=pm (ลงทะเบียนเครื่องตรวจ) ก่อนลบไลน์`); return; }
+    if (amErr || amCount == null) { toast.error((tr('ตรวจทะเบียน AM รายวันของไลน์ไม่สำเร็จ — ยังลบไม่ได้ (กันทะเบียนค้าง') + '): ') + (amErr?.message || '')); return; }
+    if (amCount > 0) { toast.error(`${tr("ไลน์นี้มีจุดตรวจ AM รายวันลงทะเบียนอยู่")} ${amCount} ${tr("รายการ — เอาออกที่ /daily-checker?tab=pm (ลงทะเบียนเครื่องตรวจ) ก่อนลบไลน์")}`); return; }
     // Clear parent ref from children first
     if (childCount > 0) {
       /* นับแถว — เข้ามาในนี้เมื่อ childCount > 0 เท่านั้น ⇒ 0 แถว = ลูกยังชี้ไลน์แม่ที่กำลังถูกลบ
@@ -477,12 +483,12 @@ export default function LineSetup({ embedded = false } = {}) {
     const { data: staIds } = await supabase.from('workstations').select('id').eq('line_name', line.name);
     if (staIds?.length) {
       const { error: eReq } = await supabase.from('station_requirements').delete().in('station_id', staIds.map(s => s.id));
-      if (eReq) { toast.error('ลบทักษะประจำสถานีไม่สำเร็จ: ' + eReq.message); return; }
+      if (eReq) { toast.error((tr('ลบทักษะประจำสถานีไม่สำเร็จ') + ': ') + eReq.message); return; }
     }
     // flow_links อ้าง machine_points (from/to) → ลบ links ก่อน points
     for (const tbl of ['machine_flow_links', 'machine_points', 'wip_buffer_points', 'workstations', 'line_layouts']) {
       const { error: eDel } = await supabase.from(tbl).delete().eq('line_name', line.name);
-      if (eDel) { toast.error(`ลบ ${tbl} ไม่สำเร็จ: ` + eDel.message); return; }
+      if (eDel) { toast.error(`${tr("ลบ")} ${tbl} ${tr("ไม่สำเร็จ")}: ` + eDel.message); return; }
     }
     // ลบเฉพาะไฟล์ของไลน์นี้เอง — ข้ามถ้าไลน์อื่น (เช่นไลน์แม่/ลูกที่ยืมผัง) ยังชี้ URL เดียวกันอยู่
     if (delLayout?.image_url?.includes('/employee-photos/layouts/')) {
@@ -503,7 +509,7 @@ export default function LineSetup({ embedded = false } = {}) {
        0 แถว = ปกติ ไม่ใช่ความล้มเหลว (นับแถวจะกลายเป็น toast แดงหลอก) */
     checkWrite(await supabase.from('employees').update({ line_id: null }).eq('line_id', line.id), 'ปลดพนักงานออกจากไลน์ที่ลบ');
     const { error: eLine } = await supabase.from('production_lines').delete().eq('id', line.id);
-    if (eLine) { toast.error('ลบไลน์ไม่สำเร็จ: ' + eLine.message); return; }
+    if (eLine) { toast.error((tr('ลบไลน์ไม่สำเร็จ') + ': ') + eLine.message); return; }
     const remaining = lines.filter(l => l.id !== line.id);
     setLines(remaining);
     if (selectedLine === line.name) {
@@ -515,7 +521,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
   const handleUpdateSection = async (line, section) => {
     // เปลี่ยน Section ของไลน์ = กระทบ scope/สิทธิ์การมองเห็น — ยืนยันก่อน · ยกเลิก = revert หน้าจอ
-    if (!await askConfirm(`เปลี่ยน "Section" ของ ${line.name} เป็น "${section || '(ไม่มี)'}" ?\n\nกระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ`)) { await fetchLines(); return; }
+    if (!await askConfirm(`${tr("เปลี่ยน \"Section\" ของ")} ${line.name} ${tr("เป็น")} "${section || tr('(ไม่มี)')}" ?\n\n${tr("กระทบขอบเขตการมองเห็น (scope) และการผูกใบค่าฝีมือ")}`)) { await fetchLines(); return; }
     checkWriteRows(await supabase.from('production_lines').update({ section: section || null }).eq('id', line.id).select('id'), 'ตั้ง section ของไลน์');
     await fetchLines();
   };
@@ -524,7 +530,7 @@ export default function LineSetup({ embedded = false } = {}) {
     const name = newName.trim();
     if (!name || name === line.name) { setEditingLineId(null); return; }
     if (lines.some(l => l.id !== line.id && l.name === name)) {
-      toast.error(`มีไลน์ชื่อ "${name}" อยู่แล้ว`); return;
+      toast.error(`${tr("มีไลน์ชื่อ")} "${name}" ${tr("อยู่แล้ว")}`); return;
     }
     const old = line.name;
     /* 🔴 ต้องเช็คผลของ 2 บรรทัดนี้ก่อน cascade เสมอ (audit 2026-09-02)
@@ -535,11 +541,11 @@ export default function LineSetup({ embedded = false } = {}) {
        + `.select('id')` นับแถว: RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่ error (เงียบ) */
     const { data: renamed, error: eRen } = await supabase.from('production_lines')
       .update({ name }).eq('id', line.id).select('id');
-    if (eRen) { toast.error('เปลี่ยนชื่อไลน์ไม่สำเร็จ: ' + eRen.message); return; }
+    if (eRen) { toast.error((tr('เปลี่ยนชื่อไลน์ไม่สำเร็จ') + ': ') + eRen.message); return; }
     if (!renamed?.length) { toast.error('เปลี่ยนชื่อไลน์ไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือไลน์ถูกลบไปแล้ว'); return; }
     const { error: ePar } = await supabase.from('production_lines')
       .update({ parent_line_name: name }).eq('parent_line_name', old);
-    if (ePar) toast.error('เปลี่ยนชื่อไลน์แล้ว แต่ผูกไลน์ลูกกับชื่อใหม่ไม่สำเร็จ: ' + ePar.message);
+    if (ePar) toast.error((tr('เปลี่ยนชื่อไลน์แล้ว แต่ผูกไลน์ลูกกับชื่อใหม่ไม่สำเร็จ') + ': ') + ePar.message);
 
     // ── Cascade "ชื่อไลน์" (line_name snapshot) ทุกตารางทั้ง 2 project ────────────────────────────
     // ⚠️ กฎเหล็ก (2026-07-22): ไลน์ถูกอ้างด้วย "ชื่อ" เป็น text snapshot ในหลายตาราง ไม่ใช่ FK
@@ -616,9 +622,9 @@ export default function LineSetup({ embedded = false } = {}) {
     /* cascade ล้มบางตาราง = ข้อมูลชื่อเก่ากำพร้าอยู่ตรงนั้น ต้องบอกให้รู้ว่าตารางไหน
        (ไม่ abort ตามดีไซน์เดิม — แต่ห้ามเงียบ ไม่งั้นไม่มีใครรู้ว่าต้องไปตามแก้) */
     if (bumpFailed.length) {
-      toast.error(`เปลี่ยนชื่อไลน์แล้ว แต่ตามไปแก้ชื่อไม่สำเร็จ ${bumpFailed.length} ตาราง: ${bumpFailed.slice(0, 5).join(', ')}${bumpFailed.length > 5 ? ' …' : ''} — แจ้ง admin ให้ตามแก้`);
+      toast.error(`${tr("เปลี่ยนชื่อไลน์แล้ว แต่ตามไปแก้ชื่อไม่สำเร็จ")} ${bumpFailed.length} ${tr("ตาราง")}: ${bumpFailed.slice(0, 5).join(', ')}${bumpFailed.length > 5 ? ' …' : ''} — ${tr("แจ้ง admin ให้ตามแก้")}`);
     } else {
-      toast.success(`เปลี่ยนชื่อไลน์เป็น "${name}" แล้ว`);
+      toast.success(`${tr("เปลี่ยนชื่อไลน์เป็น")} "${name}" ${tr("แล้ว")}`);
     }
     setEditingLineId(null);
     if (selectedLine === old) setSelectedLine(name);
@@ -673,9 +679,9 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!layoutImage || usingParentLayout) return; // ผังที่ยืมแสดงจากไลน์แม่ ไม่ใช่ของเรา — ห้ามลบ
     const lineObj = lines.find(l => l.name === selectedLine);
     const backTo = lineObj?.parent_line_name
-      ? `จะกลับไปใช้รูปผังของไลน์แม่ "${lineObj.parent_line_name}" แทน`
+      ? `${tr("จะกลับไปใช้รูปผังของไลน์แม่")} "${lineObj.parent_line_name}" ${tr("แทน")}`
       : 'ไลน์นี้จะไม่มีรูปผัง (ไม่มีไลน์แม่ให้ยืม) — จุดงาน/เครื่องจักร ที่วางไว้ยังอยู่ครบ';
-    if (!await askConfirm(`ลบรูปผังของ "${selectedLine}" ?\n${backTo}`)) return;
+    if (!await askConfirm(`${tr("ลบรูปผังของ")} "${selectedLine}" ?\n${backTo}`)) return;
     try {
       /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — RLS ปฏิเสธ DELETE = 0 แถว ไม่มี error
          เดิมรอดมาได้เพราะด่าน `sharers` ข้างล่าง (แถวที่ลบไม่ออกยังถือ image_url เดิม ⇒ นับเป็นคนแชร์
@@ -696,7 +702,7 @@ export default function LineSetup({ embedded = false } = {}) {
       }
       toast.success('ลบรูปผังแล้ว');
       fetchLineData(); // โหลดใหม่ → ไลน์ลูกยืมผังไลน์แม่เอง
-    } catch (err) { toast.error('ลบไม่สำเร็จ: ' + err.message); }
+    } catch (err) { toast.error((tr('ลบไม่สำเร็จ') + ': ') + err.message); }
   };
 
   // object-fit: contain ทำให้มีพื้นที่ letterbox (แถบว่าง) รอบรูปจริง — ต้องคำนวณ
@@ -771,7 +777,7 @@ export default function LineSetup({ embedded = false } = {}) {
         // ไม่อ่านผล = ลากแล้วจุดเด้งกลับที่เดิมหลังโหลดใหม่โดยไม่บอกเหตุ (QC 05/10) · RLS ปฏิเสธ = 0 แถว ไม่ error
         const { data: moved, error: eMove } = await supabase.from(table)
           .update({ pos_top: dragPosRef.current.top, pos_left: dragPosRef.current.left }).eq('id', id).select('id');
-        if (eMove) toast.error('ย้ายตำแหน่งไม่สำเร็จ: ' + eMove.message);
+        if (eMove) toast.error((tr('ย้ายตำแหน่งไม่สำเร็จ') + ': ') + eMove.message);
         else if (!moved?.length) toast.error('ย้ายตำแหน่งไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือจุดนี้ถูกลบไปแล้ว');
         await fetchLineData();
       } else {
@@ -904,7 +910,7 @@ export default function LineSetup({ embedded = false } = {}) {
     }
 
     const { error: wErr835 } = await supabase.from('station_requirements').delete().eq('station_id', stationId);
-    if (wErr835) { toast.error('ล้างทักษะเดิมของจุดงาน (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ: ' + wErr835.message); return; }
+    if (wErr835) { toast.error((tr('ล้างทักษะเดิมของจุดงาน (ยังไม่เขียนชุดใหม่ กันซ้ำ)ไม่สำเร็จ') + ': ') + wErr835.message); return; }
     const reqRows = Object.entries(formData.requirements).map(([skill_name, min_score]) => ({
       station_id: stationId,
       skill_name,
@@ -927,7 +933,7 @@ export default function LineSetup({ embedded = false } = {}) {
        ตัวที่ต้องนับแถวคือการลบจุดงานเองบรรทัดล่าง (ทำไว้แล้ว) */
     if (!checkWrite(await supabase.from('station_requirements').delete().eq('station_id', id), 'ล้างทักษะของจุดงานที่ลบ')) return;
     const { data: gone, error } = await supabase.from('workstations').delete().eq('id', id).select('id');
-    if (error) toast.error('ลบจุดงานไม่สำเร็จ: ' + error.message);
+    if (error) toast.error((tr('ลบจุดงานไม่สำเร็จ') + ': ') + error.message);
     else if (!gone?.length) toast.error('ลบจุดงานไม่สำเร็จ — ไม่มีสิทธิ์ลบ หรือจุดนี้ถูกลบไปแล้ว');
     fetchLineData();
   };
@@ -971,7 +977,7 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!await askConfirm('ยืนยันการลบจุดเครื่องจักรนี้?')) return;
     hist.pushHistory();
     const { data: gone, error } = await supabase.from('machine_points').delete().eq('id', id).select('id');
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (error) return toast.error((tr('ลบไม่สำเร็จ') + ': ') + error.message);
     if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
     fetchLineData();
   };
@@ -998,7 +1004,7 @@ export default function LineSetup({ embedded = false } = {}) {
     if (!await askConfirm('ยืนยันการลบเส้นเชื่อมต่อนี้?')) return;
     hist.pushHistory();
     const { data: gone, error } = await supabase.from('machine_flow_links').delete().eq('id', id).select('id');
-    if (error) return toast.error('ลบไม่สำเร็จ: ' + error.message);
+    if (error) return toast.error((tr('ลบไม่สำเร็จ') + ': ') + error.message);
     if (!gone?.length) return toast.error('ไม่มีสิทธิ์แก้ผังไลน์นี้ (บันทึกไม่ติด 0 แถว) — เช็คสิทธิ์ line_setup:edit');
     fetchLineData();
   };
@@ -1050,8 +1056,8 @@ export default function LineSetup({ embedded = false } = {}) {
           ))}
           {canEdit && (
             <>
-              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title={tr('ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)')}>Undo</button>
-              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title={tr('ทำซ้ำ (Ctrl+Y)')}>Redo</button>
+              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title={tr('ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)')}>{tr('เลิกทำ')}</button>
+              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title={tr('ทำซ้ำ (Ctrl+Y)')}>{tr('ทำซ้ำ')}</button>
             </>
           )}
           <button
@@ -1065,7 +1071,7 @@ export default function LineSetup({ embedded = false } = {}) {
               background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
               color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
-            {showPills ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
+            {showPills ? tr("ซ่อนป้าย") : tr("โชว์ป้าย")}
             <ToggleDot on={showPills} />
           </button>
         </div>
@@ -1080,7 +1086,7 @@ export default function LineSetup({ embedded = false } = {}) {
     }}>
       <div style={{
         flex: 1,
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+        background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         position: 'relative', overflow: 'auto',
         display: layoutImage ? 'block' : 'flex',
         alignItems: layoutImage ? undefined : 'center',
@@ -1115,7 +1121,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                   zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
-                  ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
+                  {tr("ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง")}
                 </div>
               )}
               <img
@@ -1207,7 +1213,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div
                     key={p.id}
                     onPointerDown={(e) => startDrag(e, 'machine', p.id)}
-                    title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — คลิกเพื่อเชื่อมต่อสายงาน` : `${p.machine_no} — คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง`}
+                    title={!canEdit ? p.machine_no : connectMode ? `${p.machine_no} — ${tr("คลิกเพื่อเชื่อมต่อสายงาน")}` : `${p.machine_no} — ${tr("คลิกเพื่อแก้ไข — ลากเพื่อย้ายตำแหน่ง")}`}
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: SUB, height: SUB, borderRadius: '50%',
@@ -1259,7 +1265,7 @@ export default function LineSetup({ embedded = false } = {}) {
               <p style={{ color: 'var(--muted)', marginBottom: 12 }}>{tr('ยังไม่มีรูปผังไลน์')} {selectedLine}</p>
               {canEdit && (
                 <label style={uploadBtnSt}>
-                  {isUploading ? 'อัปโหลด...' : '➕ อัปโหลดรูป'}
+                  {isUploading ? tr("อัปโหลด...") : tr("➕ อัปโหลดรูป")}
                   <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
                 </label>
               )}
@@ -1272,7 +1278,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
       <div style={{
         width: isMobile ? '100%' : 400,
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+        background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
         {/* 🏭 แถบ "ไลน์ที่กำลังตั้งค่า" — ตรึงหัวแผงไว้ (05/10)
@@ -1292,13 +1298,13 @@ export default function LineSetup({ embedded = false } = {}) {
                 แต่ "แยกกลุ่มให้เห็น" — ไลน์ผลิตเป็นลิสต์หลัก · หน่วยสนับสนุนเป็นกลุ่ม 🗂️ แยกท้าย ไม่ปนกัน */}
             <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder={tr('เลือกไลน์…')}
               extraGroups={supportGroup} extraAt="end"
-              style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
+              style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--accent)' }} />
           </div>
         )}
 
         <CollapseCard id="lineList" storePrefix="ls" title={tr('ทะเบียนไลน์ / หน่วย')} count={lines.length} defaultOpen={!selectedLine}>
           {lines.length > 6 && (
-            <SearchInput value={lineSearch} onChange={setLineSearch} fields="ไลน์"
+            <SearchInput value={lineSearch} onChange={setLineSearch} fields={tr("ไลน์")}
               style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
@@ -1350,7 +1356,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     const col = collapsedParents.has(l.name);
                     return (
                       <span onClick={e => { e.stopPropagation(); toggleParent(l.name); }}
-                        title={col ? `กางไลน์ย่อย (${nKids})` : 'พับไลน์ย่อย'}
+                        title={col ? `${tr("กางไลน์ย่อย")} (${nKids})` : tr("พับไลน์ย่อย")}
                         style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0, cursor: 'pointer', padding: '2px 4px', borderRadius: 'var(--r-xs)', userSelect: 'none' }}>
                         {col ? `▶ ${nKids}` : '▼'}
                       </span>
@@ -1380,7 +1386,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
                         style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
-                        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                        style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', flexShrink: 0 }}>✕</button>
                     </>
                   ) : canEdit && (
                     <>
@@ -1391,7 +1397,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         value={l.section || ''}
                         onClick={e => e.stopPropagation()}
                         onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
                         {sectionOptsInScope.map(s => <option key={s} value={s}>{tr(s)}</option>)}
@@ -1402,18 +1408,18 @@ export default function LineSetup({ embedded = false } = {}) {
                         <span onClick={e => e.stopPropagation()} title={tr('ไลน์หลัก (parent)')} style={{ display: 'inline-flex', flexShrink: 0 }}>
                           <LineSelect lines={lines.filter(p => p.name !== l.name && !p.parent_line_name)} value={l.parent_line_name || ''} includeSupport
                             onChange={v => handleUpdateParent(l, v)} placeholder={tr('ไม่มีหลัก')}
-                            style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
+                            style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
                         </span>
                       )}
                       {canDel && <DeleteButton onClick={(e) => { e.stopPropagation(); handleDeleteLine(l); }}
-                        style={{ width: 26, height: 26 }} title={`ลบไลน์ ${l.name}`} />}
+                        style={{ width: 26, height: 26 }} title={`${tr("ลบไลน์")} ${l.name}`} />}
                     </>
                   )}
                 </div>
               );
               return [
-                ...(prodRows.length ? [groupHead(`🏭 ไลน์ผลิต (${nProd})`), ...prodRows.map(renderRow)] : []),
-                ...(supRows.length ? [groupHead(`🗂️ หน่วยสนับสนุน (${nSup}) — ไม่โผล่ในจอผลิต`), ...supRows.map(renderRow)] : []),
+                ...(prodRows.length ? [groupHead(`🏭 ${tr("ไลน์ผลิต")} (${nProd})`), ...prodRows.map(renderRow)] : []),
+                ...(supRows.length ? [groupHead(`🗂️ ${tr("หน่วยสนับสนุน")} (${nSup}) — ${tr("ไม่โผล่ในจอผลิต")}`), ...supRows.map(renderRow)] : []),
               ];
             })()}
             {lines.length === 0 && (
@@ -1428,7 +1434,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 onKeyDown={e => e.key === 'Enter' && handleAddLine()}
                 style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
               <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
-                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
+                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
                 <option value="">Section</option>
                 {sectionOptsInScope.map(s => <option key={s} value={s}>{tr(s)}</option>)}
               </select>
@@ -1436,7 +1442,7 @@ export default function LineSetup({ embedded = false } = {}) {
             {/* 2026-09-07: <LineSelect> ส่งเฉพาะไลน์ราก · cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
             <LineSelect includeSupport lines={lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection))}
               value={newLineParent} onChange={setNewLineParent} placeholder={tr('ไม่มีไลน์หลัก (standalone)')}
-              style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
+              style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
             {/* 🔴 ชนิดหน่วย — ถามตั้งแต่ตอนสร้าง (13/10 · คำสั่ง user) ไม่งั้นสำนักงาน/งานสนับสนุน
                 ถูกสร้างเป็น "ไลน์ผลิต" แล้วไปโผล่ในแผนผลิต/OEE/ใบตรวจรายวันทุกจอ */}
             <div style={{ display: 'flex', gap: 6 }}>
@@ -1450,8 +1456,7 @@ export default function LineSetup({ embedded = false } = {}) {
             </div>
             {newUnitKind === UNIT_SUPPORT && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
-                ใช้ <b>{tr('เช็คชื่อ · จัดกะ · ผังองค์กร')}</b> {tr('ได้ตามปกติ ·')} <b>{tr('ไม่โผล่')}</b>ในแผนผลิต / OEE / Daily Report /
-                ใบตรวจรายวัน (AM · LPA · Poka-Yoke) และไม่ถูกนับเป็นไลน์ในตัวหาร
+                {tr("ใช้")} <b>{tr('เช็คชื่อ · จัดกะ · ผังองค์กร')}</b> {tr('ได้ตามปกติ ·')} <b>{tr('ไม่โผล่')}</b>{tr("ในแผนผลิต / OEE / Daily Report / ใบตรวจรายวัน (AM · LPA · Poka-Yoke) และไม่ถูกนับเป็นไลน์ในตัวหาร")}
               </div>
             )}
             <button type="button" className="pg-btn sm primary" onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
@@ -1469,11 +1474,11 @@ export default function LineSetup({ embedded = false } = {}) {
               {!usingParentLayout && (
                 <button onClick={handleDeleteLayout}
                   style={{ fontSize: 12, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
-                  {tr('ลบรูปผังนี้')}{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
+                  {tr('ลบรูปผังนี้')}{lines.find(l => l.name === selectedLine)?.parent_line_name ? tr(" (กลับไปใช้ผังไลน์แม่)") : ''}
                 </button>
               )}
               <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer' }}>
-                {isUploading ? 'อัปโหลด...' : '🔄 เปลี่ยนรูปภาพ'}
+                {isUploading ? tr("อัปโหลด...") : tr("🔄 เปลี่ยนรูปภาพ")}
                 <input type="file" hidden onChange={handleUploadImage} disabled={isUploading} />
               </label>
             </div>
@@ -1481,7 +1486,7 @@ export default function LineSetup({ embedded = false } = {}) {
           {activeTab === 'stations' && <>
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, marginBottom: 10 }}>
             <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-              {formData.id ? '📝 แก้ไขจุดงาน' : '📍 เพิ่มจุดงาน'}
+              {formData.id ? tr("📝 แก้ไขจุดงาน") : tr("📍 เพิ่มจุดงาน")}
             </h4>
             {(tempPos || formData.id) ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)' }}>
@@ -1494,7 +1499,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 </label>
                 {skillDefs.length === 0 ? (
                   <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px', background: 'var(--bg3)', borderRadius: 'var(--r-md)' }}>
-                    ยังไม่มีสกิล — กำหนดสกิลได้ที่หน้า Operator
+                    {tr("ยังไม่มีสกิล — กำหนดสกิลได้ที่หน้า")} Operator
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1567,20 +1572,20 @@ export default function LineSetup({ embedded = false } = {}) {
                     {formData.id ? tr('บันทึก') : tr('เพิ่ม')}
                   </button>
                   <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' }); }}
-                    style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
-                    ยกเลิก
+                    style={{ padding: '9px 14px', background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
+                    {tr("ยกเลิก")}
                   </button>
                 </div>
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', fontSize: 12 }}>
-                {canEdit ? <>{tr('คลิกบนรูปภาพเพื่อเพิ่มจุดงาน')}<br />{tr('หรือคลิกที่จุดเดิมเพื่อแก้ไข')}</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
+                {canEdit ? <>{tr('คลิกบนรูปภาพเพื่อเพิ่มจุดงาน')}<br />{tr('หรือคลิกที่จุดเดิมเพื่อแก้ไข')}</> : tr("👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข")}
               </div>
             )}
           </div>
           <CollapseCard id="stations" storePrefix="ls" title={tr('รายการจุดงาน')} count={stations.length} defaultOpen={stations.length > 0}>
           {stations.length > 6 && (
-            <SearchInput value={pointSearch} onChange={setPointSearch} fields="จุดงาน"
+            <SearchInput value={pointSearch} onChange={setPointSearch} fields={tr("จุดงาน")}
               style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
           )}
           <div>
@@ -1599,7 +1604,7 @@ export default function LineSetup({ embedded = false } = {}) {
                             const def = skillDefs.find(d => d.name === r.skill_name);
                             return `${def?.label || r.skill_name} ≥${r.min_score}%`;
                           }).join(', ')
-                        : 'ไม่มีสกิลที่กำหนด'}
+                        : tr("ไม่มีสกิลที่กำหนด")}
                     </div>
                   </div>
                   {canDel && <DeleteButton onClick={() => deleteStation(st.id)} title={tr('ลบจุดงาน')} />}
@@ -1618,7 +1623,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {/* ทะเบียนเครื่องจักร (สร้าง/แก้ไข/กำหนดประเภท) ย้ายไปหน้าฐานข้อมูลเครื่องจักรแล้ว — ที่นี่แค่วางจุดบนผัง */}
               <a href="/equipment?tab=machine" target="_blank" rel="noopener noreferrer"
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none',
-                  background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+                  background: 'var(--bg2-surf)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                 <div>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>{tr('ฐานข้อมูลเครื่องจักร')}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} {tr('เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่')}</div>
@@ -1628,7 +1633,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
               {/* ── วางจุดเครื่องจักรบนผัง ── */}
               <h4 style={{ margin: '0 0 10px', color: 'var(--text)', fontSize: 14, fontFamily: 'var(--font-display)' }}>
-                {machineForm.id ? '📝 แก้ไขจุดเครื่องจักร' : '⚙️ เพิ่มจุดเครื่องจักร'}
+                {machineForm.id ? tr("📝 แก้ไขจุดเครื่องจักร") : tr("⚙️ เพิ่มจุดเครื่องจักร")}
               </h4>
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)', marginBottom: 14 }}>
@@ -1655,7 +1660,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       ))}
                     </datalist>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                      ใส่ชื่อกลุ่มเดียวกันให้เครื่องที่ทำงานคู่ขนานแบบ balance cycle time (เช่น Laser1/2/3) — ถ้าตัวใดหยุด ระบบจะลดกำลังผลิตตามสัดส่วน (1/จำนวนเครื่องในกลุ่ม) ไม่ใช่หยุดทั้งไลน์
+                      {tr("ใส่ชื่อกลุ่มเดียวกันให้เครื่องที่ทำงานคู่ขนานแบบ balance cycle time (เช่น Laser1/2/3) — ถ้าตัวใดหยุด ระบบจะลดกำลังผลิตตามสัดส่วน (1/จำนวนเครื่องในกลุ่ม) ไม่ใช่หยุดทั้งไลน์")}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -1664,18 +1669,18 @@ export default function LineSetup({ embedded = false } = {}) {
                     </button>
                     <button type="button" className="pg-btn sm" onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '', redundancy_group: '' }); }}
                      >
-                      ยกเลิก
+                      {tr("ยกเลิก")}
                     </button>
                   </div>
                 </div>
               ) : (
                 <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', fontSize: 12, marginBottom: 14 }}>
-                  {canEdit ? <>{tr('คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร')}<br />{tr('หรือคลิกที่จุดเดิมเพื่อแก้ไข')}</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
+                  {canEdit ? <>{tr('คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร')}<br />{tr('หรือคลิกที่จุดเดิมเพื่อแก้ไข')}</> : tr("👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข")}
                 </div>
               )}
               <CollapseCard id="machinePoints" storePrefix="ls" title={tr('รายการจุดเครื่องจักร')} count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
               {machinePoints.length > 6 && (
-                <SearchInput value={pointSearch} onChange={setPointSearch} fields="เลขเครื่อง / ชื่อเครื่อง"
+                <SearchInput value={pointSearch} onChange={setPointSearch} fields={tr("เลขเครื่อง / ชื่อเครื่อง")}
                   style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
               )}
               <div>
@@ -1712,19 +1717,19 @@ export default function LineSetup({ embedded = false } = {}) {
                       background: connectMode ? 'var(--amber-dim)' : 'var(--bg2)',
                       color: connectMode ? 'var(--amber)' : 'var(--text2)',
                     }}>
-                    {connectMode ? 'กำลังเชื่อม' : 'เชื่อมต่อ'}
+                    {connectMode ? tr("กำลังเชื่อม") : tr("เชื่อมต่อ")}
                     <ToggleDot on={connectMode} />
                   </button>
                 )}>
                 <Hint label={tr('เชื่อมเครื่องจักรไว้ทำไม')}>
-                  เชื่อมเครื่องจักรที่ทำงาน <b>{tr('ต่อเนื่องกัน (Sequential)')}</b> {tr('— ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย')}<br />
-                  เครื่องที่ <b>{tr('ไม่เชื่อม')}</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
+                  {tr("เชื่อมเครื่องจักรที่ทำงาน")} <b>{tr('ต่อเนื่องกัน (Sequential)')}</b> {tr('— ถ้าเครื่องหนึ่งหยุด อีกเครื่องในสายต้องหยุดด้วย')}<br />
+                  {tr("เครื่องที่")} <b>{tr('ไม่เชื่อม')}</b> {tr("ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว")}
                 </Hint>
                 {connectMode && (
                   <div style={{ fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', padding: '8px 10px', borderRadius: 'var(--r-md)', marginBottom: 10 }}>
                     {connectFrom
-                      ? `คลิกเครื่องจักรเครื่องที่ 2 บนรูปเพื่อเชื่อมจาก ${machinePoints.find(p => p.id === connectFrom)?.machine_no || ''}`
-                      : 'คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน'}
+                      ? `${tr("คลิกเครื่องจักรเครื่องที่ 2 บนรูปเพื่อเชื่อมจาก")} ${machinePoints.find(p => p.id === connectFrom)?.machine_no || ''}`
+                      : tr("คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน")}
                   </div>
                 )}
                 <div>
@@ -1761,25 +1766,24 @@ export default function LineSetup({ embedded = false } = {}) {
                     color: mpSaving || !mpDirty ? 'var(--muted)' : '#fff',
                     border: `1px solid ${mpSaving || !mpDirty ? 'var(--border2)' : 'var(--accent)'}`,
                     borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12, cursor: mpDirty && !mpSaving ? 'pointer' : 'default' }}>
-                  {mpSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  {mpSaving ? tr("กำลังบันทึก...") : tr("บันทึก")}
                 </button>
               </div>
             )}>
           <div>
             {/* ══ ข้อมูลของกลุ่ม — ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตกทอดค่าจากไลน์แม่ ══ */}
             <div style={groupHeadSt}>
-              ข้อมูลของกลุ่ม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่')}</span>
+              {tr("ข้อมูลของกลุ่ม")} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่')}</span>
             </div>
             {parentLineObj && (
               <div style={inheritNoteSt}>
-                ไลน์นี้เป็น <strong style={{ color: 'var(--text)' }}>{tr('ไลน์ย่อย')}</strong> {tr('ของ')} <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> —
-                เว้นว่าง/ใส่ 0 = ใช้ค่าของไลน์แม่ · กรอกเมื่อไลน์นี้มีกำลังคน/ผู้รับผิดชอบแยกจริงเท่านั้น
+                {tr("ไลน์นี้เป็น")} <strong style={{ color: 'var(--text)' }}>{tr('ไลน์ย่อย')}</strong> {tr('ของ')} <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> —
+                {tr("เว้นว่าง/ใส่ 0 = ใช้ค่าของไลน์แม่ · กรอกเมื่อไลน์นี้มีกำลังคน/ผู้รับผิดชอบแยกจริงเท่านั้น")}
               </div>
             )}
             {!parentLineObj && childLines.length > 0 && (
               <div style={inheritNoteSt}>
-                ไลน์นี้เป็น <strong style={{ color: 'var(--text)' }}>{tr('ไลน์หลักของกลุ่ม')}</strong> {tr('(มีไลน์ย่อย')} {childLines.length} ไลน์) —
-                ตัวเลขที่กรอกที่นี่คือกำลังคน <strong style={{ color: 'var(--text)' }}>{tr('ของทั้งกลุ่ม')}</strong> ระบบจะไม่บวกไลน์ย่อยซ้ำ
+                {tr("ไลน์นี้เป็น")} <strong style={{ color: 'var(--text)' }}>{tr('ไลน์หลักของกลุ่ม')}</strong> {tr('(มีไลน์ย่อย')} {childLines.length} {tr("ไลน์) — ตัวเลขที่กรอกที่นี่คือกำลังคน")} <strong style={{ color: 'var(--text)' }}>{tr('ของทั้งกลุ่ม')}</strong> {tr("ระบบจะไม่บวกไลน์ย่อยซ้ำ")}
               </div>
             )}
             <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
@@ -1800,16 +1804,14 @@ export default function LineSetup({ embedded = false } = {}) {
               <Hint label={tr('ตัวเลขนี้ถูกนับยังไง')}>
                 {(parentLineObj.std_day_shift || 0) > 0 || (parentLineObj.std_night_shift || 0) > 0 ? (
                   <>
-                    ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ตั้งกำลังคน
-                    <strong style={{ color: 'var(--text)' }}> {tr('ของทั้งกลุ่ม')}</strong> ไว้แล้ว
-                    (☀️ {parentLineObj.std_day_shift || 0} · {parentLineObj.std_night_shift || 0} คน) —
-                    ระบบใช้ตัวเลขนั้นเป็นยอดกลุ่ม ตัวเลขในช่องนี้จะ<strong style={{ color: 'var(--text)' }}>{tr('ไม่ถูกนับซ้ำ')}</strong>
+                    {tr("ไลน์แม่")} <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> {tr("ตั้งกำลังคน")}
+                    <strong style={{ color: 'var(--text)' }}> {tr('ของทั้งกลุ่ม')}</strong> {tr("ไว้แล้ว")}
+                    (☀️ {parentLineObj.std_day_shift || 0} · {parentLineObj.std_night_shift || 0} {tr("คน) — ระบบใช้ตัวเลขนั้นเป็นยอดกลุ่ม ตัวเลขในช่องนี้จะ")}<strong style={{ color: 'var(--text)' }}>{tr('ไม่ถูกนับซ้ำ')}</strong>
                     {((parseInt(stdDay) || 0) > 0 || (parseInt(stdNight) || 0) > 0) &&
                       ' · ถ้าอยากให้นับแยกรายไลน์จริง ต้องล้างตัวเลขที่ไลน์แม่ให้เป็น 0 แล้วกรอกทุกไลน์ย่อยแทน'}
                   </>
                 ) : (
-                  <>{tr('ไลน์แม่')} <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ไม่ได้ตั้งกำลังคนไว้ —
-                    ระบบจะ<strong style={{ color: 'var(--text)' }}>{tr('รวมกำลังคนจากไลน์ย่อยแต่ละไลน์')}</strong> {tr('ตัวเลขที่กรอกที่นี่จึงถูกนับจริง')}</>
+                  <>{tr('ไลน์แม่')} <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> {tr("ไม่ได้ตั้งกำลังคนไว้ — ระบบจะ")}<strong style={{ color: 'var(--text)' }}>{tr('รวมกำลังคนจากไลน์ย่อยแต่ละไลน์')}</strong> {tr('ตัวเลขที่กรอกที่นี่จึงถูกนับจริง')}</>
                 )}
               </Hint>
             )}
@@ -1820,28 +1822,28 @@ export default function LineSetup({ embedded = false } = {}) {
               <div style={{ marginTop: 4 }}>
                 <CostCenterSelect value={costCenter} disabled={!canEdit} section={selLineObj?.section} history={ccCodes}
                   onChange={r => setCostCenter(r.code)}
-                  placeholder={parentLineObj?.cost_center ? `ตามไลน์แม่: ${parentLineObj.cost_center}` : 'ค้นรหัส / ชื่อ cost center…'}
+                  placeholder={parentLineObj?.cost_center ? `${tr("ตามไลน์แม่")}: ${parentLineObj.cost_center}` : tr("ค้นรหัส / ชื่อ cost center…")}
                   inputStyle={{ fontSize: 14, fontWeight: 600 }} />
               </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 12px' }}>
-              รวมกำลังคน <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> คน (เช้า+ดึก)
+              {tr("รวมกำลังคน")} <strong style={{ color: 'var(--text)' }}>{(parseInt(stdDay) || 0) + (parseInt(stdNight) || 0)}</strong> {tr("คน (เช้า+ดึก")})
             </div>
             {/* ══ 👨‍🔧 หัวหน้างาน — ของจริงมาจากทะเบียนพนักงาน ไม่ใช่ช่องพิมพ์ (28/10 · feedback user) ══
                 *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน"* ⇒ ช่องข้อความช่องเดียวตอบไม่ได้
                 กฎทั้งหมดอยู่ใน utils/lineHeads.js (จอใบค่าฝีมือใช้ชุดเดียวกัน) */}
             <div style={{ marginBottom: 14 }}>
               <label style={labelSt}>{tr('หัวหน้างานของไลน์นี้')} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ใช้ในใบค่าฝีมือ')}</span></label>
-              <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+              <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)', border: '1px solid var(--border)' }}>
                 {lineHeads.rows.length ? (
                   <>
                     <div style={{ display: 'grid', gap: 4 }}>
-                      {[['day', '🌞 กะเช้า'], ['night', '🌙 กะดึก'], ['unknown', '❔ ยังไม่รู้กะ']].map(([k, label]) => (
+                      {[['day', ("🌞 " + tr("กะเช้า"))], ['night', '🌙 กะดึก'], ['unknown', '❔ ยังไม่รู้กะ']].map(([k, label]) => (
                         lineHeads.byShift[k].length ? (
                           <div key={k} style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'baseline', fontSize: 13 }}>
                             <span style={{ color: 'var(--muted)', minWidth: 78 }}>{label}</span>
                             <span style={{ fontWeight: 700 }}>
-                              {lineHeads.byShift[k].map(r => `${r.name}${r.team ? ` (ทีม ${r.team})` : ''}`).join(' · ')}
+                              {lineHeads.byShift[k].map(r => `${r.name}${r.team ? ` (${tr("ทีม")} ${r.team})` : ''}`).join(' · ')}
                             </span>
                           </div>
                         ) : null
@@ -1849,18 +1851,17 @@ export default function LineSetup({ embedded = false } = {}) {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                       {lineHeads.level === 'supervisor'
-                        ? '⚠️ ไลน์นี้ยังไม่มี "หัวหน้าไลน์" ในทะเบียน — ที่เห็นคือหัวหน้าแผนก'
-                        : 'มาจากทะเบียนพนักงาน (ตำแหน่ง + ทีม + ไลน์)'}
-                      {lineHeads.fromLineName ? ` · ตกทอดจากไลน์แม่ ${lineHeads.fromLineName}` : ''}
-                      {!schedRows.length ? ' · ยังไม่มีตารางกะของวันนี้ จึงยังแยกกะไม่ได้' : ''}
-                      {' · แก้ได้ที่ทะเบียนพนักงาน (/operator)'}
+                        ? tr("⚠️ ไลน์นี้ยังไม่มี \"หัวหน้าไลน์\" ในทะเบียน — ที่เห็นคือหัวหน้าแผนก")
+                        : tr("มาจากทะเบียนพนักงาน (ตำแหน่ง + ทีม + ไลน์)")}
+                      {lineHeads.fromLineName ? ` · ${tr("ตกทอดจากไลน์แม่")} ${lineHeads.fromLineName}` : ''}
+                      {!schedRows.length ? tr(" · ยังไม่มีตารางกะของวันนี้ จึงยังแยกกะไม่ได้") : ''}
+                      {tr(" · แก้ได้ที่ทะเบียนพนักงาน (/operator)")}
                     </div>
                   </>
                 ) : (
                   /* 🔴 "ทะเบียนยังไม่มี" ≠ "ไลน์นี้ไม่มีหัวหน้า" — เขียนให้ตรง ห้ามโชว์ว่างเฉยๆ */
                   <div style={{ fontSize: 12.5, color: 'var(--amber)' }}>
-                    ⚠️ ยังไม่มีใครถูกตั้งเป็นหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้ในทะเบียนพนักงาน —
-                    ตั้งตำแหน่ง + ทีม + ไลน์ ให้เขาที่ <strong>/operator</strong> แล้วชื่อจะขึ้นเองทุกจอ
+                    ⚠️ {tr("ยังไม่มีใครถูกตั้งเป็นหัวหน้าไลน์/หัวหน้าแผนกของไลน์นี้ในทะเบียนพนักงาน — ตั้งตำแหน่ง + ทีม + ไลน์ ให้เขาที่")} <strong>/operator</strong> {tr("แล้วชื่อจะขึ้นเองทุกจอ")}
                   </div>
                 )}
               </div>
@@ -1871,20 +1872,20 @@ export default function LineSetup({ embedded = false } = {}) {
                 <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5,
                   background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>
                   <div style={{ fontWeight: 700, color: 'var(--amber)', marginBottom: 3 }}>
-                    ⚠️ บัญชีผู้ใช้กับทะเบียนพนักงานไม่ตรงกัน {lineHeads.conflicts.length} รายการ
+                    ⚠️ {tr("บัญชีผู้ใช้กับทะเบียนพนักงานไม่ตรงกัน")} {lineHeads.conflicts.length} {tr("รายการ")}
                   </div>
                   <ul style={{ margin: 0, paddingInlineStart: 16 }}>
                     {lineHeads.conflicts.map((c, i) => (
                       <li key={`${c.kind}-${c.name}-${i}`}>
-                        <strong>{c.name}</strong>{c.team ? ` (ทีม ${c.team})` : ''} —{' '}
+                        <strong>{c.name}</strong>{c.team ? ` (${tr("ทีม")} ${c.team})` : ''} —{' '}
                         {c.kind === 'no_employee'
-                          ? `มีบัญชีผู้ใช้ผูกไลน์นี้ (สิทธิ์ ${c.role}) แต่ยังไม่มีตัวตนในทะเบียนพนักงาน (ชื่อไม่ตรง/ยังไม่ลงทะเบียน)`
-                          : `บัญชีให้สิทธิ์ระดับ ${c.role} แต่ตำแหน่งในทะเบียนพนักงานคือ "${positionLabel(c.position) || c.position || 'ไม่ระบุ'}" ⇒ ไม่ถูกนับเป็นหัวหน้างาน`}
+                          ? `${tr("มีบัญชีผู้ใช้ผูกไลน์นี้ (สิทธิ์")} ${c.role}) ${tr("แต่ยังไม่มีตัวตนในทะเบียนพนักงาน (ชื่อไม่ตรง/ยังไม่ลงทะเบียน")})`
+                          : `${tr("บัญชีให้สิทธิ์ระดับ")} ${c.role} ${tr("แต่ตำแหน่งในทะเบียนพนักงานคือ")} "${positionLabel(c.position) || c.position || tr('ไม่ระบุ')}" ⇒ ${tr("ไม่ถูกนับเป็นหัวหน้างาน")}`}
                       </li>
                     ))}
                   </ul>
                   <div style={{ color: 'var(--muted)', marginTop: 3 }}>
-                    ชื่อที่ขึ้นข้างบนยึด <strong>{tr('ตำแหน่งในทะเบียนพนักงาน')}</strong> เสมอ — สิทธิ์ของบัญชีไม่ใช่ตำแหน่งงาน
+                    {tr("ชื่อที่ขึ้นข้างบนยึด")} <strong>{tr('ตำแหน่งในทะเบียนพนักงาน')}</strong> {tr("เสมอ — สิทธิ์ของบัญชีไม่ใช่ตำแหน่งงาน")}
                   </div>
                 </div>
               )}
@@ -1892,26 +1893,26 @@ export default function LineSetup({ embedded = false } = {}) {
                   เปลี่ยนชื่อ/เว้นวรรคเมื่อไหร่ ความเชื่อมโยงขาดเงียบ (เคยเกิด: "ณัฐพล  คำผาง" เว้น 2 เคาะ) */}
               {lineHeads.unlinkedAccounts.length > 0 && (
                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
-                  บัญชีผู้ใช้ที่ยังไม่ได้ผูกกับทะเบียนพนักงาน: <strong>{lineHeads.unlinkedAccounts.join(' · ')}</strong>
-                  {' '}{tr('— ตอนนี้จับคู่ด้วย')}<u>{tr('ชื่อ')}</u> ถ้าชื่อเปลี่ยนจะขาดจากกันเงียบๆ · ผูกให้ถาวรที่ทะเบียนผู้ใช้
+                  {tr("บัญชีผู้ใช้ที่ยังไม่ได้ผูกกับทะเบียนพนักงาน")}: <strong>{lineHeads.unlinkedAccounts.join(' · ')}</strong>
+                  {' '}{tr('— ตอนนี้จับคู่ด้วย')}<u>{tr('ชื่อ')}</u> {tr("ถ้าชื่อเปลี่ยนจะขาดจากกันเงียบๆ · ผูกให้ถาวรที่ทะเบียนผู้ใช้")}
                 </div>
               )}
               {/* ชื่อที่พิมพ์ทับ — เก็บไว้เพราะของเดิม 6/13 ไลน์เป็นชื่อที่ไม่มีในทะเบียน (เกษียณ/สะกดต่าง)
                   🔴 ใช้ได้แค่ "คนเดียว" ⇒ เป็นทางหนี ไม่ใช่ทางหลัก — เขียนบอกให้ชัด */}
               <details style={{ marginTop: 6 }} open={!!signerHead && lineHeads.legacyInRegistry === false}>
                 <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
-                  ✏️ ชื่อที่พิมพ์ทับ (ของเดิม · ใส่ได้คนเดียว){signerHead ? ` — ${signerHead}` : ' — ยังไม่ได้ตั้ง'}
+                  ✏️ {tr("ชื่อที่พิมพ์ทับ (ของเดิม · ใส่ได้คนเดียว")}){signerHead ? ` — ${signerHead}` : tr(" — ยังไม่ได้ตั้ง")}
                 </summary>
                 <div style={{ marginTop: 6 }}>
                   <PersonSelect value={signerHead} onChange={({ name }) => setSignerHead(name)} disabled={!canEdit}
-                    placeholder={parentLineObj?.head_name ? `ตามไลน์แม่: ${parentLineObj.head_name}` : 'เว้นว่าง = ใช้ชื่อจากทะเบียนข้างบน'} />
+                    placeholder={parentLineObj?.head_name ? `${tr("ตามไลน์แม่")}: ${parentLineObj.head_name}` : tr("เว้นว่าง = ใช้ชื่อจากทะเบียนข้างบน")} />
                   {lineHeads.legacyInRegistry === false && (
                     <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
-                      ⚠️ ชื่อนี้ไม่มีในทะเบียนพนักงาน — ระบบจะเทียบกลับไม่ได้ (เช็คชื่อ/สกิล/กำลังคน ไม่รู้ว่าเป็นใคร)
+                      ⚠️ {tr("ชื่อนี้ไม่มีในทะเบียนพนักงาน — ระบบจะเทียบกลับไม่ได้ (เช็คชื่อ/สกิล/กำลังคน ไม่รู้ว่าเป็นใคร")})
                     </div>
                   )}
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    เว้นว่างไว้ดีที่สุด — ใบค่าฝีมือจะให้เลือกจากรายชื่อจริงข้างบนตามกะที่ออกใบ
+                    {tr("เว้นว่างไว้ดีที่สุด — ใบค่าฝีมือจะให้เลือกจากรายชื่อจริงข้างบนตามกะที่ออกใบ")}
                   </div>
                 </div>
               </details>
@@ -1920,7 +1921,7 @@ export default function LineSetup({ embedded = false } = {}) {
             {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══
                 แยกพื้นหลัง+เส้นคั่นให้เห็นชัดว่า "คนละเรื่องกับกำลังคนข้างบน" (user ทักว่าของปนกันในแผงเดียว) */}
             <div style={{ ...groupHeadSt, borderTop: '2px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-              คุณสมบัติของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์')}</span>
+              {tr("คุณสมบัติของไลน์นี้")} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์')}</span>
             </div>
             {/* ชนิดหน่วย ต้องมาก่อน "ประเภทไลน์" — ตอบคำถามที่ใหญ่กว่า (เป็นไลน์ผลิตไหม) */}
             <div style={{ marginBottom: 12 }}>
@@ -1938,8 +1939,8 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
               <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>
                 {unitKind === UNIT_SUPPORT
-                  ? 'หน่วยนี้ใช้ เช็คชื่อ · จัดกะ · ผังองค์กร ได้ แต่ไม่โผล่ในแผนผลิต / OEE / Daily Report / ใบตรวจรายวัน'
-                  : 'มีแผนผลิต · เปิดกะ · คิด OEE · ต้องตรวจรายวัน (AM · LPA · Poka-Yoke)'}
+                  ? tr("หน่วยนี้ใช้ เช็คชื่อ · จัดกะ · ผังองค์กร ได้ แต่ไม่โผล่ในแผนผลิต / OEE / Daily Report / ใบตรวจรายวัน")
+                  : tr("มีแผนผลิต · เปิดกะ · คิด OEE · ต้องตรวจรายวัน (AM · LPA · Poka-Yoke)")}
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
@@ -1961,8 +1962,8 @@ export default function LineSetup({ embedded = false } = {}) {
               <div style={{ marginTop: 5 }}>
                 <Hint label={tr('โหมดนี้ทำอะไร')}>
                   {flowMode === 'parallel_machine'
-                    ? 'เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order'
-                    : 'สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)'}
+                    ? tr("เครื่อง stand-alone หลายตัววิ่งพร้อมกันคนละรายการ (เช่น SUB APRON) — บอร์ดแตกเลนขนานตามเครื่อง + เลือกเครื่องตอนเปิด Order")
+                    : tr("สายเดียวไหลทีละชิ้น — บอร์ดเรียงคิว 1 ใบต่อครั้ง (ดีฟอลต์ · งานคู่ LH/RH แยกเลนคู่ให้เองจาก pair_mat_no)")}
                 </Hint>
               </div>
               <div style={{ marginTop: 8 }}>
@@ -1974,16 +1975,14 @@ export default function LineSetup({ embedded = false } = {}) {
                   placeholder={tr('เช่น 3')} style={{ marginTop: 4, width: 120 }} />
                 <div style={{ marginTop: 4 }}>
                   <Hint label={tr('N คือเลขอะไร')}>
-                    = <strong style={{ color: 'var(--text)' }}>{tr('เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง')}</strong> (ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน)
-                    · ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow แต่ตั้ง N=3
-                    · <strong style={{ color: 'var(--text)' }}>มีผล 2 ที่: หัก Downtime 1/N ในสูตร OEE และตัวเลข "ควรผลิตได้ตอนนี้" บนผังรวมโรงงาน</strong>
+                    = <strong style={{ color: 'var(--text)' }}>{tr('เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง')}</strong> ({tr("ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน) · ตั้งได้ทุกโหมดไหลงาน — เช่น LASER-345/789 (เลเซอร์ 3 ตัวขึ้นงานคู่ LH/RH) เป็น One-piece flow แต่ตั้ง")} N=3
+                    · <strong style={{ color: 'var(--text)' }}>{tr("มีผล 2 ที่: หัก Downtime 1/N ในสูตร OEE และตัวเลข \"ควรผลิตได้ตอนนี้\" บนผังรวมโรงงาน")}</strong>
                   </Hint>
                 </div>
                 {flowMode === 'parallel_machine' && !(parseInt(parallelStations) > 0) && (
                   // ⚠️ ไลน์เครื่องขนานที่ไม่ตั้ง N = ผังรวมคำนวณกำลังผลิตไม่ได้ ต้องถอยไปสูตรอัตราตามเวลา — ห้ามปล่อยเงียบ
                   <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--amber)', background: 'var(--amber)14', border: '1px solid var(--amber)44', borderRadius: 'var(--r-md)', padding: '6px 8px', marginTop: 6 }}>
-                    ⚠️ ไลน์นี้ตั้งเป็น "เครื่องขนาน" แต่ยังไม่ได้กรอก N — ระบบไม่รู้ว่าเดินกี่เครื่องพร้อมกัน
-                    จึงคิด "ควรผลิตได้ตอนนี้" จากสัดส่วนเวลาที่ผ่านไปแทน (หยาบกว่า) และหัก Downtime เต็มเหมือนไลน์เครื่องเดียว
+                    ⚠️ {tr("ไลน์นี้ตั้งเป็น \"เครื่องขนาน\" แต่ยังไม่ได้กรอก N — ระบบไม่รู้ว่าเดินกี่เครื่องพร้อมกัน จึงคิด \"ควรผลิตได้ตอนนี้\" จากสัดส่วนเวลาที่ผ่านไปแทน (หยาบกว่า) และหัก Downtime เต็มเหมือนไลน์เครื่องเดียว")}
                   </div>
                 )}
               </div>
@@ -1998,8 +1997,8 @@ export default function LineSetup({ embedded = false } = {}) {
                 color: selLineObj.is_active === false ? 'var(--amber)' : 'var(--muted)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
                 <span>{tr('⏸ ปลดระวางไลน์นี้')} {selLineObj.is_active === false
-                  ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
-                  : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์ · มีผลทันที ไม่ต้องกดบันทึก'}</span>
+                  ? tr("(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)")
+                  : tr("— ใช้แทนการลบ เมื่อเลิกใช้ไลน์ · มีผลทันที ไม่ต้องกดบันทึก")}</span>
               </label>
             )}
           </div>
@@ -2022,8 +2021,8 @@ export default function LineSetup({ embedded = false } = {}) {
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
-            ผู้เซ็น/อนุมัติใบค่าฝีมือ ตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ผังองค์กร')}</a> แล้ว{' '}
+          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3-surf)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
+            {tr("ผู้เซ็น/อนุมัติใบค่าฝีมือ ตั้งที่หน้า")} <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ผังองค์กร')}</a> {tr("แล้ว")}{' '}
             <MoreMark text={tr('เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น')} />
           </div>
 
@@ -2045,10 +2044,10 @@ function Hint({ children, label = 'คำอธิบาย' }) {
       <button type="button" onClick={() => setOpen(v => !v)}
         style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
           fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)', textDecoration: 'underline dotted' }}>
-        {open ? 'ซ่อนคำอธิบาย' : `(?) ${label}`}
+        {open ? tr("ซ่อนคำอธิบาย") : `(?) ${label}`}
       </button>
       {open && (
-        <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', background: 'var(--bg2)',
+        <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', background: 'var(--bg2-surf)',
           border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 8px', marginTop: 5 }}>
           {children}
         </div>

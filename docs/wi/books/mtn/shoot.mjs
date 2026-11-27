@@ -4,7 +4,7 @@ const OUT=process.argv[2]; const SPEC=JSON.parse(fs.readFileSync(process.argv[3]
 const only = process.argv[4] ? process.argv[4].split(',') : null;
 const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSync(EXE) ? { executablePath: EXE } : {}); const pg=await b.newPage({viewport:{width:1600,height:1000}, timezoneId:'Asia/Bangkok'});
 const res = fs.existsSync(OUT+'/boxes.json') ? JSON.parse(fs.readFileSync(OUT+'/boxes.json')) : {};
-async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
+async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ(?! \(④\))/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
 let LOOSE=false;
 async function findVisible(label0){
   const last = label0.endsWith('@last'); const label = last ? label0.slice(0,-5) : label0;
@@ -31,6 +31,9 @@ for (const s of SPEC){
   await pg.goto(`http://localhost:${process.env.PORT||5223}/audit/index.html?p=${s.p}&role=admin${s.q?'&'+s.q:''}`); await pg.waitForTimeout(3500); await dismiss();
   for (const a of (s.acts||[])){
     if (a[0]==='click') await clickL(a[1]);
+    else if (a[0]==='selectopt'){ /* เลือกค่าใน <select> ที่มี option ข้อความนี้ (ไม่พึ่งลำดับ select บนหน้า) */
+      const sel=pg.locator('select',{has:pg.locator('option',{hasText:a[1]})}).last();
+      if(await sel.count()){ await sel.selectOption(a[2]).catch(()=>console.log('  select-miss',a[1])); await pg.waitForTimeout(1300);} else console.log('  select-miss',a[1]); }
     else if (a[0]==='select'){ const sel=pg.locator('select').nth(a[1]); const v=await sel.evaluate((e,k)=>e.options[k]?.value,a[2]); await sel.selectOption(v).catch(()=>{}); await pg.waitForTimeout(1300); }
     else if (a[0]==='wait') await pg.waitForTimeout(a[1]);
   }

@@ -37,14 +37,14 @@ export default function ConnBanner() {
     }}>
       <span>{tr('⚠️ เชื่อมต่อฐานข้อมูลไม่ได้ — ข้อมูลบนจอตอนนี้อาจไม่ใช่ล่าสุด')}</span>
       <span style={{ opacity: 0.85, fontWeight: 500 }}>
-        {left > 0 ? `ระบบจะลองใหม่ให้เองใน ${left} วิ` : 'กำลังลองใหม่…'}
+        {left > 0 ? `${tr("ระบบจะลองใหม่ให้เองใน")} ${left} ${tr("วิ")}` : tr("กำลังลองใหม่…")}
       </span>
       <button onClick={connRetryNow} style={{
         background: '#fff', color: '#7f1d1d', border: 'none', borderRadius: 'var(--r-md)',
         padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
       }}>{tr('ลองใหม่เดี๋ยวนี้')}</button>
       <span style={{ opacity: 0.8, fontWeight: 500, fontSize: 11 }}>
-        · อย่ากดรีเฟรชซ้ำๆ จะยิ่งช้า · ปิดจอที่ไม่ได้ใช้ช่วยได้
+        · {tr("อย่ากดรีเฟรชซ้ำๆ จะยิ่งช้า · ปิดจอที่ไม่ได้ใช้ช่วยได้")}
       </span>
     </div>
   );

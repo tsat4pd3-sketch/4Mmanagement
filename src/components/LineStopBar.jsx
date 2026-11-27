@@ -15,8 +15,8 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import React from 'react';
 
-import { tr } from '../utils/i18n';
-const fmtHr = (h) => (h == null ? '—' : `${Number(h).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.`);
+import { tr, dateLocale } from '../utils/i18n';
+const fmtHr = (h) => (h == null ? '—' : `${Number(h).toLocaleString(dateLocale(), { maximumFractionDigits: 1 })} ${tr("ชม.")}`);
 
 /**
  * @param {object} p
@@ -51,7 +51,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
       )}
       {/* แถบเดียว แตกเป็นช่วง — ความกว้างรวมกันได้ 100% ของยอดเต็มเสมอ */}
       <div style={{ display: 'flex', width: '100%', height: 22, borderRadius: 'var(--r-xs)',
-                    overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg3)' }}>
+                    overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg3-surf)' }}>
         {rows.map(r => {
           const w = pct(r.hr);
           if (w <= 0) return null;
@@ -77,7 +77,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
       </div>
       {mismatch && (
         <div style={{ color: 'var(--amber)', marginTop: 3 }}>
-          ⚠ ช่วงย่อยรวมได้ {fmtHr(sum)} {tr('ไม่เท่ากับยอดเต็ม')} {fmtHr(T)} — ข้อมูลขัดกัน ต้องไล่ที่ต้นทาง
+          ⚠ {tr("ช่วงย่อยรวมได้")} {fmtHr(sum)} {tr('ไม่เท่ากับยอดเต็ม')} {fmtHr(T)} — {tr("ข้อมูลขัดกัน ต้องไล่ที่ต้นทาง")}
         </div>
       )}
       {note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>{note}</div>}

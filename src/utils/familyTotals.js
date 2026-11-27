@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* familyTotals — ยอดผลิตสะสมต่อ "ตระกูลสินค้า" (family_id) · ของกลางจุดเดียว (2026-10-15 · QC audit)
 
    🔴 ทำไมต้องมีไฟล์นี้ — ของเดิมผิด 2 ชั้นซ้อนกันใน 2 จอ (`/products` + `/daily-report` แท็บสินค้า):
@@ -35,8 +36,8 @@ export async function loadFamilyQtyTotals() {
       (ด่าน `status-palette-single-source`) · อ่านไม่ได้ = `warn` (เหลือง = มีอะไรไม่ปกติ)
       ยังไม่เคยผลิต = `none` (เทา = ไม่มีค่าให้ตัดสิน · **ห้ามเขียว**) */
 export function familyQtyChip(totals, familyId, fail = false) {
-  if (fail) return { text: '📦 อ่านยอดสะสมไม่ได้', tone: 'warn' };
+  if (fail) return { text: tr('📦 อ่านยอดสะสมไม่ได้'), tone: 'warn' };
   const n = totals?.[familyId];
-  if (!(Number(n) > 0)) return { text: '📦 ยังไม่เคยผลิต', tone: 'none' };
-  return { text: `📦 ยอดสะสม ${Number(n).toLocaleString()} ชิ้น`, tone: 'good' };
+  if (!(Number(n) > 0)) return { text: tr('📦 ยังไม่เคยผลิต'), tone: 'none' };
+  return { text: `📦 ${tr('ยอดสะสม')} ${Number(n).toLocaleString()} ${tr('ชิ้น')}`, tone: 'good' };
 }

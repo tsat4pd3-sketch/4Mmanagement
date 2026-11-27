@@ -25,6 +25,7 @@
    (เลขขั้นคนละความหมายระหว่างฟอร์ม JIG/DIE กับ MTN — กฎเหล็กใน CLAUDE.md)
    ═══════════════════════════════════════════════════════════════════════════ */
 import { personKey, normPersonName } from './actorStamp.js';
+import { moPrBlocked } from './moChase.js';
 import {
   canDoStep, moWaitMeta, offLoopWaitOf, approvalWaitsOnMe, sideAllows, STAGE_APPROVE_FIRST,
   canSignMtnApproval,
@@ -35,6 +36,7 @@ import { assignedTechsOf } from './mtnPurchase.js';
 import { isMtnFormRow, isApprovalBlocked } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
 import { binTagAge, ncStep } from './qualityBin.js';   // อายุแท็กถังเหลือง/แดง (WI-PD3-087 §5.6) — ห้ามเขียนเลขวันซ้ำที่นี่
+import { tr } from './i18n.js';
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
 export const TIER = { MINE: 'mine', UNIT: 'unit', FLOOR: 'floor' };
@@ -163,6 +165,48 @@ export function scopeStateOf(row, me) {
 /** แถวนี้อยู่ในขอบเขตของเราไหม — `sections: []` = ไม่จำกัด (เห็นทุกส่วนงาน)
  *  ⚠️ พฤติกรรมเหมือนเดิมเป๊ะ (แถวไม่ระบุส่วนงาน = false) — แค่ยืมคำตอบจาก `scopeStateOf` จุดเดียว */
 export const inMyScope = (row, me) => scopeStateOf(row, me) === 'in';
+
+/**
+ * ✍️ **"ใบนี้รอ *เรา* เซ็นรับทราบ (ผจก.ต้นสังกัด) ไหม"** — เจ้าของกฎที่เดียว
+ *
+ * 🔴 23/11 (หน้างานแจ้ง): *"แจ้งเตือนที่ 2 บอกมีรอ 1 ใบ กดเข้ามาเจอ 4 ใบ และเป็นใบถูกตีกลับ/รอยกเลิก"*
+ *    ต้นเหตุ: ป้ายในคิวนับด้วยกฎ 5 ข้อ (ฟอร์ม MTN · ยังไม่เซ็น · ไม่ใช่ใบที่ลายเซ็นบล็อกงาน ·
+ *    อยู่ในขอบเขตเรา · เราเซ็นได้จริง) แต่ **ตัวกรอง `?ack=pending` ในหน้า MO เช็คแค่ 2 ข้อแรก**
+ *    ⇒ กดจากป้ายแล้วเจอใบที่ไม่ใช่ของเรา/เซ็นไม่ได้/ใบตีกลับ ปนมาด้วย
+ *    **ป้ายกับลิสต์ที่ป้ายพาไป ต้องใช้กฎเดียวกันเสมอ** — ไม่งั้นเลขไม่ตรงและคนเลิกเชื่อป้าย
+ * 🔴 ห้ามเขียนเงื่อนไขชุดนี้ซ้ำในหน้า (มีด่าน `ack-queue-single-rule`)
+ */
+export function ackWaitsOnMe(o, me = {}) {
+  if (!o || !isMtnFormRow(o) || o.dept_manager_at) return false;
+  if (isApprovalBlocked(o)) return false;          // ใบที่ลายเซ็นนี้บล็อกงานจริง = ขึ้นเป็นรายการของตัวเองแล้ว
+  if (scopeStateOf(o, me) !== 'in') return false;  // ผจก.เห็นเฉพาะใบของส่วนงานตัวเอง
+  return canSignMtnApproval('dept', {
+    order: o, fullName: me.name || '', can: me.can || (() => false), isShared: !!me.isShared,
+  }).ok;
+}
+
+/**
+ * ✍️ **"ใบนี้รอ *เรา* เซ็น (ขั้นที่ล็อกตำแหน่ง) ไหม"** — เจ้าของกฎที่เดียว
+ *
+ * 🔴 27/11 (หน้างานแจ้ง): *"ทำไมแจ้งเตือนงานที่รออนุมัติ พอกดเข้ามายังเจองานที่ยังติด loop PR อยู่
+ *    มันยังอนุมัติไม่ได้นิ"*
+ *    ต้นเหตุ: ป้าย "รอคุณเซ็น N ใบ" นับถูกแล้ว (ตัดใบที่ติดลูป PR ออกตั้งแต่ 23/11)
+ *    **แต่ลิงก์ของป้ายพาไป `?wait=<stage>`** ซึ่งแปลว่า "ใบที่ค้างอยู่ขั้นนี้" เฉยๆ
+ *    ⇒ ไม่รู้จักทั้งกฎ "รอเราจริง" และกฎ PR ⇒ ป้ายบอก 4 กดเข้าไปเจอ 14 ปนใบที่กดไม่ได้
+ *    **คลาสเดียวกับ `ackWaitsOnMe` (23/11) เป๊ะ — ป้ายกับลิสต์ที่ป้ายพาไป ต้องใช้กฎเดียวกันเสมอ**
+ * 🔴 `prs` = ใบขอซื้อของใบนี้ · **`null` = ไม่รู้ ⇒ ไม่ตัดทิ้ง** (พฤติกรรมเดิมเป๊ะ)
+ * 🔴 `stage` ใส่มาเพื่อกรองเฉพาะขั้นนั้น (ป้ายแยกบรรทัดต่อขั้น) · ไม่ใส่ = ทุกขั้นที่รอเรา
+ * 🔴 ห้ามเขียนเงื่อนไขชุดนี้ซ้ำในหน้า (ด่าน `sign-queue-single-rule`)
+ */
+export function signWaitsOnMe(o, me = {}, prs = null, stage = null) {
+  if (!o) return false;
+  const w = moWaitingOn(o);
+  if (!w?.meta || w.byName) return false;
+  if (stage && (w.meta.stage || `step${w.step}`) !== stage) return false;
+  if (!soleSignerFor(o, w, me)) return false;
+  if (scopeStateOf(o, me) !== 'in') return false;
+  return !moPrBlocked(o, prs);
+}
 
 /* ── ขั้นที่ "ตำแหน่งเดียวเซ็นได้" — นับเป็นงานรอคุณ (2026-10-13 · คำสั่ง user) ──────────────
    *"อย่างอนุมัติ MO สำหรับช่องที่คนเซ็นคือ ผู้จัดการฝ่ายผู้แจ้ง ต้องอนุมัติและอนุมัติได้คนเดียว
@@ -304,8 +348,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     /* 🔴 ใบที่ลายเซ็นนี้ **บล็อกงานจริง** (งานปรับปรุง/สร้าง) ไม่เข้าป้ายนี้ — มันขึ้นเป็นรายการ
        ของตัวเองอยู่แล้วผ่าน moWaitMeta/approvalWaitsOnMe · นับซ้ำ = badge เกินจริง
        และป้ายนี้เขียนว่า "ไม่บล็อกงาน" ซึ่งจะกลายเป็นคำโกหกสำหรับใบที่บล็อกอยู่ */
-    if (isMtnFormRow(o) && !o.dept_manager_at && !isApprovalBlocked(o) && scopeStateOf(o, me) === 'in'
-        && canSignMtnApproval('dept', { order: o, fullName: me.name || '', can: me.can || (() => false), isShared: !!me.isShared }).ok) {
+    if (ackWaitsOnMe(o, me)) {
       ackCount += 1;
       const aAge = ageDays(o.work_date, now);
       if (aAge != null && (ackOldest == null || aAge > ackOldest)) ackOldest = aAge;
@@ -315,7 +358,14 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     if (!w.meta) continue;
     if (w.byName && isMeAmong(w, me)) { mine.push(moItem(o, w, TIER.MINE)); continue; }
     // ขั้นล็อกตำแหน่งที่เราเซ็นได้คนเดียว (ในขอบเขตเรา) ⇒ รอคุณ + ขึ้นก่อน (soleSignerFor ข้างบน)
-    if (!w.byName && soleSignerFor(o, w, me) && scopeStateOf(o, me) === 'in') {
+    /* 🛒 23/11 (หน้างาน: *"รอเรา 7 ใบ แต่เป็นใบอยู่ loop pr ซึ่งมันไม่ได้รอเราไง"*)
+       ใบที่ลูปจัดซื้อยังไม่จบ = **กดอนุมัติไม่ได้จริง** (ด่าน `moCloseGate` บล็อกตอนกด)
+       ⇒ ห้ามนับเป็น "รอคุณเซ็น" · คนที่ต้องลงมือคือช่าง/จัดซื้อ ไม่ใช่ ผจก.
+       🔴 ใช้ `moPrBlocked()` ตัวเดียวกับป้ายสถานะในหน้า MO — ห้ามเทียบ PR เองที่นี่
+       🔴 ไม่ได้ส่ง `prOf` มา (ผู้เรียกไม่มีข้อมูล PR) = พฤติกรรมเดิมเป๊ะ ไม่ตัดอะไรทิ้ง */
+    /* 🔴 ใช้ `signWaitsOnMe()` ตัวเดียวกับตัวกรอง `?sign=` ในหน้า MO — ห้ามเขียนเงื่อนไขซ้ำที่นี่
+       (27/11: ป้ายกับลิสต์ที่ป้ายพาไปเคยใช้คนละกฎ ⇒ ป้ายบอก 4 กดเข้าไปเจอ 14) */
+    if (signWaitsOnMe(o, me, src.prOf ? src.prOf(o) : null)) {
       mine.push({ ...moItem(o, w, TIER.MINE), sign: true, tag: '✍️ รอคุณเซ็น' });
       /* สะสมไว้ทำ "ป้ายคาไว้" บรรทัดเดียวต่อขั้น (คำสั่ง user 22/10) — ดู signRollup ข้างล่าง */
       const sk = w.meta.stage || `step${w.step}`;
@@ -336,7 +386,7 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     unit.push({
       key: `ses:${s.id}`, icon: '📋', tier: TIER.UNIT,
       title: `คำขอปิดกะ — ${s.line_name || '-'}`,
-      detail: s.shift === 'night' ? 'กะดึก' : 'กะเช้า',
+      detail: s.shift === 'night' ? 'กะดึก' : tr("กะเช้า"),
       age: ageDays(s.work_date, now), tag: 'รอหัวหน้าอนุมัติ',
       to: `/daily-report?date=${s.work_date || ''}`,
     });
@@ -494,6 +544,54 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     }
   }
 
+  /* ── ✍️ ใบตรวจ AM รออนุมัติ (A5 · 2026-11-24 · คำสั่ง user) ────────────────────────────
+     วัดจริง 24/11: ค้าง 326 ใบ 10 ไลน์ เก่าสุด 10/08 — ไม่เคยโผล่ในคิวใคร
+     · โหลด/นับเฉพาะคนที่อนุมัติ AM ได้ (`me.canAmApprove`) · ชั้น `unit` **บรรทัดเดียวต่อไลน์** (ห้ามแตกรายใบ)
+     · ไม่ขึ้น badge (หัวหน้าหลายคนกดได้ ไม่ได้รอ "เรา" คนเดียว) · ไลน์นอกทะเบียน = นับเป็น "ชี้ส่วนงานไม่ได้" */
+  if (me.canAmApprove) {
+    if (src?.amPendingTruncated) missing.push('am_pending_truncated');
+    const byLine = new Map();
+    for (const r of need('amPending', src.amPending)) {
+      if (!keep(r)) continue;
+      const k = r.line_name || '-';
+      const g = byLine.get(k) || { line: k, n: 0, oldest: null };
+      g.n += 1;
+      const a = ageDays(r.inspected_at, now);
+      if (a != null && (g.oldest == null || a > g.oldest)) g.oldest = a;
+      byLine.set(k, g);
+    }
+    for (const g of byLine.values()) {
+      unit.push({
+        key: `amappr:${g.line}`, icon: '✍️', tier: TIER.UNIT, count: g.n,
+        title: `ใบตรวจ AM รออนุมัติ ${g.n} ใบ — ${g.line}`,
+        detail: 'หัวหน้ากลุ่ม/หัวหน้าแผนกรับทราบผลตรวจ', age: g.oldest, tag: 'รออนุมัติ',
+        to: '/daily-checker?tab=amcheck',
+      });
+    }
+  }
+
+  /* ── ✍️ งาน e-Workflow ที่รอฉัน (25/11) — ใบรอบเอกสาร (Poka-Yoke ฯลฯ) + ใบฟอร์ม ──────────────
+     · งานถูกมอบ "ถึงตัว" แล้ว (wf_tasks.assignee_id = ฉัน) แต่หลายคนกดได้ ⇒ ชั้น `unit` ไม่ขึ้น badge
+     · บรรทัดเดียวต่อใบงาน (นิยาม) ห้ามแตกรายใบ · ไม่ส่ง = ไม่ได้โหลด (ไม่ใช่ partial) */
+  if (me.uid && src.wfTasks !== undefined) {
+    const byDef = new Map();
+    for (const t of need('wfTasks', src.wfTasks)) {
+      const g = byDef.get(t.def) || { def: t.def, n: 0, oldest: null, bound: t.bound };
+      g.n += 1;
+      const a = ageDays(t.created_at, now);
+      if (a != null && (g.oldest == null || a > g.oldest)) g.oldest = a;
+      byDef.set(t.def, g);
+    }
+    for (const g of byDef.values()) {
+      unit.push({
+        key: `wf:${g.def}`, icon: '✍️', tier: TIER.UNIT, count: g.n,
+        title: `${g.def} — รอคุณเซ็น ${g.n} ใบ`,
+        detail: g.bound ? 'ใบรอบเอกสาร (e-Workflow)' : 'ใบงาน e-Workflow', age: g.oldest, tag: 'รอเซ็น',
+        to: '/workflows?tab=inbox',
+      });
+    }
+  }
+
   if (me.canLevelUp || me.canLevelUp100) {
     const lu = need('levelUps', src.levelUps).filter(r => (Number(r.to_level) >= 100 ? me.canLevelUp100 : me.canLevelUp) && keep(r));
     if (lu.length) {
@@ -555,7 +653,9 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
       detail: ['กดเพื่อเปิดรายการที่รอคุณอนุมัติ',
         g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null].filter(Boolean).join(' · '),
       count: g.count, age: null,
-      to: `/mtn-repair?tab=list&wait=${encodeURIComponent(g.stage)}`
+      /* 🔴 27/11 — ต้องพาไปตัวกรอง `?sign=<stage>` ที่ใช้ `signWaitsOnMe()` **กฎเดียวกับที่นับป้ายนี้**
+         เดิมพาไป `?wait=<stage>` = "ใบที่ค้างขั้นนี้" เฉยๆ ⇒ เลขไม่ตรง + ปนใบที่กดอนุมัติไม่ได้ */
+      to: `/mtn-repair?tab=list&sign=${encodeURIComponent(g.stage)}`
         + (g.oldest != null ? `&from=${dayKeyBack(g.oldest, now)}` : ''),
     });
   });

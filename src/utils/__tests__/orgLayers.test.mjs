@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { unitParentId, isUnitRoot, isOrphanDept, unitRoots, unitNodes, unitChain, UPPER_KINDS } from '../orgLayers.js';
+import { unitParentId, isUnitRoot, isOrphanDept, unitRoots, unitNodes, unitChain, UPPER_KINDS, UPPER_META } from '../orgLayers.js';
 
 const TODAY = [
   { id: 1, kind: 'section', name: 'PD1', parent_id: null },
@@ -45,4 +45,9 @@ test('แม่ที่ไม่อยู่ในลิสต์ที่ส�
   const deptsOnly = FUTURE.filter(n => n.kind === 'department');
   assert.equal(isOrphanDept(deptsOnly.find(n => n.id === 2), deptsOnly), false, 'parent 1 ไม่อยู่ในลิสต์ → ไม่เดาว่าขึ้นตรง');
   assert.equal(isOrphanDept(deptsOnly.find(n => n.id === 3), deptsOnly), false, 'parent 103 ไม่อยู่ในลิสต์ → ยังตอบไม่ได้ (ต้องโหลดชั้นบน)');
+});
+
+test('🏷️ เลเวลชั้นบน = Group 0 · SPG 1 · Company 2 · Plant 3 (user เคาะ 20/11) — ต่อบันไดกับส่วนงาน 4', () => {
+  assert.deepEqual(UPPER_KINDS.map(k => UPPER_META[k]?.level), [0, 1, 2, 3]);
+  for (const k of UPPER_KINDS) assert.ok(UPPER_META[k].th, `${k} ต้องมีป้ายไทย`);
 });

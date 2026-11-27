@@ -164,7 +164,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         // → โชว์ สเตจ+เวลา แล้วเลข MAT เต็มอยู่ใน tooltip/popup (หลักเดียวกับบอร์ดรอบส่งของ Store)
         id: o.id, timeMin: tm, color, text: `${st.icon}${hhmm(tm)}`,
         title: `${o.line_name} · ${o.mat_no} · ${st.label}\n`
-          + `เรียกตอน ${hhmm(tm)} · ครบกำหนด ${hhmm(frameMinFromIso(o.due_at) ?? tm)}\n`
+          + `${tr("เรียกตอน")} ${hhmm(tm)} · ${tr("ครบกำหนด")} ${hhmm(frameMinFromIso(o.due_at) ?? tm)}\n`
           + (isLate ? '⚠️ เกินเวลาแล้ว' : o.status === 'acked' ? '📝 กำลังตรวจ'
             : o.status === 'cancelled' ? 'ยกเลิก' : o.status === 'expired' ? '⌛ หมดเวลา — ข้ามกะแล้วไม่ได้ตรวจ'
             : o.status?.startsWith('done') ? 'ตรวจแล้ว' : 'รอตรวจ'),
@@ -187,9 +187,9 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
       push(r.lineName, {
         id: `eta-${r.lineName}-${r.matNo}`, timeMin: fc.etaMin, color: C.eta, dashed: true,
         text: `3️⃣~${hhmm(fc.etaMin)}`,                      // ~ = ประมาณ (ย้ำอีกชั้นนอกจากเส้นประ)
-        title: `คาดการณ์ (ยังไม่ใช่งานตรวจจริง)\n${r.lineName} · ${r.matNo}\n`
-          + `เหลืออีก ${r.remaining.toLocaleString()} ชิ้น × CT ${fc.ct} วิ → น่าจะจบ ~${hhmm(fc.etaMin)}\n`
-          + 'เวลานี้ขยับได้ตามจังหวะผลิตจริง · งานตรวจจะถูกสร้างเมื่อรุ่นจบจริง',
+        title: `${tr("คาดการณ์ (ยังไม่ใช่งานตรวจจริง")})\n${r.lineName} · ${r.matNo}\n`
+          + `${tr("เหลืออีก")} ${r.remaining.toLocaleString()} ${tr("ชิ้น")} × CT ${fc.ct} ${tr("วิ → น่าจะจบ")} ~${hhmm(fc.etaMin)}\n`
+          + tr('เวลานี้ขยับได้ตามจังหวะผลิตจริง · งานตรวจจะถูกสร้างเมื่อรุ่นจบจริง'),
         data: { kind: 'eta', r, etaMin: fc.etaMin, ct: fc.ct },
       });
     });
@@ -200,7 +200,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
       groups: lines.map(l => {
         const items = byLine.get(l);
         const open = items.filter(i => i.data.kind === 'ob' && ['pending', 'acked'].includes(i.data.o.status)).length;
-        return { key: l, label: l, sub: open ? `ค้าง ${open}` : `${items.length} จุด`, items };
+        return { key: l, label: l, sub: open ? `${tr("ค้าง")} ${open}` : `${items.length} ${tr("จุด")}`, items };
       }),
     };
   }, [obs, runs, ctMap, nowMin, breaks, now]);
@@ -221,18 +221,17 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
 
       {/* คำอธิบายสี — บอร์ดที่คนอ่านไม่ออกว่าสีไหนแปลว่าอะไร = บอร์ดที่ไม่มีใครใช้ */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--muted)', padding: '8px 4px 0' }}>
-        <Key c={C.pending} t="รอตรวจ" /><Key c={C.late} t="เกินเวลา" /><Key c={C.acked} t="กำลังตรวจ" />
-        <Key c={C.ok} t="ตรวจแล้ว" /><Key c={C.ng} t="เจอของเสีย" /><Key c={C.cancel} t="ยกเลิก" />
-        <Key c={C.eta} t={`คาดการณ์ชิ้นสุดท้าย${etaCount ? ` (${etaCount})` : ''}`} dashed />
+        <Key c={C.pending} t={tr("รอตรวจ")} /><Key c={C.late} t={tr("เกินเวลา")} /><Key c={C.acked} t={tr("กำลังตรวจ")} />
+        <Key c={C.ok} t={tr("ตรวจแล้ว")} /><Key c={C.ng} t={tr("เจอของเสีย")} /><Key c={C.cancel} t={tr("ยกเลิก")} />
+        <Key c={C.eta} t={`${tr("คาดการณ์ชิ้นสุดท้าย")}${etaCount ? ` (${etaCount})` : ''}`} dashed />
       </div>
 
       {noCt.length > 0 && (
         <div style={{ ...warnBox, marginTop: 8 }}>
-          ⏱️ คาดการณ์เวลาไม่ได้ <b>{noCt.length} {tr('รุ่น')}</b> {tr('(ยังไม่ได้ตั้ง Cycle Time):')}{' '}
-          {noCt.slice(0, 6).map(r => `${r.lineName}·${r.matNo}`).join(' · ')}{noCt.length > 6 ? ` … อีก ${noCt.length - 6}` : ''}
+          ⏱️ {tr("คาดการณ์เวลาไม่ได้")} <b>{noCt.length} {tr('รุ่น')}</b> {tr('(ยังไม่ได้ตั้ง Cycle Time):')}{' '}
+          {noCt.slice(0, 6).map(r => `${r.lineName}·${r.matNo}`).join(' · ')}{noCt.length > 6 ? ` … ${tr("อีก")} ${noCt.length - 6}` : ''}
           <div style={{ marginTop: 3, opacity: 0.85 }}>
-            ระบบไม่เดาเวลาให้ — ตั้ง CT ที่ <b>Product Master</b> แล้วบล็อกคาดการณ์จะขึ้นเอง
-            (งานตรวจจริงยังทำงานปกติ ไม่กระทบ)
+            {tr("ระบบไม่เดาเวลาให้ — ตั้ง CT ที่")} <b>Product Master</b> {tr("แล้วบล็อกคาดการณ์จะขึ้นเอง (งานตรวจจริงยังทำงานปกติ ไม่กระทบ")})
           </div>
         </div>
       )}
@@ -246,30 +245,30 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (
                   <>
                     <b style={{ fontSize: 13 }}>{d.r.lineName} · {d.r.matNo}</b>
                     <div style={{ color: C.eta, fontWeight: 700, marginTop: 2 }}>
-                      คาดการณ์ — ยังไม่ใช่งานตรวจจริง
+                      {tr("คาดการณ์ — ยังไม่ใช่งานตรวจจริง")}
                     </div>
                     <div>{tr('น่าจะผลิตครบ ~')}<b>{hhmm(d.etaMin)}</b></div>
                     <div style={{ color: 'var(--muted)' }}>
-                      เหลืออีก {d.r.remaining.toLocaleString()} {tr('ชิ้น · CT')} {d.ct} วิ/ชิ้น (หักเวลาพักแล้ว)
+                      {tr("เหลืออีก")} {d.r.remaining.toLocaleString()} {tr('ชิ้น · CT')} {d.ct} {tr("วิ/ชิ้น (หักเวลาพักแล้ว")})
                     </div>
                     <div style={{ color: 'var(--muted)', marginTop: 5, fontSize: 11.5 }}>
-                      เวลานี้ขยับตามจังหวะผลิตจริง · ระบบจะสร้างงานตรวจ “ชิ้นสุดท้าย” ให้เองเมื่อรุ่นนี้จบจริง
+                      {tr("เวลานี้ขยับตามจังหวะผลิตจริง · ระบบจะสร้างงานตรวจ “ชิ้นสุดท้าย” ให้เองเมื่อรุ่นนี้จบจริง")}
                     </div>
                   </>
                 ) : (
                   <>
                     <b style={{ fontSize: 13 }}>{o.line_name} · {o.mat_no}</b>
                     <div>{(STAGE[o.stage] || STAGE.first).icon} {(STAGE[o.stage] || STAGE.first).label}
-                      {' · '}{o.shift === 'night' ? 'กะดึก' : 'กะเช้า'}</div>
+                      {' · '}{o.shift === 'night' ? tr("กะดึก") : tr("กะเช้า")}</div>
                     <div style={{ color: 'var(--muted)' }}>
-                      เรียกตอน {hhmm(frameMinFromIso(o.triggered_at))} {tr('· ครบกำหนด')} {hhmm(frameMinFromIso(o.due_at))}
+                      {tr("เรียกตอน")} {hhmm(frameMinFromIso(o.triggered_at))} {tr('· ครบกำหนด')} {hhmm(frameMinFromIso(o.due_at))}
                     </div>
                     {d.isLate && <div style={{ color: C.late, fontWeight: 700 }}>{tr('⚠️ เกินเวลาแล้ว')}</div>}
                     {o.status === 'expired' && <div style={{ color: C.late, fontWeight: 700 }}>{tr('⌛ หมดเวลา — ข้ามกะแล้วไม่ได้ตรวจ')}</div>}
@@ -278,7 +277,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                     )}
                     {!o.part_id && (
                       <div style={{ color: '#f59e0b', fontSize: 11.5 }}>
-                        ⚠️ ยังไม่ผูกกับพาร์ทในระบบตรวจ — ตั้งเลข MAT ที่ /qa-setup ก่อนถึงเปิดใบอัตโนมัติได้
+                        ⚠️ {tr("ยังไม่ผูกกับพาร์ทในระบบตรวจ — ตั้งเลข MAT ที่ /qa-setup ก่อนถึงเปิดใบอัตโนมัติได้")}
                       </div>
                     )}
                     {['pending', 'acked'].includes(o.status) && (

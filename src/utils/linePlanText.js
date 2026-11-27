@@ -3,8 +3,9 @@
           รายละเอียดที่แจ้งบอกด้วยว่าของค้างเท่าไหร่ มีมั้ย สะสมอีกเท่าไหร่ถึงจะแจ้ง"*
    ป้อนด้วย rows จาก `syncLineOrderDemand({ dryRun:true })` (ผล `planLineRequest` ต่อพาร์ท + `uom`) — pure (มีเทส) */
 import { qtyUnit } from './coilUom.js';
+import { dateLocale } from './i18n.js';
 
-const f = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 3 }));
+const f = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: 3 }));
 
 /** บรรทัดผลลัพธ์ต่อพาร์ท — ต้องบอก "ทำอะไร" และถ้าไม่แจ้ง "ขาดอีกเท่าไหร่ถึงจะแจ้ง" */
 export function planActionText(r) {

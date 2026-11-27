@@ -124,3 +124,34 @@ test('scopePathText: หน่วย = เส้นทางผัง · CC = �
   assert.match(scopePathText(ix, { kind: 'cost_center', value: '2140561001' }), /^PD1 › BIG PRESS(?: › LINE A)? › 💰 2140561001/);
   assert.match(scopePathText(ix, { kind: 'cost_center', value: '999' }), /ผังยังไม่ผูกหน่วย › 💰 999/);
 });
+
+/* ⬆ 25/11 รวมข้ามหน่วยแบบสูตร (user: "DL-OH ระดับโรงงานต้องรวมทุกส่วนที่มีข้อมูล") — Σ ตัวตั้งของลูก ÷ ค่ากลาง ไม่ใช่เฉลี่ย % */
+import { rollupModeOf } from '../kpiRollup.js';
+test('rollupModeOf: ทะเบียนตั้งเองชนะ · สูตร = formula · sum = sum · อื่น = average', () => {
+  const fx = { provider: 'formula', provider_config: { formula: 'dloh_pct' }, kpi_catalog: cat('c9', 'DL+OH', 'average') };
+  assert.equal(rollupModeOf(fx), 'formula');
+  assert.equal(rollupModeOf({ kpi_catalog: cat('c1', 'Scrap', 'sum') }), 'sum');
+  assert.equal(rollupModeOf({ kpi_catalog: cat('c2', 'Rework', 'average') }), 'average');
+  assert.equal(rollupModeOf({ kpi_catalog: cat('c3', 'DSI', 'as_of', { rollup_mode: 'sum' }) }), 'sum');
+  assert.equal(rollupModeOf({ provider: 'formula', provider_config: { formula: 'dloh_pct' }, kpi_catalog: cat('c9', 'DL+OH', 'average', { rollup_mode: 'average' }) }), 'average');
+});
+
+test('rollupChildDefs formula: Σ dl+oh ของหน่วยที่มีข้อมูล ÷ sale_product (ค่ากลาง) · เดือนที่ไม่มีตัวแปรข้าม · ไม่มี formulaInfoOf = ถอยไปเฉลี่ย ≈', () => {
+  const c = cat('c9', 'DL+OH (Direct Labor + Overhead)', 'average');
+  const mk = (id, sv) => def(id, 'section', sv, c, { provider: 'formula', provider_config: { formula: 'dloh_pct' }, target_value: 1, target_compare: '<=', direction: 'down' });
+  const ds = [mk(1, 'PD1'), mk(2, 'PD2'), mk(3, 'PD3')];
+  const infos = {
+    1: { inputs: { 1: { dl: 800000, oh: 200000, sale_product: 100e6 }, 2: { dl: 900000, oh: 100000, sale_product: 120e6 } } },
+    2: { inputs: { 1: { dl: 400000, oh: 100000, sale_product: 100e6 } } },
+    3: { inputs: {} },   // ยังไม่กรอก = ไม่เข้ารวม (ไม่ใช่ 0)
+  };
+  const ent = { 1: { 1: 1.0, 2: 0.8333 }, 2: { 1: 0.5 } };   // % ที่รางสูตรคิดไว้รายหน่วย — ถ้าเฉลี่ยจะได้ 0.75 (ผิด)
+  const r = rollupChildDefs(ds, ent, { formulaInfoOf: (d) => infos[d.id] });
+  assert.equal(r.combine, 'formula'); assert.equal(r.approx, false); assert.equal(r.formulaKey, 'dloh_pct');
+  assert.ok(Math.abs(r.entries[1] - 1.5) < 1e-9);          // (800k+200k+400k+100k) ÷ 100 MB × 100 = 1.5 %
+  assert.ok(Math.abs(r.entries[2] - (1e6 / 120e6 * 100)) < 1e-9);
+  assert.deepEqual(r.coverage[1], { n: 2, of: 3 }); assert.deepEqual(r.coverage[2], { n: 1, of: 3 });
+  assert.deepEqual(r.partial, [1, 2]);
+  const avg = rollupChildDefs(ds, ent, {});
+  assert.equal(avg.combine, 'average'); assert.equal(avg.approx, true); assert.ok(Math.abs(avg.entries[1] - 0.75) < 1e-9);
+});

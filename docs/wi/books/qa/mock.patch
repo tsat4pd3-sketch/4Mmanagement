@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -501,6 +501,8 @@
+@@ -523,6 +523,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -9,7 +9,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -1042,6 +1044,62 @@
+@@ -1089,6 +1091,66 @@
     ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
     ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
@@ -38,6 +38,9 @@
 +    issue_description: _ST(['เปลี่ยน Tip', 'Robot Alarm', 'ไฟดับ'], i), overall_status: _ST(['pending', 'in_progress', 'approved', 'in_progress'], i),
 +    cqi15_event_definitions: { event_no: (i % 6) + 1, category: _ST(['A', 'B', 'C'], i), name_th: _ST(['เปลี่ยน Tip/Cap', 'ซ่อม/ปรับ Fixture', 'ไฟดับ/ลมดับ'], i), name_en: 'Event' },
 +    cqi15_event_approvals: [{ role_key: 'O', status: 'approved' }, { role_key: 'QT', status: 'pending' }] }),
++  /* WI-QA: ?wi=approve = ใบตรวจที่ปิดแล้ว รอหัวหน้า QA อนุมัติ (เปิดด้วย ?sheet=id-1 ให้คีย์ใบตรงกับแถบเลือกใบ) */
++  ...((typeof location !== 'undefined' && /[?&]wi=approve/.test(location.search)) ? { qa_inspection_sheets: (r, i) => ({ ...r, part_id: 'id-1', work_date: _recentDay(0), shift: 'day', round_no: 1,
++    status: 'done', result: 'pass', approval_status: 'pending', created_by_uid: 'u-qc-other', inspector_name: 'QC หน้างาน', closed_by: 'QC หน้างาน' }) } : {}),
 +  /* WI-QA: ถังเหลือง/แดง — คละขั้น 2/3/4/5 ของสายใบเหลือง (แบบใบ MO) ให้ปุ่มทุกขั้นโผล่ในคิว */
 +  quality_bin_records: (r, i) => {
 +    const K = { 1: ['yellow', null], 2: ['yellow', 'repair', 1], 3: ['yellow', 'repair'], 4: ['red'], 5: ['yellow', null], 6: ['yellow', 'scrap'],
@@ -55,7 +58,8 @@
 +  },
 +});
 +Object.assign(TABLE_FIXED, {
-+  qa_fme_obligations: ROWS.slice(0, 2).map((r, k) => ({ ...r, stage: k ? 'middle' : 'first', due_at: '2026-11-03T10:00:00+07:00', part_id: 'id-1', status: 'pending', seq: 1 })),
++  /* WI-QA: แถวที่ 3 = ใบที่ QA เปิดค้างจากกะก่อน (acked ของวันอื่น) → ปุ่ม "ใบที่เปิดค้างจากกะก่อน" โผล่ท้ายคิว */
++  qa_fme_obligations: ROWS.slice(0, 3).map((r, k) => ({ ...r, stage: ['first', 'middle', 'end'][k], due_at: '2026-11-03T10:00:00+07:00', part_id: 'id-1', status: k === 2 ? 'acked' : 'pending', seq: 1 })),
 +  qa_inspection_pieces: (typeof location !== 'undefined' && /[?&]wi=alarm/.test(location.search)) ? [1, 2].map(n => ({ id: `pc-${n}`, sheet_id: 'id-1', round_no: 1, piece_no: n, result: 'fail',
 +    failed_items: [{ balloon_no: '3', characteristic: 'ระยะรู A', spec_text: '5 (4 – 6) mm', value: '6.4', note: 'รูเลื่อน' }], disposition: n === 1 ? 'rework' : 'hold', remark: 'กักไว้รอตัดสิน' })) : [],
 +  qa_inspection_actions: [],

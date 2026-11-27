@@ -98,6 +98,24 @@
   --shadow-float: 0 2px 8px rgba(0,0,0,0.45);
   --shadow-md: 0 4px 20px rgba(0,0,0,0.7);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.85);
+  /* 🪪 sidebar desktop (20/11 · คำสั่ง user "ไล่สีทำให้ดูมีมิติ · ไล่สีไม่ได้แปลว่าหลายสี")
+     ไล่เฉดใน "สีเดียว" เท่านั้น — ห้ามไล่ข้ามสีสถานะ (ด่าน status-color-gradient-mix · UI §6.x ข้อ 6) */
+  --rail-top:    #141823;  --rail-bot:    #0f1218;
+  --panel-top:   #1a1e29;  --panel-bot:   #11131a;
+  --avatar-from: #2fbf63;  --avatar-to:   #2aae5a;   /* เขียวแบรนด์ อ่อน→เข้ม (ตัวอักษร = --accent-ink) · 20/11 เดิม #1c7a40 Δ17% ⇒ Δ4.3% ตามเพดาน */
+  /* 🎨 ผิวร่วมทั้งระบบไล่เฉด "สีเดียว" (20/11 · คำสั่ง user "แทบเหมือนสีไม่ต่างกัน แต่ดูผ่านๆรู้สึกมีมิติ")
+     🔴 เพดาน: คู่ --x-top/--x-bot ต่างกันได้ ≤ 5% lightness (HSL L) · alpha คู่ ≤ 0.06 — ด่าน gradient-delta-cap
+     ปลายทางยังเป็นสีเดิม (--card/--bg3/--accent) ⇒ ไม่ใช่สีใหม่ แค่ "แสงตกบนขอบบน" */
+  --card-top:    #1b1f2a;  --card-bot:    #171a23;   /* .card · .kpi-tile  (ล่าง = --card เดิม · Δ2.2%) */
+  --hero-top:    rgba(47,191,99,0.16);  --hero-bot: rgba(47,191,99,0.10);   /* .kpi-tile.hero (= --accent-dim ไล่ · Δα0.06) */
+  --modal-top:   #1f2431;  --modal-bot:   #1b1f2a;   /* .modal (ล่าง = --bg3 เดิม · Δ2.2%) */
+  --accent-top:  #33c66a;  --accent-bot:  #2bb65c;   /* .pg-btn.primary (กลาง = --accent เดิม · Δ4.6%) */
+  --bg2-top:     #181d28;  --bg2-bot:     #151821;   /* แผง inline พื้น --bg2 (ล่าง = --bg2 เดิม · Δ2.0%) */
+  --bg3-top:     #1e2331;  --bg3-bot:     #1b1f2a;   /* แผง inline พื้น --bg3 (ล่าง = --bg3 เดิม · Δ2.0%) */
+  /* 🔴 แผงในหน้า (กรอบ+มุมโค้ง) ใช้ตัวนี้แทน background:'var(--card)' — สีล่างคือสีเดิม ⇒ ไม่ใช่สีใหม่ · UI §6.17 ข้อ 6 */
+  --card-surf:   linear-gradient(180deg, var(--card-top), var(--card-bot));
+  --bg2-surf:    linear-gradient(180deg, var(--bg2-top), var(--bg2-bot));
+  --bg3-surf:    linear-gradient(180deg, var(--bg3-top), var(--bg3-bot));
 }
 
 /* ─── Light Theme — VX White/Green ──────────────────────────────────── */
@@ -144,6 +162,15 @@
   --shadow-float: 0 2px 8px rgba(0,0,0,0.18);   /* ของที่ลอยจริง — มีเงาทั้ง 2 ธีม (ดู :root) */
   --shadow-md: 0 4px 20px rgba(0,0,0,0.10);
   --shadow-lg: 0 10px 40px rgba(0,0,0,0.14);
+  --rail-top:    #eceef2;  --rail-bot:    #e6e8ec;   /* 24/11: เข้มกว่า --bg หนึ่งขั้น ให้แผ่นเนื้อหา (.app-sheet) ลอยเห็นชัดในธีมสว่าง · ΔL ≤ 5% */
+  --panel-top:   #ffffff;  --panel-bot:   #f1f2f4;   /* 20/11 เดิม #eef0f3 Δ5.7% เกินเพดาน gradient-delta-cap ⇒ Δ4.9% */
+  --avatar-from: #1a7a1a;  --avatar-to:   #176717;   /* 20/11 เดิม #0d3d14 ⇒ Δ4.3% ตามเพดาน */
+  --card-top:    #ffffff;  --card-bot:    #fafbfc;
+  --hero-top:    rgba(13,61,20,0.10);  --hero-bot: rgba(13,61,20,0.05);
+  --modal-top:   #f6f7f9;  --modal-bot:   #eef0f3;
+  --accent-top:  #114e19;  --accent-bot:  #0d3d14;
+  --bg2-top:     #ffffff;  --bg2-bot:     #fafbfc;
+  --bg3-top:     #f3f4f6;  --bg3-bot:     #eef0f3;
 }
 
 /* ─── Reset ────────────────────────────────────────────────── */
@@ -252,6 +279,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 /* ─── Card ─────────────────────────────────────────────────────── */
 .card {
   background: var(--card);
+  background-image: var(--card-surf);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
@@ -429,9 +457,16 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 .filter-bar :is(select, input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),
 .search-input input {
   width: auto; height: var(--ctl-h); font-size: var(--ctl-fs);
-  padding: 0 var(--ctl-pad-x); border-radius: var(--ctl-r); max-width: 100%;
+  padding: 0 var(--ctl-pad-x); border-radius: var(--ctl-r);
 }
-.filter-bar select { max-width: 280px; }
+/* 📏 เพดานความกว้าง (แก้ทั้งระบบ 2026-11-20 · คำสั่ง user) — เดิม `max-width: 100%` อยู่ในกฎ :is() ข้างบน
+   ซึ่ง specificity = 0,6,1 (ตัวสูงสุดในวงเล็บ) ⇒ **ทับ** `.filter-bar select { max-width: 280px }` ทุกหน้า
+   = เพดาน 280 ไม่เคยมีผล select ชื่อไลน์ยาวยืดถึง ~465px ดันแถบกรองตกบรรทัด
+   ⇒ แยก max-width ออก: ช่องพิมพ์ = 100% เหมือนเดิม (กฎนี้ specificity เท่าเดิม พฤติกรรมไม่เปลี่ยน)
+      select = ใช้กฎ `.filter-bar select` ข้างล่าง (จอคอม 280 · มือถือ 100%) */
+.filter-bar :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file])),
+.search-input input { max-width: 100%; }
+.filter-bar select { max-width: min(280px, 100%); }   /* min() = กล่องแคบกว่า 280 ก็ยังไม่ล้น (Cr 79+) */
 .filter-bar input[type=date] { width: 150px; }
 .filter-bar input[type=month] { width: 160px; }
 .filter-bar .grow { flex: 1 1 220px; }
@@ -525,6 +560,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 }
 .modal {
   background: var(--bg3);
+  background-image: linear-gradient(180deg, var(--modal-top), var(--modal-bot));   /* modal สว่างกว่าแผงหนึ่งขั้น (ลอยอยู่) */
   border: 1px solid var(--border2);
   border-radius: var(--radius-lg);
   padding: 28px;
@@ -707,6 +743,37 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 @keyframes energyFlow { to { stroke-dashoffset: -28; } }
 .energy-flow { animation: energyFlow 1.2s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .energy-flow { animation: none; } }
+/* 📈 อนิเมชันตอนเปิดหน้าของแถบที่วาดเอง (utils/motion.js animClass · คู่กับ chartAnim ของ Recharts · 20/11)
+   เล่นครั้งเดียว · จอ TV (data-perf lite) / reduced-motion = นิ่ง · clip-path/transform = ไม่ทำให้ layout ขยับ (Chromium 94 ได้) */
+@keyframes animSweep { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes animGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.anim-sweep { animation: animSweep 0.9s ease-out both; }
+.anim-grow { animation: animGrow 0.8s ease-out both; transform-origin: left center; }
+@media (prefers-reduced-motion: reduce) { .anim-sweep, .anim-grow { animation: none; } }
+html[data-perf="lite"] .anim-sweep, html[data-perf="lite"] .anim-grow { animation: none; }
+/* 🩶 skeleton (components/Skeleton.jsx · 24/11) — พื้น --bg3 วิบด้วย --bg2 (token เดิม 2 ระดับ ไม่ใช่สีใหม่) · นิ่งบนจอ TV / reduced-motion */
+@keyframes skelShimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.skel { border-radius: var(--r-sm); background: var(--bg3); background-image: linear-gradient(90deg, var(--bg3) 25%, var(--bg2) 50%, var(--bg3) 75%); background-size: 200% 100%; animation: skelShimmer 1.4s ease-in-out infinite; }
+.skel-card { background: var(--card); background-image: var(--card-surf); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px 18px; min-height: 96px; }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+html[data-perf="lite"] .skel { animation: none; }
+/* 🪄 การ์ดยกตอนชี้ (utils/motion.js liftHover · 24/11) — เงาเพิ่มเฉพาะตอนลอย ผ่าน token `--shadow-float` (UI §6.20) · เฉพาะอุปกรณ์มีเมาส์ */
+@media (hover: hover) and (pointer: fine) { .lift-card { transition: box-shadow 0.18s ease; } .lift-card:hover { box-shadow: var(--shadow-float); } }
+html[data-perf="lite"] .lift-card:hover { box-shadow: var(--shadow-sm); }
+/* 🗂 "แผ่นเนื้อหา" ต่อกับเมนู (24/11 · รีล CRM Dashboard V10 — user "ชอบที่ sidebar ลิงก์กับหน้าหลัก")
+   เนื้อหาหลักเป็นแผ่นมุมโค้งลอยบน "กรอบ" สีเดียวกับราง · pill ของหมวดที่เปิดอยู่บนรางใช้สีเดียวกับแผ่นและยื่นไปชนแผ่น ⇒ อ่านเป็น "แท็บที่ติดกับหน้า"
+   desktop เท่านั้น — มือถือ/TV ไม่มีขอบ ไม่มีมุม (จอเต็มเหมือนเดิม) · สีทั้งหมด = token เดิม (--bg · --rail-*) ไม่มีสีใหม่ */
+.app-frame { background: linear-gradient(180deg, var(--rail-top), var(--rail-bot)); }
+.app-sheet { background: var(--bg); border-radius: 16px 0 0 16px; border: 1px solid var(--border); border-left: none; margin: 8px 0 8px 0; min-height: calc(100vh - 16px - var(--tvbar-h, 0px)) !important; }
+@media (max-width: 768px) { .app-sheet { border-radius: 0; margin: 0; border: none; } }
+body.esm-tv-shell .app-sheet { border-radius: 0; margin: 0; border: none; }
+/* ✨ แท่ง active "นีออน" (24/11 · รีล Sidebar v2 — ทดลอง) — เงาสีเดียวกับ accent offset 0 = "สัญญาณ" ไม่ใช่ "ของลอย"
+   (อยู่ในข้อยกเว้นของด่าน card-shadow-via-token โดยเจตนา) · ใช้ --accent-glow ที่มีทั้ง 2 ธีม · TV lite/reduced-motion = ไม่มีเงา
+   พื้นแถว active ไล่จาก --accent-dim → โปร่ง (tint ไม่ใช่พื้นผิว ⇒ ไม่เข้ากฎ ΔL ของ --x-top/bot) */
+.neon-bar { box-shadow: 0 0 10px 2px var(--accent-glow), 0 0 22px 4px var(--accent-dim); }
+.neon-row { background: linear-gradient(90deg, var(--accent-dim), transparent 78%) !important; }
+html[data-perf="lite"] .neon-bar { box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .neon-bar { box-shadow: none; } }
 
 /* ─── Downtime alarm — จุดเครื่องจักรกระพริบสีแดงเมื่อมี downtime ค้างอยู่ ── */
 @keyframes dtAlarmBlink {
@@ -1211,7 +1278,7 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .pg-btn { height: 34px; padding: 0 14px; border-radius: var(--r-md); border: 1px solid var(--border2);
   background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 500;
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
-.pg-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pg-btn.primary { background: var(--accent); background-image: linear-gradient(180deg, var(--accent-top), var(--accent-bot)); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .pg-btn.danger  { border-color: var(--red); color: var(--red); }
 /* ปุ่มคำสั่งขนาดเล็กในแถวตาราง/การ์ด/แถบเครื่องมือ (06/11 · UI §6.35) — มุมเดียวกับ .pg-btn · ห้ามเขียน borderRadius เองที่ปุ่ม */
 .pg-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; gap: 5px; }
@@ -1232,9 +1299,9 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .pg-menu-badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--bg3); color: var(--text2); flex-shrink: 0; }
 
 /* การ์ด KPI โครงเดียว (components/KpiTile.jsx) — ชื่อ → ตัวเลข → บรรทัดบริบท · ตัวเลขสีเดียว สีอยู่ที่บรรทัดล่าง */
-.kpi-tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px 18px;   /* 18/11: 12/14 → 16/18 ที่ว่างในการ์ด (ก๊อป ERP) */
+.kpi-tile { background: var(--card); background-image: var(--card-surf); border: 1px solid var(--border); border-radius: var(--r-md); padding: 16px 18px;   /* 18/11: 12/14 → 16/18 ที่ว่างในการ์ด (ก๊อป ERP) */
   display: flex; flex-direction: column; gap: 2px; text-align: left; font: inherit; color: var(--text); min-width: 0; }
-.kpi-tile.hero { background: var(--accent-dim); border-color: var(--accent); }   /* ใบพระเอก 1 ใบต่อแถว — token เดิม ไม่เพิ่มสี */
+.kpi-tile.hero { background: var(--accent-dim); background-image: linear-gradient(180deg, var(--hero-top), var(--hero-bot)); border-color: var(--accent); }   /* ใบพระเอก 1 ใบต่อแถว — token เดิม ไม่เพิ่มสี */
 .kpi-tile-spark { display: block; width: 100%; height: 22px; margin-top: 6px; opacity: 0.9; }
 .kpi-tile-k { color: var(--text2); font-size: 12px; font-weight: 500; }
 .kpi-tile-v { font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
@@ -1253,8 +1320,9 @@ body.esm-tv-shell .tv-hide { display: none !important; }
   .qb-row:hover > td { background: var(--bg2); }
 }
 
-/* 📏 B6 (2026-11-16 · หน้า /scrap-report เท่านั้น) — ช่องเลือกไลน์ในแถบกรองยาว 465px จนแถบตกบรรทัด
-   ต้นเหตุ: `.filter-bar select { max-width: 280px }` ข้างบน **แพ้** `.filter-bar :is(select, input:not(...)×5)`
-   (specificity ของ :is() = ตัวที่สูงสุดในวงเล็บ = 0,6,1) ⇒ เพดาน 280 ไม่เคยมีผลทั้งระบบ
-   ⚠️ แก้เฉพาะหน้านี้ตามที่สั่ง — แก้ตัวกลางจะทำให้ select ทุกหน้าแคบลงพร้อมกัน (ต้องตัดสินใจแยก) */
-.scrap-page .filter-bar select { max-width: 280px !important; }
+/* 🗂 TabBar `scroller` (จอคอม · 24/11): แถบแท็บแถวเดียวเลื่อนด้วยปุ่ม ◀ ▶ — ซ่อนแถบเลื่อนของกล่อง (ปุ่มบอกทางแทนแล้ว) */
+.tabbar-scroller { scrollbar-width: none; }
+.tabbar-scroller::-webkit-scrollbar { display: none; }
+
+/* 📐 <Page top="flush"> (27/11 · มาตรฐานหน้ากิจกรรม) — หัวเพจตรงแถวบนสุดของ Main bar · จอคอมเท่านั้น */
+@media (min-width: 769px) { .page-content.page-flush-top { padding-top: 10px; } .page-content .page-content.page-flush-top { padding-top: 0; } }   /* หน้าที่ถูกฝังใน hub (Page ซ้อน) = ไม่มีขอบเหมือนเดิม */

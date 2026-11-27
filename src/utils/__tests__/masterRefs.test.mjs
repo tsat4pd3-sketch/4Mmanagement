@@ -33,7 +33,7 @@ function fakeClient(answers = {}, log = []) {
 test('ทะเบียนที่ประกาศไว้ ต้องมี keysOf + targets ครบทุกตัว', () => {
   const regs = Object.keys(MASTER_REF_SPECS);
   assert.deepEqual(regs.sort(), [
-    'container_categories', 'customers', 'die_op_types', 'die_press_lines', 'die_set_kinds', 'repair_wi_registry',
+    'companies', 'container_categories', 'customers', 'die_op_types', 'die_press_lines', 'die_set_kinds', 'repair_wi_registry',
     'suppliers', 'trial_reasons', 'uom_units',
   ]);
   for (const [name, spec] of Object.entries(MASTER_REF_SPECS)) {

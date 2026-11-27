@@ -57,7 +57,7 @@ const ALLOW = [
     why: 'handler ตอนเลือกจาก picker — ไม่ใช่การวาด' },
   { file: 'src/components/NpiPartPanel.jsx', match: 'PFC/FMEA/CP',
     why: 'MAT ของพาร์ท กับ part_no ของ "ชุดเอกสาร PE ที่ผูกไว้" เป็นคนละของ ไม่ใช่ป้ายชิ้นงานชุดเดียวกัน' },
-  { file: 'src/components/PeRoutingSuggest.jsx', match: 'ผูกกับ MAT SAP:',
+  { file: 'src/components/PeRoutingSuggest.jsx', match: 'ผูกกับ MAT SAP")}:',
     why: 'ประโยคนี้มี MAT เป็นประธานโดยตรง ("ผูกกับ MAT SAP: …") — สลับแล้วอ่านไม่รู้เรื่อง' },
   { file: 'src/pages/ProductMaster.jsx', match: '— ชั้น 1 (ใต้',
     why: 'ข้อความ placeholder ของ <option> ที่อ้างถึงตัวแม่ FG ไม่ใช่ป้ายชิ้นงาน' },

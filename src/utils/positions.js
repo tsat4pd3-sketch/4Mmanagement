@@ -11,6 +11,7 @@
 //   POSITION_LEVELS (ไฟล์นี้)   = "ระดับงาน" — แนวคิด TPM ที่นิ่ง ใช้ตัดสินว่าใครทำ AM ใครทำ PM
 //   เพิ่มตำแหน่งใหม่ = เพิ่มแถวใน `positions` ชี้ไป level เดิม · ไม่ต้องแตะโค้ด
 import { supabase } from '../supabaseClient'
+import { getLang } from './i18n.js';
 
 /** ระดับงาน — `maintenance` บอกว่าระดับนี้ควรทำงานบำรุงรักษาแบบไหน
  *    'am'   = พนักงานหน้างานตรวจเองทุกต้นกะ
@@ -95,7 +96,9 @@ export function positionLabel(v) {
     String(p.key || '').toLowerCase() === low ||
     String(p.label_th || '').toLowerCase() === low ||
     String(p.label_en || '').toLowerCase() === low)
-  return hit ? (hit.label_th || hit.key) : s
+  if (!hit) return s
+  // 🌐 โหมดอังกฤษใช้ label_en ของทะเบียนถ้ามี (ไม่แปลข้อมูลด้วย tr) — ไม่มี = ไทยตามเดิม
+  return (getLang() === 'en' && hit.label_en) ? hit.label_en : (hit.label_th || hit.key)
 }
 /** ค่าใดๆ → ระดับงาน (key ของ POSITION_LEVELS) · ไม่รู้จัก = null */
 export function levelOfPosition(v) {

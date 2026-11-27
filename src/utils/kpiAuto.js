@@ -1,3 +1,4 @@
+import { dateLocale } from './i18n.js';
 /* ══ kpiAuto — KPI ที่ระบบคำนวณเองตาม "สูตรทางการ" ใน KPI Guideline 2026 (pure · ห้าม import supabase/DOM) ══
    2026-09-24 · user ส่ง `KPI_Guideline_2026_As_of_29.01.2026.pdf` ซ้ำ ("เคยส่งให้แล้ว ดูให้ละเอียดอีกรอบ")
    → หน้า 10 ตาราง "Maintenance" กำหนดสูตรครบทั้ง 4 ตัว (docs/OBEYA-KPI-SOURCES.md §15.2) — **ไม่ต้องรอเคาะอะไรอีก**
@@ -221,7 +222,7 @@ export function autoUnitMismatch(name, unit) {
  *  ⇒ ตัวตั้ง/ตัวหารต้องโผล่บนจอคู่กับ % (tooltip + บรรทัดรองของแผ่น) ไม่ใช่เปลี่ยนหน่วย KPI */
 export function autoDetailText(m, autoKey) {
   if (!m) return '';
-  const hr = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 1 }));
+  const hr = (v) => (v == null ? '—' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: 1 }));
   if (autoKey === 'mo_on_target') return `ตรงเป้า ${m.on_target ?? 0}/${m.closed ?? 0} ใบ BM${m.no_target ? ` · ไม่ตั้งกำหนด ${m.no_target}` : ''}${m.closed_all != null && m.closed_all > (m.closed ?? 0) ? ` · ไม่นับงานประเภทอื่น ${m.closed_all - (m.closed ?? 0)} ใบ` : ''}`;
   if (autoKey === 'mbd' || autoKey === 'mtbf') return `หยุด ${hr(m.breakdown_hr)} ชม. · ${m.events ?? 0} ครั้ง · ${m.machines ?? 0} เครื่อง`;
   if (autoKey === 'mttr') return `หยุด ${hr(m.breakdown_hr)} ชม. ÷ ${m.events ?? 0} ครั้ง`;

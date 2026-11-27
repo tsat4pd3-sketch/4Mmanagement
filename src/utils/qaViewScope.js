@@ -6,6 +6,7 @@
    · นี่คือ "เห็น" เท่านั้น — การแก้ยังผ่าน RLS (`qa:record`/`qa:manage`) + `writeScope.js` เหมือนเดิม
    คืน `names` = Set ชื่อไลน์ที่เห็น หรือ null = ไม่จำกัด */
 import { scopedLineNames } from './sectionScope.js';
+import { isProductionUnit } from './unitKind.js';   // 🏭 ไลน์ผลิต vs หน่วยสนับสนุน (21/11)
 
 export function qaViewScope(allLines = [], { role, lineId, sections, scopeIdx } = {}) {
   /* ส่ง `scopeIdx` ต่อให้ตัวกลาง — ขอบเขตที่เป็นแผนก/ไลน์จึงขยายผ่านผังได้ (22/10) */
@@ -25,6 +26,9 @@ export function qaViewScope(allLines = [], { role, lineId, sections, scopeIdx } 
 export function qaWriteCtx(ctx = {}, lines = []) {
   if (ctx.allUnits || !lines?.length || !ctx.section) return ctx;
   const home = String(ctx.section).trim().toLowerCase();
-  const ownsLine = lines.some(l => String(l?.section ?? '').trim().toLowerCase() === home);
+  /* 🔴 นับเฉพาะ "ไลน์ผลิต" — ตั้งแต่ 05/11 หน่วยสนับสนุน (QA · Inspection · PQA-Press …) อยู่ในทะเบียนไลน์ด้วย
+     (`unit_kind='support'`) ⇒ ถ้านับรวม QA จะ "มีไลน์" แล้วไม่ถูกยกเว้น = ติด "ของหน่วยงานอื่น" ตอนตั้งค่าใบตรวจ
+     (เกิดจริง เสาร์ 21/11 · แก้ชั่วคราวด้วยใบผ่านรายคนแล้ว) · ตัดสิน kind ผ่าน utils/unitKind.js เท่านั้น */
+  const ownsLine = lines.some(l => isProductionUnit(l) && String(l?.section ?? '').trim().toLowerCase() === home);
   return ownsLine ? ctx : { ...ctx, allUnits: true, qaUnit: true };
 }

@@ -24,7 +24,7 @@ const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetecto
 
 export default function ScanModal({
   title = 'สแกน QR / บาร์โค้ด',
-  hint = 'ส่องกล้องที่ป้าย QR หรือยิงด้วยเครื่องสแกน',
+  hint = tr("ส่องกล้องที่ป้าย QR หรือยิงด้วยเครื่องสแกน"),
   footer = null,   // ของที่หน้าอยากโชว์ใต้ผลสแกน (เช่น ตัวนับ "เช็คแล้ว 12/20 คน")
   onScan,          // (parsed) => void | string | { ok } — string = ข้อความ error (เช่น "ไม่พบเครื่องนี้") · { ok } = ข้อความสำเร็จของหน้าเอง
   onClose,
@@ -200,7 +200,7 @@ export default function ScanModal({
             </>
           )}
         </div>
-        {camErr && <div style={{ marginTop: 8, fontSize: 12, color: '#f59e0b' }}>⚠️ {camErr}</div>}
+        {camErr && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--amber)' }}>⚠️ {camErr}</div>}
 
         {/* เครื่องยิง / พิมพ์เอง */}
         <div style={{ marginTop: 14 }}>
@@ -220,11 +220,11 @@ export default function ScanModal({
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
               placeholder={isMobile && !kbd ? tr('กดปุ่มสแกนข้างเครื่องได้เลย') : tr('เช่น RB-104 หรือ ESM:M:…')}
               inputMode={isMobile && !kbd ? 'none' : undefined}
-              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
+              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
-                style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+                style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
                 {tr('⌨️ พิมพ์เอง')}
               </button>
             )}
@@ -235,12 +235,12 @@ export default function ScanModal({
           </div>
         </div>
 
-        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{tr('⏳ กำลังบันทึก…')}</div>}
-        {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
+        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{tr('⏳ กำลังบันทึก…')}</div>}
+        {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: 'var(--red)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
         {footer}
         {ok && !err && !busy && (okMsg
-          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
-          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>{tr('✓ อ่านได้:')} <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
+          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: 'var(--green)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
+          : <div style={{ marginTop: 10, fontSize: 13, color: 'var(--green)' }}>{tr('✓ อ่านได้:')} <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>
   );

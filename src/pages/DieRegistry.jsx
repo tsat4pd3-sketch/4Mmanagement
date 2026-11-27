@@ -38,7 +38,7 @@ import { loadDocForms } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 
 import NoticeBar from '../components/NoticeBar';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
@@ -143,39 +143,39 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
 
   const [a, b] = r.mats;
   const msg = r.state === 'mismatch'
-    ? `Product Master บอกว่าคู่ของ ${a} คือ ${r.says} ไม่ใช่ ${b} — ตรวจก่อนบันทึก`
-    : `ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ — OEE จะยังนับ shot ซ้ำ 2 เท่า`;
+    ? `Product Master ${tr("บอกว่าคู่ของ")} ${a} ${tr("คือ")} ${r.says} ${tr("ไม่ใช่")} ${b} — ${tr("ตรวจก่อนบันทึก")}`
+    : `${tr("ยังไม่ได้ตั้งคู่ RH/LH ของ 2 ตัวนี้ — OEE จะยังนับ shot ซ้ำ 2 เท่า")}`;
 
   async function setPair() {
     const pa = byMat(a), pb = byMat(b);
-    if (!pa || !pb) return toast.error(`${!pa ? a : b} ยังไม่มีในทะเบียนสินค้า — เพิ่มที่ /products ก่อน`);
+    if (!pa || !pb) return toast.error(`${!pa ? a : b} ${tr("ยังไม่มีในทะเบียนสินค้า — เพิ่มที่ /products ก่อน")}`);
     const why = pairBlockReason(pa, pb);          // ด่านเดียวกับ Product Master ห้ามข้าม
     if (why) return toast.error(why);
-    if (!pGuard(pa, `สินค้า ${a}`) || !pGuard(pb, `สินค้า ${b}`)) return;   // ชั้นที่ 3 — ทั้ง 2 ฝั่งของคู่
+    if (!pGuard(pa, `${tr("สินค้า")} ${a}`) || !pGuard(pb, `${tr("สินค้า")} ${b}`)) return;   // ชั้นที่ 3 — ทั้ง 2 ฝั่งของคู่
     const olds = [pa.pair_mat_no, pb.pair_mat_no]   // คู่เก่าที่ชี้ไปที่อื่น ต้องปลดก่อน ไม่งั้นค้างชี้ข้างเดียว
       .map(v => String(v || '').trim().toUpperCase())
       .filter(v => v && v !== a && v !== b);
     if (!await askConfirm(
-      `ตั้งให้ ${a} ↔ ${b} เป็นคู่ RH/LH ในทะเบียนสินค้า?\n`
-      + (olds.length ? `\n⚠️ จะปลดคู่เดิมออกก่อน: ${olds.join(', ')}\n` : '')
+      `${tr("ตั้งให้")} ${a} ↔ ${b} ${tr("เป็นคู่ RH/LH ในทะเบียนสินค้า")}?\n`
+      + (olds.length ? `\n⚠️ ${tr("จะปลดคู่เดิมออกก่อน")}: ${olds.join(', ')}\n` : '')
       + '\nมีผลกับการคำนวณ OEE ของทั้ง 2 พาร์ท (ยุบ shot งานคู่)')) return;
 
     setBusy(true);
     try {
       for (const o of olds) {
         /* คู่เก่าที่ต้องปลด อาจเป็นพาร์ทของไลน์อื่น — ปลดคู่ของเขาก็คือการเขียนทับข้อมูลเขา */
-        if (!pGuard(byMat(o), `คู่เดิม ${o}`)) return;
+        if (!pGuard(byMat(o), `${tr("คู่เดิม")} ${o}`)) return;
         if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: null })
-          .eq('mat_no', o).select('id'), `ปลดคู่เดิมของ ${o}`)) return;   // ปลดไม่ได้ = หยุด ห้ามเขียนทับต่อ
+          .eq('mat_no', o).select('id'), `${tr("ปลดคู่เดิมของ")} ${o}`)) return;   // ปลดไม่ได้ = หยุด ห้ามเขียนทับต่อ
       }
       if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: b })
-        .eq('mat_no', pa.mat_no).select('id'), `ผูกคู่ฝั่ง ${a}`)) return;
+        .eq('mat_no', pa.mat_no).select('id'), `${tr("ผูกคู่ฝั่ง")} ${a}`)) return;
       if (!checkWriteRows(await supabaseDR.from('dr_products').update({ pair_mat_no: a })
-        .eq('mat_no', pb.mat_no).select('id'), `ผูกคู่ฝั่ง ${b}`)) {
-        toast.error(`⚠️ ${a} ผูกไปแล้วแต่ ${b} ไม่สำเร็จ — คู่ชี้ข้างเดียว ไปแก้ที่ /products`);
+        .eq('mat_no', pb.mat_no).select('id'), `${tr("ผูกคู่ฝั่ง")} ${b}`)) {
+        toast.error(`⚠️ ${a} ${tr("ผูกไปแล้วแต่")} ${b} ${tr("ไม่สำเร็จ — คู่ชี้ข้างเดียว ไปแก้ที่")} /products`);
         return;
       }
-      toast.success(`ตั้งคู่ ${a} ↔ ${b} แล้ว`);
+      toast.success(`${tr("ตั้งคู่")} ${a} ↔ ${b} ${tr("แล้ว")}`);
       await onDone?.();
     } finally { setBusy(false); }
   }
@@ -218,7 +218,7 @@ export default function DieRegistry() {
     let alive = true;
     supabaseDR.from('mtn_item_types').select('name, team').eq('is_active', true).order('sort_order').then(({ data, error }) => {
       if (!alive) return;
-      if (error) { toast.error('โหลดชนิดอุปกรณ์ (ใบแจ้งซ่อม) ไม่สำเร็จ: ' + error.message); return; }
+      if (error) { toast.error((tr('โหลดชนิดอุปกรณ์ (ใบแจ้งซ่อม) ไม่สำเร็จ') + ': ') + error.message); return; }
       setDieItemTypes((data || []).filter(t => !t.team || t.team === 'die_maintenance').map(t => t.name));
     });
     return () => { alive = false; };
@@ -286,11 +286,11 @@ export default function DieRegistry() {
       supabaseDR.from('die_set_shared_dies').select('die_set_id, machine_id, op_seq, note'),
     ]);
     const { data: ln } = lnRes, { data: mc } = mcRes, { data: st } = stRes, { data: ot } = otRes, { data: pd } = pdRes;
-    if (lnRes.error) warn.push('ไลน์');
-    if (mcRes.error) warn.push('ทะเบียนแม่พิมพ์');
-    if (stRes.error) warn.push('ชุดแม่พิมพ์');
-    if (otRes.error) warn.push('ชนิด OP');
-    if (pdRes.error) warn.push('สินค้า');
+    if (lnRes.error) warn.push(tr("ไลน์"));
+    if (mcRes.error) warn.push(tr("ทะเบียนแม่พิมพ์"));
+    if (stRes.error) warn.push(tr("ชุดแม่พิมพ์"));
+    if (otRes.error) warn.push(tr("ชนิด OP"));
+    if (pdRes.error) warn.push(tr("สินค้า"));
     setLines(ln || []);
     // equipment_die เป็น 1:1 (machine_id เป็นทั้ง PK และ FK) → PostgREST คืนเป็น "object"
     // แต่รับทั้ง 2 ทรงไว้ กันกรณี schema cache มองเป็น 1:N แล้วคืน array (ว่าง = ยังไม่มีแถวส่วนขยาย)
@@ -301,12 +301,12 @@ export default function DieRegistry() {
     setProducts(pd || []);
     setAreas(areaRes.error ? [] : (areaRes.data || []));
     setLayoutReady(!areaRes.error);
-    if (moRes.error) toast.error('โหลดใบซ่อม MO ไม่สำเร็จ: ' + moRes.error.message);   // ห้ามเงียบ — สถานะซ่อมจะหายทั้งบอร์ด
+    if (moRes.error) toast.error((tr('โหลดใบซ่อม MO ไม่สำเร็จ') + ': ') + moRes.error.message);   // ห้ามเงียบ — สถานะซ่อมจะหายทั้งบอร์ด
     setOpenMos(moRes.data || []);
     // โหลดไม่ได้ ≠ ไม่มีใครยืม — ต้องเขียนบนจอ ไม่งั้นชุดที่ยืมแม่พิมพ์ดูเหมือน OP ขาด
     setShared(shRes.error ? [] : (shRes.data || []));
     setSharedErr(shRes.error ? shRes.error.message : '');
-    setDataWarn(warn.length ? `โหลดไม่สำเร็จ: ${warn.join(' · ')} — ข้อมูลบนจอไม่ครบ (ไม่ใช่ว่าไม่มีข้อมูล)` : '');
+    setDataWarn(warn.length ? `${tr("โหลดไม่สำเร็จ")}: ${warn.join(' · ')} — ${tr("ข้อมูลบนจอไม่ครบ (ไม่ใช่ว่าไม่มีข้อมูล")})` : '');
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -374,22 +374,22 @@ export default function DieRegistry() {
     const dup = seqs.length - new Set(seqs).size;
     // OP ซ้ำ = สัญญาณว่าชุดนี้จริงๆ เป็นหลายชุดที่ถูกรวมกัน (เช่นแยกตามวัสดุ RAW/AAW/LAW)
     // เป็นการตัดสินใจของคน ระบบแค่ชี้ให้เห็น **ห้ามแยกให้เองอัตโนมัติ**
-    if (dup > 0) out.push(`OP ซ้ำ ${dup} ตัว — อาจเป็นหลายชุดที่ถูกรวมกัน (เช่นแยกตามวัสดุ) ต้องแยกชุดเอง`);
+    if (dup > 0) out.push(`OP ${tr("ซ้ำ")} ${dup} ${tr("ตัว — อาจเป็นหลายชุดที่ถูกรวมกัน (เช่นแยกตามวัสดุ) ต้องแยกชุดเอง")}`);
     const noOp = mem.filter(x => x.opSeq == null).length;
-    if (noOp) out.push(`ยังไม่ระบุ OP ${noOp} ตัว`);
-    if (!s.kind)    out.push('ยังไม่ระบุรูปแบบชุด');
-    if (!s.part_no) out.push('ยังไม่ระบุเลขพาร์ท');
-    if (!s.mat_no)  out.push('ยังไม่ผูก MAT SAP');
+    if (noOp) out.push(`${tr("ยังไม่ระบุ")} OP ${noOp} ${tr("ตัว")}`);
+    if (!s.kind)    out.push(tr("ยังไม่ระบุรูปแบบชุด"));
+    if (!s.part_no) out.push(tr("ยังไม่ระบุเลขพาร์ท"));
+    if (!s.mat_no)  out.push(tr("ยังไม่ผูก MAT SAP"));
     /* 🔨 ไม่รู้ "ชิ้น/จังหวะ" = PM แม่พิมพ์คิดเป็น shot ไม่ได้ (14/10) — เข้าลิสต์ "ต้องแก้" ให้หน้างานไล่กรอก
        แนบหลักฐานที่พบในชื่อ/เลขพาร์ทไปด้วยเพื่อให้ตัดสินเร็ว · 🔴 ระบบไม่กรอกให้เอง (pairHint ไม่เขียนฐาน) */
     /* ชิ้นออก/shot เป็นของ OP (05/11) — ตัวไหนว่างทั้งที่ OP และชุด = PM คิดเป็น shot ไม่ได้ (ppsOf ตัดสินที่เดียว) */
     const noPps = mem.filter(x => ppsOf(x.die.ext, s) == null).length;
     if (noPps || (!mem.length && s.pieces_per_stroke == null)) {
       const h = pairHint(s);
-      out.push(`ยังไม่ระบุ ชิ้นออก/shot${noPps ? ` ${noPps} OP` : ''}` + (h ? ` — น่าจะเป็นงานคู่ (${h.why}) รอยืนยัน` : ''));
+      out.push(`${tr("ยังไม่ระบุ ชิ้นออก")}/shot${noPps ? ` ${noPps} OP` : ''}` + (h ? ` — ${tr("น่าจะเป็นงานคู่")} (${h.why}) ${tr("รอยืนยัน")}` : ''));
     }
     if (s.op_total && mem.length !== s.op_total && dup === 0)
-      out.push(`จำนวนแม่พิมพ์ (${mem.length}) ไม่ตรงกับจำนวน OP ที่ระบุ (${s.op_total})`);
+      out.push(`${tr("จำนวนแม่พิมพ์")} (${mem.length}) ${tr("ไม่ตรงกับจำนวน OP ที่ระบุ")} (${s.op_total})`);
     return out;
   }, [diesBySet]);
 
@@ -478,7 +478,7 @@ export default function DieRegistry() {
   };
   const removeShare = async (s, d) => {
     if (!inScope(s.line_name)) return toast.error('ชุดนี้อยู่นอกส่วนงานของคุณ');
-    if (!await askConfirm(`เลิกใช้แม่พิมพ์ ${d.ext?.die_no || d.machine_no} ร่วมในชุด ${s.set_code || s.part_name}?\n(แม่พิมพ์ยังอยู่ชุดบ้านเหมือนเดิม ไม่ถูกลบ)`)) return;
+    if (!await askConfirm(`${tr("เลิกใช้แม่พิมพ์")} ${d.ext?.die_no || d.machine_no} ${tr("ร่วมในชุด")} ${s.set_code || s.part_name}?\n(${tr("แม่พิมพ์ยังอยู่ชุดบ้านเหมือนเดิม ไม่ถูกลบ")})`)) return;
     // delete ที่ RLS ปฏิเสธ = "สำเร็จ 0 แถว" ⇒ ต้องนับแถว (กฎเหล็ก DB ข้อ 2)
     if (!checkWriteRows(await supabaseDR.from('die_set_shared_dies').delete()
       .eq('die_set_id', s.id).eq('machine_id', d.id).select('machine_id'), 'เลิกใช้ร่วม')) return;
@@ -507,17 +507,17 @@ export default function DieRegistry() {
       XLSX.utils.book_append_sheet(wb, wsS, 'ชุด');
       // คำอธิบายอยู่ชีตท้าย — ชีตข้อมูลต้องเริ่มที่หัวตาราง (ตัวอ่านของผู้ใช้ยึดแถวแรก = หัว)
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ['ทะเบียนแม่พิมพ์', `ส่งออก ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })} โดย ${fullName || '-'}`],
-        ['ขอบเขต', scopeActive ? 'เฉพาะส่วนงานของผู้ส่งออก' : 'ทั้งโรงงาน'],
+        ['ทะเบียนแม่พิมพ์', `${tr("ส่งออก")} ${new Date().toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok' })} ${tr("โดย")} ${fullName || '-'}`],
+        ['ขอบเขต', scopeActive ? 'เฉพาะส่วนงานของผู้ส่งออก' : tr("ทั้งโรงงาน")],
         ['ช่องว่าง', 'ยังไม่ได้กรอก (ไม่ใช่ 0) — ไล่เติมแล้วกรอกกลับที่หน้า /equipment?tab=die'],
         ['เลขแม่พิมพ์', 'D-xxxx ระบบออกให้ ห้ามแก้ · 1 เลข = แม่พิมพ์ 1 ตัว = 1 OP'],
         ['ใช้ร่วมกับชุดอื่น', 'common die — ชุดอื่นยืมแม่พิมพ์ตัวนี้ไปเป็น OP ของชุดนั้น'],
         ['ชิ้นเข้า/ชิ้นออก ต่อ shot', 'เช่น OP ตัดแยก LH/RH = เข้า 1 ออก 2 · ม้วน (progressive) ไม่มีชิ้นเข้า ใช้ระยะพิทช์แทน'],
-        ...(sharedErr ? [['⚠', `อ่านรายการใช้ร่วมไม่ได้ (${sharedErr}) — คอลัมน์ "ใช้ร่วมกับชุดอื่น" ไม่ครบ`]] : []),
+        ...(sharedErr ? [['⚠', `${tr("อ่านรายการใช้ร่วมไม่ได้")} (${sharedErr}) — ${tr("คอลัมน์ \"ใช้ร่วมกับชุดอื่น\" ไม่ครบ")}`]] : []),
       ]), 'คำอธิบาย');
       XLSX.writeFile(wb, xlsxDocName('xlsx_die_registry', 'die_registry'));
     } catch (e) {
-      toast.error(`ส่งออก Excel ไม่สำเร็จ: ${e?.message || e}`);
+      toast.error(`${tr("ส่งออก Excel ไม่สำเร็จ")}: ${e?.message || e}`);
     } finally { setExporting(false); }
   };
 
@@ -545,7 +545,7 @@ export default function DieRegistry() {
       ? await supabaseDR.from('die_sets').update(payload).eq('id', f.id)
       : await supabaseDR.from('die_sets').insert(payload);
     setSaving(false);
-    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
+    if (error) return toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + error.message);
     toast.success('บันทึกชุดแม่พิมพ์แล้ว');
     invalidateDieSetKinds(); // ใบแจ้งซ่อมแม่พิมพ์เติม "ชนิดอุปกรณ์" จากรูปแบบชุด — ล้าง cache ให้เห็นค่าใหม่
     setEditSet(null); load();
@@ -580,7 +580,7 @@ export default function DieRegistry() {
     // ⚠️ ไม่แตะ shot_total ที่นี่ — เป็นตัวนับสะสมจากการผลิต ไม่ใช่ค่าที่คนพิมพ์ทับ
     const { error } = await supabaseDR.from('equipment_die').upsert(payload, { onConflict: 'machine_id' });
     setSaving(false);
-    if (error) return toast.error('บันทึกไม่สำเร็จ: ' + error.message);
+    if (error) return toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + error.message);
     toast.success('บันทึกแม่พิมพ์แล้ว');
     invalidateDieSetKinds(); // ประเภท OP ของแม่พิมพ์ = ตัวเติม "ชนิดอุปกรณ์" ในใบแจ้งซ่อม — ล้าง cache ให้เห็นค่าใหม่
     setEditDie(null); load();
@@ -612,11 +612,11 @@ export default function DieRegistry() {
           อยู่ใน <Hub> ⇒ PageHeader ไม่วาดชื่อหน้าซ้ำ เหลือคำอธิบาย + แถบแท็บย่อย `?die=` */}
       <PageHeader
         title={tr('ทะเบียนแม่พิมพ์')} icon="🔨"
-        sub={`แม่พิมพ์ 1 ตัว = 1 OP (เลข D-xxxx) · ชุด = รวม OP เป็นพาร์ท (ยืมแม่พิมพ์ข้ามชุดได้) · ตัวตนอยู่ฐานเดียวกับเครื่องจักร (QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
+        sub={`${tr("แม่พิมพ์ 1 ตัว = 1 OP (เลข D-xxxx) · ชุด = รวม OP เป็นพาร์ท (ยืมแม่พิมพ์ข้ามชุดได้) · ตัวตนอยู่ฐานเดียวกับเครื่องจักร (QR/ประวัติซ่อมใช้ร่วมกัน")})${scopeActive ? tr(' · เห็นเฉพาะส่วนงานของคุณ') : ''}`}
         tabs={[
-          { key: 'registry', label: 'ทะเบียน' },
-          { key: 'layout', label: 'ผังจัดเก็บ' },
-          { key: 'status', label: 'สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
+          { key: 'registry', label: tr("ทะเบียน") },
+          { key: 'layout', label: tr("ผังจัดเก็บ") },
+          { key: 'status', label: tr("สถานะ"), badge: moDieCount ? `🔧 ${moDieCount}` : null },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -629,14 +629,13 @@ export default function DieRegistry() {
 
       {sharedErr && tab === 'registry' && (
         <div style={{ ...warnBox, marginBottom: 12 }}>
-          ⚠️ อ่านรายการ "แม่พิมพ์ใช้ร่วม (common die)" ไม่ได้ — ชุดที่ยืมแม่พิมพ์ของชุดอื่นจะดูเหมือน OP ขาด
-          และเพิ่มการใช้ร่วมไม่ได้จนกว่าจะแก้ ({sharedErr})
+          ⚠️ {tr("อ่านรายการ \"แม่พิมพ์ใช้ร่วม (common die)\" ไม่ได้ — ชุดที่ยืมแม่พิมพ์ของชุดอื่นจะดูเหมือน OP ขาด และเพิ่มการใช้ร่วมไม่ได้จนกว่าจะแก้")} ({sharedErr})
         </div>
       )}
 
       {/* ⚠️ /die-registry เปิดให้ role `mtn` ด้วย — ถ้าวันหน้าถอด machines:edit ออกจาก mtn
           ปุ่มแก้จะหายทั้งหน้าโดยไม่มีคำอธิบาย (กับดักเดียวกับตารางกะ) */}
-      <ReadOnlyNote show={!canEdit} role={role} what="แก้ทะเบียนแม่พิมพ์"
+      <ReadOnlyNote show={!canEdit} role={role} what={tr("แก้ทะเบียนแม่พิมพ์")}
         permKey="machines:edit"
         hint={tr('แม่พิมพ์ใช้ตัวตนเดียวกับเครื่องจักร จึงคุมด้วยสิทธิ์เดียวกัน')} />
 
@@ -668,15 +667,15 @@ export default function DieRegistry() {
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
           <option value="">{allOf('รูปแบบชุด')}</option>
           <option value={KIND_NONE}>{tr('— ยังไม่ระบุ (')}{stat.noKind}) —</option>
-          {setKinds.map(k => <option key={k.key} value={k.key}>{tr(k.label)}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
+          {setKinds.map(k => <option key={k.key} value={k.key}>{tr(k.label)}{k.is_active ? '' : tr(" (ปิดใช้)")}</option>)}
         </select>
-        <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
+        <SearchInput value={search} onChange={setSearch} fields={tr("พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์")} />
         <span className="spacer" />
         <span className="filter-count">{tr('แสดง')} {rows.length} {tr('ชุด')}</span>
         {/* 📥 Excel ให้ทีม DIE เอาไปไล่ข้อมูล (05/11 · คำสั่ง user) — ทั้งหมดในขอบเขต ไม่ตามตัวกรอง (worklist ต้องครบ) */}
         <button onClick={exportExcel} disabled={exporting} title={tr('แม่พิมพ์ราย OP + ชุด ทั้งหมดในขอบเขตของคุณ — ช่องว่าง = ยังไม่ได้กรอก')}
           style={{ ...cancelBtnStyle, padding: '0 12px' }}>
-          {exporting ? tr('กำลังสร้างไฟล์…') : 'Export Excel'}
+          {exporting ? tr('กำลังสร้างไฟล์…') : tr('ส่งออก Excel')}
         </button>
         {canEdit && (
           <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
@@ -691,19 +690,19 @@ export default function DieRegistry() {
       {/* สรุป */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
         {[
-          { t: 'ชุดแม่พิมพ์', v: stat.sets },
-          { t: 'แม่พิมพ์', v: stat.dies },
-          { t: 'ยังไม่ระบุตัน', v: stat.noTon, warn: stat.noTon > 0 },
+          { t: tr("ชุดแม่พิมพ์"), v: stat.sets },
+          { t: tr("แม่พิมพ์"), v: stat.dies },
+          { t: tr("ยังไม่ระบุตัน"), v: stat.noTon, warn: stat.noTon > 0 },
           /* ⏱️ ความสูงแม่พิมพ์ = ตัวแปรของเวลาเปลี่ยนรุ่น — ยังไม่ครบ = จัดลำดับผลิตให้ประหยัดที่สุดไม่ได้
              (ตั้งใจโชว์จำนวนที่ "ยังไม่รู้" ตรงๆ ไม่ซ่อน ตามกฎความซื่อสัตย์ของจอ) */
-          { t: 'ยังไม่ระบุความสูง', v: stat.noHeight, warn: stat.noHeight > 0,
+          { t: tr("ยังไม่ระบุความสูง"), v: stat.noHeight, warn: stat.noHeight > 0,
             hint: 'ความสูงแม่พิมพ์ (มม.) ใช้คำนวณเวลาเปลี่ยนรุ่นงานปั๊ม — ยังไม่กรอก = ระบบจัดลำดับให้ประหยัดเวลาไม่ได้' },
-          { t: 'ยังไม่ระบุรูปแบบชุด', v: stat.noKind, warn: stat.noKind > 0,
+          { t: tr("ยังไม่ระบุรูปแบบชุด"), v: stat.noKind, warn: stat.noKind > 0,
             hint: 'รูปแบบชุดว่าง = ใบแจ้งซ่อมเติมชนิดอุปกรณ์ให้ไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP) · กรองด้วยช่อง "รูปแบบชุด" → ยังไม่ระบุ' },
-          { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
+          { t: tr("ชุดที่ข้อมูลไม่ครบ"), v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
           <div key={c.t} title={tr(c.hint) || undefined} style={{
-            background: 'var(--card)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
+            background: 'var(--card-surf)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
             borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 110,
           }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{c.t}</div>
@@ -717,7 +716,7 @@ export default function DieRegistry() {
         <div style={{ ...warnBox, marginBottom: 12 }}>
           <b>{tr('⚠️ ข้อมูลที่ยังต้องเก็บให้ครบ')}</b>
           <div style={{ marginTop: 4, lineHeight: 1.7 }}>
-            ทะเบียนชุดนี้ได้มาจากการ <b>{tr('แกะชื่อเครื่องเดิม')}</b> — ช่องที่แกะไม่ออกถูกปล่อยว่างไว้ (ไม่เดาให้)
+            {tr("ทะเบียนชุดนี้ได้มาจากการ")} <b>{tr('แกะชื่อเครื่องเดิม')}</b> — {tr("ช่องที่แกะไม่ออกถูกปล่อยว่างไว้ (ไม่เดาให้")})
             {stat.todo > 0 && <> {tr('· ชุดที่ข้อมูลยังไม่ครบ')} <b>{stat.todo}</b> {tr('ชุด')}</>}
             {stat.unlinked > 0 && <> {tr('· แม่พิมพ์ที่ยังไม่ได้อยู่ชุดไหน')} <b>{stat.unlinked}</b> {tr('ตัว')}</>}
           </div>
@@ -749,7 +748,7 @@ export default function DieRegistry() {
 
       {rows.length === 0 && (
         <div style={{ padding: 28, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          {todoOnly ? 'ไม่มีชุดที่ต้องแก้แล้ว 🎉' : 'ไม่พบชุดแม่พิมพ์ตามเงื่อนไข'}
+          {todoOnly ? tr("ไม่มีชุดที่ต้องแก้แล้ว 🎉") : tr("ไม่พบชุดแม่พิมพ์ตามเงื่อนไข")}
         </div>
       )}
 
@@ -763,7 +762,7 @@ export default function DieRegistry() {
               const open = expanded.has(s.id);
               return (
                 <div key={s.id} style={{
-                  background: 'var(--card)', borderRadius: 'var(--r-md)',
+                  background: 'var(--card-surf)', borderRadius: 'var(--r-md)',
                   border: `1px solid ${s.issues.length ? 'var(--amber-line)' : 'var(--border)'}`,
                   overflow: 'hidden',
                 }}>
@@ -774,10 +773,10 @@ export default function DieRegistry() {
                     <span style={{ fontSize: 12, color: 'var(--muted)', width: 12 }}>{open ? '▼' : '▶'}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13.5, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.part_name || '(ไม่มีชื่อ)'}
+                        {s.part_name || tr("(ไม่มีชื่อ)")}
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                        พาร์ท {s.part_no || <Blank />}
+                        {tr("พาร์ท")} {s.part_no || <Blank />}
                         {' · '}MAT {dieSetMats(s).join(' + ') || <Blank />}
                         {s.model && <> {tr('· รุ่น')} {s.model}</>}
                       </div>
@@ -796,7 +795,7 @@ export default function DieRegistry() {
                     {s.pieces_per_stroke > 1 ? (
                       <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}
                         title={tr('ค่าสำรองระดับชุด — OP ที่ยังไม่กรอกชิ้นออก/shot จะใช้ค่านี้')}>
-                        ชุด: {s.pieces_per_stroke} ชิ้น/shot
+                        {tr("ชุด")}: {s.pieces_per_stroke} {tr("ชิ้น")}/shot
                       </span>
                     ) : null}
                     {s.issues.length > 0 && (
@@ -851,9 +850,9 @@ export default function DieRegistry() {
                                   <td style={{ padding: '5px 6px', color: 'var(--muted)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                     title={d.machine_no}>
                                     {isShared && (
-                                      <span title={`แม่พิมพ์ของชุด ${home?.set_code || home?.part_name || '(ไม่มีชุดบ้าน)'} — ชุดนี้ยืมมาใช้ (common die) · แก้รายละเอียดที่ตัวแม่พิมพ์ได้เลย`}
+                                      <span title={`${tr("แม่พิมพ์ของชุด")} ${home?.set_code || home?.part_name || tr('(ไม่มีชุดบ้าน)')} — ${tr("ชุดนี้ยืมมาใช้ (common die) · แก้รายละเอียดที่ตัวแม่พิมพ์ได้เลย")}`}
                                         style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginRight: 6 }}>
-                                        ใช้ร่วม · {home?.set_code || home?.part_name || 'ไม่มีชุดบ้าน'}
+                                        {tr("ใช้ร่วม")} · {home?.set_code || home?.part_name || tr("ไม่มีชุดบ้าน")}
                                       </span>
                                     )}
                                     {d.machine_no}
@@ -895,7 +894,7 @@ export default function DieRegistry() {
                             <option value="">{tr('— เลือกแม่พิมพ์ที่จะใช้ร่วม —')}</option>
                             {shareOptions(s).map(d => (
                               <option key={d.id} value={d.id}>
-                                {d.ext?.die_no || '—'} · {setsById[d.ext?.die_set_id]?.set_code || 'ไม่มีชุด'}
+                                {d.ext?.die_no || '—'} · {setsById[d.ext?.die_set_id]?.set_code || tr("ไม่มีชุด")}
                                 {d.ext?.op_seq != null ? ` OP${d.ext.op_seq}` : ''} · {d.machine_no}
                               </option>
                             ))}
@@ -931,10 +930,10 @@ export default function DieRegistry() {
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateDiePressLines}
           help={tr('ชื่อในทะเบียนนี้คือค่าที่เก็บใน die_sets.line_name / machines.line_name (text) — แยกจากทะเบียนไลน์ผลิต (production_lines) ตั้งใจไม่ให้ชื่อเครื่องปั๊มโผล่ใน dropdown ไลน์ผลิตทุกหน้า · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)')}
           fields={[
-            { key: 'name', label: 'ชื่อกลุ่ม/ไลน์', required: true, placeholder: 'เช่น LINE A ( 800 Ton )' },
+            { key: 'name', label: tr("ชื่อกลุ่ม/ไลน์"), required: true, placeholder: 'เช่น LINE A ( 800 Ton )' },
             { key: 'tonnage', label: 'Tonnage', type: 'text', placeholder: 'เช่น 800 Ton', width: 120 },
-            { key: 'ref_production_line', label: 'ไลน์ผลิตอ้างอิง', placeholder: 'เช่น HDF1 (ถ้าเป็นไลน์ผลิตจริง)' },
-            { key: 'note', label: 'หมายเหตุ' },
+            { key: 'ref_production_line', label: tr("ไลน์ผลิตอ้างอิง"), placeholder: 'เช่น HDF1 (ถ้าเป็นไลน์ผลิตจริง)' },
+            { key: 'note', label: tr("หมายเหตุ") },
           ]} />
       </CollapseCard>
 
@@ -951,8 +950,8 @@ export default function DieRegistry() {
           onChanged={() => { invalidateDieSetKinds(); load(); }}
           help={tr('ประเภท OP = หน้าที่ของแม่พิมพ์ตัวนั้น (ตั้งที่ปุ่มแก้แม่พิมพ์รายตัว) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; ที่ตั้งตรงนี้ **ชนะ** ค่าของรูปแบบชุด — ใช้กับชุดที่มีแม่พิมพ์ต่างหน้าที่กันในชุดเดียว (เช่น HDF: HYDRO / BENDING / PREFORM) · ว่าง = ใช้ค่าของรูปแบบชุด · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (แม่พิมพ์เก่ายังอ่านออก)')}
           fields={[
-            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น Hydroform / ดัด' },
-            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+            { key: 'label', label: tr("ชื่อที่หน้างานเรียก"), required: true, placeholder: 'เช่น Hydroform / ดัด' },
+            { key: 'mo_item_type', label: tr("ชนิดอุปกรณ์ในใบแจ้งซ่อม"), type: 'select', options: dieItemTypeOpts, width: 190 },
           ]} />
       </CollapseCard>
 
@@ -964,9 +963,9 @@ export default function DieRegistry() {
           onChanged={() => { invalidateDieSetKinds(); setKindsVer(v => v + 1); }}
           help={tr('ตั้งชื่อเป็นคำที่หน้างานเรียกจริงได้เลย (แก้ชื่อทีหลังได้ ชุดเดิมไม่กระทบ) · &quot;ชนิดอุปกรณ์ในใบแจ้งซ่อม&quot; = ค่าที่ใบ MO เติมให้เองเมื่อผู้แจ้งเลือกแม่พิมพ์ในชุดแบบนี้ (ว่าง = ให้ผู้แจ้งเลือกเอง · เพิ่มชื่อใหม่ได้ที่ /mtn-repair แท็บข้อมูลหลัก › ชนิดอุปกรณ์) · ปิดใช้ = ไม่โผล่ให้เลือกใหม่ (ชุดเก่ายังอ่านออก)')}
           fields={[
-            { key: 'label', label: 'ชื่อที่หน้างานเรียก', required: true, placeholder: 'เช่น HYDROFORM DIE / แม่พิมพ์ดัด' },
-            { key: 'description', label: 'คำอธิบาย (ภาษาบ้านๆ)', placeholder: 'โชว์ใต้ช่องเลือกตอนแก้ชุด' },
-            { key: 'mo_item_type', label: 'ชนิดอุปกรณ์ในใบแจ้งซ่อม', type: 'select', options: dieItemTypeOpts, width: 190 },
+            { key: 'label', label: tr("ชื่อที่หน้างานเรียก"), required: true, placeholder: 'เช่น HYDROFORM DIE / แม่พิมพ์ดัด' },
+            { key: 'description', label: tr("คำอธิบาย (ภาษาบ้านๆ)"), placeholder: 'โชว์ใต้ช่องเลือกตอนแก้ชุด' },
+            { key: 'mo_item_type', label: tr("ชนิดอุปกรณ์ในใบแจ้งซ่อม"), type: 'select', options: dieItemTypeOpts, width: 190 },
           ]} />
       </CollapseCard>
 
@@ -1018,7 +1017,7 @@ export default function DieRegistry() {
                   ตั้งใจแยกจาก production_lines · ชื่อเก่าที่ชุด/แม่พิมพ์ใช้อยู่แต่ยังไม่ลงทะเบียนยังเลือกซ้ำได้ (กันสะกดต่างจน
                   inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์) · "✏️ ระบุใหม่" เฉพาะกรณีจริงที่ยังไม่มีในทะเบียน */}
               <SelectOrFree value={editSet.line_name || ''} options={setLineOptions} placeholder={tr('— เลือกจากทะเบียนกลุ่มเครื่องปั๊ม —')}
-                freeLabel="✏️ ระบุใหม่ (ยังไม่มีในทะเบียน die_press_lines)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
+                freeLabel={tr("✏️ ระบุใหม่ (ยังไม่มีในทะเบียน die_press_lines)")} freePlaceholder={tr("เช่น LINE A ( 800 Ton )")} style={inputStyle} inputStyle={inputStyle}
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label={tr('รูปแบบชุด')}>
@@ -1029,7 +1028,7 @@ export default function DieRegistry() {
                 {dieSetKindOptions(setKinds, editSet.kind || '').map(k => <option key={k.key} value={k.key}>{tr(k.label)}</option>)}
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                {editSet.kind ? setKinds.find(k => k.key === editSet.kind)?.desc : 'ยังไม่ระบุ — ใบแจ้งซ่อมจะเติมชนิดอุปกรณ์จากรูปแบบชุดไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP ผู้แจ้งต้องเลือกเอง)'}
+                {editSet.kind ? setKinds.find(k => k.key === editSet.kind)?.desc : tr("ยังไม่ระบุ — ใบแจ้งซ่อมจะเติมชนิดอุปกรณ์จากรูปแบบชุดไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP ผู้แจ้งต้องเลือกเอง)")}
                 {canEdit && <> {tr('· ไม่มีแบบที่ต้องการ? เพิ่มได้ที่แผง ⚙️ รูปแบบชุดแม่พิมพ์ ท้ายแท็บนี้')}</>}
               </div>
             </Field>
@@ -1078,7 +1077,7 @@ export default function DieRegistry() {
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, wordBreak: 'break-word' }}>
             <b style={{ fontFamily: 'monospace', fontSize: 14, color: 'var(--text)', marginRight: 8 }}>{editDie.die_no || 'D-????'}</b>
             {editDie.machine_no}
-            <div style={{ fontSize: 11, marginTop: 2 }}>เลขแม่พิมพ์ระบบออกให้ แก้ไม่ได้ · 1 เลข = แม่พิมพ์ 1 ตัว = 1 OP</div>
+            <div style={{ fontSize: 11, marginTop: 2 }}>{tr("เลขแม่พิมพ์ระบบออกให้ แก้ไม่ได้ · 1 เลข = แม่พิมพ์ 1 ตัว")} = 1 OP</div>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label={tr('ชุดบ้าน (อยู่ชุดไหน)')} hint={tr('ชุดอื่นยืมไปใช้ได้ที่หน้าชุด')}>
@@ -1173,7 +1172,7 @@ export default function DieRegistry() {
             </Field>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-            shot สะสม {Number(editDie.shot_total || 0).toLocaleString()} — เป็นตัวนับจากการผลิต แก้ที่นี่ไม่ได้
+            shot {tr("สะสม")} {Number(editDie.shot_total || 0).toLocaleString()} — {tr("เป็นตัวนับจากการผลิต แก้ที่นี่ไม่ได้")}
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
             <button style={cancelBtnStyle} onClick={() => setEditDie(null)}>{tr('ยกเลิก')}</button>
@@ -1192,7 +1191,7 @@ function Modal({ title, onClose, children }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
+        background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         padding: 18, width: 'min(720px, 100%)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800 }}>{title}</h3>

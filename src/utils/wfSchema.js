@@ -19,8 +19,13 @@ export const FIELD_TYPES = [
   { type: 'mat',      label: 'MAT / พาร์ท (ทะเบียน)', picker: 'ProductSelect' },
   { type: 'line',     label: 'ไลน์ผลิต (ทะเบียน)',   picker: 'LineSelect' },
   { type: 'heading',  label: 'หัวข้อคั่น (ไม่เก็บค่า)', display: true },
+  // 🧩 26/11 ตารางตรวจ (คน × วัน) — ใช้ได้เฉพาะใบที่ผูกเอกสาร "ใบตรวจแบบตาราง" · ข้อมูลอยู่ wf_grid_* ไม่อยู่ใน data ของใบ (utils/checkGrid.js)
+  { type: 'checkgrid', label: 'ตารางตรวจ (คน × วัน)', display: true, gridOnly: true },
 ];
 export const FIELD_TYPE_MAP = Object.fromEntries(FIELD_TYPES.map(t => [t.type, t]));
+
+import { validateBinding } from './wfBound.js';
+import { validateGrid } from './checkGrid.js';
 
 export const STEP_KINDS = [
   { kind: 'approve', label: 'อนุมัติ (อนุมัติ/ตีกลับ/ส่งกลับแก้ได้)' },
@@ -29,6 +34,7 @@ export const STEP_KINDS = [
 
 /* กฎหาผู้อนุมัติ — ต้องตรงกับ `wf_resolve()` ฝั่ง DB */
 export const ASSIGNEE_RULES = [
+  { rule: 'perm_in_line', label: 'คนที่ถือสิทธิ์ (คีย์) ที่ดูแลไลน์ของใบ (ใบรอบเอกสารเท่านั้น)', hint: 'ไลน์ = คนที่ผูกไลน์นี้/ไลน์แม่ (ไม่เจอ = ทั้งส่วนงาน) · ส่วนงาน = ทุกคนในส่วนงานของไลน์', boundOnly: true },
   { rule: 'perm_in_unit', label: 'คนที่ถือสิทธิ์ (คีย์) ในส่วนงาน', hint: 'ทุกคนที่ถือคีย์นี้ในส่วนงานที่เลือก ได้งานพร้อมกัน — ใครกดก่อนก็ได้' },
   { rule: 'creator_head', label: 'หัวหน้าของผู้เปิดใบ (ตามผังองค์กร)', hint: 'ไล่ผังองค์กรขึ้นไปหาหัวหน้า/รักษาการ (ตั้งที่ /org-setup)' },
   { rule: 'person',       label: 'ระบุตัวคน', hint: 'คนย้ายงานแล้ว flow ค้าง — ใช้เท่าที่จำเป็น' },
@@ -56,12 +62,13 @@ export function checkData(form, data) {
 
 /** ตรวจนิยามก่อนส่งขอเผยแพร่ — คืน [ข้อความ] (ว่าง = ผ่าน) · ตรงกับด่านใน `wf_request_publish` + เพิ่มด่านที่จอเห็นก่อน */
 export function validateDef({ key, name, ownerSection, form, flow, startRoles } = {}) {
+  const bound = !!flow?.binding;   // ใบรอบเอกสาร (25/11) — ระบบเปิดใบเอง ไม่มีฟอร์ม/role เปิดใบ
   const errs = [];
   if (!KEY_RE.test(String(key || ''))) errs.push('รหัสใบงาน (key) ต้องเป็นอังกฤษตัวเล็ก/ตัวเลข/_ ขึ้นต้นด้วยตัวอักษร 2–40 ตัว');
   if (isBlank(name)) errs.push('ต้องตั้งชื่อใบงาน');
   if (isBlank(ownerSection)) errs.push('ต้องระบุส่วนงานเจ้าของใบ');
   const fields = form?.fields || [];
-  if (!fields.filter(f => !FIELD_TYPE_MAP[f.type]?.display).length) errs.push('ฟอร์มยังไม่มีช่องกรอก');
+  if (!bound && !fields.filter(f => !FIELD_TYPE_MAP[f.type]?.display).length) errs.push('ฟอร์มยังไม่มีช่องกรอก');
   const seen = new Set();
   fields.forEach((f, i) => {
     const at = `ช่องที่ ${i + 1}`;
@@ -87,8 +94,18 @@ export function validateDef({ key, name, ownerSection, form, flow, startRoles } 
     if (a.rule === 'perm_in_unit' && isBlank(a.perm)) errs.push(`${at}: ยังไม่ได้เลือกคีย์สิทธิ์`);
     if (a.rule === 'perm_in_unit' && isBlank(a.unit)) errs.push(`${at}: ยังไม่ได้เลือกส่วนงาน`);
     if (a.rule === 'person' && isBlank(a.profile_id)) errs.push(`${at}: ยังไม่ได้เลือกคน`);
+    if (a.rule === 'perm_in_line' && isBlank(a.perm)) errs.push(`${at}: ยังไม่ได้เลือกคีย์สิทธิ์`);
+    if (a.rule === 'perm_in_line' && !bound) errs.push(`${at}: กฎ "ตามไลน์" ใช้ได้เฉพาะใบที่ผูกเอกสาร`);
   });
-  if (!(startRoles || []).length) errs.push('ยังไม่ได้เลือกว่า role ไหนเปิดใบได้');
+  if (!bound && !(startRoles || []).length) errs.push('ยังไม่ได้เลือกว่า role ไหนเปิดใบได้');
+  if (bound) errs.push(...validateBinding(flow.binding, steps));
+  // 🧩 ใบตรวจแบบตาราง: ตารางตรวจ 1 ช่องพอดี · ไม่แยกกะ (ตรงกับด่านใน wf_request_publish · 20261126)
+  const grids = fields.filter(f => f.type === 'checkgrid');
+  if (flow?.binding?.subject === 'grid') {
+    if (grids.length !== 1) errs.push(`ใบตรวจแบบตารางต้องมีช่อง "ตารางตรวจ" 1 ช่องพอดี (ตอนนี้ ${grids.length} ช่อง)`);
+    if (flow.binding.perShift) errs.push('ใบตรวจแบบตารางยังไม่รองรับแยกกะ');
+    grids.forEach(g => errs.push(...validateGrid(g)));
+  } else if (grids.length) errs.push('ช่อง "ตารางตรวจ" ใช้ได้เฉพาะใบที่ผูกเอกสาร "ใบตรวจแบบตาราง"');
   return errs;
 }
 

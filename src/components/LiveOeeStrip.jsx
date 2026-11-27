@@ -68,7 +68,7 @@ export default function LiveOeeStrip({ workDate, scopeNames = null, onOpenLine }
 
   if (err) return (
     <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: `1px solid ${toneLine('bad')}`, background: toneDim('bad'), fontSize: 11.5, color: toneVar('bad'), marginBottom: 12 }}>
-      🔴 โหลด OEE สดไม่ได้ — {err}
+      🔴 {tr("โหลด OEE สดไม่ได้")} — {err}
     </div>
   );
   if (!d) return null;
@@ -77,16 +77,16 @@ export default function LiveOeeStrip({ workDate, scopeNames = null, onOpenLine }
   const below = judged.filter(r => statusOf(r.oee, d.tgOf(r.line)) === 'bad').length;
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12 }}>
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: d.rows.length ? 8 : 0 }}>
         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>{tr('🟢 OEE สด — กะที่กำลังเดิน')}</span>
         {d.rows.length > 0 && (
           <span style={{ fontSize: 12, fontWeight: 800, color: below ? toneVar('bad') : 'var(--text2)' }}>
-            {d.rows.length} {tr('ไลน์เปิดกะ')}{below ? ` · ต่ำกว่าเป้า ${below} ไลน์` : ''}{judged.length < d.rows.length ? ` · ประเมินไม่ได้ ${d.rows.length - judged.length}` : ''}
+            {d.rows.length} {tr('ไลน์เปิดกะ')}{below ? ` · ${tr("ต่ำกว่าเป้า")} ${below} ${tr("ไลน์")}` : ''}{judged.length < d.rows.length ? ` · ${tr("ประเมินไม่ได้")} ${d.rows.length - judged.length}` : ''}
           </span>
         )}
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-          {d.rows.length ? 'คิดถึงตอนนี้ · ตัวเลขจริงยืนยันตอนปิดกะ · สีเทียบเป้าของกลุ่ม' : 'ยังไม่มีไลน์ไหนเปิดกะของวันงานนี้'}
+          {d.rows.length ? tr("คิดถึงตอนนี้ · ตัวเลขจริงยืนยันตอนปิดกะ · สีเทียบเป้าของกลุ่ม") : tr("ยังไม่มีไลน์ไหนเปิดกะของวันงานนี้")}
         </span>
         {d.partial && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{tr('⚠ โหลดข้อมูลได้ไม่ครบ — บางไลน์อาจต่ำกว่าจริง')}</span>}
         {d.tgFail && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{tr('⚠ โหลดเป้า OEE ไม่ได้ — ยังไม่ตัดสินสี')}</span>}
@@ -99,8 +99,8 @@ export default function LiveOeeStrip({ workDate, scopeNames = null, onOpenLine }
             const c = toneVar(st);
             return (
               <div key={r.sessionId} onClick={() => onOpenLine?.(r.line)}
-                title={r.oee != null ? `${r.line} · A ${r.A}% · P ${r.P}% · Q ${r.Q}%${tg != null ? ` · เป้า ${tg.toFixed(1)}%` : ''}` : `${r.line} · ${LIVE_OEE_REASON[r.reason] || ''}`}
-                style={{ cursor: onOpenLine ? 'pointer' : 'default', minWidth: 130, flex: '0 1 auto', background: 'var(--bg2)',
+                title={r.oee != null ? `${r.line} · A ${r.A}% · P ${r.P}% · Q ${r.Q}%${tg != null ? ` · ${tr("เป้า")} ${tg.toFixed(1)}%` : ''}` : `${r.line} · ${LIVE_OEE_REASON[r.reason] || ''}`}
+                style={{ cursor: onOpenLine ? 'pointer' : 'default', minWidth: 130, flex: '0 1 auto', background: 'var(--bg2-surf)',
                   border: `1px solid ${r.oee == null ? 'var(--border)' : toneLine(st)}`, borderRadius: 9, padding: '7px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                   {r.line}{r.shift === 'night' ? ' 🌙' : ''}
@@ -119,7 +119,7 @@ export default function LiveOeeStrip({ workDate, scopeNames = null, onOpenLine }
                     )}
                   </>
                 ) : (
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>— {LIVE_OEE_REASON[r.reason] || 'ประเมินไม่ได้'}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>— {LIVE_OEE_REASON[r.reason] || tr("ประเมินไม่ได้")}</div>
                 )}
                 {r.openCount > 1 && <div style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('⚠ เปิดค้าง')} {r.openCount} {tr('กะ')}</div>}
               </div>

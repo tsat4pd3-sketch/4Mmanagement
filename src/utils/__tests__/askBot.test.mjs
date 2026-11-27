@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseQuestion, periodFromText, defaultPeriod, matchSubject, oeeSummary, downtimeTop, productionTotals,
-  rankLinesByOee, openDowntimeList, moOpenSummary, fourMPendingSummary, defectTop, attendanceSummary,
+  rankLinesByOee, openDowntimeList, moOpenSummary, fourMPendingSummary, defectTop, attendanceSummary, makeShiftOf, applyHelpers, scrapReportSummary,
 } from '../askBot.js';
 import { dtOpenKind } from '../downtimeRules.js';
 
@@ -265,4 +265,100 @@ test('คำพ้องที่หน้างานพิมพ์ (user ส�
     assert.equal(q.subject, subject, s);
   }
   assert.equal(parseQuestion('ยอดขายเดือนนี้', T).intent, null, 'ยอดขาย ยังไม่มีเครื่องมือ — ต้องไม่ถูกตีเป็นยอดผลิต');
+});
+
+test('กะ (user สั่ง 20/11): กะเช้า/กะดึก/กะนี้ — กะนี้ต้องรู้กะปัจจุบันจากผู้เรียก ห้ามเดา', () => {
+  const a = parseQuestion('oee HDF1 กะเช้า', T);
+  assert.deepEqual([a.intent, a.subject, a.shift?.key], ['oee', 'hdf1', 'day']);
+  const b = parseQuestion('ของเสียสูงสุด สัปดาห์นี้ กะดึก', T);
+  assert.deepEqual([b.intent, b.subject, b.shift?.key, b.period.from], ['defect_top', '', 'night', '2026-11-16']);
+  const c = parseQuestion('ยอดผลิต HDF1 กะนี้', T, { shiftNow: 'night' });
+  assert.deepEqual([c.subject, c.shift?.key, c.period.from, c.period.to], ['hdf1', 'night', T, T], 'กะนี้ไม่บอกช่วง = วันนี้');
+  assert.ok(parseQuestion('oee HDF1 กะนี้', T).error, 'ไม่รู้กะปัจจุบัน = ตอบไม่ได้ ห้ามเดา');
+  assert.equal(parseQuestion('oee HDF1 วันนี้', T).shift, null, 'ไม่พูดถึงกะ = ทั้งวันเหมือนเดิม');
+  assert.equal(parseQuestion('downtime กะเช้า เดือนนี้', T).subject, '');
+});
+
+test('มาทำงานแยกกะ (user สั่ง 20/11): กะของคนตามลำดับเดียวกับจอเช็คชื่อ · ไม่รู้กะ = แยกนับ ห้ามเดา', () => {
+  const lines = [{ id: 1, name: 'HDF1', section: 'PD1' }, { id: 2, name: 'HDF1-A', parent_line_name: 'HDF1', section: 'PD1' }, { id: 3, name: 'X', section: 'PD9' }];
+  const shiftOf = makeShiftOf({
+    schedules: [{ line_id: 1, day_team: 'A' }],                 // HDF1 ทีม A เช้า · ไลน์ลูกตกทอด
+    overrides: [{ employee_id: 'o', shift: 'day' }],             // คน B ที่สลับมาเช้ารายคน
+    merges: [],
+    lines,
+  });
+  const emps = [
+    { id: 'a', line_id: 1, team: 'A' }, { id: 'b', line_id: 1, team: 'B' }, { id: 'c', line_id: 2, team: 'C' },
+    { id: 'kid', line_id: 2, team: 'B' }, { id: 'o', line_id: 1, team: 'B' }, { id: 'u', line_id: 3, team: 'A' },
+  ];
+  assert.deepEqual(emps.map(shiftOf), ['day', 'night', 'day', 'night', 'day', null]);
+  const name = Object.fromEntries(lines.map(l => [l.id, l.name]));
+  const logs = [{ employee_id: 'a', is_present: true }, { employee_id: 'b', is_present: true }, { employee_id: 'u', is_present: true }];
+  const day = attendanceSummary(emps, logs, id => name[id], { shift: 'day', shiftOf });
+  assert.deepEqual([day.head, day.in, day.none, day.otherShift, day.unknownShift, day.unknownIn], [3, 1, 2, 2, 1, 1]);
+  const night = attendanceSummary(emps, logs, id => name[id], { shift: 'night', shiftOf });
+  assert.deepEqual([night.head, night.in], [2, 1]);
+  const all = attendanceSummary(emps, logs, id => name[id]);
+  assert.equal(all.head, 6, 'ไม่ระบุกะ = ทั้งวันเหมือนเดิม');
+});
+
+test('ยืมคน (user สั่ง 20/11): นับที่ไลน์ปลายทาง · กะ = กะที่ยืม · ทั้งวันไปคนละไลน์ = ต้นสังกัด ห้ามเดา', () => {
+  const emps = [{ id: 'a', line_id: 1, team: 'A' }, { id: 'b', line_id: 1, team: 'A' }, { id: 'c', line_id: 1, team: 'A' }];
+  const helpers = [
+    { employee_id: 'a', to_line_id: 2, shift: 'night' },
+    { employee_id: 'b', to_line_id: 2, shift: 'day' }, { employee_id: 'b', to_line_id: 3, shift: 'night' },
+  ];
+  const night = applyHelpers(emps, helpers, { shift: 'night' });
+  assert.deepEqual(night.emps.map(e => [e.line_id, e._helperShift ?? null]), [[2, 'night'], [3, 'night'], [1, null]]);
+  assert.equal(night.emps[0]._homeLineId, 1);
+  assert.deepEqual([...night.otherShift], [], 'b ถูกยืมทั้ง 2 กะ = ย้ายแล้ว ไม่ใช่อีกกะ');
+  const day = applyHelpers(emps, helpers, { shift: 'day' });
+  assert.deepEqual([...day.otherShift], ['a'], 'a ถูกยืมเฉพาะกะดึก = อีกกะ ต้องให้จอเขียนบอก');
+  const shiftOf = makeShiftOf({ schedules: [{ line_id: 1, day_team: 'A' }], lines: [{ id: 1, name: 'L1' }, { id: 2, name: 'L2' }, { id: 3, name: 'L3' }] });
+  assert.equal(shiftOf(night.emps[0]), 'night', 'ทีม A เป็นกะเช้าตามตาราง แต่ถูกยืมไปกะดึก = นับกะดึก');
+  const allDay = applyHelpers(emps, helpers);
+  assert.deepEqual([allDay.moved, allDay.split], [1, 1]);
+  assert.deepEqual(allDay.emps.map(e => e.line_id), [2, 1, 1]);
+  assert.equal(emps[0].line_id, 1, 'ห้ามแก้แถวเดิม');
+});
+
+test('สแครป (user สั่ง 20/11 · ทำทั้ง 2): "สแครป" = ของเสียรายงานผลิต + ธงบอก · "ใบสแครป" = ใบรายงานของเสีย', () => {
+  const a = parseQuestion('สแครปเดือนนี้ HDF1', T);
+  assert.deepEqual([a.intent, a.subject, a.viaScrap], ['defect_top', 'hdf1', true]);
+  assert.equal(parseQuestion('ของเสียสูงสุด', T).viaScrap, false);
+  for (const s of ['ใบสแครป เดือนนี้', 'ใบ scrap HDF1', 'scrap report เดือน 10', 'ใบรายงานของเสีย สัปดาห์นี้']) {
+    const q = parseQuestion(s, T);
+    assert.equal(q.intent, 'scrap_report', s);
+  }
+  assert.equal(parseQuestion('ใบ scrap HDF1', T).subject, 'hdf1');
+  assert.equal(parseQuestion('ใบสแครป เดือนนี้', T).subject, '');
+});
+
+test('สรุปใบสแครป: นับตามสถานะ · จับพาร์ทด้วย mat→part_no→ชื่อ · ยืนยันไม่เท่ายอด = บอก', () => {
+  const r = scrapReportSummary(
+    [{ id: 1, status: 'draft' }, { id: 2, status: 'approved' }, { id: 3, status: 'แปลก' }],
+    [{ mat_no: 'M1', part_name: 'A', qty: 5, confirm_qty: 5 }, { mat_no: 'M1', qty: 3, confirm_qty: 2 },
+     { part_no: 'NUT-6', part_name: 'นัต', qty: 10 }, { part_name: 'สกรู', qty: 1 }]);
+  assert.deepEqual([r.reports, r.byStatus.draft, r.byStatus.approved, r.unknownStatus, r.total], [3, 1, 1, 1, 19]);
+  assert.deepEqual(r.top.map(e => [e.key, e.qty]), [['NUT-6', 10], ['M1', 8], ['สกรู', 1]]);
+  assert.equal(r.confirmDiffers, true);
+});
+
+test('"เมื่อกี้" (user สั่ง 20/11) = กะก่อนหน้ากะปัจจุบัน · ไม่รู้กะปัจจุบัน = ตอบไม่ได้ ห้ามเดา', () => {
+  const a = parseQuestion('ของเสียเมื่อกี้', T, { shiftNow: 'day' });
+  assert.deepEqual([a.intent, a.subject, a.shift?.key, a.period.from], ['defect_top', '', 'night', '2026-11-18'], 'ตอนนี้กะเช้า ⇒ กะดึกเมื่อวาน');
+  const b = parseQuestion('oee HDF1 เมื่อกี้', T, { shiftNow: 'night' });
+  assert.deepEqual([b.subject, b.shift?.key, b.period.from], ['hdf1', 'day', T], 'ตอนนี้กะดึก ⇒ กะเช้าวันเดียวกัน');
+  assert.match(b.shift.label, /กะก่อนหน้า/, 'ป้ายต้องบอกว่าตีความเป็นกะไหน');
+  assert.equal(parseQuestion('ยอดผลิต HDF1 กะที่แล้ว', T, { shiftNow: 'day' }).shift.key, 'night');
+  assert.ok(parseQuestion('oee HDF1 เมื่อกี้', T).error, 'ไม่รู้กะปัจจุบัน = ตอบไม่ได้');
+});
+
+test('เลข 0 นำหน้าไม่นับ: "060" ต้องเจอ "Line 60" (user ทัก 20/11) · ไลน์ชนเลขพาร์ท = ให้เลือก ห้ามเดา', () => {
+  const lines = [{ name: 'Line 60' }, { name: 'Line 61' }, { name: 'Line 600' }];
+  assert.equal(matchSubject('060', { lines }).pick.name, 'Line 60');
+  const products = [{ mat_no: '10100385', name: 'REINF ASY', p_no: 'RB3B-16E060-BA' }];
+  const m = matchSubject('060', { lines, products });
+  assert.equal(m.pick, null);
+  assert.deepEqual(m.choices.map(c => c.kind).sort(), ['line', 'part']);
 });

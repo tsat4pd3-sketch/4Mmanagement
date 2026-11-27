@@ -59,5 +59,6 @@ export async function loadRunDays({ lineNames = [], from, to } = {}) {
     put(runKey(r.work_date), r.line_name);
     if (r.shift) { days.add(runKey(r.work_date, r.shift)); put(runKey(r.work_date, r.shift), r.line_name); }
   }
-  return { ok: true, days, byKey, error: null };
+  // sessions = แถวกะจริง (id/work_date/shift/line_name) — ผู้เรียกที่ต้องตามใบผลิตต่อ (AM รายเครื่อง · 23/11 · additive)
+  return { ok: true, days, byKey, sessions: data, error: null };
 }

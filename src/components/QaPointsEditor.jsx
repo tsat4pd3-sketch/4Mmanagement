@@ -76,7 +76,7 @@ const S = {
 function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, hasImage, methodHist, calcOptions, calcIssues }) {
   const isVar = p.item_type === 'variable';
   return (
-    <PointCardShell label={p.balloon_no || '?'} caption="จุดตรวจชิ้นงาน" pinned={p.pos_x != null}
+    <PointCardShell label={p.balloon_no || '?'} caption={tr("จุดตรวจชิ้นงาน")} pinned={p.pos_x != null}
       isPinning={isPinning} canPin={hasImage} onPinToggle={onPinToggle} onUnpin={onUnpin} onDelete={onDelete}
       inactive={!p.is_active}
       /* 🔴 แนบรูปแล้วต้องเห็นพรีวิวทันที — เดิมเก็บแต่ `_imgFile` ⇒ จอยังเขียน "แนบรูปจุดนี้"
@@ -104,7 +104,7 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
           </div>
           {/* พรีวิวจากค่าชุดเดียวกับที่ตัดสินอัตโนมัติ (utils/qaSpec — ห้ามประกอบข้อความสเปคเอง) */}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
-            จอตรวจจะแสดงสเปคว่า <b style={{ color: 'var(--text)' }}>{specLabel(p)}</b>
+            {tr("จอตรวจจะแสดงสเปคว่า")} <b style={{ color: 'var(--text)' }}>{specLabel(p)}</b>
             {p.lsl === '' && p.usl === '' && <span style={{ color: '#f59e0b' }}> {tr('· ยังไม่ตั้ง LSL/USL — ระบบไม่ตัดสินอัตโนมัติ')}</span>}
           </div>
         </>
@@ -156,7 +156,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
   const [custom, setCustom] = useState(current || '');
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>{tr('ตั้งชื่อแผ่น/มุมมอง')}</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
           {STANDARD_VIEWS.map(v => {
@@ -177,7 +177,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
             style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>{tr('ตกลง')}</button>
         </div>
         <div style={{ textAlign: 'right', marginTop: 10 }}>
-          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ข้าม')}</button>
+          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ข้าม')}</button>
         </div>
       </div>
     </div>
@@ -272,7 +272,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
     try {
       const c = await imageCompression(file, { maxSizeMB: 0.3, maxWidthOrHeight: 1280 });
       update(key, { _imgFile: c, _imgPreview: URL.createObjectURL(c) });
-    } catch (e) { toast.error(`ย่อรูปไม่สำเร็จ: ${e?.message || ''}`); }
+    } catch (e) { toast.error(`${tr("ย่อรูปไม่สำเร็จ")}: ${e?.message || ''}`); }
   };
 
   /* ── แผ่นรูป/Drawing ── */
@@ -280,7 +280,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
     setBusy(true);
     const added = [];
     for (const file of files) {
-      if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} ใหญ่เกิน 20MB`); continue; }
+      if (file.size > 20 * 1024 * 1024) { toast.error(`${file.name} ${tr("ใหญ่เกิน")} 20MB`); continue; }
       let f = file;
       const isPdf = file.type === 'application/pdf';
       // drawing ต้องซูมอ่าน dimension ได้ ⇒ ไม่ครอป · บีบแบบเดียวกับผัง (2560px/2.5MB/q0.9) · PDF ส่งดิบ
@@ -302,7 +302,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
   const removeFrame = async (key) => {
     const f = frames.find(x => x._key === key);
     const cnt = points.filter(p => p._frameKey === key && p.pos_x != null).length;
-    if (!await askConfirm(`เอาแผ่น "${f?.title || ''}" ออก?${cnt ? `\nหมุด ${cnt} จุดบนแผ่นนี้จะถูกถอด (ตัวจุดตรวจไม่หาย)` : ''}\n(มีผลเมื่อกดบันทึก)`)) return;
+    if (!await askConfirm(`${tr("เอาแผ่น")} "${f?.title || ''}" ${tr("ออก")}?${cnt ? `\n${tr("หมุด")} ${cnt} ${tr("จุดบนแผ่นนี้จะถูกถอด (ตัวจุดตรวจไม่หาย")})` : ''}\n(${tr("มีผลเมื่อกดบันทึก")})`)) return;
     setFrames(prev => prev.filter(x => x._key !== key));
     setPoints(prev => prev.map(p => (p._frameKey === key ? { ...p, pos_x: null, pos_y: null, _frameKey: null, label_dx: null, label_dy: null } : p)));
     setFrameIdx(0);
@@ -345,11 +345,11 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
     /* 🔐 ด่านซ้ำตอนกดจริง (audit สิทธิ์ 15/10) — หน้าแม่ซ่อนปุ่มแล้ว แต่ห้ามพึ่งการซ่อนปุ่มอย่างเดียว */
     if (writeCheck && !writeCheck.ok) { setError(writeBlockText(writeCheck, { what: 'พาร์ทของไลน์นี้' })); return; }
     const blank = points.find(p => !p.characteristic.trim());
-    if (blank) { jumpTo(blank._key); setError(`ใส่ชื่อจุดตรวจให้ครบ — ยังว่าง ${points.filter(p => !p.characteristic.trim()).length} จุด`); return; }
+    if (blank) { jumpTo(blank._key); setError(`${tr("ใส่ชื่อจุดตรวจให้ครบ — ยังว่าง")} ${points.filter(p => !p.characteristic.trim()).length} ${tr("จุด")}`); return; }
     const badSpec = points.find(p => p.item_type === 'variable' && p.usl !== '' && p.lsl !== '' && Number(p.usl) <= Number(p.lsl));
-    if (badSpec) { jumpTo(badSpec._key); setError(`จุด ${badSpec.balloon_no || '?'}: USL ต้องมากกว่า LSL`); return; }
+    if (badSpec) { jumpTo(badSpec._key); setError(`${tr("จุด")} ${badSpec.balloon_no || '?'}: USL ${tr("ต้องมากกว่า")} LSL`); return; }
     const calcBad = calcIssueList[0];
-    if (calcBad) { jumpTo(calcBad.key); setError(`จุด ${labels[calcBad.key] || '?'} (คำนวณ): ${calcBad.msg}`); return; }
+    if (calcBad) { jumpTo(calcBad.key); setError(`${tr("จุด")} ${labels[calcBad.key] || '?'} (${tr("คำนวณ")}): ${calcBad.msg}`); return; }
 
     setSaving(true);
     let fr = frames, pts = points;
@@ -415,11 +415,11 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
           calc: isVar ? calcOf(p) : null,
         };
         if (p.id) {
-          if (!checkWriteRows(await supabase.from('qa_inspection_items').update(payload).eq('id', p.id).select('id'), `บันทึกจุด ${payload.balloon_no}`)) throw new Error(`บันทึกจุด ${payload.balloon_no} ไม่สำเร็จ`);
+          if (!checkWriteRows(await supabase.from('qa_inspection_items').update(payload).eq('id', p.id).select('id'), `${tr("บันทึกจุด")} ${payload.balloon_no}`)) throw new Error(`บันทึกจุด ${payload.balloon_no} ไม่สำเร็จ`);
           pts[i] = { ...p, image_path: imagePath, _imgFile: null };
         } else {
           const res = await supabase.from('qa_inspection_items').insert({ ...payload, id: p._key }).select('id').single();
-          if (!checkWrite(res, `เพิ่มจุด ${payload.balloon_no}`)) throw new Error(`เพิ่มจุด ${payload.balloon_no} ไม่สำเร็จ`);
+          if (!checkWrite(res, `${tr("เพิ่มจุด")} ${payload.balloon_no}`)) throw new Error(`เพิ่มจุด ${payload.balloon_no} ไม่สำเร็จ`);
           pts[i] = { ...p, id: res.data.id, image_path: imagePath, _imgFile: null };
         }
       }
@@ -445,10 +445,10 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
       // 5) เก็บกวาดไฟล์เก่า — แถวในฐานเลิกอ้างแล้วจริง (นับแถวผ่านด้านบน) · best-effort
       const paths = stale.filter(Boolean);
       if (paths.length) supabase.storage.from(BUCKET).remove(paths).catch(() => {});
-      toast.success(`บันทึกแล้ว ✓ ${pts.length} จุด · ${fr.length} แผ่น`);
+      toast.success(`${tr("บันทึกแล้ว")} ✓ ${pts.length} ${tr("จุด")} · ${fr.length} ${tr("แผ่น")}`);
       onSaved?.();
     } catch (e) {
-      setError(`${e.message} — ส่วนที่บันทึกไปแล้วยังอยู่ แก้แล้วกดบันทึกอีกครั้งได้`);
+      setError(`${e.message} — ${tr("ส่วนที่บันทึกไปแล้วยังอยู่ แก้แล้วกดบันทึกอีกครั้งได้")}`);
       // ให้ state รู้ id ของแถวที่เพิ่งเกิด — กดบันทึกซ้ำจะ update ไม่ insert ซ้ำ
       setFrames(fr); setPoints(pts);
       setInitial(prev => ({ ...prev, frameIds: [...new Set([...prev.frameIds, ...fr.map(f => f.id).filter(Boolean)])], itemIds: [...new Set([...prev.itemIds, ...pts.map(p => p.id).filter(Boolean)])] }));
@@ -462,15 +462,15 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
 
   return (
     <InspectEditorModal wide={wide} bodyRef={bodyRef} onClose={onClose} onSave={handleSave} saving={saving}
-      title={`ตั้งค่าจุดตรวจ — ${part.part_no || part.part_name || 'ชิ้นงาน'}`} subtitle={[part.part_name, part.customer].filter(Boolean).join(' · ') || 'ชิ้นงาน'}>
+      title={`${tr("ตั้งค่าจุดตรวจ")} — ${part.part_no || part.part_name || tr('ชิ้นงาน')}`} subtitle={[part.part_name, part.customer].filter(Boolean).join(' · ') || tr("ชิ้นงาน")}>
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
       ) : loadErr ? (
-        <div style={{ padding: 16, color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดข้อมูลไม่สำเร็จ (')}{loadErr}) — ปิดแล้วเปิดใหม่ · ยังไม่ได้แก้อะไร</div>
+        <div style={{ padding: 16, color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดข้อมูลไม่สำเร็จ (')}{loadErr}) — {tr("ปิดแล้วเปิดใหม่ · ยังไม่ได้แก้อะไร")}</div>
       ) : (
         <PinWorkspace twoCol={wide} stickyRef={stickyRef}
-          boardTitle="Drawing / รูปชิ้นงาน (หลายแผ่น) + จุดตรวจ"
-          boardBadge={pinnedCount > 0 ? `📍 ${pinnedCount}/${points.length} จุดวางแล้ว` : null}
+          boardTitle={tr("Drawing / รูปชิ้นงาน (หลายแผ่น) + จุดตรวจ")}
+          boardBadge={pinnedCount > 0 ? `📍 ${pinnedCount}/${points.length} ${tr("จุดวางแล้ว")}` : null}
           board={(
             <SpinAnnotator subject="part" spinnable={false} acceptPdf
               frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
@@ -490,7 +490,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
               pinHasDetail={Object.fromEntries(points.map(p => [p._key, !!(p._imgPreview || p.image_path)]))} />
           )}
           boardFooter={activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{tr('✦ เลือกแผ่นที่เห็นจุดชัด แล้วแตะวางตำแหน่ง')}</p>}
-          listTitle={`จุดตรวจชิ้นงาน (${points.length})`} onAdd={addPoint}
+          listTitle={`${tr("จุดตรวจชิ้นงาน")} (${points.length})`} onAdd={addPoint}
           jump={{ points: points.map(p => ({ _key: p._key, name: p.characteristic, group_name: '' })), labels, onJump: jumpTo, flashKey, onTop: scrollTop }}>
           {points.map(p => (
             <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 'var(--r-md)', transition: 'box-shadow .3s',
@@ -506,7 +506,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
           ))}
           {points.length === 0 && (
             <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-              ยังไม่มีจุดตรวจ — กด “+ เพิ่มจุดตรวจ” แล้วกด 🔘 วางตำแหน่ง → แตะบนรูป
+              {tr("ยังไม่มีจุดตรวจ — กด “+ เพิ่มจุดตรวจ” แล้วกด 🔘 วางตำแหน่ง → แตะบนรูป")}
             </div>
           )}
         </PinWorkspace>

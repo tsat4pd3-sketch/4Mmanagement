@@ -23,33 +23,33 @@ export default function DieMatLinkButton({ set, mat, role, onDone }) {
   if (mats.includes(m.toUpperCase())) return null;            // ผูกไว้แล้ว
   if (mats.length) return (
     <div style={{ fontSize: 11, color: 'var(--amber)' }}>
-      ⚠ ทะเบียนบอกว่าชุด {set.set_code} {tr('ทำ')} {mats.join(' + ')} — ถ้าทำพาร์ทนี้ด้วยจริง แก้ที่ /equipment?tab=die
+      ⚠ {tr("ทะเบียนบอกว่าชุด")} {set.set_code} {tr('ทำ')} {mats.join(' + ')} — {tr("ถ้าทำพาร์ทนี้ด้วยจริง แก้ที่")} /equipment?tab=die
     </div>
   );
   if (matSlotFor(set, m) !== 'mat_no') return null;
   if (!can('machines', 'edit', role)) return (
-    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชุด')} {set.set_code} ยังไม่ผูก MAT — ผู้มีสิทธิ์ทะเบียนแม่พิมพ์ผูกได้ที่ /equipment?tab=die</div>
+    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชุด')} {set.set_code} {tr("ยังไม่ผูก MAT — ผู้มีสิทธิ์ทะเบียนแม่พิมพ์ผูกได้ที่")} /equipment?tab=die</div>
   );
 
   async function link() {
-    if (!await askConfirm(`ผูก MAT ${m} เข้ากับชุดแม่พิมพ์ ${set.set_code}?\n\n`
+    if (!await askConfirm(`${tr("ผูก")} MAT ${m} ${tr("เข้ากับชุดแม่พิมพ์")} ${set.set_code}?\n\n`
       + 'ทะเบียนแม่พิมพ์จะจำว่าชุดนี้ทำพาร์ทนี้ ⇒ ครั้งต่อไประบบขึ้นแม่พิมพ์ชุดนี้เป็น "ทะเบียนยืนยัน"\n'
-      + 'แก้ได้ภายหลังที่ /equipment?tab=die')) return;
+      + (tr('แก้ได้ภายหลังที่') + ' /equipment?tab=die'))) return;
     setBusy(true);
     try {
       const q = supabaseDR.from('die_sets').update({ mat_no: m }).eq('id', set.id);
       const cas = set.mat_no == null ? q.is('mat_no', null) : q.eq('mat_no', set.mat_no);
-      if (!checkWriteRows(await cas.select('id'), `ผูก MAT กับชุด ${set.set_code}`,
-        { zeroMsg: `ช่อง MAT ของชุด ${set.set_code} ถูกกรอกไปแล้ว หรือบัญชีคุณไม่มีสิทธิ์ — โหลดใหม่แล้วดูอีกครั้ง` })) return;
-      toast.success(`ผูก ${m} → ${set.set_code} แล้ว`);
+      if (!checkWriteRows(await cas.select('id'), `${tr("ผูก MAT กับชุด")} ${set.set_code}`,
+        { zeroMsg: `${tr("ช่อง MAT ของชุด")} ${set.set_code} ${tr("ถูกกรอกไปแล้ว หรือบัญชีคุณไม่มีสิทธิ์ — โหลดใหม่แล้วดูอีกครั้ง")}` })) return;
+      toast.success(`${tr("ผูก")} ${m} → ${set.set_code} ${tr("แล้ว")}`);
       await onDone?.();
     } finally { setBusy(false); }
   }
   return (
     <button type="button" onClick={link} disabled={busy}
       style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: busy ? 'default' : 'pointer',
-        background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
-      {busy ? 'กำลังผูก…' : `🔗 ยืนยัน: ชุด ${set.set_code} ทำ MAT ${m}`}
+        background: 'var(--card-surf)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
+      {busy ? tr("กำลังผูก…") : `🔗 ${tr("ยืนยัน: ชุด")} ${set.set_code} ${tr("ทำ")} MAT ${m}`}
     </button>
   );
 }

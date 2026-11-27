@@ -9,7 +9,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 import { bandProgress, daysToNextBand, evidenceState, shadowDelta } from '../utils/skillExp';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 const box = {
   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 7,
   padding: '8px 10px', minWidth: 104, flex: '1 1 104px',
@@ -17,7 +17,7 @@ const box = {
 const capLabel = { fontSize: 11, color: 'var(--muted)', marginBottom: 2 };
 const capValue = { fontSize: 14, fontWeight: 800, lineHeight: 1.2 };
 
-const nf = (n) => (n == null ? '–' : Number(n).toLocaleString('th-TH'));
+const nf = (n) => (n == null ? '–' : Number(n).toLocaleString(dateLocale()));
 
 export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compact = false }) {
   const st = evidenceState(ev);
@@ -25,7 +25,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
   if (!ev) {
     return (
       <div style={{ ...box, flex: 1, borderStyle: 'dashed', color: 'var(--muted)', fontSize: 12 }}>
-        ยังไม่มีข้อมูลหลักฐานสำหรับทักษะนี้ — คนนี้ยังไม่เคยลงเวลาที่สถานีที่ต้องใช้ทักษะนี้
+        {tr("ยังไม่มีข้อมูลหลักฐานสำหรับทักษะนี้ — คนนี้ยังไม่เคยลงเวลาที่สถานีที่ต้องใช้ทักษะนี้")}
       </div>
     );
   }
@@ -44,14 +44,14 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         {/* 🔴 ประเมินไม่ได้ ≠ คะแนน 0 — ต้องเขียนบนจอตรงๆ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ) */}
         {ev.shadow_score == null ? (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            ไลน์นี้ยังไม่มีข้อมูลยอดผลิตในระบบ — ระบบยังตัดสินขา "ปริมาณ" ไม่ได้
+            {tr("ไลน์นี้ยังไม่มีข้อมูลยอดผลิตในระบบ — ระบบยังตัดสินขา \"ปริมาณ\" ไม่ได้")}
           </span>
         ) : (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            คะแนนตามสูตรใหม่ <strong style={{ color: 'var(--text)' }}>{ev.shadow_score}</strong>
+            {tr("คะแนนตามสูตรใหม่")} <strong style={{ color: 'var(--text)' }}>{ev.shadow_score}</strong>
             {delta != null && delta !== 0 && (
               <span style={{ color: delta > 0 ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
-                {' '}({delta > 0 ? '+' : ''}{delta} จากคะแนนปัจจุบัน)
+                {' '}({delta > 0 ? '+' : ''}{delta} {tr("จากคะแนนปัจจุบัน")})
               </span>
             )}
           </span>
@@ -66,10 +66,10 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
             <div style={{ height: '100%', width: `${Math.round(prog * 100)}%`, background: 'var(--accent)' }} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            {ev.cur_band >= 4 ? 'ขั้นสูงสุด'
-              : leftDay == null ? 'ยังประเมินเวลาที่เหลือไม่ได้'
-              : leftDay === 0   ? 'ถึงเพดานขั้นแล้ว'
-              : `อีกราว ${nf(leftDay)} วันทำงานถึงเพดานขั้น`}
+            {ev.cur_band >= 4 ? tr("ขั้นสูงสุด")
+              : leftDay == null ? tr("ยังประเมินเวลาที่เหลือไม่ได้")
+              : leftDay === 0   ? tr("ถึงเพดานขั้นแล้ว")
+              : `${tr("อีกราว")} ${nf(leftDay)} ${tr("วันทำงานถึงเพดานขั้น")}`}
           </div>
         </div>
 
@@ -79,7 +79,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
             {ev.ng_ratio == null ? '–' : `${Number(ev.ng_ratio).toFixed(2)}x`}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            {ev.ng_ratio == null ? 'ข้อมูลไม่พอตัดสิน' : `เพดาน ${cfg?.quality_max_ratio ?? '–'}x`}
+            {ev.ng_ratio == null ? tr("ข้อมูลไม่พอตัดสิน") : `${tr("เพดาน")} ${cfg?.quality_max_ratio ?? '–'}x`}
           </div>
         </div>
 
@@ -87,7 +87,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
           <div style={capLabel}>{tr('ความหลากหลาย')}</div>
           <div style={capValue}>{parts} {tr('รุ่น')}</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            เปลี่ยนรุ่น {nf(ev.n_changeover)} {tr('· เจอเหตุ')} {nf(ev.n_abnormal)} วัน
+            {tr("เปลี่ยนรุ่น")} {nf(ev.n_changeover)} {tr('· เจอเหตุ')} {nf(ev.n_abnormal)} {tr("วัน")}
           </div>
         </div>
 
@@ -97,8 +97,8 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
             {ev.has_ojt ? '✅' : '—'} OJT {ev.is_trainer ? ' · ' : ''}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-            {ev.ojt_post_score != null ? `คะแนนสอบ ${ev.ojt_post_score}` : 'ไม่มีคะแนนสอบ'}
-            {ev.is_trainer ? ' · เคยเป็นผู้สอน' : ''}
+            {ev.ojt_post_score != null ? `${tr("คะแนนสอบ")} ${ev.ojt_post_score}` : tr("ไม่มีคะแนนสอบ")}
+            {ev.is_trainer ? tr(" · เคยเป็นผู้สอน") : ''}
           </div>
         </div>
 
@@ -107,7 +107,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
             <div style={capLabel}>{tr('มาทำงาน')}</div>
             <div style={capValue}>{nf(ev.days_worked)} {tr('วัน')}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-              ล่าสุด {ev.last_worked_date || '–'}
+              {tr("ล่าสุด")} {ev.last_worked_date || '–'}
             </div>
           </div>
         )}
@@ -115,8 +115,8 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
       {missing.length > 0 && (
         <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
-                      background: 'var(--bg2)', border: '1px solid rgba(245,158,11,0.35)' }}>
-          <span style={{ color: '#f59e0b', fontWeight: 700 }}>{tr('ยังขาด:')}</span>{' '}
+                      background: 'var(--bg2-surf)', border: '1px solid rgba(245,158,11,0.35)' }}>
+          <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('ยังขาด:')}</span>{' '}
           <span style={{ color: 'var(--text2)' }}>{missing.join(' · ')}</span>
         </div>
       )}

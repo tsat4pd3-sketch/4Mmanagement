@@ -82,6 +82,9 @@ export const trMissingReset = () => missing.clear();
 if (typeof window !== 'undefined') window.__trMissing = trMissing;   // ให้ audit/คอนโซลถามได้ว่าคำไหนยังขาด
 
 /** หน่วย "วัน" ที่ตามหลังตัวเลข — อังกฤษผันพหูพจน์ (`30 days` · `1 day`) · ไทยคงเดิม */
+/** locale สำหรับ toLocale*String ที่โชว์วันที่/เวลา — ไทย = th-TH (ปี พ.ศ.) · อังกฤษ = en-GB (ปี ค.ศ.) (คำสั่ง user 24/11 "โหมด en เป็น ค.ศ. โหมดไทยเป็น พ.ศ.") */
+export const dateLocale = (lang = cur) => (lang === 'th' ? 'th-TH' : 'en-GB');
+
 export const unitDays = (n, lang = cur) => (lang === 'th' ? 'วัน' : (Number(n) === 1 ? 'day' : 'days'));
 
 /** `allOf(noun)` ฝั่งอังกฤษ — `ทุก<คำนาม>` → `All <noun>` (คำนามแปลต่อผ่าน tr) */

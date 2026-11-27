@@ -23,3 +23,15 @@ test('qaWriteCtx: บ้านเป็นหน่วยไม่มีไล�
   assert.equal(qaWriteCtx({ section: 'QA', allUnits: false }, []).allUnits, false)
   assert.equal(qaWriteCtx({ section: '', allUnits: false }, L).allUnits, false)
 })
+
+test('qaWriteCtx: หน่วยสนับสนุนในทะเบียนไลน์ (unit_kind=support) ไม่ทำให้ QA "มีไลน์" — ยังได้ยกเว้นทุกไลน์ (21/11 เกิดจริง)', () => {
+  const lines = [
+    { name: 'LINE A', section: 'PD1' },
+    { name: 'QA', section: 'QA', unit_kind: 'support' },
+    { name: 'Inspection', section: 'QA', unit_kind: 'support' },
+  ];
+  const qa = qaWriteCtx({ role: 'qa', section: 'QA' }, lines);
+  assert.equal(qa.allUnits, true, 'QA ที่มีแต่หน่วยสนับสนุนในทะเบียน ต้องถูกยกเว้นเป็น all-units');
+  const pd = qaWriteCtx({ role: 'supervisor', section: 'PD1' }, lines);
+  assert.equal(!!pd.allUnits, false, 'ส่วนงานผลิตที่มีไลน์ผลิตจริง ต้องไม่ถูกยกเว้น');
+});

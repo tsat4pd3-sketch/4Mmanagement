@@ -6,7 +6,7 @@
    · ไม่มี Provider (harness `audit/*.html` · เทส) = ใช้ค่าจากโมดูล + สลับแล้ว reload หน้า
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 import { createContext, createElement, useCallback, useContext, useMemo, useState } from 'react';
-import { getLang, setLang, nextLang, tr } from './i18n';
+import { getLang, setLang, nextLang, tr } from './i18n.js';
 
 const fallback = {
   lang: getLang(),

@@ -49,7 +49,7 @@ const PROFILES = [
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 const p0 = await b.newPage({ ...TZ });
 await p0.goto('http://localhost:5199/audit/index.html'); await p0.waitForTimeout(1200);
-const PAGES = await p0.evaluate(() => window.__PAGES); await p0.close();
+const PAGES = (process.env.ONLY ? process.env.ONLY.split(",").map(s => s.trim()).filter(Boolean) : await p0.evaluate(() => window.__PAGES)); await p0.close();
 
 const bad = [];
 for (const [prof, name] of PROFILES.flatMap(pr => PAGES.map(n => [pr, n]))) {

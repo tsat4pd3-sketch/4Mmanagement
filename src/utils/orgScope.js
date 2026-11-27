@@ -21,6 +21,7 @@
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
 import { unitRoots, unitParentId, isUpperKind } from './orgLayers.js';   // 🏢 รากของชั้นหน่วย (ส่วนงาน/แผนกขึ้นตรง) — รองรับชั้นบน plant/company (04/11)
+import { tr } from './i18n.js';
 
 export const SCOPE_KIND_META = {
   plant:       { label: 'ทั้งโรงงาน', short: 'โรงงาน', icon: '🏭', depth: 0 },
@@ -495,7 +496,7 @@ export function scopeUnder(index, defScope, selected) {
 }
 
 /** ชื่อขอบเขตแบบ "เส้นทาง" สำหรับหัวจอ — CC = "เส้นทางหน่วยเจ้าของ › 💰 รหัส · ชื่อ" (12/10 · เดิมหัวบอร์ดขึ้นแค่เลขรหัส) · plant = ป้ายที่ส่งมา */
-export function scopePathText(index, scope, plantLabel = 'ทั้งโรงงาน') {
+export function scopePathText(index, scope, plantLabel = tr("ทั้งโรงงาน")) {
   if (!scope || isPlant(scope)) return plantLabel;
   const path = (sc) => [...(index.pathOf?.(sc.kind, sc.value) || []), sc.value].filter((x, i, a) => x && a.indexOf(x) === i).join(' › ');
   if (scope.kind === 'cost_center') {

@@ -22,7 +22,7 @@ export const ROW_FOLD_MAX = 10;
 
 /** @param colSpan  ตั้งเมื่อลูกเป็น <tr> — ปุ่มจะถูกห่อใน <tr><td colSpan> (ปุ่มเปล่าใน <tbody> = HTML ผิด
   *                 เบราว์เซอร์ย้ายออกนอกตารางให้เอง = ปุ่มไปโผล่เหนือตาราง) */
-export default function RowFold({ rows = [], max = ROW_FOLD_MAX, unit = 'รายการ', colSpan = 0, children }) {
+export default function RowFold({ rows = [], max = ROW_FOLD_MAX, unit = tr("รายการ"), colSpan = 0, children }) {
   const [all, setAll] = useState(false);
   const list = Array.isArray(rows) ? rows : [];
   const hidden = Math.max(0, list.length - max);
@@ -34,13 +34,13 @@ export default function RowFold({ rows = [], max = ROW_FOLD_MAX, unit = 'รา�
       style={{
         display: 'block', width: '100%', marginTop: colSpan ? 0 : 4, padding: '5px 10px',
         fontSize: 11.5, fontWeight: 600, textAlign: 'center', cursor: 'pointer',
-        color: 'var(--text2)', background: 'var(--bg3)',
+        color: 'var(--text2)', background: 'var(--bg3-surf)',
         border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)',
       }}
     >
       {all
-        ? `▴ ย่อกลับเหลือ ${max} ${unit}แรก`
-        : `▾ ดูทั้งหมด ${list.length} ${unit} — ซ่อนอยู่ ${hidden}`}
+        ? `▴ ${tr("ย่อกลับเหลือ")} ${max} ${unit}${tr("แรก")}`
+        : `▾ ${tr("ดูทั้งหมด")} ${list.length} ${unit} — ${tr("ซ่อนอยู่")} ${hidden}`}
     </button>
   );
   return (

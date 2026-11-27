@@ -19,13 +19,17 @@
  *
  * ── ⏸️ สถานะ: **ยังไม่มีผู้เรียกใช้ — ตั้งใจ** (21/10) ────────────────────────────────
  *   เขียนสูตรเสร็จแล้วแต่ **ยังไม่ต่อเข้าข้อมูลจริง** เพราะ input ที่มีอยู่เชื่อไม่ได้:
- *   `line_stock_summary.qty_on_hand` **สูงกว่าจริงอย่างเป็นระบบ** (วัดสด 21/10 ทั้งตาราง:
- *   issue 5,177,813 ชิ้น : consume 484,043 = ตัดออกแค่ **9%** · มี `adjust` คนไล่แก้มือ
- *   644 ครั้ง รวม −1,725,279) — มีกฎห้ามใช้เลขนี้ตอบ "ค้างที่ไลน์" อยู่แล้วใน `LineWipPanel.jsx`
+ *   `line_stock_summary.qty_on_hand` **สูงกว่าจริงอย่างเป็นระบบ**
+ *   🔴 **หลักฐานที่ยังจริงวันนี้ (วัดสด 18/11) = ใบตรวจนับ 169 ใบทั้งระบบ ตรงเป๊ะ 0 ใบ**
+ *     ไม่มีแม้ใบเดียวที่ระบบตรงกับของจริง · STORE นับ 47 ครั้ง **ระบบสูงกว่าจริง 35 ครั้ง**
+ *     สุทธิ −101,791 ชิ้น (ตัวเลข "ตัดออกแค่ 9%" ในเวอร์ชันก่อนของหัวไฟล์นี้ **หมดอายุ** —
+ *     มันเป็นค่าสะสมทั้งหมด ไม่ใช่สถานะวันนี้ · 30 วันล่าสุดตัดออก 35%)
  *   🔴 ต่อเข้าไปจะผิด**ด้านที่เงียบที่สุด**: คงเหลือพอง ⇒ บอก "ไม่ต้องเติม" ทั้งที่ต้องเติม
  *   ⇒ สัญญาณที่ถูกคือ **ช่องว่างในตู้คัมบัง** (ป้ายที่ถอดกลับมา = ข้อเท็จจริงทางกายภาพ
  *     ไม่ต้องพึ่งบัญชี) — ยังไม่มีในระบบ รอ user ตัดสินวิธีบันทึก (สแกน / นับต้นกะ / อนุมาน)
- *   **อย่าเพิ่งต่อไฟล์นี้เข้า `qty_on_hand` จนกว่า backflush จะใช้ได้จริง**
+ *   🔄 **18/11: "รอ backflush" ไม่ใช่เงื่อนไขอีกแล้ว — backflush เดินทุกวันจริง**
+ *     (`consume` 22,163 แถว ล่าสุดวันนี้) ⇒ เงื่อนไขที่เหลือคือ **ตั้งต้นยอดด้วยการนับจริง**
+ *     ที่ "ที่ของนอนรออยู่จริง" แล้วค่อยเชื่อ `qty_on_hand` · **ห้ามต่อก่อนนับ**
  *
  * ไฟล์นี้ pure — ห้าม import supabase/react
  * 📄 docs/modules/kanban-auto-calc.md §เติมเต็ม
@@ -128,6 +132,15 @@ export function refillSummary(rows = []) {
  * 🔴 **ไม่มีบัญชี ≠ ของหมด** — คู่ไลน์+พาร์ทที่ไม่มีแถวใน ledger เลย = `unknown` ห้ามนับเป็น "ติด min"
  *   (วัดจริง 13/11: ชิ้นส่วน 7 จาก 41 แถวไม่มีบัญชีเลย) · กับดักเดียวกับ `refillNeed()` ข้างบน
  *
+ * 🔴🔴 **ที่จริงมี 3 ที่ ไม่ใช่ 2** (วัดจริง 18/11) — เจ้าของงาน · ที่ทะเบียนตั้ง min · **ที่ของนอนรอ/ถูกกินจริง**
+ *   วัด 41 คู่ที่ตั้ง min: **35 คู่ ของจริงถูกกินที่อื่น** ไม่ใช่ไลน์ในทะเบียน
+ *   (STORE 28 คู่ · ไลน์ประกอบอื่น 7 คู่ — D6 / Assembly D / APRON ASSY / ร้านชุบ)
+ *   เพราะโซ่จริงคือ **ไลน์ปั๊ม ──issue──▶ STORE ──ใบขอเติม──▶ ไลน์ประกอบ ──คอนเฟิร์ม FG──▶ consume**
+ *   แต่ทะเบียนตั้ง min ไว้ที่**ไลน์ปั๊ม** ซึ่งของออกไปแล้ว ⇒ บัญชีที่นั่นนิ่งถาวร
+ *   ⇒ `minAlerts` รับ `movesElsewhereOf` มาชี้ว่า "ของขยับจริงที่ไหน" แล้วติดธง `wrongPlace`
+ *   **ยังคืน `state:'unknown'` เหมือนเดิม** (ตอบ "ติด min" ไม่ได้จริงๆ) แต่เปลี่ยนจอจาก
+ *   "ตอบไม่ได้" กองตาย → **รายการที่คนแก้ทะเบียนได้** · 🔴 **เป็นข้อเสนอ ห้ามย้ายทะเบียนให้เอง**
+ *
  * 🔴 **"ไลน์เจ้าของงาน" ≠ "ไลน์ที่ของไปกอง"** — เจ้าของงานมาจาก `dr_products.line_name`
  *   (ช่อง "ไลน์" ใน Product Master) · ไลน์ที่ของกองคือ `line_part_levels.line_name`
  *   วัดจริง 13/11: ชิ้นส่วนตรงกันทั้ง 41 แถว · FG ต่างกัน 5 แถว (แต่ FG ไม่ควรมี min ที่ไลน์อยู่แล้ว)
@@ -146,12 +159,27 @@ export const isFgMat = (mat) => /^1/.test(String(mat ?? '').trim());
  * @param levels  [{ line_name, mat_no, min_qty, max_qty, part_name }] ทะเบียน `line_part_levels`
  * @param onHandOf (line_name, mat_no) => number|null   · **`null` = ไม่มีบัญชี ห้ามส่ง 0 มาแทน**
  * @param ownerLineOf (mat_no) => string|null           · ไลน์เจ้าของงานจาก Product Master
- * @returns [{ line_name, ownerLine, mat_no, part_name, min, max, onHand, state, refillPcs, why, fgNotAllowed }]
+ * @param opt.movesElsewhereOf (line_name, mat_no) => { line_name, lastAt, moves }|null
+ *        · "mat นี้ขยับจริงที่ไหน (ที่ไม่ใช่ไลน์ในทะเบียน)" — ไม่ส่ง = ไม่ตรวจ = พฤติกรรมเดิมเป๊ะ
+ * @returns [{ line_name, ownerLine, mat_no, part_name, min, max, onHand, state, refillPcs, why, fgNotAllowed, elsewhere, wrongPlace }]
  *          `state`: 'at_min' (ติด min แล้ว) · 'ok' (ยังพอ) · 'unknown' (ตอบไม่ได้)
  *          เรียง: ติด min ก่อน → ขาดลึกสุดก่อน → ตอบไม่ได้ต่อท้าย (**ห้ามตัดทิ้ง**)
  */
 export function minAlerts(levels = [], onHandOf = () => null, ownerLineOf = () => null,
-  { lastMoveOf = null, now = null, staleDays = STALE_DAYS } = {}) {
+  { lastMoveOf = null, movesElsewhereOf = null, now = null, staleDays = STALE_DAYS } = {}) {
+  /* "ของตัวนี้ขยับจริงที่ไหน" → ท้ายข้อความ + ธง · อ่านไม่ได้/ไม่ส่ง = ไม่เติมอะไรเลย */
+  const elsewhereOf = (line, mat) => {
+    if (typeof movesElsewhereOf !== 'function') return { tail: '', flag: {} };
+    let el = null;
+    try { el = movesElsewhereOf(line, mat); } catch { el = null; }
+    const where = String(el?.line_name ?? '').trim();
+    if (!where || where === String(line ?? '').trim()) return { tail: '', flag: {} };
+    const when = el?.lastAt ? ` ล่าสุด ${String(el.lastAt).slice(0, 10)}` : '';
+    return {
+      tail: ` · 🔎 ของตัวนี้ขยับจริงที่ "${where}"${when} ⇒ ทะเบียนน่าจะตั้ง min ผิดที่`,
+      flag: { wrongPlace: true, elsewhere: { line_name: where, lastAt: el?.lastAt ?? null, moves: num(el?.moves) } },
+    };
+  };
   const rows = (levels || []).filter(Boolean).map((l) => {
     const min = num(l.min_qty);
     const max = num(l.max_qty);
@@ -161,6 +189,7 @@ export function minAlerts(levels = [], onHandOf = () => null, ownerLineOf = () =
       ownerLine: ownerLineOf(l.mat_no) || null,
       min, max, onHand, refillPcs: null,
       fgNotAllowed: isFgMat(l.mat_no),
+      elsewhere: null, wrongPlace: false,
     };
     if (min == null || min <= 0) return { ...base, state: 'unknown', why: 'ยังไม่ตั้ง min ของคู่ไลน์+พาร์ทนี้' };
     /* 🔴 ไม่มีบัญชี = ยังไม่เคยนับ ไม่ใช่ของหมด — นับเป็น "ติด min" ไม่ได้ */
@@ -172,13 +201,19 @@ export function minAlerts(levels = [], onHandOf = () => null, ownerLineOf = () =
        ⇒ ปล่อยตามนี้ = จอขึ้น "ติด min 32 ตัว" ที่ผิดทั้ง 32 ตัว แล้วคนเลิกเชื่อทั้งจอ
        (กับดักเดียวกับ `refillNeed()` ข้างบน · ไม่ส่ง `lastMoveOf` = ไม่ตรวจ = พฤติกรรมเดิม) */
     if (lastMoveOf) {
+      /* 🔴 บัญชีที่ทะเบียนชี้นิ่ง — ก่อนจะบอกแค่ "ตอบไม่ได้" ให้ดูว่า mat นี้ขยับจริงที่ไหน
+         เจอ = ทะเบียนน่าจะตั้งผิดที่ (ข้อเสนอ · คนตัดสิน) ไม่ใช่ปริศนา */
+      const el = elsewhereOf(l.line_name, l.mat_no);
       const at = lastMoveOf(l.line_name, l.mat_no);
-      if (!at) return { ...base, state: 'unknown', why: 'บัญชีของคู่นี้ไม่เคยขยับเลย — เลข 0 ไม่ได้แปลว่าของหมด' };
+      if (!at) {
+        return { ...base, state: 'unknown', ...el.flag,
+          why: `บัญชีของคู่นี้ไม่เคยขยับเลย — เลข 0 ไม่ได้แปลว่าของหมด${el.tail}` };
+      }
       const age = daysSince(at, now);
       if (age == null) return { ...base, state: 'unknown', why: 'อ่านเวลาเคลื่อนไหวล่าสุดของบัญชีไม่ได้' };
       if (age > (num(staleDays) ?? STALE_DAYS)) {
-        return { ...base, state: 'unknown', staleDays: age,
-          why: `บัญชีไม่ขยับมา ${age} วัน (ล่าสุด ${String(at).slice(0, 10)}) — ยอดคงเหลือเชื่อเป็นของจริงไม่ได้` };
+        return { ...base, state: 'unknown', staleDays: age, ...el.flag,
+          why: `บัญชีไม่ขยับมา ${age} วัน (ล่าสุด ${String(at).slice(0, 10)}) — ยอดคงเหลือเชื่อเป็นของจริงไม่ได้${el.tail}` };
       }
     }
     return {
@@ -203,6 +238,8 @@ export function minAlertSummary(rows = []) {
     ok: (rows || []).filter(r => r?.state === 'ok').length,
     noMax: at.filter(r => r.refillPcs == null).length,
     fgRows: (rows || []).filter(r => r?.fgNotAllowed).length,
+    /* ตอบไม่ได้เพราะ "ทะเบียนตั้งผิดที่" — แยกออกจากกองตอบไม่ได้ทั่วไป เพราะอันนี้**แก้ได้** */
+    wrongPlace: (rows || []).filter(r => r?.wrongPlace).length,
     lines: [...new Set(at.map(r => r.ownerLine).filter(Boolean))].length,
   };
 }

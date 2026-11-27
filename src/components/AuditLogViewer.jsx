@@ -4,7 +4,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import { AUDIT_ACTIONS, AUDIT_SKIP_FIELDS, tableLabel, fieldLabel, rowLabel } from '../utils/auditLabels';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 /* ── AuditLogViewer — จอกลางดูประวัติ "ใครแก้อะไร" (2026-08-19) ────────────────────
    ใช้ร่วมทั้งหน้า /audit-log (ทั้งระบบ) และแท็บย่อยในหน้างาน (จำกัดเฉพาะตารางของตัวเอง)
    **ห้ามเขียนจอดู audit ใหม่ที่อื่น** — ต่อยอดตัวนี้
@@ -22,7 +22,7 @@ import { tr } from '../utils/i18n';
 const fmtDT = (iso) => {
   if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
 export default function AuditLogViewer({ client, tables, limit = 300, intro, fmtValue, showTable = true, reloadKey }) {
@@ -73,7 +73,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
     <div>
       {/* คำอธิบาย "ทะเบียนนี้เก็บอะไร" — ถาวร ไม่ขึ้นกับตัวกรอง ⇒ ป้าย data-page-note (UI-STANDARD §2.1) */}
       {intro && (
-        <div data-page-note="1" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>
+        <div data-page-note="1" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>
           {intro}
         </div>
       )}
@@ -82,34 +82,34 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         {showTable && (
           <select value={fTable} onChange={e => setFTable(e.target.value)}>
             <option value="">{tr(ALL.table)}</option>
-            {tableOpts.map(t => <option key={t} value={t}>{tableLabel(t)}</option>)}
+            {tableOpts.map(t => <option key={t} value={t}>{tr(tableLabel(t))}</option>)}
           </select>
         )}
         <select value={fActor} onChange={e => setFActor(e.target.value)}>
           <option value="">{tr(ALL.person)}</option>
           {actorOpts.map(a => <option key={a} value={a}>{tr(a)}</option>)}
         </select>
-        <SearchInput value={q} onChange={setQ} fields="ชื่อรายการ / คน" />
+        <SearchInput value={q} onChange={setQ} fields={tr("ชื่อรายการ / คน")} />
         <span className="spacer" />
         <span className="filter-count">
-          {shown.length} {tr('รายการ')}{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
+          {shown.length} {tr('รายการ')}{rows.length >= limit ? ` (${tr("แสดง")} ${limit} ${tr("ล่าสุด — เก่ากว่านี้ยังมีอีก")})` : ''}
         </span>
-        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>{tr('↻ รีเฟรช')}</button>
+        <button onClick={load} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>{tr('↻ รีเฟรช')}</button>
       </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
 
       {/* โหลดไม่ได้ ≠ ไม่มีประวัติ — ต้องแยกให้ขาด */}
       {!!err && (
-        <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)' }}>
-          ⚠️ โหลดประวัติไม่ได้: {err}
-          <br />{tr('(ถ้าเป็นเพราะตาราง')} <code>audit_log</code> {tr('ไม่มี — ต้อง apply migration')} <code>20260724_audit_log_main.sql</code> / <code>_dr.sql</code> ก่อน)
+        <div style={{ color: 'var(--amber)', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)' }}>
+          ⚠️ {tr("โหลดประวัติไม่ได้")}: {err}
+          <br />{tr('(ถ้าเป็นเพราะตาราง')} <code>audit_log</code> {tr('ไม่มี — ต้อง apply migration')} <code>20260724_audit_log_main.sql</code> / <code>_dr.sql</code> {tr("ก่อน")})
         </div>
       )}
 
       {!loading && !err && !shown.length && (
         <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>
-          {rows.length ? 'ไม่มีรายการตรงกับตัวกรอง' : 'ยังไม่มีประวัติการแก้ไข'}
+          {rows.length ? tr("ไม่มีรายการตรงกับตัวกรอง") : tr("ยังไม่มีประวัติการแก้ไข")}
         </div>
       )}
 
@@ -117,13 +117,13 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         const act = AUDIT_ACTIONS[r.action] || { t: r.action, c: 'var(--text2)' };
         const fields = (r.changed_fields || []).filter(f => !AUDIT_SKIP_FIELDS.has(f));
         return (
-          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
+          <div key={r.id} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
-              <b style={{ color: act.c }}>{act.t}</b>
-              <span style={{ color: 'var(--muted)' }}>{tableLabel(r.table_name)}</span>
-              <b style={{ color: 'var(--text)' }}>{rowLabel(r)}</b>
+              <b style={{ color: act.c }}>{tr(act.t)}</b>
+              <span style={{ color: 'var(--muted)' }}>{tr(tableLabel(r.table_name))}</span>
+              <b style={{ color: 'var(--text)' }}>{tr(rowLabel(r))}</b>
               <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11.5 }}>
-                {r.actor || '— (ระบบ/migration)'} · {fmtDT(r.changed_at)}
+                {r.actor || tr("— (ระบบ/migration)")} · {fmtDT(r.changed_at)}
               </span>
             </div>
             {/* 📤 ปิดใบข้ามไลน์ (03/11) — ไม่มีการกดยืนยัน ⇒ แถวนี้คือหลักฐานชิ้นเดียว
@@ -134,9 +134,9 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
                 <div>
                   <span style={{ color: 'var(--muted)' }}>{tr('ยอดเข้า:')}</span>{' '}
                   <b>{r.new_data?.owner_line || tr('(ไม่รู้ไลน์)')}</b>
-                  {r.new_data?.shift ? ` · ${r.new_data.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}` : ''}
+                  {r.new_data?.shift ? ` · ${r.new_data.shift === 'night' ? tr('🌙 กะดึก') : tr('☀️ กะเช้า')}` : ''}
                   {r.new_data?.work_date ? ` · ${String(r.new_data.work_date).slice(0, 10)}` : ''}
-                  {r.new_data?.qty_ok != null ? ` · ${r.new_data.qty_ok} ชิ้น` : ''}
+                  {r.new_data?.qty_ok != null ? ` · ${r.new_data.qty_ok} ${tr("ชิ้น")}` : ''}
                 </div>
                 <div>
                   <span style={{ color: 'var(--muted)' }}>{tr('ปิดจากจอของไลน์:')}</span>{' '}
@@ -155,7 +155,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
               <div style={{ marginTop: 5, display: 'grid', gap: 2 }}>
                 {fields.map(f => (
                   <div key={f} style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                    <span style={{ color: 'var(--muted)' }}>{fieldLabel(f)}:</span>{' '}
+                    <span style={{ color: 'var(--muted)' }}>{tr(fieldLabel(f))}:</span>{' '}
                     <span style={{ textDecoration: 'line-through', opacity: 0.65 }}>{val(f, r.old_data?.[f])}</span>
                     {' → '}<b>{val(f, r.new_data?.[f])}</b>
                   </div>

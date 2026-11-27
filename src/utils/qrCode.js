@@ -9,6 +9,7 @@
  *   ESM:T:<uuid>     ประเภท Downtime (dr_downtime_types.id)
  *   ESM:X:<uuid>     ประเภทงานเสีย (dr_defect_types.id)
  *   ESM:W:<code>     ที่เก็บ/รหัสคลัง (storage_locations.code)
+ *   ESM:K:<uuid>     ใบ e-kanban (kanban_cards.id — DR · 2026-11-25)
  *   ESM:D:<uuid>     จุดส่งงานหน้าไลน์ (line_delivery_points.id — DR · ลูปสโตร์เฟส 4 · 2026-09-03)
  *                    สโตร์ยิงป้ายนี้ตอนวางของถึงไลน์ = หมุดเวลา delivered_at + ด่านตรวจ "ส่งถูกจุดไหม"
  *
@@ -38,6 +39,10 @@ export const QR_KINDS = {
   downtime_type: { code: 'T', label: 'ประเภท Downtime', icon: '⏱' }, // dr_downtime_types.id (uuid)
   defect_type: { code: 'X', label: 'ประเภทงานเสีย', icon: '🔴' },    // dr_defect_types.id (uuid)
   storage: { code: 'W', label: 'ที่เก็บ/รหัสคลัง', icon: '🏬' },      // storage_locations.code — รหัสเป็นภาษากลางกับ SAP (เหตุผลเดียวกับ mat_no)
+  /* 🎴 ใบ e-kanban รายใบ (2026-11-25 · user "ไม่ต้องส่งใบจริง สแกนผ่านจอ")
+     ใช้ `kanban_cards.id` (uuid) ไม่ใช่เลขใบ — เลขใบผูกกับ mat+ลำดับ ซึ่งเปลี่ยนได้ตอนทะเบียนปรับจำนวนใบ
+     ป้ายที่พิมพ์ไปแล้วจะชี้ผิดทันที (เหตุผลเดียวกับเครื่องจักร/จิ๊ก) · บนใบยังพิมพ์ `card_no` ให้คนอ่าน */
+  card: { code: 'K', label: 'ใบคัมบัง', icon: '🎴' },
 };
 
 const CODE_TO_KIND = Object.fromEntries(Object.entries(QR_KINDS).map(([k, v]) => [v.code, k]));

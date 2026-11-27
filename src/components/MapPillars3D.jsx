@@ -40,7 +40,7 @@ function TopLabel({ it, H, lift, ok, x = 0, y = 0, cam }) {
         transition: cam.transition, pointerEvents: 'auto' }}>
         <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 'var(--r-md)', padding: `${Math.round(2 * k)}px ${Math.round(8 * k)}px ${Math.round(3 * k)}px`, textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
           <div style={{ fontSize: Math.round(12 * k), fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
-            {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
+            {it.blink && <span className="dt-alarm-icon" style={{ color: 'var(--red)' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
             {it.group && it.kids > 0 && <span style={{ fontSize: Math.round(11 * k), fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} {tr('ไลน์')}</span>}
           </div>
           {it.text && <div style={{ fontSize: Math.round(11 * k), fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}

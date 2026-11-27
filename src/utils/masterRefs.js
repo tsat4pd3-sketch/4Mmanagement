@@ -120,6 +120,18 @@ export const MASTER_REF_SPECS = {
     keysOf: r => uniq([r?.code]),
     targets: [['container_types', 'category', 'ชนิดภาชนะ']],
   },
+  /* 🏢 บริษัทในกลุ่ม (25/11 · Main) — ปลายทางอยู่ **Main** (ส่ง client = supabase ไม่ใช่ supabaseDR)
+     · org_nodes(kind=company).code เก็บรหัส SAP 4 หลัก ('2100') · cost_centers.company เก็บชื่อย่อ ('TSAT')
+     ⇒ keysOf ส่งทั้ง 2 คีย์ (ต่างชั้นใช้คีย์ต่างกัน — แบบเดียวกับ orgNodeRefs) · employees.employee_id_code ขึ้นต้นด้วย
+       com_code แต่ไม่ใช่ค่าเท่ากัน ⇒ ไม่นับที่นี่ (ลบบริษัท ≠ รหัสพนักงานเสีย) */
+  companies: {
+    label: 'บริษัทในกลุ่ม',
+    keysOf: r => uniq([r?.code, r?.sap_code]),
+    targets: [
+      ['org_nodes', 'code', 'ผังองค์กร (ชั้นบริษัท)', { eq: { kind: 'company' } }],
+      ['cost_centers', 'company', 'ทะเบียน Cost Center'],
+    ],
+  },
   repair_wi_registry: {
     label: 'WI ซ่อม',
     mode: 'contains',

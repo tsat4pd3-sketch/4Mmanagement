@@ -16,8 +16,8 @@ import { positionAllCards, orderKeyOf, planStatusOf } from '../utils/heijunkaQue
 import { buildBoardCards, boardFrame, cardState, cardMade, groupBoardRows, CARD_STATE_META } from '../utils/boardCards';
 import PlanSlipBar from './PlanSlipBar';
 
-import { tr } from '../utils/i18n';
-const fmtMs = (ms) => (ms == null ? '—' : new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }));
+import { tr, dateLocale } from '../utils/i18n';
+const fmtMs = (ms) => (ms == null ? '—' : new Date(ms).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }));
 const ORDER_COLS = 'id, session_id, status, qty, qty_ok, qty_actual, qty_target, is_manual, is_backfill, prod_no, mat_no, machine_no, opened_at, confirmed_at';
 
 /**
@@ -115,7 +115,7 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
               const made = r.cards.reduce((a, c) => a + c._made, 0);
               const target = r.cards.reduce((a, c) => a + (Number(c.qty_target ?? c.qty) || 0), 0);
               return (
-                <div key={r.key} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
+                <div key={r.key} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                     {r.img ? <img src={r.img} alt="" loading="lazy" style={{ width: 36, height: 36, objectFit: 'contain', borderRadius: 6, background: 'var(--bg2)', flexShrink: 0 }} />
                       : <span style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', background: 'var(--bg2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>📦</span>}
@@ -131,13 +131,13 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
                     {r.cards.map(c => {
                       const m = CARD_STATE_META[c._state]; const k = String(orderKeyOf(c)); const on = k === selKey;
                       return (
-                        <button key={k} onClick={() => setSelKey(on ? null : k)} title={`${c.prod_no || ''} · ${m.label}`}
+                        <button key={k} onClick={() => setSelKey(on ? null : k)} title={`${c.prod_no || ''} · ${tr(m.label)}`}
                           style={{ minWidth: 74, padding: '4px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', textAlign: 'left',
                             background: 'var(--card)', backgroundImage: `linear-gradient(${m.color}26, ${m.color}26)`,
                             border: `1.5px solid ${m.color}`, boxShadow: on ? `0 0 0 2px var(--text)` : 'none', color: 'var(--text)' }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{tr(m.label).split(' ')[0]}</div>
                           <div style={{ fontSize: 11.5, fontWeight: 700, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{c._made}/{c.qty ?? '—'}</div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{c.shift === 'night' ? '🌙' : '☀️'} {c.orderStartMs ? fmtMs(c.orderStartMs) : 'รอเปิด'}</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{c.shift === 'night' ? '🌙' : '☀️'} {c.orderStartMs ? fmtMs(c.orderStartMs) : tr("รอเปิด")}</div>
                         </button>
                       );
                     })}
@@ -158,14 +158,14 @@ export function OrderDetailCard({ c }) {
   const m = CARD_STATE_META[c._state] || CARD_STATE_META.waiting;
   const row = (k, v) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span style={{ color: 'var(--muted)' }}>{k}</span><b style={{ color: 'var(--text)', textAlign: 'right' }}>{v}</b></div>;
   return (
-    <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12, display: 'grid', gap: 3 }}>
-      <div style={{ fontWeight: 800, color: 'var(--text)' }}>{c.prod_no || 'ใบไม่มีเลข'} — <span style={{ color: m.color }}>{tr(m.label)}</span></div>
+    <div style={{ background: 'var(--bg3-surf)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12, display: 'grid', gap: 3 }}>
+      <div style={{ fontWeight: 800, color: 'var(--text)' }}>{c.prod_no || tr("ใบไม่มีเลข")} — <span style={{ color: m.color }}>{tr(m.label)}</span></div>
       <div style={{ color: 'var(--text2)' }}>{c.productLabel} · {c.mat_no}{c.line_name ? ` · ${c.line_name}` : ''}</div>
       {row('ทำได้ / สั่ง', `${c._made} / ${c.qty ?? '—'}`)}
       {row('เปิดใบ', c.orderStartMs ? fmtMs(c.orderStartMs) : 'ยังไม่เปิด')}
       {row('ควรเสร็จ (ตาม CT)', c.ctSec > 0 && c.orderEndMs ? fmtMs(c.orderEndMs) : 'ไม่รู้ CT — ประเมินไม่ได้')}
       {c.confirmed_at && row('ปิดใบ', fmtMs(new Date(c.confirmed_at).getTime()))}
-      {c.machine_no && row('เครื่อง', c.machine_no)}
+      {c.machine_no && row(tr("เครื่อง"), c.machine_no)}
       {c.is_backfill && <div style={{ color: 'var(--muted)' }}>{tr('ใบเปิดย้อนหลัง — ไม่ตัดสินดีเลย์')}</div>}
     </div>
   );

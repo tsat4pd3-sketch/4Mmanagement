@@ -22,7 +22,7 @@ export default function PointCardShell({
     if (f) closeup.onPick(f)
   }
   return (
-    <div style={{ background: 'var(--bg3)', border: `1px solid ${isPinning ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 14, opacity: inactive ? 0.55 : 1 }}>
+    <div style={{ background: 'var(--bg3-surf)', border: `1px solid ${isPinning ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 14, opacity: inactive ? 0.55 : 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
@@ -55,7 +55,7 @@ export default function PointCardShell({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
           {closeup.preview ? (
             <>
-              <img src={closeup.preview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)' }} />
+              <img src={closeup.preview} alt="" style={{ height: 44, borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2-surf)' }} />
               <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>{tr('🔍 รูปเจาะจุดนี้')}</span>
               <label style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }}>
                 <input type="file" accept="image/*" onChange={pick} style={{ display: 'none' }} />{tr('เปลี่ยนรูป')}

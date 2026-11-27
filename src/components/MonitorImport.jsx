@@ -36,8 +36,8 @@ async function insertChunked(table, rows, label, conflict) {
     const res = await supabaseDR.from(table).upsert(rows.slice(i, i + CHUNK), { onConflict: conflict });
     /* index เก่า (board_id, mat_no) ยังอยู่ = MAT เดียวกันคนละพาร์ทถูกปฏิเสธ — บอกทางแก้ ไม่ใช่โยนข้อความ pg ดิบ */
     if (/monitor_board_parts_(bm_)?uniq/.test(res.error?.message || '')) {
-      toast.error('ยังไม่ได้ถอด index เก่า (board_id, mat_no) ของ monitor_board_parts — '
-        + 'MAT เดียวกันคนละพาร์ท (เช่น 300T คว่ำครีบ/หงายครีบ) จึงถูกปฏิเสธ · แจ้ง admin รัน SQL ถอด index');
+      toast.error((tr('ยังไม่ได้ถอด index เก่า (board_id, mat_no) ของ') + ' monitor_board_parts — ')
+        + ('MAT ' + tr('เดียวกันคนละพาร์ท (เช่น 300T คว่ำครีบ/หงายครีบ) จึงถูกปฏิเสธ · แจ้ง admin รัน SQL ถอด') + ' index'));
       return false;
     }
     if (!checkWrite(res, label)) return false;
@@ -92,9 +92,9 @@ export async function writeBoardPlan(made = [], { fullName } = {}) {
           is_active: true,
           updated_by_name: fullName || null,
         }, { onConflict: 'board_key' }).select('id').single();
-        if (!checkWrite(bRes, `สร้างบอร์ด ${sh.name}`)) return sum;
+        if (!checkWrite(bRes, `${tr("สร้างบอร์ด")} ${sh.name}`)) return sum;
         const boardId = bRes.data?.id;
-        if (!boardId) { toast.error(`สร้างบอร์ด ${sh.name} ไม่สำเร็จ — ไม่มีสิทธิ์เขียน`); return sum; }
+        if (!boardId) { toast.error(`${tr("สร้างบอร์ด")} ${sh.name} ${tr("ไม่สำเร็จ — ไม่มีสิทธิ์เขียน")}`); return sum; }
         boardsN++;
 
         /* พาร์ท — upsert ตาม (board_id, row_key) = MAT + เลขพาร์ท
@@ -121,7 +121,7 @@ export async function writeBoardPlan(made = [], { fullName } = {}) {
             kg_per_piece: p.kg_per_piece ?? null,
             spec: p.spec ?? null,
             semi_part: p.semi_part ?? null,
-            note: p.mat_after ? `หลังชุบ: ${p.mat_after}` : null,
+            note: p.mat_after ? `${tr("หลังชุบ")}: ${p.mat_after}` : null,
             is_active: true,
             updated_by_name: fullName || null,
           }));
@@ -130,13 +130,13 @@ export async function writeBoardPlan(made = [], { fullName } = {}) {
         const dPart = dedupeByKey(partRowsRaw, (r) => r.row_key, (a, b) => a.part_name === b.part_name && a.fc === b.fc);
         const partRows = dPart.rows.map((r, i) => ({ ...r, sort_order: i }));
         mergedParts += dPart.merged; conflictParts += dPart.conflict;
-        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `พาร์ทของ ${sh.name}`, 'board_id,row_key')) return sum;
+        if (partRows.length && !await insertChunked('monitor_board_parts', partRows, `${tr("พาร์ทของ")} ${sh.name}`, 'board_id,row_key')) return sum;
         partsN += partRows.length;
 
         /* ต้องอ่าน id กลับมาเพื่อผูกช่อง (upsert คืนเฉพาะที่เพิ่งเขียน ไม่ครบเมื่อนำเข้าซ้ำ) */
         const { data: saved, error: sErr } = await supabaseDR
           .from('monitor_board_parts').select('id, mat_no, part_no').eq('board_id', boardId).eq('is_active', true);
-        if (sErr) { toast.error(`อ่านพาร์ทกลับไม่สำเร็จ: ${sErr.message}`); return sum; }
+        if (sErr) { toast.error(`${tr("อ่านพาร์ทกลับไม่สำเร็จ")}: ${sErr.message}`); return sum; }
         const idOf = new Map((saved || []).map((r) => [partRowKey(r.mat_no, r.part_no), r.id]));
 
         const cellRowsRaw = [];
@@ -165,13 +165,13 @@ export async function writeBoardPlan(made = [], { fullName } = {}) {
           (a, b) => a.qty === b.qty && a.txt === b.txt,
         );
         mergedCells += dCell.merged; conflictCells += dCell.conflict;
-        if (dCell.rows.length && !await insertChunked('monitor_cells', dCell.rows, `ข้อมูลของ ${sh.name}`, 'board_part_id,row_key,period_key')) return sum;
+        if (dCell.rows.length && !await insertChunked('monitor_cells', dCell.rows, `${tr("ข้อมูลของ")} ${sh.name}`, 'board_part_id,row_key,period_key')) return sum;
         cellsN += dCell.rows.length;
       }
       Object.assign(sum, { ok: true, boardsN, partsN, cellsN, mergedParts, mergedCells, conflictParts, conflictCells });
       return sum;
   } catch (e) {
-    toast.error(`นำเข้าบอร์ดไม่สำเร็จ: ${e.message}`);
+    toast.error(`${tr("นำเข้าบอร์ดไม่สำเร็จ")}: ${e.message}`);
     return sum;
   }
 }
@@ -186,7 +186,7 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
         {made.map((sh) => (
           <div key={sh.name} style={{
             border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px',
-            background: 'var(--bg2)', fontSize: FS,
+            background: 'var(--bg2-surf)', fontSize: FS,
           }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
               <b style={{ fontSize: FS + 1 }}>{sh.name}</b>
@@ -195,11 +195,11 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
                 <span style={{ color: 'var(--accent)' }}>{tr('ผูกไลน์')} {SHEET_LINE_HINT[sh.name.trim()]}</span>
               ) : null}
               <span style={{ marginLeft: 'auto', color: 'var(--text2)' }}>
-                {sh.parts.length} {tr('พาร์ท ·')} {sh.dates.length} {tr('คอลัมน์ ·')} {fmt(sh.cellCount)} ช่อง
+                {sh.parts.length} {tr('พาร์ท ·')} {sh.dates.length} {tr('คอลัมน์ ·')} {fmt(sh.cellCount)} {tr("ช่อง")}
               </span>
             </div>
             <div style={{ color: 'var(--muted)', fontSize: FS - 1, marginTop: 2 }}>
-              แถว: {sh.rowKeys.map((k) => ROW_LABEL[k] || k).join(' · ') || '—'}
+              {tr("แถว")}: {sh.rowKeys.map((k) => ROW_LABEL[k] || k).join(' · ') || '—'}
             </div>
             {sh.warnings?.map((w, i) => (
               <div key={i} style={{ color: 'var(--accent2)', fontSize: FS - 1, marginTop: 2 }}>⚠️ {w}</div>
@@ -217,17 +217,15 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
             </div>
           ))}
           {skipped.some((s) => !s.intentional) ? (
-            <div style={{ color: '#f87171', marginTop: 2 }}>
-              ชีทที่ขึ้น 🔴 คือระบบแกะโครงไม่ได้ ไม่ใช่ของที่ตั้งใจข้าม — ถ้าเป็นชีทที่ต้องใช้ ให้แจ้งไว้
+            <div style={{ color: 'var(--red)', marginTop: 2 }}>
+              {tr("ชีทที่ขึ้น 🔴 คือระบบแกะโครงไม่ได้ ไม่ใช่ของที่ตั้งใจข้าม — ถ้าเป็นชีทที่ต้องใช้ ให้แจ้งไว้")}
             </div>
           ) : null}
         </div>
       ) : null}
 
       <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
-        ℹ️ ช่อง <b>{tr('UNBOUND / BALANCE / ค้างที่ร้านชุบ')}</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
-        ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง ·
-        ส่วนนี้ <b>{tr('ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า')}</b> — ยกผิดก็ลบบอร์ดทิ้งได้
+        ℹ️ {tr("ช่อง")} <b>{tr('UNBOUND / BALANCE / ค้างที่ร้านชุบ')}</b> {tr("เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก — ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง · ส่วนนี้")} <b>{tr('ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า')}</b> — {tr("ยกผิดก็ลบบอร์ดทิ้งได้")}
       </div>
     </div>
   );

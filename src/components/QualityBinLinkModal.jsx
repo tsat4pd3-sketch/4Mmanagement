@@ -31,7 +31,7 @@ import { positionLabel } from '../utils/positions';
 import { TAG_MAX_DAYS } from '../utils/qualityBin';
 import { notifyEvent } from '../utils/notifyEvent';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 const num = v => (v === '' || v == null ? 0 : (Number(v) || 0));
 
 const BINS = [
@@ -59,7 +59,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by');
   const disposedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
 
-  const defectName = defect?.dr_defect_types?.name_th || 'ของเสีย';
+  const defectName = defect?.dr_defect_types?.name_th || tr("ของเสีย");
   const causeDefault = [defectName, defect?.description].filter(Boolean).join(' — ');
 
   // ค่าตั้งต้นของแต่ละถัง — ติ๊กให้เฉพาะถังที่มีจำนวนจริง และยังไม่เคยลง
@@ -118,23 +118,23 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         /* 42703 = คอลัมน์ไม่มี · payload นี้ใช้ 2 คอลัมน์ที่มาจากคนละ migration
            (`defect_log_id` 19/08 · `found_img` 12/10) ⇒ ห้ามระบุชื่อ migration เดียวแบบเดิม
            ไม่งั้นชี้ให้ admin ไปรัน migration ที่รันไปแล้ว แล้ววนหาไม่เจอว่าขาดตัวไหน */
-        ? `ยังบันทึกไม่ได้ — ตาราง quality_bin_records ขาดคอลัมน์ที่โค้ดนี้ใช้ (${error.message}) · แจ้ง admin ให้ apply migration ที่ค้าง`
+        ? `${tr("ยังบันทึกไม่ได้ — ตาราง quality_bin_records ขาดคอลัมน์ที่โค้ดนี้ใช้")} (${error.message}) · ${tr("แจ้ง admin ให้ apply migration ที่ค้าง")}`
         : error.code === '42P01'
           ? 'ยังไม่ได้ติดตั้งตารางถังเหลือง/แดง — แจ้ง admin ให้ apply migration 20260819_quality_bin_records'
-          : `บันทึกไม่สำเร็จ: ${error.message}`);
+          : `${tr("บันทึกไม่สำเร็จ")}: ${error.message}`);
       return;
     }
     if (!data?.length) { toast.error('บันทึกไม่สำเร็จ — ไม่มีรายการถูกสร้าง'); return; }
-    toast.success(`ลงถังแล้ว ${data.length} รายการ`);
+    toast.success(`${tr("ลงถังแล้ว")} ${data.length} ${tr("รายการ")}`);
     /* แจ้ง QA เหมือนฟอร์ม "เพิ่ม" ใน /qa (QualityBins) — เดิมทางนี้ (ลงถังจาก Daily Report = ทางหลักของหน้างาน)
        ไม่แจ้งใครเลย ⇒ notification `quality_bin_added` = 0 ตลอดประวัติ · QA ไม่รู้ว่ามีของรอตัดสิน (workflow audit 05/10) */
     picked.forEach((b, i) => notifyEvent({
       event: 'quality_bin_added', type: b.key === 'red' ? 'error' : 'info',
       ref_table: 'quality_bin_records', ref_id: data[i]?.id, line_name: session?.line_name || null, actor: reportedBy || actorName,
       lines: [
-        `${b.key === 'red' ? '🔴 ถังแดง (ของเสียยืนยันแล้ว)' : '🟡 ถังเหลือง (ต้องสงสัย)'}`,
-        `🏭 ไลน์: ${session?.line_name || '—'} · ${defect?.prod_orders?.part_name || matNo || '—'}`,
-        `🔢 ${num(rows[b.key].qty)} ชิ้น`,
+        `${b.key === 'red' ? tr('🔴 ถังแดง (ของเสียยืนยันแล้ว)') : tr('🟡 ถังเหลือง (ต้องสงสัย)')}`,
+        `🏭 ${tr("ไลน์")}: ${session?.line_name || '—'} · ${defect?.prod_orders?.part_name || matNo || '—'}`,
+        `🔢 ${num(rows[b.key].qty)} ${tr("ชิ้น")}`,
         rows[b.key].cause.trim() ? `📝 ${rows[b.key].cause.trim()}` : '',
       ],
     }));
@@ -151,11 +151,11 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   return (
     <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
+        background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         padding: 20, width: 'min(96vw, 640px)', maxHeight: '90vh', overflowY: 'auto' }}>
 
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
-          ลงถังเหลือง / ถังแดง
+          {tr("ลงถังเหลือง / ถังแดง")}
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
@@ -178,14 +178,14 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
               <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
                 <input type="checkbox" checked={r.on} onChange={e => set(b.key, { on: e.target.checked })}
                   style={{ width: 16, height: 16, accentColor: b.color }} />
-                <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{b.icon} {b.name}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{b.sub}</span>
+                <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{b.icon} {tr(b.name)}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr(b.sub)}</span>
               </label>
 
               {had > 0 && (
                 // เคยลงไปแล้ว = เตือนเสมอ ห้ามให้ลงซ้ำโดยไม่รู้ตัว (แต่ไม่บล็อก — ทยอยลงถังได้จริง)
-                <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7 }}>
-                  ⚠ บันทึกงานเสียรายการนี้เคยลง{b.name}{tr('ไปแล้ว')} {had.toLocaleString('th-TH')} ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ
+                <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 7 }}>
+                  ⚠ {tr("บันทึกงานเสียรายการนี้เคยลง")}{tr(b.name)}{tr('ไปแล้ว')} {had.toLocaleString(dateLocale())} {tr("ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ")}
                 </div>
               )}
 
@@ -195,7 +195,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
                     <label style={lbl}>{tr('จำนวน (ชิ้น)')}</label>
                     <input type="number" value={r.qty} onChange={e => set(b.key, { qty: e.target.value })} style={inp} />
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                      ลงไว้ {b.fromLabel} {src.toLocaleString('th-TH')} ชิ้น
+                      {tr("ลงไว้")} {tr(b.fromLabel)} {src.toLocaleString(dateLocale())} {tr("ชิ้น")}
                     </div>
                   </div>
                   <div>
@@ -210,9 +210,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
 
         {!created && repaired > 0 && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
-            ℹ️ รายการนี้ลง “ซ่อม {repaired.toLocaleString('th-TH')} ชิ้น” ไว้ด้วย —
-            ถ้าของกลุ่มนั้นผ่านถังเหลืองมาแล้ว ให้ไปกรอกผลซ่อม (OK/NG) ที่ใบถังเหลืองใบเดิม
-            อย่าสร้างใบใหม่ ไม่งั้นจำนวนจะซ้ำ
+            ℹ️ {tr("รายการนี้ลง “ซ่อม")} {repaired.toLocaleString(dateLocale())} {tr("ชิ้น” ไว้ด้วย — ถ้าของกลุ่มนั้นผ่านถังเหลืองมาแล้ว ให้ไปกรอกผลซ่อม (OK/NG) ที่ใบถังเหลืองใบเดิม อย่าสร้างใบใหม่ ไม่งั้นจำนวนจะซ้ำ")}
           </div>
         )}
 
@@ -251,8 +249,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
             </div>
             {/* ⏱️ อายุแท็กตาม WI-PD3-087 §5.6 — บอกตั้งแต่ตอนลงถัง ว่ามีเวลาเท่าไหร่ก่อนของค้าง */}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
-              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} {tr('วัน')}</b> {tr('· 🔴 แดง')} <b>{TAG_MAX_DAYS.red} {tr('วัน')}</b> นับจากวันที่ลงถัง —
-              เกินแล้วจะขึ้นเตือนที่หน้า QA/QC → ถังเหลือง/ถังแดง
+              ⏱️ {tr("อายุแท็กตาม WI: 🟡 เหลือง")} <b>{TAG_MAX_DAYS.yellow} {tr('วัน')}</b> {tr('· 🔴 แดง')} <b>{TAG_MAX_DAYS.red} {tr('วัน')}</b> {tr("นับจากวันที่ลงถัง — เกินแล้วจะขึ้นเตือนที่หน้า QA/QC → ถังเหลือง/ถังแดง")}
             </div>
           </div>
         )}
@@ -261,18 +258,17 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         {created && (
           <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
             borderRadius: 'var(--r-md)', padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
-            <b style={{ color: '#22c55e', fontSize: 13.5 }}>{tr('✅ ลงถังเรียบร้อย')}</b>
+            <b style={{ color: 'var(--green)', fontSize: 13.5 }}>{tr('✅ ลงถังเรียบร้อย')}</b>
             {created.map(c => (
-              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} {tr('ชิ้น')}</div>
+              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString(dateLocale())} {tr('ชิ้น')}</div>
             ))}
             <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 11.5 }}>
-              ช่องที่ยังไม่รู้ตอนนี้ (ผลพิจารณา QA · ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ)
-              กรอกทีหลังได้ที่หน้าถังเหลือง/ถังแดง
+              {tr("ช่องที่ยังไม่รู้ตอนนี้ (ผลพิจารณา QA · ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ) กรอกทีหลังได้ที่หน้าถังเหลือง/ถังแดง")}
             </div>
             <Link to="/qa?tab=bins" onClick={onClose}
               style={{ display: 'inline-block', marginTop: 10, padding: '7px 14px', borderRadius: 8,
                 background: '#22c55e', color: '#06230f', fontWeight: 800, fontSize: 12.5, textDecoration: 'none' }}>
-              🗑️ ไปดูใบในถัง →
+              🗑️ {tr("ไปดูใบในถัง")} →
             </Link>
           </div>
         )}
@@ -287,7 +283,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
               background: picked.length ? '#e05252' : 'var(--border2)', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: saving || !picked.length ? 'default' : 'pointer',
               opacity: saving ? 0.6 : 1 }}>
-              {saving ? 'กำลังบันทึก…' : `ลงถัง (${picked.length})`}
+              {saving ? tr("กำลังบันทึก…") : `${tr("ลงถัง")} (${picked.length})`}
             </button>
           )}
         </div>

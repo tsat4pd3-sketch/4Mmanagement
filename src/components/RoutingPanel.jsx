@@ -18,7 +18,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
 import { DeleteButton } from './IconButton';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import SupplierSelect from './SupplierSelect'; // ผู้รับจ้าง = ทะเบียน DR suppliers (จ้างนอก/บริการขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { askConfirm } from '../utils/askConfirm';
@@ -143,7 +143,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
   };
 
   const remove = async (r) => {
-    if (!await askConfirm(`ลบขั้น "${r.step_name}" ?`)) return;
+    if (!await askConfirm(`${tr("ลบขั้น")} "${r.step_name}" ?`)) return;
     const { error } = await supabaseDR.from('part_routings').delete().eq('id', r.id);
     if (error) { toast.error(error.message); return; }
     /* เรียงลำดับที่เหลือให้ต่อเนื่อง 1..n
@@ -156,7 +156,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
       const res = await supabaseDR.from('part_routings').update({ seq: i + 1 }).eq('id', rest[i].id).select('id');
       if (res.error || !(res.data || []).length) reseqFail++;
     }
-    if (reseqFail) toast.error(`ลบแล้ว แต่เรียงลำดับขั้นใหม่ไม่สำเร็จ ${reseqFail} ขั้น — ลำดับอาจกระโดด/ซ้ำ`);
+    if (reseqFail) toast.error(`${tr("ลบแล้ว แต่เรียงลำดับขั้นใหม่ไม่สำเร็จ")} ${reseqFail} ${tr("ขั้น — ลำดับอาจกระโดด/ซ้ำ")}`);
     else toast.success('ลบแล้ว');
     loadSteps(sel.mat_no); loadAll();
   };
@@ -183,7 +183,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* ── ซ้าย: เลือกพาร์ท ── */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tr('ค้นหา MAT / ชื่อ / P/N…')} style={{ ...inp, marginBottom: 10 }} />
         <div style={{ maxHeight: isMobile ? 260 : 560, overflowY: 'auto' }}>
           {byLine.map(([ln, ps]) => (
@@ -198,7 +198,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                     color: sel?.id === p.id ? '#08130a' : 'var(--text)',
                   }}>
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.mat_no} · {p.name}</span>
-                  <span style={{ fontSize: 11, opacity: 0.8, flexShrink: 0 }}>{counts[p.mat_no] ? `${counts[p.mat_no]} ขั้น` : '—'}</span>
+                  <span style={{ fontSize: 11, opacity: 0.8, flexShrink: 0 }}>{counts[p.mat_no] ? `${counts[p.mat_no]} ${tr("ขั้น")}` : '—'}</span>
                 </div>
               ))}
             </div>
@@ -207,7 +207,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
       </div>
 
       {/* ── ขวา: ขั้นตอน ── */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
         {!sel && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 28, textAlign: 'center' }}>{tr('เลือกพาร์ททางซ้ายเพื่อกำหนดลำดับกระบวนการ')}</div>}
         {sel && <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
@@ -217,7 +217,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             </div>
             {canEdit && <div style={{ display: 'flex', gap: 8 }}>
               {!steps.length && sel.line_name && (
-                <button onClick={seedFromProduct} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+                <button onClick={seedFromProduct} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
                   {tr('⚡ สร้างขั้นตั้งต้นจากไลน์')}
                 </button>
               )}
@@ -228,7 +228,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
           {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
           {!loading && !steps.length && (
             <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
-              ยังไม่ได้กำหนดลำดับกระบวนการ<br />
+              {tr("ยังไม่ได้กำหนดลำดับกระบวนการ")}<br />
               <span style={{ fontSize: 12 }}>{tr('VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing')}</span>
             </div>
           )}
@@ -237,7 +237,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
-                  {['#', 'กระบวนการ', 'ไลน์ / ผู้รับจ้าง', 'C/T', 'C/O', 'LOT', 'คน', 'จุดพักหลังขั้นนี้', ''].map((h, i) =>
+                  {['#', tr("กระบวนการ"), tr("ไลน์ / ผู้รับจ้าง"), 'C/T', 'C/O', 'LOT', tr("คน"), tr("จุดพักหลังขั้นนี้"), ''].map((h, i) =>
                     <th key={i} style={{ padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
                 </tr></thead>
                 <tbody>
@@ -250,7 +250,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
                         {r.is_outsourced
-                          ? <span style={{ color: '#a78bfa' }}>{tr('จ้างนอก ·')} {r.vendor_name}</span>
+                          ? <span style={{ color: 'var(--purple)' }}>{tr('จ้างนอก ·')} {r.vendor_name}</span>
                           : (r.line_name || '—')}
                       </td>
                       {[r.ct_sec, r.setup_sec, r.lot_size, r.operators].map((v, k) => (
@@ -259,7 +259,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                         </td>
                       ))}
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
-                        {r.wip_label ? `${r.wip_label}${r.wip_qty != null ? ` · ${Number(r.wip_qty).toLocaleString('th-TH')} pcs` : ''}` : '—'}
+                        {r.wip_label ? `${r.wip_label}${r.wip_qty != null ? ` · ${Number(r.wip_qty).toLocaleString(dateLocale())} pcs` : ''}` : '—'}
                       </td>
                       <td style={{ padding: '5px 8px', borderTop: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
                         {canEdit && <>
@@ -276,9 +276,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                 </tbody>
               </table>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.6 }}>
-                <b>auto</b> = ปล่อยว่างให้ระบบไปหาจากข้อมูลจริง (C/T จาก Product Master · C/O จาก downtime ที่จัดหมวด
-                “ปรับตั้ง/เปลี่ยนรุ่น” · LOT จาก Kanban Std · คนจาก Standard Manpower) —
-                กรอกตัวเลขเฉพาะตอนค่าจริงไม่ตรงกับที่ต้องการให้แสดงในใบ VSM
+                <b>auto</b> = {tr("ปล่อยว่างให้ระบบไปหาจากข้อมูลจริง (C/T จาก Product Master · C/O จาก downtime ที่จัดหมวด “ปรับตั้ง/เปลี่ยนรุ่น” · LOT จาก Kanban Std · คนจาก Standard Manpower) — กรอกตัวเลขเฉพาะตอนค่าจริงไม่ตรงกับที่ต้องการให้แสดงในใบ")} VSM
               </div>
             </div>
           )}
@@ -289,9 +287,9 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
       {editing && (
         <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
           style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 620px)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 620px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
-              {editing === 'new' ? 'เพิ่มขั้นกระบวนการ' : 'แก้ไขขั้นกระบวนการ'}
+              {editing === 'new' ? tr("เพิ่มขั้นกระบวนการ") : tr("แก้ไขขั้นกระบวนการ")}
             </h3>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
               <div style={{ gridColumn: '1 / -1' }}>

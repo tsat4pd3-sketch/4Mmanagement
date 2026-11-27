@@ -30,9 +30,9 @@ export default function PeSetFromMasterModal({ masters, masterItems, lines, role
     const { data: set, error: e1 } = await supabase.from('pe_doc_sets').insert({
       part_no: form.part_no.trim(), part_name: form.part_name?.trim() || null, model: form.model?.trim() || null, customer: form.customer?.trim() || null,
       line_name: form.line_name || null, doc_no_pfc: form.doc_no_pfc?.trim() || null, doc_no_fmea: form.doc_no_fmea?.trim() || null, doc_no_cp: form.doc_no_cp?.trim() || null,
-      status: 'active', remark: `สร้างจากคลัง PFMEA กลาง ${chosen.length} กระบวนการ`, created_by_name: fullName || null,
+      status: 'active', remark: `${tr("สร้างจากคลัง PFMEA กลาง")} ${chosen.length} ${tr("กระบวนการ")}`, created_by_name: fullName || null,
     }).select().single();
-    if (e1) { setSaving(false); return toast.error(`สร้างชุดไม่สำเร็จ: ${e1.message}`); }
+    if (e1) { setSaving(false); return toast.error(`${tr("สร้างชุดไม่สำเร็จ")}: ${e1.message}`); }
     const selected = chosen.map(c => ({ ...active.find(m => m.id === c.id), op_no: c.op_no, line_name: form.line_name || null }));
     const { procs, items } = buildSetFromMaster(selected, byProc, { setId: set.id });
     const { data: pRows, error: e2 } = await supabase.from('pe_processes').insert(procs.map(({ _key, ...p }) => p)).select('id, master_process_id'); // eslint-disable-line no-unused-vars
@@ -49,18 +49,18 @@ export default function PeSetFromMasterModal({ masters, masterItems, lines, role
       setSaving(false);
       if (eDel || !gone?.length) {
         onCreated?.(set);   // ให้รายการรีโหลดเห็นชุดที่ค้าง
-        return toast.error(`สร้าง OP/FMEA ไม่สำเร็จ: ${(e2 || e3).message} — ⚠️ และลบชุด ${set.part_no} ที่สร้างค้างไว้ไม่สำเร็จ${eDel ? ` (${eDel.message})` : ''} ต้องลบเองที่รายการชุด`);
+        return toast.error(`${tr("สร้าง OP/FMEA ไม่สำเร็จ")}: ${(e2 || e3).message} — ⚠️ ${tr("และลบชุด")} ${set.part_no} ${tr("ที่สร้างค้างไว้ไม่สำเร็จ")}${eDel ? ` (${eDel.message})` : ''} ${tr("ต้องลบเองที่รายการชุด")}`);
       }
-      return toast.error(`สร้าง OP/FMEA ไม่สำเร็จ (ยกเลิกชุดแล้ว): ${(e2 || e3).message}`);
+      return toast.error(`${tr("สร้าง OP/FMEA ไม่สำเร็จ (ยกเลิกชุดแล้ว")}): ${(e2 || e3).message}`);
     }
     setSaving(false);
-    toast.success(`สร้างชุด ${set.part_no}: ${procs.length} OP · ${items.length} failure mode`);
+    toast.success(`${tr("สร้างชุด")} ${set.part_no}: ${procs.length} OP · ${items.length} failure mode`);
     onCreated?.(set); onClose();
   };
 
   return (
     <Modal title={tr('➕ สร้างชุด PFC/FMEA/CP จากคลัง PFMEA กลาง')} onClose={onClose} width={860}
-      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={create}>{saving ? 'กำลังสร้าง…' : `💾 สร้างชุด (${chosen.length} OP)`}</button></>}>
+      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={create}>{saving ? tr("กำลังสร้าง…") : `💾 ${tr("สร้างชุด")} (${chosen.length} OP)`}</button></>}>
       {!active.length && <WarnBar color="#f59e0b">{tr('คลังยังว่าง — apply migration 20260915_pe_fmea_master_main หรือเพิ่มกระบวนการที่แท็บ 📚 คลัง PFMEA ก่อน')}</WarnBar>}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'start', marginBottom: 12 }}>
         <Field label="Part No. *"><input style={{ ...inp, fontFamily: 'monospace' }} value={form.part_no} onChange={e => setForm({ ...form, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
@@ -97,7 +97,7 @@ export default function PeSetFromMasterModal({ masters, masterItems, lines, role
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>{count(c.id)} FM</span>
                   <button className="tbtn" style={{ ...ghost, padding: '2px 6px' }} onClick={() => move(i, -1)}>↑</button>
                   <button className="tbtn" style={{ ...ghost, padding: '2px 6px' }} onClick={() => move(i, 1)}>↓</button>
-                  <button className="tbtn" style={{ ...ghost, padding: '2px 6px', color: '#ef4444' }} onClick={() => setChosen(cs => cs.filter(x => x.id !== c.id))}>✕</button>
+                  <button className="tbtn" style={{ ...ghost, padding: '2px 6px', color: 'var(--red)' }} onClick={() => setChosen(cs => cs.filter(x => x.id !== c.id))}>✕</button>
                 </div>
               );
             })}

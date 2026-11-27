@@ -73,7 +73,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
     const ok = checkWriteRows(await supabase.from('org_assignments')
       .update({ ends_on: value || null }).eq('id', row.id).select('id'), 'กำหนดวันสิ้นสุด');
     setBusy(false);
-    if (ok) { toast.success(value ? `กำหนดวันสิ้นสุด ${value}` : 'ล้างวันสิ้นสุดแล้ว'); load(); }
+    if (ok) { toast.success(value ? `${tr("กำหนดวันสิ้นสุด")} ${value}` : 'ล้างวันสิ้นสุดแล้ว'); load(); }
   };
   const confirmRow = async (row) => {
     setBusy(true);
@@ -83,7 +83,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
     if (ok) { toast.success('ยืนยันแล้ว'); load(); }
   };
   const remove = async (row) => {
-    if (!await askConfirm(`ลบ "${nameOf(row.profile_id)} — ${nodeById.get(row.org_node_id)?.name || '?'}" ?`)) return;
+    if (!await askConfirm(`${tr("ลบ")} "${nameOf(row.profile_id)} — ${nodeById.get(row.org_node_id)?.name || '?'}" ?`)) return;
     setBusy(true);
     const ok = checkWriteRows(await supabase.from('org_assignments').delete().eq('id', row.id).select('id'), 'ลบรายการ');
     setBusy(false);
@@ -112,14 +112,14 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
         <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>{tr('ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ')}</h3>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-          ตอบ “ใครคุมหน่วยไหน” — คนละเรื่องกับ “สังกัดที่ไหน” · คนเดียวคุมได้หลายหน่วย
+          {tr("ตอบ “ใครคุมหน่วยไหน” — คนละเรื่องกับ “สังกัดที่ไหน” · คนเดียวคุมได้หลายหน่วย")}
         </span>
         {canEdit && (
           <button onClick={() => setOpen(v => !v)} style={{ marginLeft: 'auto', padding: '5px 12px',
             borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: open ? 'var(--bg3)' : 'var(--accent)', color: open ? 'var(--text2)' : '#fff',
             border: `1px solid ${open ? 'var(--border2)' : 'var(--accent)'}` }}>
-            {open ? 'ยกเลิก' : '➕ เพิ่ม'}
+            {open ? tr("ยกเลิก") : tr("➕ เพิ่ม")}
           </button>
         )}
       </div>
@@ -128,9 +128,9 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           เดิมโชว์ปุ่มให้ role เหล่านี้ แล้ว RLS ปฏิเสธเงียบ ⇒ กดแล้วขึ้นเขียวแต่ไม่บันทึก */}
       {canSeeOnly && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '7px 10px',
-          background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
-          ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์ <b>org:manage</b>
-          (สิทธิ์ <b>org:manage_own_unit</b> ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้)
+          background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+          {tr("ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์")} <b>org:manage</b>
+          ({tr("สิทธิ์")} <b>org:manage_own_unit</b> {tr("ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้")})
         </div>
       )}
 
@@ -141,22 +141,22 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           borderRadius: 'var(--r-md)', padding: '8px 11px', alignItems: 'center' }}>
           <b style={{ color: '#f59e0b' }}>{tr('ต้องทบทวน')}</b>
           {sum.openEnded.length > 0 && chip('rgba(245,158,11,0.2)', '#f59e0b',
-            `🔄 รักษาการไม่มีวันสิ้นสุด ${sum.openEnded.length}`)}
+            `🔄 ${tr("รักษาการไม่มีวันสิ้นสุด")} ${sum.openEnded.length}`)}
           {sum.expired.length > 0 && chip('rgba(239,68,68,0.2)', '#ef4444',
-            `⌛ หมดอายุแล้ว ${sum.expired.length}`)}
+            `⌛ ${tr("หมดอายุแล้ว")} ${sum.expired.length}`)}
           {sum.expiring.length > 0 && chip('rgba(59,130,246,0.2)', '#3b82f6',
-            `⏳ ใกล้หมดใน 30 วัน ${sum.expiring.length}`)}
+            `⏳ ${tr("ใกล้หมดใน 30 วัน")} ${sum.expiring.length}`)}
           {sum.unconfirmed.length > 0 && chip('rgba(148,163,184,0.25)', 'var(--text2)',
-            `❓ ยังไม่ยืนยัน ${sum.unconfirmed.length}`)}
+            `❓ ${tr("ยังไม่ยืนยัน")} ${sum.unconfirmed.length}`)}
           <span style={{ color: 'var(--muted)', fontSize: 11 }}>
-            · รักษาการที่ไม่มีวันจบ = สิทธิ์ชั่วคราวที่กลายเป็นถาวรโดยไม่มีใครรู้
+            · {tr("รักษาการที่ไม่มีวันจบ = สิทธิ์ชั่วคราวที่กลายเป็นถาวรโดยไม่มีใครรู้")}
           </span>
         </div>
       )}
 
       {open && canEdit && (
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, marginBottom: 10 }}>
+          background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, marginBottom: 10 }}>
           {/* ⚠️ <SearchSelect> ใช้ `options: [{id,label}]` และคืนค่าเป็น `({id})` — ไม่ใช่ value ดิบ
               (ส่งผิดรูปแล้ว build ยังผ่าน แต่ลิสต์จะว่างและเลือกไม่ติด) */}
           <SearchSelect value={form.profile_id} placeholder={tr('— เลือกคน —')}
@@ -174,8 +174,8 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
               onChange={e => setForm(f => ({ ...f, ends_on: e.target.value }))} />
             <div style={{ fontSize: 11, color: form.kind === 'acting' && !form.ends_on ? '#f59e0b' : 'var(--muted)', marginTop: 2 }}>
               {form.kind === 'acting'
-                ? (form.ends_on ? 'วันสิ้นสุด' : '⚠️ รักษาการควรมีวันสิ้นสุด')
-                : 'วันสิ้นสุด (ไม่ใส่ก็ได้)'}
+                ? (form.ends_on ? tr("วันสิ้นสุด") : tr("⚠️ รักษาการควรมีวันสิ้นสุด"))
+                : tr("วันสิ้นสุด (ไม่ใส่ก็ได้)")}
             </div>
           </div>
           <button onClick={add} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontWeight: 700,
@@ -187,7 +187,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
 
       {rows.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--muted)', padding: '10px 2px' }}>
-          ยังไม่มีข้อมูล — กด “➕ เพิ่ม” เพื่อระบุว่าใครคุมหน่วยไหน
+          {tr("ยังไม่มีข้อมูล — กด “➕ เพิ่ม” เพื่อระบุว่าใครคุมหน่วยไหน")}
         </div>
       ) : (
         <div style={{ overflowX: 'auto' }}>
@@ -207,7 +207,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                 const m = STATUS[st] || STATUS.active;
                 return (
                   <tr key={r.id}>
-                    <td>{n ? `${NODE_KIND_TH[n.kind] || n.kind} · ${n.name}` : '(หน่วยถูกลบ)'}</td>
+                    <td>{n ? `${NODE_KIND_TH[n.kind] || n.kind} · ${n.name}` : tr("(หน่วยถูกลบ)")}</td>
                     <td>{nameOf(r.profile_id)}
                       {r.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.note}</div>}</td>
                     {/* 🔴 บทบาท = **ตำแหน่งจริงของคนนั้น** ไม่ใช่คำที่ระบบประดิษฐ์ (21/10 · คำสั่ง user) */}

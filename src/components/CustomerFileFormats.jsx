@@ -84,7 +84,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
     if (!code) { toast.error('ต้องมีรหัสฟอร์แมต (เช่น tsra_order)'); return; }
     const missing = FIELDS.filter(f => f.required && !fromTags(d.col_map[f.key]).length);
     if (missing.length) {
-      toast.error(`ต้องกรอกชื่อคอลัมน์ของ: ${missing.map(f => f.label).join(' · ')} — ขาดตัวใดตัวหนึ่งระบบอ่านไฟล์ไม่ได้`);
+      toast.error(`${tr("ต้องกรอกชื่อคอลัมน์ของ")}: ${missing.map(f => f.label).join(' · ')} — ${tr("ขาดตัวใดตัวหนึ่งระบบอ่านไฟล์ไม่ได้")}`);
       return;
     }
     const col_map = {};
@@ -107,7 +107,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
   };
 
   const toggleActive = async (r) => {
-    if (r.is_active && !await askConfirm(`ปิดใช้ "${r.name || r.code}"?\n\nไฟล์ของลูกค้าเจ้านี้จะอ่านไม่ออกจนกว่าจะเปิดกลับ (ข้อมูลที่นำเข้าไปแล้วไม่หาย)`)) return;
+    if (r.is_active && !await askConfirm(`${tr("ปิดใช้")} "${r.name || r.code}"?\n\n${tr("ไฟล์ของลูกค้าเจ้านี้จะอ่านไม่ออกจนกว่าจะเปิดกลับ (ข้อมูลที่นำเข้าไปแล้วไม่หาย")})`)) return;
     const res = await supabaseDR.from('customer_pull_formats')
       .update({ is_active: !r.is_active }).eq('code', r.code).select('code');
     if (!checkWrite(res, 'เปลี่ยนสถานะฟอร์แมต')) return;
@@ -119,11 +119,11 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
   const editing = adding || !!draft;
 
   return (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
+    <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
         <b style={{ fontSize: 13 }}>{tr('ฟอร์แมตไฟล์ความต้องการของลูกค้า')}</b>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา — เพิ่มที่นี่ ไม่ต้องแก้โปรแกรม
+          {tr("ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา — เพิ่มที่นี่ ไม่ต้องแก้โปรแกรม")}
         </span>
         {canManage && !editing && (
           <button onClick={() => { setDraft(blankDraft()); setAdding(true); }} style={{ ...btn('var(--accent)'), marginLeft: 'auto' }}>{tr('+ เพิ่มฟอร์แมต')}</button>
@@ -135,18 +135,18 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
           {rows.map(r => (
             <div key={r.code} style={{
               display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '6px 8px',
-              borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--border)',
+              borderRadius: 'var(--r-md)', background: 'var(--card-surf)', border: '1px solid var(--border)',
               opacity: r.is_active ? 1 : 0.55,
             }}>
               <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: 'var(--muted)', minWidth: 90 }}>{r.code}</span>
               <span style={{ fontSize: 12.5, fontWeight: 700 }}>{r.name || r.code}</span>
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                {r.customer_name || 'ไม่ระบุลูกค้า'} · {KINDS.find(k => k.value === r.kind)?.label || r.kind}
+                {r.customer_name || tr("ไม่ระบุลูกค้า")} · {tr(KINDS.find(k => k.value === r.kind)?.label) || r.kind}
               </span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                {FIELDS.filter(f => (r.col_map?.[f.key] || []).length).length}/{FIELDS.length} ช่อง
+                {FIELDS.filter(f => (r.col_map?.[f.key] || []).length).length}/{FIELDS.length} {tr("ช่อง")}
               </span>
-              {!r.is_active && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{tr('ปิดใช้')}</span>}
+              {!r.is_active && <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>{tr('ปิดใช้')}</span>}
               {canManage && !editing && (
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                   <button onClick={() => startEdit(r)} style={btn('var(--bg2)', 'var(--text)')}>{tr('✎ แก้')}</button>
@@ -156,15 +156,15 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
             </div>
           ))}
           {!rows.length && (
-            <div style={{ fontSize: 12, color: '#f59e0b' }}>
-              ⚠ ทะเบียนว่าง — ระบบใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (อ่านไฟล์ Ford 830/862 ได้ตามเดิม)
+            <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+              ⚠ {tr("ทะเบียนว่าง — ระบบใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (อ่านไฟล์ Ford 830/862 ได้ตามเดิม")})
             </div>
           )}
         </div>
       )}
 
       {editing && (
-        <div style={{ marginTop: 10, padding: 10, borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--accent)' }}>
+        <div style={{ marginTop: 10, padding: 10, borderRadius: 'var(--r-md)', background: 'var(--card-surf)', border: '1px solid var(--accent)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 8 }}>
             <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('รหัส (ห้ามซ้ำ)')}
               <input value={D.code || ''} disabled={D._edit} placeholder="tsra_order"
@@ -186,15 +186,15 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
           </div>
 
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
-            ชื่อหัวคอลัมน์ในไฟล์ของลูกค้า — ใส่ได้หลายชื่อคั่นด้วยจุลภาค (ระบบเทียบแบบไม่สนตัวพิมพ์/เว้นวรรค/ขีด)
+            {tr("ชื่อหัวคอลัมน์ในไฟล์ของลูกค้า — ใส่ได้หลายชื่อคั่นด้วยจุลภาค (ระบบเทียบแบบไม่สนตัวพิมพ์/เว้นวรรค/ขีด")})
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 8 }}>
             {FIELDS.map(f => (
               <label key={f.key} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                {tr(f.label)}{f.required && <span style={{ color: '#ef4444' }}> *</span>}
+                {tr(f.label)}{f.required && <span style={{ color: 'var(--red)' }}> *</span>}
                 <input value={D.col_map?.[f.key] || ''} placeholder={(FALLBACK_EDI_DICT[f.key] || []).slice(0, 2).join(', ')}
                   onChange={e => setDraft({ ...D, col_map: { ...D.col_map, [f.key]: e.target.value } })} style={inp} />
-                {f.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.hint)}</div>}
+                {tr(f.hint) && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.hint)}</div>}
               </label>
             ))}
           </div>
@@ -207,8 +207,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
       )}
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-        ชื่อคอลัมน์จากทุกแถวถูกรวมเป็นพจนานุกรมเดียวตอนอ่านไฟล์ — ระบบยังแยก "ใบส่ง" กับ "แผนล่วงหน้า"
-        ด้วยสัญญาณในไฟล์เอง (มีคอลัมน์เวลา/ท่ารับ = ใบส่ง · ไม่มีและวันที่ยิงยาวข้ามปี = แผน) แล้วให้คนยืนยันก่อนนำเข้าเสมอ
+        {tr("ชื่อคอลัมน์จากทุกแถวถูกรวมเป็นพจนานุกรมเดียวตอนอ่านไฟล์ — ระบบยังแยก \"ใบส่ง\" กับ \"แผนล่วงหน้า\" ด้วยสัญญาณในไฟล์เอง (มีคอลัมน์เวลา/ท่ารับ = ใบส่ง · ไม่มีและวันที่ยิงยาวข้ามปี = แผน) แล้วให้คนยืนยันก่อนนำเข้าเสมอ")}
       </div>
     </div>
   );

@@ -16,6 +16,7 @@
 import { isMoOpen, moWaitMeta, MO_DONE_STATUSES, MO_STATUS_LABEL } from './mtnStepPerm.js';
 import { stageSinceOf, staleTone, STALE_SINCE_COLS } from './mtnStale.js';
 import { daysOpen } from './mtnDuplicate.js';
+import { tr, unitDays } from './i18n.js';
 
 /** กองบนจอ — ลำดับ = ลำดับงานจริง · `stages` = stage จาก `moWaitMeta()` */
 export const MO_TV_GROUPS = Object.freeze([
@@ -53,9 +54,9 @@ export function moTvGroupOf(order) {
 /** "ค้างมานาน" แบบสั้น — นาทีน้อยกว่า 1 ชม. = น. · น้อยกว่า 1 วัน = ชม. · นอกนั้น = วัน · ไม่รู้ = '–' */
 export function fmtWait(min) {
   if (min == null || !Number.isFinite(min)) return '–';
-  if (min < 60) return `${Math.max(0, Math.floor(min))} น.`;
-  if (min < 1440) return `${Math.floor(min / 60)} ชม.`;
-  return `${Math.floor(min / 1440)} วัน`;
+  if (min < 60) return `${Math.max(0, Math.floor(min))} ${tr('น.')}`;
+  if (min < 1440) return `${Math.floor(min / 60)} ${tr('ชม.')}`;
+  const d = Math.floor(min / 1440); return `${d} ${unitDays(d)}`;
 }
 
 /**

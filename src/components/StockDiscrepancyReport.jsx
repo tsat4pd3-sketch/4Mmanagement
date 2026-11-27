@@ -15,7 +15,7 @@ import { getWorkDate } from '../utils/workDate';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { downloadCsvDoc, csvCell } from '../utils/csvDoc';
 import {
-  SUSPENSE_LOC, SIDE_LABEL, OUTCOME_LABEL, STATUS_LABEL, sidesOf, proposeBlock, confirmBlock, resolveLedgerRows, monthlySummary, discrepancyFlow,
+  SUSPENSE_LOC, SIDE_LABEL, STATUS_LABEL, outcomeLabel, sidesOf, proposeBlock, confirmBlock, resolveLedgerRows, monthlySummary, discrepancyFlow,
 } from '../utils/stockDiscrepancy';
 import StepFlow from './StepFlow';
 import { toast } from './Toast';
@@ -23,11 +23,11 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 const COLS = 'id, created_at, source, ref_id, line_name, mat_no, part_name, sent_qty, received_qty, short_qty, work_date, reported_by, note, status, proposed_outcome, proposed_by, proposed_side, proposed_at, confirmed_by, confirmed_side, resolved_at, resolved_by, resolve_note, sap_doc';
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
-const dt = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+const dt = (iso) => (iso ? new Date(iso).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { textAlign: 'left', fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', borderBottom: '1px solid var(--border)' };
 const td = { fontSize: 12.5, color: 'var(--text)', padding: '7px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
@@ -80,7 +80,7 @@ export default function StockDiscrepancyReport() {
       sap_doc: sapDoc.trim() || null, resolve_note: note.trim() || null,
     }).eq('id', d.id).eq('status', 'open').select('id'), 'เสนอผลเคลียร์', { zeroMsg: 'เคสนี้ถูกเปลี่ยนสถานะไปแล้ว — รีเฟรช' });
     setBusy(null);
-    if (ok) { toast.success(`🤝 เสนอ "${OUTCOME_LABEL[outcome]}" แล้ว — รออีกฝ่ายยืนยัน`); setForm(null); }
+    if (ok) { toast.success(`🤝 ${tr("เสนอ")} "${outcomeLabel(outcome, d)}" ${tr("แล้ว — รออีกฝ่ายยืนยัน")}`); setForm(null); }
     load();
   };
 
@@ -89,7 +89,7 @@ export default function StockDiscrepancyReport() {
     const { d, side, sapDoc, note } = form;
     const why = confirmBlock(d, { side, sides, by: fullName });
     if (why) { toast.error(why); return; }
-    if (!await askConfirm(`ยืนยัน "${OUTCOME_LABEL[d.proposed_outcome]}" ในนาม${SIDE_LABEL[side]}?\n\n${d.part_name || ''} MAT ${d.mat_no} × ${fmt(d.short_qty)} (${d.line_name})\nเสนอโดย ${d.proposed_by || '—'} (${SIDE_LABEL[d.proposed_side] || ''})`)) return;
+    if (!await askConfirm(`${tr("ยืนยัน")} "${outcomeLabel(d.proposed_outcome, d)}" ${tr("ในนาม")}${SIDE_LABEL[side]}?\n\n${d.part_name || ''} MAT ${d.mat_no} × ${fmt(d.short_qty)} (${d.line_name})\n${tr("เสนอโดย")} ${d.proposed_by || '—'} (${SIDE_LABEL[d.proposed_side] || ''})`)) return;
     setBusy(d.id);
     const now = new Date().toISOString();
     const claimed = checkWriteRows(await supabaseDR.from('stock_discrepancies').update({
@@ -103,22 +103,22 @@ export default function StockDiscrepancyReport() {
       const { error: eBack } = await supabaseDR.from('stock_discrepancies').update({
         status: 'proposed', confirmed_by: null, confirmed_side: null, resolved_at: null, resolved_by: null,
       }).eq('id', d.id).eq('status', d.proposed_outcome);
-      toast.error(eBack ? `ย้ายยอดออกจากคลังพักไม่สำเร็จ และคืนสถานะไม่ได้ — แจ้ง admin (${eLedger.message})`
-        : `ย้ายยอดออกจากคลังพักไม่สำเร็จ — คืนเป็น "รออีกฝ่ายยืนยัน" แล้ว ลองใหม่ (${eLedger.message})`);
-    } else { toast.success(`✔ เคลียร์แล้ว: ${OUTCOME_LABEL[d.proposed_outcome]} ${d.mat_no} × ${fmt(d.short_qty)}`); setForm(null); }
+      toast.error(eBack ? `${tr("ย้ายยอดออกจากคลังพักไม่สำเร็จ และคืนสถานะไม่ได้ — แจ้ง")} admin (${eLedger.message})`
+        : `${tr("ย้ายยอดออกจากคลังพักไม่สำเร็จ — คืนเป็น \"รออีกฝ่ายยืนยัน\" แล้ว ลองใหม่")} (${eLedger.message})`);
+    } else { toast.success(`✔ ${tr("เคลียร์แล้ว")}: ${outcomeLabel(d.proposed_outcome, d)} ${d.mat_no} × ${fmt(d.short_qty)}`); setForm(null); }
     setBusy(null); load();
   };
 
   const rejectProposal = async (d) => {
     const side = sides.find(s => s !== d.proposed_side);
     if (!side) { toast.error('ต้องเป็นอีกฝ่ายถึงจะตีกลับได้'); return; }
-    const why = window.prompt(`ไม่เห็นด้วยกับ "${OUTCOME_LABEL[d.proposed_outcome]}" — เหตุผล (บังคับ)`, '');
+    const why = window.prompt(`${tr("ไม่เห็นด้วยกับ")} "${outcomeLabel(d.proposed_outcome, d)}" — ${tr("เหตุผล (บังคับ")})`, '');
     if (why == null) return;
     if (!why.trim()) { toast.error('ใส่เหตุผลที่ไม่เห็นด้วย'); return; }
     setBusy(d.id);
     const ok = checkWriteRows(await supabaseDR.from('stock_discrepancies').update({
       status: 'open', proposed_outcome: null, proposed_by: null, proposed_side: null, proposed_at: null,
-      resolve_note: `ตีกลับโดย ${fullName || '—'} (${SIDE_LABEL[side]}): ${why.trim()}`,
+      resolve_note: `${tr("ตีกลับโดย")} ${fullName || '—'} (${SIDE_LABEL[side]}): ${why.trim()}`,
     }).eq('id', d.id).eq('status', 'proposed').select('id'), 'ตีกลับข้อเสนอ', { zeroMsg: 'เคสนี้ถูกเปลี่ยนสถานะไปแล้ว — รีเฟรช' });
     setBusy(null);
     if (ok) toast.info('ตีกลับแล้ว — เคสกลับไปรอเคลียร์');
@@ -127,9 +127,9 @@ export default function StockDiscrepancyReport() {
 
   const exportCsv = () => {
     if (!list.length) { toast.info('ไม่มีรายการให้ export'); return; }
-    const head = ['วันที่งาน', 'ไลน์', 'Part Name', 'MAT', 'ส่ง', 'รับจริง', 'ขาด', 'สถานะ', 'ผลที่เสนอ', 'เสนอโดย', 'ยืนยันโดย', 'เลข SAP', 'หมายเหตุ', 'แจ้งโดย', 'ที่มา'];
+    const head = ['วันที่งาน', tr("ไลน์"), 'Part Name', 'MAT', 'ส่ง', 'รับจริง', tr("ขาด"), 'สถานะ', 'ผลที่เสนอ', 'เสนอโดย', 'ยืนยันโดย', 'เลข SAP', tr("หมายเหตุ"), 'แจ้งโดย', 'ที่มา'];
     const body = list.map(r => [r.work_date, r.line_name, r.part_name || '', r.mat_no, r.sent_qty, r.received_qty, r.short_qty,
-      STATUS_LABEL[r.status] || r.status, OUTCOME_LABEL[r.proposed_outcome] || '', r.proposed_by || '', r.confirmed_by || '',
+      STATUS_LABEL[r.status] || r.status, outcomeLabel(r.proposed_outcome, r), r.proposed_by || '', r.confirmed_by || '',
       r.sap_doc || '', r.resolve_note || r.note || '', r.reported_by || '', r.source].map(csvCell).join(','));
     downloadCsvDoc('csv_stock_discrepancy', `stock_discrepancy_${month || 'all'}`, [head.map(csvCell).join(','), ...body].join('\n'));
   };
@@ -138,13 +138,13 @@ export default function StockDiscrepancyReport() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยอดในคลังพัก "{SUSPENSE_LOC}"</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr("ยอดในคลังพัก")} "{SUSPENSE_LOC}"</div>
           <div style={{ fontSize: 24, fontWeight: 900, color: suspenseQty ? 'var(--amber)' : 'var(--green)' }}>{fmt(suspenseQty)}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{fmt(rows.filter(r => r.status === 'open' || r.status === 'proposed').length)} {tr('เคสยังไม่เคลียร์')}</div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 260 }}>
-          ไลน์กด <b>{tr('รับไม่ครบ')}</b> {tr('→ ส่วนที่ขาดย้ายมาพักที่นี่ (ไม่หาย) → ฝ่ายหนึ่ง')} <b>{tr('เสนอ')}</b> คืน STORE / ตัดหาย →
-          <b> {tr('อีกฝ่าย (คนละคน) ยืนยัน')}</b> ยอดจึงออกจากคลังพัก · ใส่เลขเอกสาร SAP ที่ใช้ปรับได้
+          {tr("ไลน์กด")} <b>{tr('รับไม่ครบ')}</b> {tr('→ ส่วนที่ขาดย้ายมาพักที่นี่ (ไม่หาย) → ฝ่ายหนึ่ง')} <b>{tr('เสนอ')}</b> {tr("คืน STORE / ตัดหาย")} →
+          <b> {tr('อีกฝ่าย (คนละคน) ยืนยัน')}</b> {tr("ยอดจึงออกจากคลังพัก · ใส่เลขเอกสาร SAP ที่ใช้ปรับได้")}
           {!sides.length && <div style={{ marginTop: 4, color: 'var(--muted)' }}>{tr('บัญชีนี้ดูได้อย่างเดียว (ไม่มีสิทธิ์ heijunka:operate / wip_request:receive)')}</div>}
         </div>
         <button className="tbtn" onClick={load} style={btn(false)}>{tr('↻ รีเฟรช')}</button>
@@ -166,7 +166,7 @@ export default function StockDiscrepancyReport() {
                   <td style={{ ...td, fontWeight: 800 }}>{m.month}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{fmt(m.cases)}</td>
                   <td style={{ ...td, textAlign: 'right' }}>{fmt(m.qty)}</td>
-                  <td style={{ ...td, textAlign: 'right', fontWeight: 900, color: m.openQty ? 'var(--amber)' : 'var(--muted)' }}>{fmt(m.openQty)} ({fmt(m.openCases)} เคส)</td>
+                  <td style={{ ...td, textAlign: 'right', fontWeight: 900, color: m.openQty ? 'var(--amber)' : 'var(--muted)' }}>{fmt(m.openQty)} ({fmt(m.openCases)} {tr("เคส")})</td>
                   <td style={{ ...td, textAlign: 'right' }}>{fmt(m.returnedQty)}</td>
                   <td style={{ ...td, textAlign: 'right', color: m.writtenOffQty ? 'var(--red)' : 'var(--muted)' }}>{fmt(m.writtenOffQty)}</td>
                   <td style={td}><button className="tbtn" onClick={() => setMonth(month === m.month ? '' : m.month)} style={btn(month === m.month)}>{month === m.month ? tr('✓ กำลังดู') : tr('ดูเดือนนี้')}</button></td>
@@ -179,8 +179,8 @@ export default function StockDiscrepancyReport() {
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Segmented value={view} onChange={setView} label={tr('สถานะ')}
-          options={[{ value: 'open', label: 'ยังไม่เคลียร์' }, { value: 'done', label: 'เคลียร์แล้ว' }, { value: 'all', label: 'ทั้งหมด' }]} />
-        <SearchInput value={q} onChange={setQ} fields="MAT / ชื่อพาร์ท / ไลน์ / เลข SAP / หมายเหตุ" grow={false} />
+          options={[{ value: 'open', label: tr("ยังไม่เคลียร์") }, { value: 'done', label: tr("เคลียร์แล้ว") }, { value: 'all', label: tr("ทั้งหมด") }]} />
+        <SearchInput value={q} onChange={setQ} fields={tr("MAT / ชื่อพาร์ท / ไลน์ / เลข SAP / หมายเหตุ")} grow={false} />
         {month && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('เดือน')} {month} <button className="tbtn" onClick={() => setMonth('')} style={btn(false)}>{tr('✕ ทุกเดือน')}</button></span>}
         <div style={{ flex: 1 }} />
         <button className="tbtn" onClick={exportCsv} disabled={!list.length} style={btn(false)}>⬇️ Export CSV</button>
@@ -188,7 +188,7 @@ export default function StockDiscrepancyReport() {
 
       <div style={card}>
         {loading ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
-          : !list.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{view === 'open' ? 'ไม่มีเคสค้างในคลังพัก' : 'ไม่มีรายการ'}{base.length > list.length ? ` · ซ่อนอยู่ ${base.length - list.length} เคส (ไม่ตรงคำค้น)` : ''}</div>
+          : !list.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{view === 'open' ? tr("ไม่มีเคสค้างในคลังพัก") : tr("ไม่มีรายการ")}{base.length > list.length ? ` · ${tr("ซ่อนอยู่")} ${base.length - list.length} ${tr("เคส (ไม่ตรงคำค้น")})` : ''}</div>
           : (
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -214,7 +214,7 @@ export default function StockDiscrepancyReport() {
                           {(() => { const f = discrepancyFlow(r); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
                         </td>
                         <td style={{ ...td, fontSize: 12, color: 'var(--text2)' }}>
-                          {r.status === 'proposed' && <div>{tr('เสนอ')} {OUTCOME_LABEL[r.proposed_outcome]} · {r.proposed_by || '—'} ({SIDE_LABEL[r.proposed_side]}) {dt(r.proposed_at)}</div>}
+                          {r.status === 'proposed' && <div>{tr('เสนอ')} {outcomeLabel(r.proposed_outcome, r)} · {r.proposed_by || '—'} ({SIDE_LABEL[r.proposed_side]}) {dt(r.proposed_at)}</div>}
                           {(r.status === 'returned' || r.status === 'written_off') && <div>{tr('ยืนยัน')} {r.confirmed_by || '—'} ({SIDE_LABEL[r.confirmed_side] || ''}) {dt(r.resolved_at)} {tr('· เสนอ')} {r.proposed_by || '—'}</div>}
                           {r.sap_doc && <div>SAP {r.sap_doc}</div>}
                           {(r.resolve_note || r.note) && <div>{r.resolve_note || r.note}</div>}
@@ -242,13 +242,13 @@ export default function StockDiscrepancyReport() {
 
       {form && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(480px, 96vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(480px, 96vw)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>
-              {form.mode === 'propose' ? '🤝 เสนอผลเคลียร์' : '✔ ยืนยันผลเคลียร์'}
+              {form.mode === 'propose' ? tr("🤝 เสนอผลเคลียร์") : tr("✔ ยืนยันผลเคลียร์")}
             </div>
             <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>
               <MatLabel mat={form.d.mat_no} name={form.d.part_name} /> · {form.d.line_name} {tr('· ขาด')} <b>{fmt(form.d.short_qty)}</b>
-              {form.mode === 'confirm' && <div style={{ marginTop: 4 }}>{tr('เสนอ')} <b>{OUTCOME_LABEL[form.d.proposed_outcome]}</b> {tr('โดย')} {form.d.proposed_by || '—'} ({SIDE_LABEL[form.d.proposed_side]})</div>}
+              {form.mode === 'confirm' && <div style={{ marginTop: 4 }}>{tr('เสนอ')} <b>{outcomeLabel(form.d.proposed_outcome, form.d)}</b> {tr('โดย')} {form.d.proposed_by || '—'} ({SIDE_LABEL[form.d.proposed_side]})</div>}
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
               <label style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กดในนามฝ่าย')}
@@ -258,7 +258,7 @@ export default function StockDiscrepancyReport() {
               {form.mode === 'propose' && (
                 <label style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผล')}
                   <Segmented value={form.outcome} onChange={v => setForm(f => ({ ...f, outcome: v }))} label={tr('ผลเคลียร์')}
-                    options={[{ value: 'returned', label: OUTCOME_LABEL.returned }, { value: 'written_off', label: OUTCOME_LABEL.written_off }]} />
+                    options={[{ value: 'returned', label: outcomeLabel('returned', form.d) }, { value: 'written_off', label: outcomeLabel('written_off', form.d) }]} />
                 </label>
               )}
               <input value={form.sapDoc} onChange={e => setForm(f => ({ ...f, sapDoc: e.target.value }))} placeholder={tr('เลขเอกสาร SAP ที่ใช้ปรับ (ถ้ามี)')}

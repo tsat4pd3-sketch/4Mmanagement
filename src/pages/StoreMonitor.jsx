@@ -130,27 +130,28 @@ export default function StoreMonitor() {
   const nLate = scoped.filter(f => f.code === 'C').length;
 
   return (
-    <Page>
+    <Page top="flush">
       <PageHeader title={tr('เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)')} icon="🚨"
-        sub={tr('จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)')} />
+        sub={tr('จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)')}
+        tools={[{ key: 'refresh', label: 'รีเฟรช', onClick: () => load() }]}   /* Tool Bar มาตรฐาน (27/11) */ />
 
 
       {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
       <FilterBar style={{ marginBottom: 14 }}>
         {/* 🔴 แถบกรองต้องเป็น **แถบเดียว** (UI-STANDARD §3.1) — เดิมชิปฝั่งขาเข้า-ขาออกเป็นแถวแยก
             เหนือแถบกรอง = ตัวกรอง 2 ชั้น · ย้ายเข้ามาเป็น child 20/10 (ต้นแบบ: /line-stock) */}
-        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="เรื่อง" />
+        <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit={tr("เรื่อง")} />
         {lines.length > 0 && (
           /* ไลน์ที่มีเรื่องเตือน — จัดลำดับชั้นตามผัง (แม่→ลูก) ส่วนคลังที่ไม่ใช่ไลน์ผลิตแยก optgroup
              scope ถูกกรองที่ `scoped` แล้ว จึงไม่ต้องส่ง role/sections ซ้ำ */
           <LineSelect
             lines={prodLines.filter(l => lines.includes(l.name))}
             value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-            extraGroups={[{ label: 'คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            extraGroups={[{ label: tr("คลัง"), options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
         <Segmented value={kindFilter} onChange={setKindFilter} label={tr('ชนิดความผิดปกติ')}
-          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: 'จะขาด' }, { value: 'over', label: 'ล้น' }]} />
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: tr("จะขาด") }, { value: 'over', label: tr("ล้น") }]} />
       </FilterBar>
 
       {/* 🔴 การ์ดนับ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1) — ย้ายลงมา 20/10
@@ -162,7 +163,7 @@ export default function StoreMonitor() {
           { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: 'var(--red)' },
           { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
         ].map(c => (
-          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2-surf)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {tr(c.label)}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
           </div>
@@ -171,19 +172,19 @@ export default function StoreMonitor() {
 
       {loadErr && (
         <div style={{ ...card, borderColor: 'var(--red-line)', background: 'var(--red-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--red)', fontWeight: 700 }}>
-          ⚠ โหลดข้อมูลเฝ้าระวังไม่สำเร็จ — <b>{tr('ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ')}</b> ({loadErr})
+          ⚠ {tr("โหลดข้อมูลเฝ้าระวังไม่สำเร็จ")} — <b>{tr('ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ')}</b> ({loadErr})
         </div>
       )}
       {cutMsg && (
         <div style={{ ...card, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
-          ⚠ รายการผิดปกติเกิน {cutMsg} {tr('รายการ — แสดงเฉพาะที่รุนแรงที่สุด')} <b>{tr('ตัวเลขบนจอยังไม่ครบ')}</b>
+          ⚠ {tr("รายการผิดปกติเกิน")} {cutMsg} {tr('รายการ — แสดงเฉพาะที่รุนแรงที่สุด')} <b>{tr('ตัวเลขบนจอยังไม่ครบ')}</b>
         </div>
       )}
       {loading ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : shown.length === 0 ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--green)', fontSize: 14, fontWeight: 700 }}>
-          ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
+          ✅ {tr("ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ")}
         </div>
       ) : (
         <div style={partCardGrid()}>
@@ -202,7 +203,7 @@ export default function StoreMonitor() {
                    ("ต่ำกว่า Min" + "จะขาด") ซึ่งพูดเรื่องเดียวกัน · สีบอก shortage/over อยู่แล้ว */
                 status={{ label: f.title, color: tone, bg: `${tint(tone, 'dim')}`, border: `${tint(tone, 'line')}` }}
                 aside={{ label: red ? 'ไลน์ที่จะขาด' : 'ไลน์ที่ล้น', value: f.line || 'ทุกไลน์รวมกัน' }}
-                rows={[{ k: 'เคส', v: `${f.code} · ${red ? 'Shortage' : 'Over stock'}` }]}
+                rows={[{ k: tr("เคส"), v: `${f.code} · ${red ? 'Shortage' : 'Over stock'}` }]}
                 note={f.detail}
                 alert={blink} />
             );
@@ -211,8 +212,7 @@ export default function StoreMonitor() {
       )}
 
       <InfoMore label={tr('แหล่งข้อมูลและขอบเขต')} size={11.5} style={{ marginTop: 16 }}>
-        แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
-        เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
+        {tr("แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) · เคส \"ผิดกล่อง/pattern/pallet\" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป")}
       </InfoMore>
     </Page>
   );

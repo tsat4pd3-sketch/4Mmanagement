@@ -109,21 +109,21 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     const qty = Number(pick[r.key]?.qty ?? r.qty);
     if (!to) { toast.error('เลือกไลน์ปลายทางก่อน'); return; }
     if (!(qty > 0)) { toast.error('จำนวนต้องมากกว่า 0'); return; }
-    if (qty > r.qty && !await askConfirm(`ย้าย ${qty.toLocaleString()} ชิ้น มากกว่าคงเหลือ ${r.qty.toLocaleString()} — ยอดที่ ${r.line_name} จะติดลบ\nยืนยัน?`)) return;
+    if (qty > r.qty && !await askConfirm(`${tr("ย้าย")} ${qty.toLocaleString()} ${tr("ชิ้น มากกว่าคงเหลือ")} ${r.qty.toLocaleString()} — ${tr("ยอดที่")} ${r.line_name} ${tr("จะติดลบ\\nยืนยัน")}?`)) return;
     /* 🔴 เลือกปลายทางที่ยัง "ไม่ผ่านขั้นขึ้นรูป" ทั้งที่ของเป็นวัตถุดิบ/blank = ถามยืนยันอีกชั้น
        เตือนดัง ไม่บล็อก — บางไลน์ปั๊ม+ประกอบรวมกันจริง และ line_type อาจยังไม่ได้ตั้ง */
     const g = r.groups.find(x => x.lines.includes(to));
     /* ⚠️ เช็คแบบ "กลุ่มที่ยกเว้น" ไม่ใช่ "กลุ่มที่ต้องเตือน" — กลุ่มใหม่ที่เพิ่มทีหลัง
        (เช่น 🏢 ไลน์อื่นทั้งโรงงาน 2026-09-09) จะได้ตกมาเตือนเองโดยไม่ต้องไล่แก้ที่นี่ */
     if (r.needsForming && !['forming', 'forming_out', 'made', 'made_out'].includes(g?.key)
-      && !await askConfirm(`🔴 ปลายทางนี้ไม่ใช่ไลน์ขึ้นรูป\n\n${r.mat_no} เป็นวัตถุดิบ/งาน blank — ตาม pattern ต้องขึ้นรูปก่อน แล้วค่อยส่งเข้าขั้นถัดไป\n\n→ ${to}\n\nยืนยันว่าถูกต้องจริง?`)) return;
+      && !await askConfirm(`🔴 ${tr("ปลายทางนี้ไม่ใช่ไลน์ขึ้นรูป")}\n\n${r.mat_no} ${tr("เป็นวัตถุดิบ/งาน blank — ตาม pattern ต้องขึ้นรูปก่อน แล้วค่อยส่งเข้าขั้นถัดไป")}\n\n→ ${to}\n\n${tr("ยืนยันว่าถูกต้องจริง")}?`)) return;
     // ข้ามแผนก = ของอยู่ผิดแผนก ไม่ใช่แค่ผิดชั้น — ต้องยืนยันแยก
     const cross = !(childrenOf[r.line_name] || []).includes(to);
-    if (cross && !await askConfirm(`⚠️ ย้ายข้ามแผนก\n\n${r.line_name} → ${to}\n\n${to} ไม่ใช่ไลน์ลูกของ ${r.line_name}\nยืนยันว่าของอยู่ผิดแผนกจริง?`)) return;
-    if (!await askConfirm(`ย้าย ${r.mat_no} จำนวน ${qty.toLocaleString()} ชิ้น\n${r.line_name} → ${to} ?`)) return;
+    if (cross && !await askConfirm(`⚠️ ${tr("ย้ายข้ามแผนก")}\n\n${r.line_name} → ${to}\n\n${to} ${tr("ไม่ใช่ไลน์ลูกของ")} ${r.line_name}\n${tr("ยืนยันว่าของอยู่ผิดแผนกจริง")}?`)) return;
+    if (!await askConfirm(`${tr("ย้าย")} ${r.mat_no} ${tr("จำนวน")} ${qty.toLocaleString()} ${tr("ชิ้น")}\n${r.line_name} → ${to} ?`)) return;
 
     setBusy(r.key);
-    const note = `ย้ายมินิสโตร์: ${r.line_name} → ${to}`;
+    const note = `${tr("ย้ายมินิสโตร์")}: ${r.line_name} → ${to}`;
     const base = { mat_no: r.mat_no, part_name: r.part_name || null, type: 'issue', status: 'approved',
       work_date: workDate, note, created_by: fullName || 'ย้ายมินิสโตร์' };
     // ⚠️ นับแถวที่เขียนจริง — RLS ปฏิเสธ insert จะ error แต่ 0 แถวก็ต้องไม่ขึ้นว่าสำเร็จ
@@ -134,36 +134,32 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     setBusy('');
     if (error) { toast.error(error.message); return; }
     if ((data?.length || 0) < 2) { toast.error('เขียนไม่ครบ 2 แถว — ตรวจสิทธิ์แล้วลองใหม่'); return; }
-    toast.success(`✓ ย้าย ${r.mat_no} → ${to} แล้ว`);
+    toast.success(`✓ ${tr("ย้าย")} ${r.mat_no} → ${to} ${tr("แล้ว")}`);
     onDone?.();
   };
 
   return (
     <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 14 }}>
       <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
-          {open ? '▼' : '▶'} {tr('🔀 มีสต๊อกค้างอยู่ที่ “ไลน์แม่”')} {rows.length} พาร์ท — ระบบหักตอนผลิตไม่ได้
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>
+          {open ? '▼' : '▶'} {tr('🔀 มีสต๊อกค้างอยู่ที่ “ไลน์แม่”')} {rows.length} {tr("พาร์ท — ระบบหักตอนผลิตไม่ได้")}
         </span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
-          ชี้ปลายทางชัดเจน {sureCount} {tr('· ต้องเลือกเอง')} {rows.length - sureCount}
+          {tr("ชี้ปลายทางชัดเจน")} {sureCount} {tr('· ต้องเลือกเอง')} {rows.length - sureCount}
           {coveredCount > 0 && <> {tr('· ไม่นับ')} {coveredCount} {tr('รายการที่อยู่พื้นที่ SAP เดียวกับไลน์ลูก (ระบบหักได้แล้ว)')}</>}
-          {wrongDept > 0 && <b style={{ color: '#ef4444' }}> {tr('· 🔴 อยู่ผิดแผนก')} {wrongDept}</b>}
+          {wrongDept > 0 && <b style={{ color: 'var(--red)' }}> {tr('· 🔴 อยู่ผิดแผนก')} {wrongDept}</b>}
         </span>
       </div>
 
       {open && (
         <>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7, margin: '8px 0 10px' }}>
-            ระบบหักพาร์ทตอนคอนเฟิร์มจาก<b>{tr('ทุกไลน์ในพื้นที่ SAP เดียวกัน')}</b> — ไลน์แม่ที่อยู่พื้นที่เดียวกับลูก (เช่น LINE APRON ASSY = P411) ไม่ขึ้นที่นี่
-            <br />ที่เหลือในลิสต์นี้ = <b>{tr('ไลน์แม่ที่ไม่ได้ผูกพื้นที่ หรือลูกแยกอยู่หลายพื้นที่')}</b> ระบบหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดไม่ลด
-            (แก้ได้ 2 ทาง: ย้ายของไปไลน์ลูกที่ใช้จริง หรือผูกไลน์แม่เข้าพื้นที่ที่แท็บ 🏬 พื้นที่ SAP)
-            <br />{tr('ปลายทางเป็นการ')} <b>{tr('เสนอลำดับ ไม่ใช่ข้อสรุป')}</b> {tr('— dropdown แสดง')}<b>{tr('ทุกไลน์ที่เป็นไปได้')}</b> พร้อมเหตุผลของแต่ละกลุ่ม
-            (BOM ชี้ / ไลน์ขึ้นรูป / ไลน์ที่ผลิตพาร์ทนี้) พาร์ทที่ใช้หลายไลน์ต้องเลือก/แบ่งเอง
-            <br />⚠️ <b>{tr('วัตถุดิบ (5xx) และงาน blank ต้องเข้าไลน์ขึ้นรูปก่อนเสมอ')}</b> — BOM ในระบบ&ldquo;แบน&rdquo; (5xx ผูกใต้ FG โดยตรง)
-            และชั้น OP ไม่อยู่ใน BOM ⇒ BOM จะชี้ไป<b>{tr('ขั้นถัดไป')}</b> (เลเซอร์/ประกอบ) ไม่ใช่ที่รับวัตถุดิบ
+            {tr("ระบบหักพาร์ทตอนคอนเฟิร์มจาก")}<b>{tr('ทุกไลน์ในพื้นที่ SAP เดียวกัน')}</b> — {tr("ไลน์แม่ที่อยู่พื้นที่เดียวกับลูก (เช่น LINE APRON ASSY = P411) ไม่ขึ้นที่นี่")}
+            <br />{tr("ที่เหลือในลิสต์นี้")} = <b>{tr('ไลน์แม่ที่ไม่ได้ผูกพื้นที่ หรือลูกแยกอยู่หลายพื้นที่')}</b> {tr("ระบบหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดไม่ลด (แก้ได้ 2 ทาง: ย้ายของไปไลน์ลูกที่ใช้จริง หรือผูกไลน์แม่เข้าพื้นที่ที่แท็บ 🏬 พื้นที่")} SAP)
+            <br />{tr('ปลายทางเป็นการ')} <b>{tr('เสนอลำดับ ไม่ใช่ข้อสรุป')}</b> {tr('— dropdown แสดง')}<b>{tr('ทุกไลน์ที่เป็นไปได้')}</b> {tr("พร้อมเหตุผลของแต่ละกลุ่ม (BOM ชี้ / ไลน์ขึ้นรูป / ไลน์ที่ผลิตพาร์ทนี้) พาร์ทที่ใช้หลายไลน์ต้องเลือก/แบ่งเอง")}
+            <br />⚠️ <b>{tr('วัตถุดิบ (5xx) และงาน blank ต้องเข้าไลน์ขึ้นรูปก่อนเสมอ')}</b> — BOM {tr("ในระบบ“แบน” (5xx ผูกใต้ FG โดยตรง) และชั้น OP ไม่อยู่ใน BOM ⇒ BOM จะชี้ไป")} <b>{tr('ขั้นถัดไป')}</b> ({tr("เลเซอร์/ประกอบ) ไม่ใช่ที่รับวัตถุดิบ")}
             {wrongDept > 0 && (
-              <><br /><b style={{ color: '#ef4444' }}>🔴 {wrongDept} {tr('รายการอยู่ผิดแผนก')}</b> — แผนกที่ของค้างอยู่ไม่มีไลน์ขึ้นรูปเลย
-              ระบบจึงเสนอไลน์ขึ้นรูปของแผนกอื่นให้ (ย้ายข้ามแผนกต้องยืนยันอีกชั้น)</>
+              <><br /><b style={{ color: 'var(--red)' }}>🔴 {wrongDept} {tr('รายการอยู่ผิดแผนก')}</b> — {tr("แผนกที่ของค้างอยู่ไม่มีไลน์ขึ้นรูปเลย ระบบจึงเสนอไลน์ขึ้นรูปของแผนกอื่นให้ (ย้ายข้ามแผนกต้องยืนยันอีกชั้น")})</>
             )}
           </div>
           <div style={{ overflowX: 'auto', maxHeight: 340, overflowY: 'auto' }}>
@@ -196,12 +192,12 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         </select>
                         {/* 🔴 ของอยู่ผิดแผนก ไม่ใช่แค่ผิดชั้น — ปลายทางที่ถูกอยู่คนละแผนก */}
                         {r.warn && (
-                          <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
+                          <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 3, fontWeight: 700, maxWidth: 210, whiteSpace: 'normal', lineHeight: 1.45 }}>
                             🔴 {r.warn.text}
                           </div>
                         )}
                         {!r.sure && !r.warn && (
-                          <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2 }}>{tr('⚠ มีหลายปลายทาง — เลือกเอง')}</div>
+                          <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2 }}>{tr('⚠ มีหลายปลายทาง — เลือกเอง')}</div>
                         )}
                         {sel && hint?.note && (
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr(hint.label)} — {hint.note}</div>

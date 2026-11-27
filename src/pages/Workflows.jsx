@@ -22,14 +22,14 @@ import { notifyEvent } from '../utils/notifyEvent';
 import { checkData } from '../utils/wfSchema';
 import { wfFlow, WF_STATUS } from '../utils/wfFlow';
 import { statusColor } from '../utils/statusTone';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 
 const TABS = [
   { key: 'inbox', label: '📥 รอฉัน' },
   { key: 'mine', label: '📄 ใบของฉัน' },
   { key: 'new', label: '➕ เปิดใบใหม่' },
 ];
-const fmt = (ts) => (ts ? new Date(ts).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '—');
+const fmt = (ts) => (ts ? new Date(ts).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' }) : '—');
 const ACTION_LABEL = { submit: 'ยื่นใบ', approve: 'อนุมัติ', reject: 'ตีกลับ', return: 'ส่งกลับให้แก้', resubmit: 'ส่งใหม่', cancel: 'ยกเลิก' };
 
 /** ยิงแจ้งเตือนในแอปตามที่ RPC บอก (fire-and-forget · ผู้รับ = เจ้าของงานตรง) */
@@ -44,7 +44,7 @@ function fireNotify(res, ref) {
 function StatusChip({ status }) {
   const m = WF_STATUS[status];
   const c = statusColor(m?.tone || 'none');
-  return <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, color: c, border: `1px solid ${c}`, whiteSpace: 'nowrap' }}>{tr(m?.label || 'สถานะไม่รู้จัก')}</span>;
+  return <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, color: c, border: `1px solid ${c}`, whiteSpace: 'nowrap' }}>{tr(tr(m?.label) || 'สถานะไม่รู้จัก')}</span>;
 }
 
 export default function Workflows() {
@@ -79,7 +79,7 @@ export default function Workflows() {
       ]);
       if (!alive) return;
       const err = d.error || t.error || m.error;
-      if (err) { setLoadErr(`โหลดใบงานไม่สำเร็จ: ${err.message}`); setLoading(false); return; }
+      if (err) { setLoadErr(`${tr("โหลดใบงานไม่สำเร็จ")}: ${err.message}`); setLoading(false); return; }
       setLoadErr('');
       setDefs(d.data || []);
       const ids = [...new Set((t.data || []).map(x => x.instance_id))];
@@ -87,7 +87,7 @@ export default function Workflows() {
       if (ids.length) {
         const r = await supabase.from('wf_instances').select('id, def_id, version_id, doc_no, title, status, current_step, step_rev, blocked_reason, created_by_name, created_at').in('id', ids);
         if (!alive) return;
-        if (r.error) { setLoadErr(`โหลดใบที่รอคุณไม่สำเร็จ: ${r.error.message}`); }
+        if (r.error) { setLoadErr(`${tr("โหลดใบที่รอคุณไม่สำเร็จ")}: ${r.error.message}`); }
         insts = r.data || [];
       }
       const byId = Object.fromEntries(insts.map(x => [x.id, x]));
@@ -97,7 +97,7 @@ export default function Workflows() {
       if (vIds.length) {
         const v = await supabase.from('wf_versions').select('id, def_id, version_no, form_schema, flow_schema').in('id', vIds);
         if (!alive) return;
-        if (v.error) setLoadErr(`โหลดแบบฟอร์มไม่สำเร็จ: ${v.error.message}`);
+        if (v.error) setLoadErr(`${tr("โหลดแบบฟอร์มไม่สำเร็จ")}: ${v.error.message}`);
         setVersions(Object.fromEntries((v.data || []).map(x => [x.id, x])));
       }
       setLoading(false);
@@ -112,7 +112,7 @@ export default function Workflows() {
   const header = (
     <PageHeader title={tr('ใบงานออนไลน์ (e-Workflow)')} icon="✍️"
       sub={tr('เปิดใบ · อนุมัติ · ติดตามสถานะ — แบบฟอร์มและสายอนุมัติตั้งที่หน้า "ออกแบบใบงาน"')}
-      tabs={TABS.map(t => ({ ...t, label: t.key === 'inbox' && inbox.length ? `${t.label} (${inbox.length})` : t.label }))} tab={tab} onTab={setTab} />
+      tabs={TABS.map(t => ({ ...t, label: t.key === 'inbox' && inbox.length ? `${tr(t.label)} (${inbox.length})` : tr(t.label) }))} tab={tab} onTab={setTab} />
   );
 
   return (
@@ -230,7 +230,7 @@ function InstanceModal({ id, me, defById, onClose, onChanged }) {
     (async () => {
       const i = await supabase.from('wf_instances').select('*').eq('id', id).maybeSingle();
       if (!alive) return;
-      if (i.error || !i.data) { setErr(i.error ? `โหลดใบไม่สำเร็จ: ${i.error.message}` : 'ไม่พบใบนี้ หรือคุณไม่มีสิทธิ์เห็น'); return; }
+      if (i.error || !i.data) { setErr(i.error ? `${tr("โหลดใบไม่สำเร็จ")}: ${i.error.message}` : 'ไม่พบใบนี้ หรือคุณไม่มีสิทธิ์เห็น'); return; }
       const [v, t, a] = await Promise.all([
         supabase.from('wf_versions').select('id, version_no, form_schema, flow_schema').eq('id', i.data.version_id).maybeSingle(),
         supabase.from('wf_tasks').select('id, step_index, assignee_id, status').eq('instance_id', id),
@@ -238,7 +238,7 @@ function InstanceModal({ id, me, defById, onClose, onChanged }) {
       ]);
       if (!alive) return;
       const e2 = v.error || t.error || a.error;
-      if (e2) { setErr(`โหลดรายละเอียดไม่สำเร็จ: ${e2.message}`); return; }
+      if (e2) { setErr(`${tr("โหลดรายละเอียดไม่สำเร็จ")}: ${e2.message}`); return; }
       setErr('');
       setState({ inst: i.data, version: v.data, tasks: t.data || [], actions: a.data || [] });
     })();
@@ -266,13 +266,13 @@ function InstanceModal({ id, me, defById, onClose, onChanged }) {
     setBusy(false);
     if (!checkWrite(res, label)) { setTick(x => x + 1); return; }
     fireNotify(res.data, inst.id);
-    toast.success(`${label}แล้ว`);
+    toast.success(`${label}${tr("แล้ว")}`);
     reloadAll();
   };
-  const approve = () => {
-    if (!confirmSign({ what: isAck ? 'รับทราบ' : 'อนุมัติ', orderNo: inst.doc_no, docLabel: def?.name || 'ใบงาน', actor: fullName, as: step?.label,
+  const approve = async () => {
+    if (!await confirmSign({ what: isAck ? 'รับทราบ' : tr("อนุมัติ"), orderNo: inst.doc_no, docLabel: def?.name || 'ใบงาน', actor: fullName, as: step?.label,
       effect: (inst.current_step + 1 >= (version?.flow_schema?.steps?.length || 0)) ? 'ใบจบ (อนุมัติครบ)' : 'ส่งต่อขั้นถัดไป' })) return;
-    run(() => supabase.rpc('wf_act', { p_task: myTask.id, p_action: 'approve', p_comment: null, p_expected_rev: inst.step_rev }), isAck ? 'รับทราบ' : 'อนุมัติ');
+    run(() => supabase.rpc('wf_act', { p_task: myTask.id, p_action: 'approve', p_comment: null, p_expected_rev: inst.step_rev }), isAck ? 'รับทราบ' : tr("อนุมัติ"));
   };
   const withReason = () => {
     if (!reason.trim()) { toast.error(tr('ต้องใส่เหตุผล')); return; }

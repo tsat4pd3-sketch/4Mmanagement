@@ -12,7 +12,7 @@ import { looksLikeImage, isGifFile } from '../utils/imageFileKind';
 import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
 import { usePerms } from '../utils/usePerms';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
   เดิม feedback วิ่งผ่าน LINE → ตกหล่น ค้นย้อนไม่ได้ ไม่รู้ว่าเรื่องไหนแก้แล้ว
@@ -55,7 +55,7 @@ const STATUS = {
   done:    { label: '✅ แก้แล้ว',   color: '#22c55e' },
   wontfix: { label: '⏸ ยังไม่ทำ',  color: 'var(--muted)' },
 };
-const fmt = (t) => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const fmt = (t) => t ? new Date(t).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 
 export default function FeedbackModal({ onClose }) {
   const { role, fullName } = useContext(UserContext);
@@ -91,16 +91,16 @@ export default function FeedbackModal({ onClose }) {
     const files = [...(fileList || [])];
     if (!files.length) return;
     const room = MAX_SHOTS - shots.length;
-    if (room <= 0) { toast.error(`แนบได้สูงสุด ${MAX_SHOTS} รูป — ถอดรูปเดิมออกก่อน`); return; }
+    if (room <= 0) { toast.error(`${tr("แนบได้สูงสุด")} ${MAX_SHOTS} ${tr("รูป — ถอดรูปเดิมออกก่อน")}`); return; }
     const take = files.slice(0, room);
-    if (files.length > room) toast.info(`รับได้อีก ${room} รูป (สูงสุด ${MAX_SHOTS}) — ที่เหลือไม่ได้แนบ`);
+    if (files.length > room) toast.info(`${tr("รับได้อีก")} ${room} ${tr("รูป (สูงสุด")} ${MAX_SHOTS}) — ${tr("ที่เหลือไม่ได้แนบ")}`);
 
     const add = [];
     for (const f of take) {
       // ⚠️ ปฏิเสธไฟล์ต้องบอกเหตุผล+ทางแก้เสมอ ห้ามเงียบ (คำสั่ง user 2026-09-11)
-      if (!looksLikeImage(f)) { toast.error(`"${f.name}" ไม่ใช่ไฟล์รูป — แนบได้เฉพาะ JPG / PNG / WebP (สกรีนช็อตจากมือถือใช้ได้เลย)`); continue; }
-      if (isGifFile(f))       { toast.error(`"${f.name}" เป็น GIF — แนบไม่ได้ (บีบไม่ได้ ไฟล์ใหญ่มาก) ให้แคปเป็นภาพนิ่งแทน`); continue; }
-      if (f.size > MAX_PICK_MB * 1024 * 1024) { toast.error(`"${f.name}" ใหญ่เกิน ${MAX_PICK_MB} MB — ลองแคปเฉพาะส่วนที่จะชี้`); continue; }
+      if (!looksLikeImage(f)) { toast.error(`"${f.name}" ${tr("ไม่ใช่ไฟล์รูป — แนบได้เฉพาะ JPG / PNG / WebP (สกรีนช็อตจากมือถือใช้ได้เลย")})`); continue; }
+      if (isGifFile(f))       { toast.error(`"${f.name}" ${tr("เป็น GIF — แนบไม่ได้ (บีบไม่ได้ ไฟล์ใหญ่มาก) ให้แคปเป็นภาพนิ่งแทน")}`); continue; }
+      if (f.size > MAX_PICK_MB * 1024 * 1024) { toast.error(`"${f.name}" ${tr("ใหญ่เกิน")} ${MAX_PICK_MB} MB — ${tr("ลองแคปเฉพาะส่วนที่จะชี้")}`); continue; }
       add.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, file: f, preview: URL.createObjectURL(f) });
     }
     if (add.length) setShots(prev => [...prev, ...add]);
@@ -216,7 +216,7 @@ export default function FeedbackModal({ onClose }) {
       // ห้ามขึ้นว่าส่งสำเร็จทั้งที่ไม่เข้า — คนหน้างานจะรอคำตอบที่ไม่มีวันมา
       toast.error(error.code === '42P01'
         ? 'ยังเปิดใช้งานกล่อง feedback ไม่ได้ — ยังไม่ได้ apply migration user_feedback (แจ้ง admin)'
-        : `ส่งไม่สำเร็จ: ${error.message}`);
+        : `${tr("ส่งไม่สำเร็จ")}: ${error.message}`);
       return;
     }
     notifyEvent({
@@ -224,10 +224,10 @@ export default function FeedbackModal({ onClose }) {
       actor: fullName || user?.email || null,
       lines: [
         (() => { const k = KINDS.find(x => x.key === kind); return k ? `${k.icon} ${k.label}` : kind; })(),
-        `📄 หน้า: ${location.pathname}`,
+        `📄 ${tr("หน้า")}: ${location.pathname}`,
         `💬 ${body.slice(0, 400)}`,
         // ลิงก์รูปไปด้วย — คนรับแจ้งใน Telegram กดดูได้ทันที ไม่ต้องเปิดแอปก่อนถึงจะรู้ว่าเรื่องอะไร
-        ...(urls.length ? [`🖼 แนบ ${urls.length} รูป`, ...urls] : []),
+        ...(urls.length ? [`🖼 ${tr("แนบ")} ${urls.length} ${tr("รูป")}`, ...urls] : []),
       ],
     });
     toast.success('ส่งแล้ว ขอบคุณครับ 🙏 ทีมงานจะตามให้');
@@ -238,7 +238,7 @@ export default function FeedbackModal({ onClose }) {
   const setStatus = async (row, status) => {
     const { error } = await supabase.from('user_feedback')
       .update({ status, handled_by: fullName || null, handled_at: new Date().toISOString() }).eq('id', row.id);
-    if (error) { toast.error(`อัพเดทไม่สำเร็จ: ${error.message}`); return; }
+    if (error) { toast.error(`${tr("อัพเดทไม่สำเร็จ")}: ${error.message}`); return; }
     setRows(rs => rs.map(r => r.id === row.id ? { ...r, status, handled_by: fullName, handled_at: new Date().toISOString() } : r));
   };
 
@@ -255,20 +255,20 @@ export default function FeedbackModal({ onClose }) {
     if (!list.length) { toast.info('ไม่มีเรื่องให้คัดลอก'); return; }
     const byPage = {};
     list.forEach(r => { const k = r.page_path || tr('(ไม่ระบุหน้า)'); byPage[k] = (byPage[k] || 0) + 1; });
-    const head = `feedback จากผู้ใช้ ${list.length} เรื่อง (ดึงเมื่อ ${fmt(new Date().toISOString())})\n`
-      + `รวมตามหน้า: ${Object.entries(byPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${p} ×${n}`).join(' · ')}\n`;
+    const head = `feedback ${tr("จากผู้ใช้")} ${list.length} ${tr("เรื่อง (ดึงเมื่อ")} ${fmt(new Date().toISOString())})\n`
+      + `${tr("รวมตามหน้า")}: ${Object.entries(byPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${p} ×${n}`).join(' · ')}\n`;
     const body = list.map((r, i) => {
       const k = KINDS.find(x => x.key === r.kind) || KINDS[0];
       return `\n${i + 1}. [${k.label} · ${(STATUS[r.status] || STATUS.new).label}] ${fmt(r.created_at)}`
-        + ` · ${r.user_name || '—'}${r.user_role ? ` (${r.user_role})` : ''} · หน้า ${r.page_path || '—'}\n   ${r.message.replace(/\n/g, '\n   ')}`
+        + ` · ${r.user_name || '—'}${r.user_role ? ` (${r.user_role})` : ''} · ${tr("หน้า")} ${r.page_path || '—'}\n   ${r.message.replace(/\n/g, '\n   ')}`
         /* ⚠️ Claude เปิด URL รูปเองไม่ได้ (เซสชันเว็บโดน network policy บล็อก) — บอกไว้ให้คน
            ที่เอาข้อความไปวาง รู้ว่าต้องแนบรูปเข้าแชทเองด้วย ไม่งั้นบริบทหายไปเงียบๆ */
-        + (r.images?.length ? `\n   📎 มีรูปแนบ ${r.images.length} รูป (เปิดกล่องขาเข้าแล้วลากรูปมาวางในแชทด้วย):\n   ${r.images.join('\n   ')}` : '');
+        + (r.images?.length ? `\n   📎 ${tr("มีรูปแนบ")} ${r.images.length} ${tr("รูป (เปิดกล่องขาเข้าแล้วลากรูปมาวางในแชทด้วย")}):\n   ${r.images.join('\n   ')}` : '');
     }).join('\n');
     const text = head + body;
     try {
       await navigator.clipboard.writeText(text);
-      toast.success(`คัดลอก ${list.length} เรื่องแล้ว — เอาไปวางในแชท Claude ได้เลย`);
+      toast.success(`${tr("คัดลอก")} ${list.length} ${tr("เรื่องแล้ว — เอาไปวางในแชท Claude ได้เลย")}`);
     } catch {
       // บาง browser/บริบทบล็อก clipboard API → ถอยไปวิธีเลือกข้อความเอง ห้ามเงียบ
       const ta = document.createElement('textarea');
@@ -276,7 +276,7 @@ export default function FeedbackModal({ onClose }) {
       document.body.appendChild(ta); ta.select();
       const ok = document.execCommand?.('copy');
       document.body.removeChild(ta);
-      ok ? toast.success(`คัดลอก ${list.length} เรื่องแล้ว`) : toast.error('คัดลอกไม่สำเร็จ — เบราว์เซอร์ไม่อนุญาต');
+      ok ? toast.success(`${tr("คัดลอก")} ${list.length} ${tr("เรื่องแล้ว")}`) : toast.error('คัดลอกไม่สำเร็จ — เบราว์เซอร์ไม่อนุญาต');
     }
   };
 
@@ -291,7 +291,7 @@ export default function FeedbackModal({ onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>{tr('แจ้งปัญหา / ข้อเสนอแนะ')}</div>
@@ -300,13 +300,13 @@ export default function FeedbackModal({ onClose }) {
 
         <div style={{ padding: '10px 18px 0', display: 'flex', gap: 6 }}>
           {tabBtn('send', '✍️ ส่งเรื่อง')}
-          {tabBtn('list', canManage ? `📥 กล่องขาเข้า${openCount ? ` (${openCount})` : ''}` : '📄 เรื่องที่ฉันส่ง')}
+          {tabBtn('list', canManage ? `📥 ${tr("กล่องขาเข้า")}${openCount ? ` (${openCount})` : ''}` : '📄 เรื่องที่ฉันส่ง')}
         </div>
 
         <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
           {notReady && (
             <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 12 }}>
-              ⚠ ยังใช้งานไม่ได้ — ยังไม่ได้ apply migration <code>20260814_user_feedback.sql</code> (แจ้ง admin)
+              ⚠ {tr("ยังใช้งานไม่ได้ — ยังไม่ได้")} apply migration <code>20260814_user_feedback.sql</code> ({tr("แจ้ง")} admin)
             </div>
           )}
 
@@ -324,7 +324,7 @@ export default function FeedbackModal({ onClose }) {
 
               <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={6} autoFocus
                 placeholder={'เล่าให้ฟังได้เลยครับ เช่น\n• เลเซอร์ลงดาวน์ไทม์ ไม่มีให้เลือกชิ้นงาน\n• ชื่อสินค้า 2 ตัวเหมือนกัน เลือกผิดใบได้\n• อยากให้เพิ่ม...'}
-                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+                style={{ width: '100%', background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
 
               {/* 📎 แนบรูปหน้าจอ — วางไว้ "ติดใต้ช่องพิมพ์" ให้เห็นตอนกำลังเล่าปัญหา
                   ไม่ใช่ท้ายฟอร์ม (บทเรียนจากรูปก่อนซ่อมใน /mtn-repair: ช่องอยู่ล่างสุด คนใส่แค่ 25%) */}
@@ -339,12 +339,12 @@ export default function FeedbackModal({ onClose }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => fileRef.current?.click()} disabled={shots.length >= MAX_SHOTS}
                     style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)',
-                      border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                      border: '1px dashed var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
                     {tr('แนบรูปหน้าจอ')}
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
+                    {shots.length ? `${shots.length}/${MAX_SHOTS} ${tr("รูป")}` : `${tr("วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด")} ${MAX_SHOTS} ${tr("รูป")})`}
                   </span>
                 </div>
                 {!!shots.length && (
@@ -364,14 +364,14 @@ export default function FeedbackModal({ onClose }) {
               </div>
 
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
-                แนบให้อัตโนมัติ: หน้าที่เปิดอยู่ <code>{location.pathname}</code> {tr('· ผู้แจ้ง')} <b>{fullName || '—'}</b>
-                <br />ไม่ต้องพิมพ์ว่าอยู่หน้าไหน · รูปถูกบีบก่อนส่งให้เอง (ตัวหนังสือในรูปยังอ่านออก)
+                {tr("แนบให้อัตโนมัติ: หน้าที่เปิดอยู่")} <code>{location.pathname}</code> {tr('· ผู้แจ้ง')} <b>{fullName || '—'}</b>
+                <br />{tr("ไม่ต้องพิมพ์ว่าอยู่หน้าไหน · รูปถูกบีบก่อนส่งให้เอง (ตัวหนังสือในรูปยังอ่านออก")})
               </div>
 
               <button onClick={send} disabled={saving || !msg.trim()}
                 style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
-                {saving ? (shots.length ? `กำลังอัปรูป ${shots.length} รูป...` : 'กำลังส่ง...') : '📨 ส่งให้ทีมงาน'}
+                {saving ? (shots.length ? `${tr("กำลังอัปรูป")} ${shots.length} ${tr("รูป...")}` : tr("กำลังส่ง...")) : tr("📨 ส่งให้ทีมงาน")}
               </button>
             </>
           ) : (
@@ -385,12 +385,12 @@ export default function FeedbackModal({ onClose }) {
                   style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
                   {tr('คัดลอกให้ Claude')}
                 </button>
-                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('↻ รีเฟรช')}</button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('↻ รีเฟรช')}</button>
               </div>
 
               {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
                 : !shown.length ? <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: 20 }}>
-                    {rows.length ? 'ไม่มีเรื่องที่ยังไม่ปิด 👍' : 'ยังไม่มีเรื่องที่ส่งเข้ามา'}
+                    {rows.length ? tr("ไม่มีเรื่องที่ยังไม่ปิด 👍") : tr("ยังไม่มีเรื่องที่ส่งเข้ามา")}
                   </div>
                 : shown.map(r => {
                   const k = KINDS.find(x => x.key === r.kind) || KINDS[0];
@@ -406,21 +406,21 @@ export default function FeedbackModal({ onClose }) {
                       {!!r.images?.length && (
                         <div style={{ display: 'flex', gap: 6, margin: '6px 0', flexWrap: 'wrap' }}>
                           {r.images.map((u, i) => (
-                            <img key={i} src={u} alt={`แนบ ${i + 1}`} loading="lazy" onClick={() => setZoom(u)}
+                            <img key={i} src={u} alt={`${tr("แนบ")} ${i + 1}`} loading="lazy" onClick={() => setZoom(u)}
                               style={{ width: 96, height: 70, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)', cursor: 'zoom-in' }} />
                           ))}
                         </div>
                       )}
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {r.user_name || '—'}{r.user_role ? ` · ${r.user_role}` : ''}{r.page_path ? ` · ${r.page_path}` : ''}
-                        {r.handled_by ? ` · ปิดโดย ${r.handled_by}` : ''}
+                        {r.handled_by ? ` · ${tr("ปิดโดย")} ${r.handled_by}` : ''}
                       </div>
                       {/* 💬 คำตอบจากทีมงาน — คนแจ้งต้องเห็น ไม่งั้นแจ้งไปก็เหมือนตกน้ำ */}
                       {r.admin_note && (
                         <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
-                            คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
+                            {tr("คำตอบจากทีมงาน")}{r.handled_by ? ` · ${r.handled_by}` : ''}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
                         </div>
@@ -430,7 +430,7 @@ export default function FeedbackModal({ onClose }) {
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
                             placeholder={tr('ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)')}
-                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
+                            style={{ width: '100%', background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
                             style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',

@@ -42,42 +42,42 @@ export default function ShiftTimeSplit({ split, compact = false }) {
     <div style={{ marginTop: 6 }}>
       <div style={{ display: 'flex', height: compact ? 7 : 9, borderRadius: 'var(--r-xs)', overflow: 'hidden', background: 'var(--border2)' }}>
         {SEGS.map(s => {
-          const v = Number(split[s.k]) || 0;
+          const v = Number(split[tr(s.k)]) || 0;
           if (v <= 0) return null;
           return (
-            <div key={s.k} title={`${s.label} ${Math.round(v)} นาที`}
+            <div key={tr(s.k)} title={`${tr(s.label)} ${Math.round(v)} ${tr("นาที")}`}
               style={{ width: `${(v / total) * 100}%`, background: s.c, transition: 'width 0.7s ease' }} />
           );
         })}
         {/* เวลาพักตามนโยบาย — ถูกกันออกจากฐานไปแล้ว ไม่ใช่เวลาที่เสีย จึงวาดจางไว้ท้ายแถบ */}
         {split.breakMin > 0 && (
-          <div title={`พักตามนโยบาย ${Math.round(split.breakMin)} นาที (ไม่นับเป็นเวลาที่เสีย)`}
+          <div title={`${tr("พักตามนโยบาย")} ${Math.round(split.breakMin)} ${tr("นาที (ไม่นับเป็นเวลาที่เสีย")})`}
             style={{ width: `${(split.breakMin / total) * 100}%`, background: 'var(--border)' }} />
         )}
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4, alignItems: 'baseline' }}>
         {SEGS.map(s => {
-          const v = Math.round(Number(split[s.k]) || 0);
-          if (v <= 0 && s.k !== 'unknownMin') return null;
-          const hot = s.k === 'unknownMin' && v > 0;
+          const v = Math.round(Number(split[tr(s.k)]) || 0);
+          if (v <= 0 && tr(s.k) !== 'unknownMin') return null;
+          const hot = tr(s.k) === 'unknownMin' && v > 0;
           return (
-            <span key={s.k} title={tr(s.label)} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
-              {s.icon} {tr(s.label)} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> น.
+            <span key={tr(s.k)} title={tr(s.label)} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
+              {s.icon} {tr(s.label)} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> {tr("น.")}
             </span>
           );
         })}
         {split.unit === 'machine' && (
-          <span style={{ fontSize: fs, color: 'var(--muted)' }}>· ฐาน = เวลาเครื่อง ×{split.parallelCap}</span>
+          <span style={{ fontSize: fs, color: 'var(--muted)' }}>· {tr("ฐาน = เวลาเครื่อง")} ×{split.parallelCap}</span>
         )}
       </div>
 
       {note && (
-        <div style={{ fontSize: fs, color: note.c, fontWeight: 700, marginTop: 3 }}>⚠️ {note.t}</div>
+        <div style={{ fontSize: fs, color: note.c, fontWeight: 700, marginTop: 3 }}>⚠️ {tr(note.t)}</div>
       )}
       {split.startTimeOutOfFrame && (
-        <div style={{ fontSize: fs, color: '#ef4444', fontWeight: 700, marginTop: 2 }}>
-          ⚠️ เวลาเริ่มกะที่บันทึกไว้อยู่นอกกรอบกะนี้ — ระบบใช้ต้นกะแทนให้ชั่วคราว ให้แก้เวลาเริ่มกะที่ Daily Report
+        <div style={{ fontSize: fs, color: 'var(--red)', fontWeight: 700, marginTop: 2 }}>
+          ⚠️ {tr("เวลาเริ่มกะที่บันทึกไว้อยู่นอกกรอบกะนี้ — ระบบใช้ต้นกะแทนให้ชั่วคราว ให้แก้เวลาเริ่มกะที่")} Daily Report
         </div>
       )}
       {split.noBreakPolicy && (

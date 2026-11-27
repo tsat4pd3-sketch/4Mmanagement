@@ -105,6 +105,8 @@ export function buildVsmLive({
       ngQty: sumDefectQty(dfBy[openSess.id] || [], 'line'),
       // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
       ngForP: ngByMatFrom(dfBy[openSess.id] || [], ordBy[openSess.id] || []),
+      /* ฐานของ %Q = ยอดผลิต (oee.js §7.2.2) ⇒ ต้องส่งแถวดิบ ไม่ใช่ `ngForP` ที่นับงานทดลองด้วย */
+      qRows: dfBy[openSess.id] || [],
       workDate: openSess.work_date,
       nowMs, parallelN, parallelCap,
       breakPolicies,

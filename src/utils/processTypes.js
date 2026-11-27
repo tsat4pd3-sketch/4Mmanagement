@@ -6,6 +6,7 @@
  * fallback DEFAULT_PROCESS_TYPES เสมอ — ตาราง/เน็ตล่ม = พฤติกรรมเดิมเป๊ะ
  */
 import { supabaseDR } from '../supabaseClient';
+import { tr } from './i18n.js';
 
 export const DEFAULT_PROCESS_TYPES = [
   { key: 'welding_assembly', label: 'Welding / Assembly', icon: '🔥', color: '#f97316', sort_order: 1, is_active: true },
@@ -31,7 +32,7 @@ export function activeProcessTypes() { return processTypesSync().filter(p => p.i
 
 /** ป้ายแสดงผล เช่น "🔥 Welding / Assembly" — รู้จัก common/ค่าว่างด้วย */
 export function procDisplay(key) {
-  if (!key) return '❔ ยังไม่กำหนดกระบวนการ';
+  if (!key) return tr('❔ ยังไม่กำหนดกระบวนการ');
   if (key === 'common') return '🔗 ทุกกระบวนการ';
   const p = processTypesSync().find(x => x.key === key);
   return p ? `${p.icon || ''} ${p.label}`.trim() : key;

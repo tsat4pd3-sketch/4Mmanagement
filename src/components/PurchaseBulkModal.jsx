@@ -163,11 +163,11 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
       /* รายงานผลตามจริง — สำเร็จไม่ครบ ห้ามขึ้น toast เขียวเฉยๆ */
       const short = done.length < picked.length;
       if (short) {
-        toast.error(`เลื่อนได้ ${done.length} จาก ${picked.length} ใบ — ที่เหลือถูกคนอื่นเลื่อน/ยกเลิกไปแล้ว`);
+        toast.error(`${tr("เลื่อนได้")} ${done.length} ${tr("จาก")} ${picked.length} ${tr("ใบ — ที่เหลือถูกคนอื่นเลื่อน/ยกเลิกไปแล้ว")}`);
       } else {
         toast.success(next === 'ordered'
-          ? `🛒 บันทึกสั่งซื้อ ${mat} · ${done.length} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น`
-          : `✅ รับเข้า ${RECEIPT_LINE} · ${mat} · ${posted} ใบ รวม ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ชิ้น — ไลน์เบิกจากคลังอีกที`);
+          ? `🛒 ${tr("บันทึกสั่งซื้อ")} ${mat} · ${done.length} ${tr("ใบ รวม")} ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ${tr("ชิ้น")}`
+          : `✅ ${tr("รับเข้า")} ${RECEIPT_LINE} · ${mat} · ${posted} ${tr("ใบ รวม")} ${fmt(done.reduce((s, r) => s + (Number(r.qty) || 0), 0))} ${tr("ชิ้น — ไลน์เบิกจากคลังอีกที")}`);
       }
       await onDone?.();
       onClose?.();
@@ -183,14 +183,14 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
     /* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกจำนวนค้างแล้วเผลอแตะข้างนอกไม่ควรหาย */
     <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
+      <div style={{ background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: 'min(560px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 18 }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} {tr('— รวมยอดทั้งพาร์ท')}</span>
           <button onClick={onClose} disabled={busy}
             style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
-              background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
+              background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12 }}>
           <b style={{ color: 'var(--text)' }}>{mat}</b> · {group.part_name || '—'}
@@ -200,14 +200,14 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         {slips === null && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>{tr('กำลังอ่านใบจริง…')}</div>}
 
         {err && (
-          <div style={{ ...box, borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.07)', color: '#ef4444', fontSize: 12 }}>
-            🔴 อ่านใบสั่งซื้อไม่สำเร็จ — {err}
+          <div style={{ ...box, borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.07)', color: 'var(--red)', fontSize: 12 }}>
+            🔴 {tr("อ่านใบสั่งซื้อไม่สำเร็จ")} — {err}
           </div>
         )}
 
         {slips && !err && (slips.length === 0 ? (
           <div style={{ ...box, fontSize: 12.5, color: 'var(--muted)' }}>
-            ไม่มีใบที่สถานะนี้แล้ว — อาจถูกเลื่อน/ยกเลิกไปก่อนหน้า
+            {tr("ไม่มีใบที่สถานะนี้แล้ว — อาจถูกเลื่อน/ยกเลิกไปก่อนหน้า")}
           </div>
         ) : (<>
           <div style={{ ...box, marginBottom: 10 }}>
@@ -216,22 +216,22 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
               <input type="number" min={1} max={slips.length} value={take}
                 onChange={e => setTake(e.target.value)} placeholder={String(slips.length)} disabled={busy}
                 style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 'var(--ctl-r)',
-                  background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
+                  background: 'var(--bg3-surf)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
               <button onClick={() => setTake('')} disabled={busy}
                 style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                  background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
+                  background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
                 {tr('ทั้งหมด (')}{fmt(slips.length)})
               </button>
             </div>
             {/* ⭐ ยอดจริงจากใบที่จะเลื่อน ไม่ใช่ค่าประมาณจาก min/max */}
             <div style={{ fontSize: 13, marginTop: 8, color: 'var(--text)' }}>
-              จะเลื่อน <b style={{ color: 'var(--accent)' }}>{fmt(n)}</b> {tr('ใบ · รวม')}{' '}
-              <b style={{ color: 'var(--accent)' }}>{fmt(pickedQty)}</b> ชิ้น
+              {tr("จะเลื่อน")} <b style={{ color: 'var(--accent)' }}>{fmt(n)}</b> {tr('ใบ · รวม')}{' '}
+              <b style={{ color: 'var(--accent)' }}>{fmt(pickedQty)}</b> {tr("ชิ้น")}
               <span style={{ color: 'var(--muted)', fontSize: 11.5 }}> {tr('(นับจากใบจริง เรียงเก่าสุดก่อน)')}</span>
             </div>
             {n < slips.length && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                เหลือค้างในคิว {fmt(slips.length - n)} {tr('ใบ ·')} {fmt(slips.reduce((s, r) => s + (Number(r.qty) || 0), 0) - pickedQty)} ชิ้น
+                {tr("เหลือค้างในคิว")} {fmt(slips.length - n)} {tr('ใบ ·')} {fmt(slips.reduce((s, r) => s + (Number(r.qty) || 0), 0) - pickedQty)} {tr("ชิ้น")}
               </div>
             )}
           </div>
@@ -239,7 +239,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {/* ปลายทางจริง — กลุ่มนี้อาจกระจายหลายไลน์ทั้งที่การ์ดโชว์ไลน์เดียว */}
           <div style={{ ...box, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
-              ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
+              {tr("ปลายทางของใบที่จะเลื่อน")} ({byDest.length} {tr("แห่ง")})
               {next === 'received' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}> {tr('— สต็อกจะถูกเติมแยกตามนี้')}</span>}
             </div>
             {byDest.map(d => (
@@ -255,20 +255,19 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {noDest && next === 'received' && (
             <div style={{ ...box, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)',
               fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-              ⚠️ <b style={{ color: '#f59e0b' }}>{fmt(noDest.slips)} {tr('ใบ ไม่ได้ระบุปลายทางสโตร์')}</b> — ใบจะถูกเลื่อนเป็นรับเข้า
-              แต่ <b>{tr('สต็อกส่วนนั้น (')}{fmt(noDest.qty)} ชิ้น) จะไม่ถูกเติม</b> ต้องไปบันทึกรับเข้าเองที่ 📦 Line Stock
+              ⚠️ <b style={{ color: 'var(--amber)' }}>{fmt(noDest.slips)} {tr('ใบ ไม่ได้ระบุปลายทางสโตร์')}</b> — {tr("ใบจะถูกเลื่อนเป็นรับเข้า แต่")} <b>{tr('สต็อกส่วนนั้น (')}{fmt(noDest.qty)} {tr("ชิ้น) จะไม่ถูกเติม")}</b> {tr("ต้องไปบันทึกรับเข้าเองที่")} 📦 Line Stock
             </div>
           )}
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={onClose} disabled={busy}
               style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
-                background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
+                background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
             <button onClick={run} disabled={busy || !n}
               style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 'var(--r-md)',
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
-              {busy ? 'กำลังบันทึก…' : `${nextLabel} ${fmt(n)} ใบ`}
+              {busy ? tr("กำลังบันทึก…") : `${nextLabel} ${fmt(n)} ${tr("ใบ")}`}
             </button>
           </div>
         </>))}

@@ -11,7 +11,7 @@ import { isPlant, scopeKey, scopeCovers, scopePathText, sameScope, PLANT } from 
 import { rint, rnd } from '../utils/seededRandom';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 /* ══ 📢 ประกาศ / ชี้แจงบริษัท — MOCKUP workflow (2026-10-29 · คำสั่ง user จากโน้ตลายมือ) ══════════
    โจทย์: "Workflow การรับประกาศของบริษัท"  Issue → Approve → Publish
      · ผู้แจ้งกรอก หัวข้อ · รายละเอียด · ผู้รับ (เลือกขอบเขตจากผังองค์กร) · Effective date
@@ -50,17 +50,17 @@ const btnPrimary = { padding: '8px 16px', borderRadius: 10, fontSize: 13, fontWe
 const btnGhost = { padding: '6px 12px', borderRadius: 10, fontSize: 13, fontWeight: 700,
   background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' };
 
-const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
+const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
 
 let seq = 3;
 const seed = (today) => ([
   {
-    id: 1, topic: 'กำหนดวันหยุดประจำปี 2570', detail: 'บริษัทประกาศวันหยุดประจำปี 2570 รวม 16 วัน รายละเอียดตามเอกสารแนบ (ตัวอย่าง)',
+    id: 1, topic: tr("กำหนดวันหยุดประจำปี 2570"), detail: tr("บริษัทประกาศวันหยุดประจำปี 2570 รวม 16 วัน รายละเอียดตามเอกสารแนบ (ตัวอย่าง)"),
     scopes: [{ ...PLANT }], effective: addDaysStr(today, -2), state: 'approved', issuer: ISSUER, seedAck: 0.4,
-    log: [{ at: addDaysStr(today, -4), text: 'ผู้แจ้งส่งขออนุมัติ' }, { at: addDaysStr(today, -3), text: 'EVP อนุมัติ' }],
+    log: [{ at: addDaysStr(today, -4), text: 'ผู้แจ้งส่งขออนุมัติ' }, { at: addDaysStr(today, -3), text: tr("EVP อนุมัติ") }],
   },
   {
-    id: 2, topic: 'ปรับเวลาพักกลางวันช่วงปิดปรับปรุงโรงอาหาร', detail: 'ช่วงปรับปรุงโรงอาหาร พักกลางวันเหลื่อมเวลาเป็น 2 รอบ (ตัวอย่าง)',
+    id: 2, topic: tr("ปรับเวลาพักกลางวันช่วงปิดปรับปรุงโรงอาหาร"), detail: tr("ช่วงปรับปรุงโรงอาหาร พักกลางวันเหลื่อมเวลาเป็น 2 รอบ (ตัวอย่าง)"),
     scopes: [{ ...PLANT }], effective: addDaysStr(today, 3), state: 'pending', issuer: ISSUER,
     log: [{ at: today, text: 'ผู้แจ้งส่งขออนุมัติ' }],
   },
@@ -69,7 +69,7 @@ const seed = (today) => ([
 function Chip({ children, color = 'var(--muted)', onRemove }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 'var(--r-pill)',
-      border: `1px solid ${color}`, color, fontSize: 12, background: 'var(--card)' }}>
+      border: `1px solid ${color}`, color, fontSize: 12, background: 'var(--card-surf)' }}>
       {children}
       {onRemove && <button type="button" onClick={onRemove} aria-label={tr('เอาออก')}
         style={{ border: 'none', background: 'none', color, cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>}
@@ -110,10 +110,10 @@ function FlowBar({ st, ack }) {
               {bad ? '✕' : done ? '✓' : i + 1}
             </span>
             <span style={{ fontSize: 12, fontWeight: done || cur || bad ? 700 : 400, color: c }}>Step {i + 1} · {label}</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{bad ? 'ถูกตีกลับ' : cur ? `ถึงขั้นนี้ · ${STEP_SUB[i]}` : STEP_SUB[i]}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{bad ? tr("ถูกตีกลับ") : cur ? `${tr("ถึงขั้นนี้")} · ${STEP_SUB[i]}` : STEP_SUB[i]}</span>
             {i === 3 && at === 3 && ack && (
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                รับทราบ {ack.done} / {ack.total} {tr('คน')}{ack.total ? ` (${Math.round((ack.done / ack.total) * 100)}%)` : ''}
+                {tr("รับทราบ")} {ack.done} / {ack.total} {tr('คน')}{ack.total ? ` (${Math.round((ack.done / ack.total) * 100)}%)` : ''}
               </span>
             )}
           </div>
@@ -162,11 +162,11 @@ export default function AnnouncementMockup() {
   const acknowledge = (a) => {
     if (!me) return;
     setAcks(m => ({ ...m, [a.id]: { ...(m[a.id] || {}), [me.id]: today } }));
-    toast.success(`${me.name} รับทราบแล้ว`);
+    toast.success(`${me.name} ${tr("รับทราบแล้ว")}`);
   };
 
   const notify = (to, text, annId) => setNotifs(n => [{ id: Date.now() + Math.random(), to, at: today, text, annId }, ...n]);
-  const label = (sc) => (index ? scopePathText(index, sc) : (isPlant(sc) ? 'ทั้งโรงงาน' : sc.value));
+  const label = (sc) => (index ? scopePathText(index, sc) : (isPlant(sc) ? tr("ทั้งโรงงาน") : sc.value));
 
   const addScope = () => {
     const sc = pick || { ...PLANT };
@@ -186,24 +186,24 @@ export default function AnnouncementMockup() {
   ].filter(Boolean);
 
   const submit = () => {
-    if (missing.length) { toast.error(`กรอกไม่ครบ: ${missing.join(' · ')}`); return; }
+    if (missing.length) { toast.error(`${tr("กรอกไม่ครบ")}: ${missing.join(' · ')}`); return; }
     const id = seq++;
     setItems(xs => [{ id, ...form, topic: form.topic.trim(), detail: form.detail.trim(), state: 'pending', issuer: ISSUER,
       log: [{ at: today, text: 'ผู้แจ้งส่งขออนุมัติ' }] }, ...xs]);
-    notify('evp', `มีประกาศรออนุมัติ: ${form.topic.trim()}`, id);
+    notify('evp', `${tr("มีประกาศรออนุมัติ")}: ${form.topic.trim()}`, id);
     toast.success('ส่งแล้ว — แจ้งเตือนถึง EVP (จำลอง)');
     setForm(blank); setPick(null);
   };
 
   const approve = (a) => {
-    setItems(xs => xs.map(x => (x.id === a.id ? { ...x, state: 'approved', log: [...x.log, { at: today, text: 'EVP อนุมัติ' }] } : x)));
-    notify('issuer', `EVP อนุมัติแล้ว: ${a.topic} · ประกาศจะขึ้นวันที่ ${fmtDate(a.effective)}`, a.id);
+    setItems(xs => xs.map(x => (x.id === a.id ? { ...x, state: 'approved', log: [...x.log, { at: today, text: tr("EVP อนุมัติ") }] } : x)));
+    notify('issuer', `EVP ${tr("อนุมัติแล้ว")}: ${a.topic} · ${tr("ประกาศจะขึ้นวันที่")} ${fmtDate(a.effective)}`, a.id);
     toast.success('อนุมัติแล้ว — แจ้งผู้แจ้ง (จำลอง)');
   };
   const reject = (a) => {
     if (!reason.trim()) { toast.error('ตีกลับต้องใส่เหตุผล'); return; }
-    setItems(xs => xs.map(x => (x.id === a.id ? { ...x, state: 'rejected', reject_reason: reason.trim(), log: [...x.log, { at: today, text: `EVP ตีกลับ: ${reason.trim()}` }] } : x)));
-    notify('issuer', `EVP ตีกลับ: ${a.topic} — ${reason.trim()}`, a.id);
+    setItems(xs => xs.map(x => (x.id === a.id ? { ...x, state: 'rejected', reject_reason: reason.trim(), log: [...x.log, { at: today, text: `EVP ${tr("ตีกลับ")}: ${reason.trim()}` }] } : x)));
+    notify('issuer', `EVP ${tr("ตีกลับ")}: ${a.topic} — ${reason.trim()}`, a.id);
     setRejectFor(null); setReason('');
   };
 
@@ -273,7 +273,7 @@ export default function AnnouncementMockup() {
       <PageHeader
         title={tr('ประกาศ / ชี้แจงบริษัท')}
         icon="📢"
-        sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · {tr("ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่")})</span>}
         tabs={tabs} tab={tab} onTab={setTab}
         filters={(
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -287,10 +287,8 @@ export default function AnnouncementMockup() {
       />
 
       <div style={{ marginBottom: 12 }}>
-        <InfoMore lead="ลำดับงาน: ผู้แจ้งกรอก → แจ้งเตือน EVP → EVP อนุมัติ (แจ้งกลับผู้แจ้ง) → ถึงวันมีผล ประกาศขึ้นให้ user ในส่วนงานที่เลือก">
-          สลับแท็บด้านบนเพื่อดูมุมของแต่ละคน · เลื่อน "วันที่จำลอง" เพื่อดูประกาศขึ้นตามวันมีผล ·
-          ผู้รับเลือกจากผังองค์กรจริง — เลือกหน่วยแม่ = ครอบหน่วยลูกทั้งหมด ·
-          ระบบจริงต้องมีตารางประกาศ + สิทธิ์ + แจ้งเตือนในแอป (ยังไม่ได้ทำ)
+        <InfoMore lead={tr("ลำดับงาน: ผู้แจ้งกรอก → แจ้งเตือน EVP → EVP อนุมัติ (แจ้งกลับผู้แจ้ง) → ถึงวันมีผล ประกาศขึ้นให้ user ในส่วนงานที่เลือก")}>
+          {tr("สลับแท็บด้านบนเพื่อดูมุมของแต่ละคน · เลื่อน \"วันที่จำลอง\" เพื่อดูประกาศขึ้นตามวันมีผล · ผู้รับเลือกจากผังองค์กรจริง — เลือกหน่วยแม่ = ครอบหน่วยลูกทั้งหมด · ระบบจริงต้องมีตารางประกาศ + สิทธิ์ + แจ้งเตือนในแอป (ยังไม่ได้ทำ")})
         </InfoMore>
       </div>
       {failed && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', marginBottom: 12 }}>⚠ {failed} {tr('— ตัวเลือกผู้รับอาจไม่ครบ')}</div>}
@@ -305,7 +303,7 @@ export default function AnnouncementMockup() {
             <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('รายละเอียด (Detail)')}
               <textarea rows={5} value={form.detail} onChange={e => setForm(f => ({ ...f, detail: e.target.value }))} />
             </label>
-            <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>ผู้รับ (Who's receive) — เลือกจากผังองค์กร
+            <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>{tr("ผู้รับ (Who's receive) — เลือกจากผังองค์กร")}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 <OrgScopePicker index={index} failed={failed} value={pick} onChange={setPick} costCenter={false} />
                 <button type="button" style={btnGhost} onClick={addScope}>{tr('+ เพิ่ม')}</button>
@@ -355,7 +353,7 @@ export default function AnnouncementMockup() {
               </>) })
             )) : <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีประกาศรออนุมัติ')}</div>}
           </div>
-          {renderInbox({ to: 'evp', title: `แจ้งเตือนของ ${APPROVER}` })}
+          {renderInbox({ to: 'evp', title: `${tr("แจ้งเตือนของ")} ${APPROVER}` })}
         </div>
       )}
 
@@ -363,14 +361,14 @@ export default function AnnouncementMockup() {
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ ...card, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13 }}>{tr('ดูในฐานะพนักงานของ')}</span>
-            <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
+            <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel={tr("— เลือกหน่วยงานของพนักงาน —")} />
             <select value={meId} onChange={e => setMeId(e.target.value)} disabled={!myPeople.length} style={{ width: 240 }}>
               <option value="">{myPeople.length ? tr('— ฉันคือ (รายชื่อจำลอง) —') : tr('หน่วยนี้ไม่มีรายชื่อจำลอง')}</option>
               {myPeople.map(e => <option key={e.id} value={e.id}>{tr(e.name)}</option>)}
             </select>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-              ประกาศที่ขึ้น = อนุมัติแล้ว + ถึงวันมีผล ({fmtDate(today)}) + ผู้รับครอบหน่วยนี้
-              {upcomingForMe > 0 && ` · อีก ${upcomingForMe} ฉบับรอถึงวันมีผล`}
+              {tr("ประกาศที่ขึ้น = อนุมัติแล้ว + ถึงวันมีผล")} ({fmtDate(today)}) + {tr("ผู้รับครอบหน่วยนี้")}
+              {upcomingForMe > 0 && ` · ${tr("อีก")} ${upcomingForMe} ${tr("ฉบับรอถึงวันมีผล")}`}
             </span>
           </div>
           {board.length ? board.map((a) => {
@@ -381,14 +379,14 @@ export default function AnnouncementMockup() {
                   {at
                     ? <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>✓ {me.name} {tr('รับทราบแล้ว (')}{fmtDate(at)})</span>
                     : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>{tr('รับทราบ')}</button>}
-                  {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก "ฉันคือ" ก่อนจึงกดรับทราบได้</span>}
+                  {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr("เลือก \"ฉันคือ\" ก่อนจึงกดรับทราบได้")}</span>}
                 </div>
               </>) })
             );
           }) : (
             <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>
-              ไม่มีประกาศสำหรับหน่วยนี้ ณ วันที่ {fmtDate(today)}
-              {upcomingForMe > 0 ? ` (มี ${upcomingForMe} ฉบับอนุมัติแล้วแต่ยังไม่ถึงวันมีผล — ลองเลื่อนวันที่จำลอง)` : ''}
+              {tr("ไม่มีประกาศสำหรับหน่วยนี้ ณ วันที่")} {fmtDate(today)}
+              {upcomingForMe > 0 ? ` (${tr("มี")} ${upcomingForMe} ${tr("ฉบับอนุมัติแล้วแต่ยังไม่ถึงวันมีผล — ลองเลื่อนวันที่จำลอง")})` : ''}
             </div>
           )}
         </div>

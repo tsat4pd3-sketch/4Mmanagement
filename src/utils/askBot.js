@@ -13,11 +13,13 @@ import { wavg, wLoad, wRun, wProd, orderProducedQty, dtMinBySession, dtPlannedSp
 import { dtTypeName } from './downtimeCategory.js';
 import { isVague } from './unclassified.js';
 import { OPEN_MO_STATUSES, MO_STATUS_LABEL } from './mtnStepPerm.js';
+import { buildScheduleMaps, resolveAssignedShift } from './shiftAssign.js';
 import { addDaysStr } from './workDate.js';
 import { dtBucketName, buildDtIndex, dtTrashStats } from './downtimeCategory.js';
 import { collapseOps } from './pairTotals.js';
 import { partCoreOf } from './partGroup.js';
 import { weekMonday } from './timeRange.js';
+import { tr } from './i18n.js';
 
 /* ── 1) ช่วงเวลา ─────────────────────────────────────────────────────────── */
 /* 🔴 ไม่รับตัวย่อแบบไม่มีจุด ("มค" "กค") — เป็นข้อความย่อยของคำทั่วไปได้ ("ซ่อมค้าง" มี "มค")
@@ -93,8 +95,10 @@ export const INTENTS = [
   { key: 'downtime_top', re: /down\s*time|ดาว(น์)?\s*ไทม์|เครื่องหยุด|หยุดเครื่อง|เครื่องเสีย|เครื่องพัง|หยุดนาน|สาเหตุ(ที่)?หยุด/, defaultPeriod: 'week', needSubject: null },
   { key: 'mo_open', re: /(^|[^a-z])mo([^a-z]|$)|แจ้งซ่อม|ใบซ่อม|งานซ่อม|รอช่าง|ช่างยังไม่มา/, defaultPeriod: null, needSubject: null },
   { key: 'fourm_pending', re: /4\s*m|โฟร์เอ็ม|changing\s*point/, defaultPeriod: null, needSubject: null },
+  /* 🧾 "ใบสแครป" = ใบรายงานของเสีย FM-PD2-002 (`/scrap-report`) — ต้องมาก่อน defect_top ("ใบรายงานของเสีย" มีคำว่า ของเสีย) */
+  { key: 'scrap_report', re: /ใบ\s*(สแครป|scrap)|scrap\s*report|ใบ\s*รายงาน\s*ของเสีย/, defaultPeriod: 'month', needSubject: null },
   /* "งานเสีย" = คำที่หน้างานพิมพ์จริง (user ทัก 19/11: "วันนี้มีงานเสียอะไรบ้าง" ตอบไม่ได้) */
-  { key: 'defect_top', re: /ของเสีย|งานเสีย|ชิ้นงานเสีย|เสียอะไร|ของไม่ผ่าน|งานไม่ผ่าน|defect|reject|(^|[^a-z])ng([^a-z]|$)/, defaultPeriod: 'week', needSubject: null },
+  { key: 'defect_top', re: /ของเสีย|งานเสีย|ชิ้นงานเสีย|เสียอะไร|ของไม่ผ่าน|งานไม่ผ่าน|สแครป|defect|reject|scrap|(^|[^a-z])ng([^a-z]|$)/, defaultPeriod: 'week', needSubject: null },
   { key: 'attendance', re: /มาทำงาน|เช็คชื่อ|ขาดงาน|คนขาด|มากี่คน|คนมา|ใครลา|กำลังคน|คนครบ|attendance/, defaultPeriod: 'today', needSubject: null },
   /* "ยอด" เดี่ยวๆ = ยอดผลิต แต่ "ยอดขาย" ไม่ใช่ (ยังไม่มีเครื่องมือ ⇒ ต้องตอบว่าไม่เข้าใจ) */
   { key: 'production', re: /ยอดผลิต|ผลิต|กี่ชิ้น|ทำได้(กี่|เท่า)|ยอด(?!ขาย)|output|production/, defaultPeriod: 'month', needSubject: 'any' },
@@ -104,8 +108,8 @@ export const INTENTS = [
    🔴 ภาษาไทยไม่มีเว้นวรรค ("ขอยอดผลิตงาน apron…") ⇒ ฝั่งไทยต้องตัดแบบ "ข้อความย่อย"
       แต่ฝั่งอังกฤษ/ตัวเลขตัดแบบ **ทั้งคำเท่านั้น** — ชื่อไลน์/พาร์ทส่วนใหญ่เป็นอักษรละติน
       ตัดแบบข้อความย่อยฝั่งนั้น = "TOPPER" เหลือ "PER" แล้วค้นผิดตัว */
-const THAI_FILLER = /โออีอี|ประสิทธิภาพ|เปอร์เซ็นต์เครื่อง|เครื่องเสีย|เครื่องพัง|หยุดนาน|สาเหตุที่|สาเหตุ|ดาวน์|งานซ่อม|ช่างยังไม่มา|รอช่าง|ของไม่ผ่าน|งานไม่ผ่าน|เปลี่ยน|คนมา|ใครลา|กำลังคน|คนครบ|ทำได้|นาน|พัง|บ่อยที่สุด|บ่อยสุด|บ่อย|ชิ้นงานเสีย|งานเสีย|เสีย|มีเครื่อง|เครื่อง|หยุด|มี|ใคร|ต่ำที่สุด|ต่ำสุด|แย่ที่สุด|แย่สุด|น้อยที่สุด|น้อยสุด|ตอนนี้|ขณะนี้|อยู่ไหม|อยู่มั้ย|อยู่บ้าง|ไหนบ้าง|แจ้งซ่อม|ใบซ่อม|โฟร์เอ็ม|ของเสีย|มาทำงาน|เช็คชื่อ|ขาดงาน|คนขาด|มากี่คน|กี่คน|กี่ใบ|ค้าง|รออนุมัติ|อนุมัติ|ไหม|มั้ย|ไหน|อยู่|ดาว(น์)?\s*ไทม์|เครื่องหยุด|หยุดเครื่อง|ยอดผลิต|ผลิต|กี่ชิ้น|สูงสุด|มากที่สุด|มากสุด|อันดับ|อะไร|บ้าง|เท่าไหร่|เท่าไร|ไปแล้ว|แล้ว|ได้|ไป|ของ|ขอ|ยอด|ดู|หน่อย|ครับ|ค่ะ|คะ|นะ|ไลน์|งาน|ชิ้น|กี่|ที|สุด/g;
-const LATIN_FILLER = /\b(changing\s*point|reject|lowest|worst|now|mo|4\s*m|ng|defects?|attendance|oee|down\s*time|downtime|top|line|output|production|today|yesterday|this|last|week|month)\b|[?？!]/g;
+const THAI_FILLER = /โออีอี|ใบรายงานของเสีย|ใบสแครป|สแครป|ประสิทธิภาพ|เปอร์เซ็นต์เครื่อง|เครื่องเสีย|เครื่องพัง|หยุดนาน|สาเหตุที่|สาเหตุ|ดาวน์|งานซ่อม|ช่างยังไม่มา|รอช่าง|ของไม่ผ่าน|งานไม่ผ่าน|เปลี่ยน|คนมา|ใครลา|กำลังคน|คนครบ|ทำได้|นาน|พัง|บ่อยที่สุด|บ่อยสุด|บ่อย|ชิ้นงานเสีย|งานเสีย|เสีย|มีเครื่อง|เครื่อง|หยุด|มี|ใคร|ต่ำที่สุด|ต่ำสุด|แย่ที่สุด|แย่สุด|น้อยที่สุด|น้อยสุด|ตอนนี้|ขณะนี้|อยู่ไหม|อยู่มั้ย|อยู่บ้าง|ไหนบ้าง|แจ้งซ่อม|ใบซ่อม|โฟร์เอ็ม|ของเสีย|มาทำงาน|เช็คชื่อ|ขาดงาน|คนขาด|มากี่คน|กี่คน|กี่ใบ|ค้าง|รออนุมัติ|อนุมัติ|ไหม|มั้ย|ไหน|อยู่|ดาว(น์)?\s*ไทม์|เครื่องหยุด|หยุดเครื่อง|ยอดผลิต|ผลิต|กี่ชิ้น|สูงสุด|มากที่สุด|มากสุด|อันดับ|อะไร|บ้าง|เท่าไหร่|เท่าไร|ไปแล้ว|แล้ว|ได้|ไป|ของ|ขอ|ยอด|ดู|หน่อย|ครับ|ค่ะ|คะ|นะ|ไลน์|งาน|ชิ้น|กี่|ที|สุด/g;
+const LATIN_FILLER = /\b(scrap\s*report|scrap|changing\s*point|reject|lowest|worst|now|mo|4\s*m|ng|defects?|attendance|oee|down\s*time|downtime|top|line|output|production|today|yesterday|this|last|week|month)\b|[?？!]/g;
 const THAI_RUN = /([฀-๿]+)/;
 /* 🔴 ห้ามตัดคำกลางพยางค์ — "ที" ใน "ชุดที่" ตามด้วยไม้เอก ⇒ ไม่ใช่คำว่า "ที" (เคสจริงตอนลองถาม 19/11)
    ⇒ ตัดได้เฉพาะเมื่อตัวถัดไป **ไม่ใช่** สระบน/ล่าง/วรรณยุกต์ (อักขระประกอบของพยางค์เดียวกัน) */
@@ -117,7 +121,8 @@ const stripThaiFiller = (run) => run.replace(THAI_FILLER, (m, ...a) => {
 
 function stripPeriodWords(t) {
   let s = t.replace(/เดือน\s*\d{1,2}(\s*[/-]\s*\d{4})?/g, ' ')
-    .replace(/วันนี้|เมื่อวาน|(สัปดาห์|อาทิตย์)(นี้|ที่แล้ว|ก่อน)|เดือน(นี้|ที่แล้ว|ก่อน)/g, ' ');
+    .replace(/วันนี้|เมื่อวาน|(สัปดาห์|อาทิตย์)(นี้|ที่แล้ว|ก่อน)|เดือน(นี้|ที่แล้ว|ก่อน)/g, ' ')
+    .replace(SHIFT_WORDS, ' ');
   for (const names of TH_MONTHS) for (const w of names) s = s.split(w).join(' ');
   return s.replace(/(^|\s)(25|20)\d{2}(?=\s|$)/g, ' ');
 }
@@ -134,20 +139,54 @@ function subjectOf(t) {
 /**
  * @returns {{ intent:string|null, period:object|null, periodDefault:string|null, subject:string, error?:string }}
  */
-export function parseQuestion(text, today) {
+/* ── กะ (20/11 · คำสั่ง user "ใส่คำว่ากะเช้า กะดึก กะนี้") ─────────────────────
+   กะเช้า = 'day' · กะดึก = 'night' (ค่าเดียวกับ `production_sessions.shift`)
+   🔴 "กะนี้" = กะปัจจุบัน **ของวันทำงานนี้** — ผู้เรียกส่ง `shiftNow` (`getCurrentShift()`) เข้ามา
+      ไฟล์นี้ไม่อ่านนาฬิกาเอง (pure + เทสตรึงได้) · ไม่ส่ง = ตัดสินไม่ได้ ⇒ error ห้ามเดา
+   🔴 "กะนี้" ไม่บอกช่วง = วันนี้ (กะนี้ของเมื่อวานไม่มีความหมาย) */
+/* 🕐 "เมื่อกี้" (20/11 · คำสั่ง user) = **กะก่อนหน้ากะปัจจุบัน** (กะล่าสุดที่จบไปแล้ว)
+   ตีความแบบนี้เพราะคำตอบนับเฉพาะกะที่ปิดแล้ว — "กะนี้" ส่วนใหญ่ยังไม่ปิด
+   🔴 คำตอบต้องเขียนบอกเสมอว่าตีความเป็นกะไหน วันไหน (ป้ายช่วง) — ไม่ใช่ความหมายที่ชัดในตัว */
+const SHIFT_WORDS = /กะ\s*(เช้า|ดึก|นี้|ปัจจุบัน|ที่แล้ว|ก่อน)|เมื่อกี้|เมื่อกี๊|day\s*shift|night\s*shift/g;
+export const SHIFT_LABEL = { day: 'กะเช้า', night: 'กะดึก' };
+
+export function shiftFromText(t, shiftNow = null, today = null) {
+  const s = String(t || '').toLowerCase();
+  if (/กะ\s*เช้า|day\s*shift/.test(s)) return { shift: 'day', label: SHIFT_LABEL.day };
+  if (/กะ\s*ดึก|night\s*shift/.test(s)) return { shift: 'night', label: SHIFT_LABEL.night };
+  if (/กะ\s*(นี้|ปัจจุบัน)/.test(s)) {
+    if (shiftNow !== 'day' && shiftNow !== 'night') return { error: 'ยังบอกไม่ได้ว่าตอนนี้เป็นกะไหน — พิมพ์ "กะเช้า" หรือ "กะดึก" แทน' };
+    return { shift: shiftNow, label: `กะนี้ (${SHIFT_LABEL[shiftNow]})`, isNow: true };
+  }
+  if (/เมื่อกี้|เมื่อกี๊|กะ\s*(ที่แล้ว|ก่อน)/.test(s)) {
+    if ((shiftNow !== 'day' && shiftNow !== 'night') || !today) return { error: 'ยังบอกไม่ได้ว่ากะก่อนหน้าคือกะไหน — พิมพ์ "กะเช้า" หรือ "กะดึก" พร้อมวัน เช่น "กะดึก เมื่อวาน"' };
+    /* กะเช้าตอนนี้ ⇒ ก่อนหน้า = กะดึกของวันทำงานเมื่อวาน · กะดึกตอนนี้ ⇒ กะเช้าของวันทำงานเดียวกัน */
+    const prev = shiftNow === 'day' ? { shift: 'night', date: addDay(today, -1) } : { shift: 'day', date: today };
+    return { shift: prev.shift, prevDate: prev.date, label: `เมื่อกี้ = กะก่อนหน้า (${SHIFT_LABEL[prev.shift]} ${prev.date})` };
+  }
+  return null;
+}
+
+export function parseQuestion(text, today, { shiftNow = null } = {}) {
   const raw = String(text || '').trim();
   const t = raw.toLowerCase();
   const it = INTENTS.find(i => i.re.test(t)) || null;
-  const p = periodFromText(t, today);
+  const sh = shiftFromText(t, shiftNow, today);
+  let p = periodFromText(t, today);
+  if (!p && sh?.isNow) p = periodFromText(tr("วันนี้"), today);     // กะนี้ = วันนี้
+  if (!p && sh?.prevDate) p = { from: sh.prevDate, to: sh.prevDate, label: sh.prevDate, explicit: true };   // เมื่อกี้ = วันของกะก่อนหน้า
   const subject = subjectOf(t);
-  if (!it) return { intent: null, period: null, periodDefault: null, subject };
-  if (p?.error) return { intent: it.key, period: null, periodDefault: null, subject, error: p.error };
-  return { intent: it.key, period: p, periodDefault: p ? null : it.defaultPeriod, subject };
+  if (!it) return { intent: null, period: null, periodDefault: null, subject, shift: null };
+  if (p?.error || sh?.error) return { intent: it.key, period: null, periodDefault: null, subject, shift: null, error: p?.error || sh.error };
+  return { intent: it.key, period: p, periodDefault: p ? null : it.defaultPeriod, subject,
+    shift: sh ? { key: sh.shift, label: sh.label } : null,
+    /* ถามว่า "สแครป" แต่ได้ของเสียจากรายงานผลิต — จอต้องบอกว่าไม่ใช่ตัวเลขตามใบ scrap report (user เลือก 20/11) */
+    viaScrap: it.key === 'defect_top' && /สแครป|scrap/.test(t) };
 }
 
 /** ค่าตั้งต้นของช่วง (เมื่อคำถามไม่ได้บอก) — จอต้องเขียนว่า "ไม่ได้ระบุช่วง ใช้…" */
 export function defaultPeriod(key, today) {
-  const p = periodFromText(key === 'today' ? 'วันนี้' : key === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้', today);
+  const p = periodFromText(key === 'today' ? tr("วันนี้") : key === 'week' ? 'สัปดาห์นี้' : 'เดือนนี้', today);
   return { ...p, explicit: false };
 }
 
@@ -166,8 +205,9 @@ export function matchSubject(subject, { lines = [], products = [], kinds = ['lin
   if (!tokens.length) return { pick: null, choices: [], more: 0 };
   const whole = tokens.join('');
   /* ตัวเลขล้วนต้องตรง "ทั้งตัว" — ถาม "ชุดที่ 1" ห้ามได้ 10–15 มาด้วย · ถาม "060" ห้ามได้ "0601" */
+  /* 0 นำหน้าไม่นับ — พิมพ์ "060" ต้องเจอ "Line 60" (user ทัก 20/11 · เดิมหาไลน์ไม่เจอแล้วไปตกที่พาร์ท 16E060 เงียบๆ) */
   const hitAll = (hay) => tokens.every(tk => (/^\d+$/.test(tk)
-    ? new RegExp(`(^|\\D)${tk}(?!\\d)`).test(hay) : hay.includes(tk)));
+    ? new RegExp(`(^|\\D)0*${String(Number(tk))}(?!\\d)`).test(hay) : hay.includes(tk)));
 
   const lineHits = [], lineExact = [];
   if (kinds.includes('line')) for (const l of lines) {
@@ -286,7 +326,7 @@ export function openDowntimeList(rows = [], nowMs, kindOf) {
     const k = kindOf(d);
     if (k === 'done') continue;
     const e = { machine: d.machine_no || 'ไม่ระบุเครื่อง', line: d.production_sessions?.line_name || 'ไม่ระบุไลน์',
-      type: dtTypeName(d) || 'ไม่ระบุประเภท', planned: d?.dr_downtime_types?.category === 'planned',
+      type: dtTypeName(d) || tr("ไม่ระบุประเภท"), planned: d?.dr_downtime_types?.category === 'planned',
       /* ไม่มีเวลาเริ่ม = ไม่รู้ว่าหยุดมานานเท่าไหร่ ⇒ null (จอเขียน "ไม่ทราบเวลาเริ่ม") ห้ามโชว์ 0 นาที */
       min: d.started_at ? dtRawMin(d, nowMs) : null };
     (k === 'forgotten' ? forgotten : open).push(e);
@@ -353,27 +393,120 @@ export function defectTop(rows = [], n = 5) {
  * 🔴 แยก 3 กอง: มา · **แจ้งว่าไม่มา** (is_present=false) · **ยังไม่ได้เช็ค** — ห้ามรวม 2 กองหลังเป็น "ขาด"
  *    (คนกะดึกที่ยังไม่เข้ากะ = ยังไม่เช็ค ไม่ใช่ขาดงาน)
  */
-export function attendanceSummary(emps = [], logs = [], lineNameOf = () => null) {
+export function attendanceSummary(emps = [], logs = [], lineNameOf = () => null, { shift = null, shiftOf = null } = {}) {
   const st = new Map();
   logs.forEach(l => { if (l?.employee_id != null) st.set(l.employee_id, l.is_present ? 'in' : (st.get(l.employee_id) === 'in' ? 'in' : 'out')); });
   const byLine = new Map();
   const tot = { head: 0, in: 0, out: 0, none: 0 };
+  let otherShift = 0, unknownShift = 0, unknownIn = 0;
   for (const e of emps) {
     const ln = lineNameOf(e.line_id);
     if (!ln) continue;
     const k = st.get(e.id) || 'none';
+    if (shift && shiftOf) {
+      const sh = shiftOf(e);
+      /* 🔴 ไม่รู้กะ (ไลน์ยังไม่ตั้งตารางกะ · ทีมที่ไม่รู้กติกา) = แยกนับ ห้ามโยนเข้ากะไหนเอง (ห้ามเดา) */
+      if (sh == null) { unknownShift++; if (k === 'in') unknownIn++; continue; }
+      if (sh !== shift) { otherShift++; continue; }
+    }
     const r = byLine.get(ln) || { line: ln, head: 0, in: 0, out: 0, none: 0 };
     r.head++; r[k]++; tot.head++; tot[k]++;
     byLine.set(ln, r);
   }
-  return { ...tot, lines: [...byLine.values()].sort((a, b) => (b.out + b.none) - (a.out + a.none)) };
+  return { ...tot, otherShift, unknownShift, unknownIn,
+    lines: [...byLine.values()].sort((a, b) => (b.out + b.none) - (a.out + a.none)) };
+}
+
+/**
+ * "คนนี้เข้ากะไหนในวันนั้น" สำหรับนับคนรายกะ — ลำดับเดียวกับจอเช็คชื่อ (`Checkin.jsx`):
+ *   override รายคน → merge event (ไลน์ชนะส่วนงาน) → ตารางกะไลน์/หน่วยงาน (Team C = กะเช้าตลอด)
+ * ตัวตัดสินจริงคือ `resolveAssignedShift()` (`shiftAssign.js` · ของกลางตามกฎ CLAUDE.md §Shift Logic)
+ * 🔴 `lines` ต้องส่งเสมอ — ไลน์ลูกตกทอดกะจากไลน์แม่ (`buildScheduleMaps(rows, lines)`)
+ * ⚠️ คนที่ถูกยืมไปช่วยไลน์อื่น (`line_helpers`) ยังนับที่ไลน์ต้นสังกัด — จอเช็คชื่อย้ายไปนับที่ไลน์ปลายทาง
+ * @returns {(emp) => 'day'|'night'|null}
+ */
+export function makeShiftOf({ schedules = [], overrides = [], merges = [], lines = [] } = {}) {
+  const maps = buildScheduleMaps(schedules, lines);
+  const ovr = {}; overrides.forEach(o => { if (o?.employee_id != null) ovr[o.employee_id] = o.shift; });
+  const secOf = {}; lines.forEach(l => { secOf[l.id] = l.section; });
+  return (emp) => {
+    /* คนที่ถูกยืมไปช่วย = อยู่กะที่ถูกยืมแน่นอน (การยืมผูกกะ) — เหมือน /checkin ห้ามให้ตารางกะไลน์เดิมตัดสิน */
+    if (emp._helperShift) return emp._helperShift;
+    const sec = secOf[emp.line_id];
+    const m = merges.find(e => e.line_id === emp.line_id) || merges.find(e => e.section && e.section === sec);
+    return resolveAssignedShift(emp, { overrideShift: ovr[emp.id], mergeShift: m?.target_shift, maps });
+  };
+}
+
+/**
+ * ย้ายคนที่ถูกยืมไปช่วย (`line_helpers`) ไปนับที่ **ไลน์ปลายทาง** — เหมือนจอเช็คชื่อ (20/11 · คำสั่ง user)
+ * · ระบุกะ: ใช้แถวของกะนั้น (คิวรีกรอง shift มาแล้ว) ⇒ ย้ายไลน์ + ตรึงกะ = กะที่ยืม (`_helperShift`)
+ * · ไม่ระบุกะ (ทั้งวัน): ย้ายเฉพาะคนที่ทั้งวันไปไลน์ปลายทาง **ไลน์เดียว** · ไปคนละไลน์ในแต่ละกะ = นับที่ต้นสังกัด
+ *   แล้วคืนจำนวนใน `split` ให้จอเขียนบอก (ห้ามเลือกไลน์ใดไลน์หนึ่งเอง = เดา)
+ * 🔴 ไม่แตะแถวเดิม (คืน object ใหม่) · `_homeLineId` เก็บไลน์ต้นสังกัดไว้
+ * ⚠️ ระบุกะ: คนที่ถูกยืม **เฉพาะอีกกะ** ยังอยู่กะเดิมตามตารางกะ — เหมือน /checkin (โหลดการยืมเฉพาะกะที่ดู)
+ *    ⇒ กะเช้า+กะดึกอาจรวมเกินยอดทั้งวัน · คืน `otherShift` (รายชื่อ id) ให้จอเขียนบอก ห้ามเงียบ
+ * @param helpers แถวของ **ทั้งวัน** (ทุกกะ) — กรองกะในนี้เอง เพื่อรู้ว่าใครถูกยืมอีกกะ
+ * @returns {{ emps:any[], moved:number, split:number, otherShift:Set }}
+ */
+export function applyHelpers(emps = [], helpers = [], { shift = null } = {}) {
+  const by = new Map();
+  const otherShift = new Set();
+  for (const h of helpers) {
+    if (h?.employee_id == null || h.to_line_id == null) continue;
+    if (shift && h.shift && h.shift !== shift) { otherShift.add(h.employee_id); continue; }
+    const e = by.get(h.employee_id) || { lines: new Set(), shift: h.shift || shift };
+    e.lines.add(h.to_line_id); by.set(h.employee_id, e);
+  }
+  let moved = 0, split = 0;
+  const out = emps.map(emp => {
+    const h = by.get(emp.id);
+    if (!h) return emp;
+    if (h.lines.size !== 1) { split++; return emp; }
+    const to = [...h.lines][0];
+    moved++;
+    return { ...emp, line_id: to, _homeLineId: emp.line_id, ...(shift ? { _helperShift: shift } : {}) };
+  });
+  for (const id of by.keys()) otherShift.delete(id);   // ถูกยืมกะนี้ด้วย = ย้ายไปแล้ว ไม่ใช่ "อีกกะ"
+  return { emps: out, moved, split, otherShift };
+}
+
+/**
+ * 🧾 สรุปใบรายงานของเสีย (`scrap_reports` + `scrap_report_items` · DR) — ตัวเลข **ตามใบ** ไม่ใช่รายงานผลิต
+ * · ยอด = `qty` (ช่อง Q'TY ของฟอร์ม) · `confirm_qty` ต่างจากยอดเมื่อไหร่ = คืนให้จอเขียนบอก
+ * · พาร์ทจับกลุ่มด้วย mat_no → part_no → part_name (ใบมีพาร์ทย่อยที่คีย์เองซึ่งอาจไม่มี mat_no)
+ */
+export const SCRAP_STATUS_LABEL = { draft: 'ร่าง', submitted: 'ส่งอนุมัติ', approved: 'อนุมัติแล้ว' };
+export function scrapReportSummary(reports = [], items = [], n = 5) {
+  const byStatus = {};
+  let unknownStatus = 0;
+  for (const r of reports) {
+    if (SCRAP_STATUS_LABEL[r.status]) byStatus[r.status] = (byStatus[r.status] || 0) + 1;
+    else unknownStatus++;
+  }
+  const byPart = new Map();
+  let total = 0, confirm = 0, confirmKnown = 0;
+  for (const it of items) {
+    const q = Number(it.qty) || 0;
+    total += q;
+    if (it.confirm_qty != null && it.confirm_qty !== '') { confirm += Number(it.confirm_qty) || 0; confirmKnown++; }
+    const key = it.mat_no || it.part_no || it.part_name || 'ไม่ระบุพาร์ท';
+    const e = byPart.get(key) || { key, name: it.part_name || '', qty: 0 };
+    e.qty += q; byPart.set(key, e);
+  }
+  const parts = [...byPart.values()].filter(e => e.qty > 0).sort((a, b) => b.qty - a.qty);
+  return { reports: reports.length, byStatus, unknownStatus, total, confirm, confirmKnown,
+    confirmDiffers: confirmKnown > 0 && confirm !== total, top: parts.slice(0, n), parts: parts.length };
 }
 
 export const fmtInt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 export const fmtPct = (n) => (n == null ? '—' : `${(+n).toFixed(1)}%`);
 
 /** ข้อความแนะนำรูปแบบที่ถามได้ — ใช้ทั้งปุ่มลัดและตอนไม่เข้าใจคำถาม */
+/** ปุ่มลัดใต้กล่องแชท — 3 ปุ่มพอ (user ทัก 20/11 "รกเกินไป") · รายการเต็มอยู่ใน ASK_HINTS ตอนตอบว่าไม่เข้าใจ */
+export const HINT_CHIPS = ['oee HDF1 วันนี้', 'downtime สูงสุด สัปดาห์นี้', 'ยอดผลิต HDF1 วันนี้'];
+
 export const ASK_HINTS = [
   'oee HDF1 วันนี้', 'oee ต่ำสุด วันนี้', 'downtime สูงสุด สัปดาห์นี้', 'เครื่องหยุดตอนนี้',
-  'MO ค้าง', 'ของเสียสูงสุด สัปดาห์นี้', '4M ค้าง', 'มาทำงานกี่คน HDF1', 'ยอดผลิต HDF1 เดือนนี้',
+  'MO ค้าง', 'ของเสียสูงสุด สัปดาห์นี้', 'ใบสแครป เดือนนี้', '4M ค้าง', 'มาทำงานกี่คน HDF1', 'ยอดผลิต HDF1 เดือนนี้',
 ];

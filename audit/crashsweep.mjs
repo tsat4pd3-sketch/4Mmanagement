@@ -48,6 +48,12 @@ const bad = []
    ต้นเหตุทั้งชุด = ต่อผล 2 คิวรีของตารางเดียวกันด้วย `[...a, ...b]` (ดู src/utils/mergeRows.js)
    ⇒ เฝ้าที่นี่ ไม่ใช่ด่าน grep: regex จับ "ต่ออาร์เรย์" แม่นไม่ได้ (ของถูก 20 จุดในรีโป) แต่ React ตัดสินถูกเสมอ */
 const dupKeys = []
+/* 💬 คอมเมนต์โค้ดหลุดมาเป็นข้อความบนจอ — `/* … *\/` ใน JSX **ต้องครอบ `{ }`**
+   ไม่ครอบ = React ถือว่าเป็น "ข้อความลูก" แล้ววาดออกมาทั้งก้อนบนหน้าเว็บ
+   🔴 build / lint / เทส **ผ่านหมด** (ถูกต้องตามไวยากรณ์ JSX ทุกประการ) — เห็นได้จาก DOM เท่านั้น
+   เคสจริง 26/11: คอมเมนต์อธิบายลำดับโมดัลใน MtnRepair.jsx หลุดขึ้นหน้า /mtn-repair ของจริง
+   ⇒ เฝ้าที่นี่เหมือนคีย์ซ้ำ — regex จับไม่แม่น (`/*` มีเต็มรีโปในฐานะคอมเมนต์ปกติ) แต่ DOM ตัดสินถูกเสมอ */
+const leakedComments = []
 for (const name of PAGES) {
   const p = await b.newPage({ viewport: { width: 1500, height: 900 }, ...TZ })
   const errs = []
@@ -99,6 +105,15 @@ for (const name of PAGES) {
     }
   } catch (e) { bad.push({ name, where: 'โหลดไม่ขึ้น', errs: [String(e).slice(0, 120)] }) }
   if (dups.size) dupKeys.push({ name, n: dups.size })
+  /* ตัวอย่างข้อความที่หลุดออกมา (ตัด 90 ตัวแรก) ให้ไล่หาต้นตอได้ทันทีโดยไม่ต้องเปิดจอเอง */
+  try {
+    const leak = await p.evaluate(() => {
+      const t = document.body?.innerText || ''
+      const i = t.search(/\/\*|\*\//)
+      return i < 0 ? null : t.slice(Math.max(0, i - 10), i + 90).replace(/\s+/g, ' ')
+    })
+    if (leak) leakedComments.push({ name, sample: leak })
+  } catch { /* อ่าน DOM ไม่ได้ = ข้าม (หน้าที่พังไปแล้วถูกนับใน bad อยู่แล้ว) */ }
   await p.close()
 }
 /* ═══ 🔭 รอบที่ 2 — "บัญชีที่มีขอบเขตส่วนงาน" (2026-10-26) ═══
@@ -140,7 +155,7 @@ for (const SCOPED of SCOPES) {
 await b2.close()
 
 await b.close()
-console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length} · คีย์ซ้ำ ${dupKeys.length} หน้า`)
+console.log(`ตรวจ ${PAGES.length} หน้า — พัง ${bad.length} · คีย์ซ้ำ ${dupKeys.length} หน้า · คอมเมนต์หลุด ${leakedComments.length} หน้า`)
 for (const SC of SCOPES) {
   const n = badScoped.filter(x => x.scope === SC).length
   console.log(`รอบขอบเขต (role=${SC.role} · sections=${SC.sections || '(ไม่จำกัดส่วนงาน — แกนไลน์ล้วน)'}) — พัง ${n} หน้า`)
@@ -149,3 +164,5 @@ badScoped.forEach(x => console.log(`🔭 [${x.scope.role}] ${x.name} ${x.errs[0]
 bad.forEach(x => console.log(`🔴 ${x.name} [${x.where}] ${x.errs[0] || ''}`))
 /* ห้ามปิดด่านนี้ด้วยการเลิกพิมพ์ — แก้ที่หน้า (ยุบด้วย mergeById / ตั้งคีย์ให้ไม่ซ้ำ) */
 dupKeys.forEach(x => console.log(`🔑 ${x.name}: คีย์ซ้ำในลิสต์ ${x.n} ตัว — ยุบแถวด้วย mergeById (src/utils/mergeRows.js) หรือ prefix คีย์ตามแหล่ง`))
+/* ห้ามปิดด่านนี้ด้วยการเลิกพิมพ์ — แก้ที่หน้า (ครอบคอมเมนต์ JSX ด้วย `{ }`) */
+leakedComments.forEach(x => console.log(`💬 ${x.name}: คอมเมนต์โค้ดหลุดขึ้นจอ — ครอบด้วย {/* … */} · ที่เจอ: ${x.sample}`))

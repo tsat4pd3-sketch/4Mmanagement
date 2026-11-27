@@ -50,7 +50,7 @@ import Segmented from '../components/Segmented';
 import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 import SectionScopeSelect from '../components/SectionScopeSelect';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
@@ -83,7 +83,7 @@ function getShiftInfo(date) {
   const m = date.getMinutes();
   const total = h * 60 + m;
   const isDay = total >= 480 && total < 1200;
-  return { isDay, label: isDay ? 'กะเช้า' : 'กะดึก', icon: isDay ? '☀️' : '🌙' };
+  return { isDay, label: isDay ? tr("กะเช้า") : 'กะดึก', icon: isDay ? '☀️' : '🌙' };
 }
 
 // การ์ดผังไลน์ย่อ — พิกัด pos_top/pos_left เป็น % ของ "ตัวรูปจริง" (มาตรฐานเดียวกับ LineSetup/Management)
@@ -411,7 +411,7 @@ export default function Dashboard({ view = 'timeline' }) {
           .select(ordCols.replace(', machine_no', '')).in('session_id', sessionIds));
       }
       if (oErr) miss.push('ใบผลิต');
-      if (dtErr) miss.push('เครื่องหยุด');
+      if (dtErr) miss.push(tr("เครื่องหยุด"));
       if (dfErr) miss.push('ของเสีย');
       oeeBlind = !!(oErr || dtErr || dfErr || pErr);
       (orders     || []).forEach(o => { (ordersBySession[o.session_id]  ||= []).push(o); });
@@ -437,6 +437,8 @@ export default function Dashboard({ view = 'timeline' }) {
         ngQty: sumDefectQty(defectBySession[s.id] || [], 'line'),
         // ของเสีย/ทดลองกินรอบเครื่อง → เข้าตัวเศษ %P ด้วย (utils/oee.js `ngByMatFrom`)
         ngForP: ngByMatFrom(defectBySession[s.id] || [], ordersBySession[s.id] || []),
+        /* ฐานของ %Q = ยอดผลิต (oee.js §7.2.2) ⇒ ต้องส่งแถวดิบ ไม่ใช่ `ngForP` ที่นับงานทดลองด้วย */
+        qRows: defectBySession[s.id] || [],
         workDate: s.work_date,
         parallelN: parallelUnitsOf(line),
         parallelCap: flowModeOf(line?.flow_mode) === 'parallel_machine' ? parallelUnitsOf(line) : 1,
@@ -500,7 +502,7 @@ export default function Dashboard({ view = 'timeline' }) {
         ngQty: sessDefects.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) };
     });
     if (!live()) return;
-    setProdErr(miss.length ? `⚠️ โหลด${miss.join(' / ')}ไม่สำเร็จ — ${oeeBlind ? 'OEE สดซ่อนไว้ (คิดไม่ได้) · ' : ''}ตัวเลขบนจอยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ` : '');
+    setProdErr(miss.length ? `⚠️ ${tr("โหลด")}${miss.join(' / ')}${tr("ไม่สำเร็จ")} — ${oeeBlind ? tr('OEE สดซ่อนไว้ (คิดไม่ได้) · ') : ''}${tr("ตัวเลขบนจอยังไม่ครบ อย่าเพิ่งใช้ตัดสินใจ")}` : '');
     setProdStatus(ps);
   }, [boardDate, beginProd]);
 
@@ -792,7 +794,7 @@ export default function Dashboard({ view = 'timeline' }) {
       const e = m[s.line_name] || (m[s.line_name] = { ng: 0, byType: {} });
       e.ng += s.ngQty;
       (s.defectLogs || []).forEach(d => {
-        const k = d.dr_defect_types?.name_th || 'ไม่ระบุประเภท';
+        const k = d.dr_defect_types?.name_th || tr("ไม่ระบุประเภท");
         const t = e.byType[k] || (e.byType[k] = { name: k, qty: 0, notes: [] });
         t.qty += (d.qty_ng || 0) + (d.qty_suspect || 0);
         if (d.description) t.notes.push(d.description);
@@ -816,9 +818,9 @@ export default function Dashboard({ view = 'timeline' }) {
   const personAlarmOf = useCallback((emp) => {
     if (!emp || emp.is_present !== true) return null;
     const ppeMiss = ppeMissingList(emp);
-    if (ppeMiss.length) return { kind: 'red', icon: '⛑', label: `PPE ไม่ครบ (${ppeMiss.join(', ')})` };
+    if (ppeMiss.length) return { kind: 'red', icon: '⛑', label: `PPE ${tr("ไม่ครบ")} (${ppeMiss.join(', ')})` };
     const pend = man4mPendingFor(emp.name);
-    if (pend) return { kind: 'amber', icon: '⏳', label: `รออนุมัติ 4M — ${pend.description}` };
+    if (pend) return { kind: 'amber', icon: '⏳', label: `${tr("รออนุมัติ")} 4M — ${pend.description}` };
     return null;
   }, [man4mPendingFor]);
 
@@ -995,8 +997,8 @@ export default function Dashboard({ view = 'timeline' }) {
       {(scopeFellBack || scopeUnsure) && (
         <div role="status" style={{ margin: '0 0 12px', padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)', fontSize: 13, fontWeight: 700 }}>
           {scopeFellBack
-            ? '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน (ขอบเขตของบัญชีไม่ตรงกับไลน์ในทะเบียน · ตั้งที่หน้าผู้ใช้)'
-            : '⚠ หาไลน์ของบัญชีนี้ไม่เจอ — แสดงตามส่วนงานของบัญชีแทน'}
+            ? tr("⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน (ขอบเขตของบัญชีไม่ตรงกับไลน์ในทะเบียน · ตั้งที่หน้าผู้ใช้)")
+            : tr("⚠ หาไลน์ของบัญชีนี้ไม่เจอ — แสดงตามส่วนงานของบัญชีแทน")}
         </div>
       )}
       {prodErr && (
@@ -1010,7 +1012,7 @@ export default function Dashboard({ view = 'timeline' }) {
       <div className="ph-chrome" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28, gap: 16, flexWrap: 'wrap' }}>
         <motion.div {...stagger(0)}>
           <h1 style={{ margin: 0, fontSize: 'clamp(18px,3vw,24px)', fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.5px' }}>
-            {isPeople ? 'ภาพรวมกำลังคน' : (lineSeedShown.length ? `ไทม์ไลน์ผลิต · ${lineSeedShown.join(' · ')}` : 'ไทม์ไลน์ผลิตทุกไลน์')}
+            {isPeople ? tr("ภาพรวมกำลังคน") : (lineSeedShown.length ? `${tr("ไทม์ไลน์ผลิต")} · ${lineSeedShown.join(' · ')}` : tr("ไทม์ไลน์ผลิตทุกไลน์"))}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
             {selectedShift !== 'all' && (
@@ -1020,13 +1022,13 @@ export default function Dashboard({ view = 'timeline' }) {
                 color: selectedShift === 'day' ? 'var(--amber)' : 'var(--blue)',
                 border: `1px solid ${selectedShift === 'day' ? 'var(--amber-line)' : 'var(--blue-line)'}`,
               }}>
-                {selectedShift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
-                {isToday && selectedShift === (shiftInfo.isDay ? 'day' : 'night') && ' · กะปัจจุบัน'}
+                {selectedShift === 'day' ? tr("☀️ กะเช้า") : tr("🌙 กะดึก")}
+                {isToday && selectedShift === (shiftInfo.isDay ? 'day' : 'night') && tr("· กะปัจจุบัน")}
               </span>
             )}
             <span style={{ fontSize: 14, color: 'var(--muted)', fontFamily: 'var(--font-display)' }}>
               {isToday
-                ? now.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                ? now.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                 : selectedDate}
             </span>
           </div>
@@ -1040,11 +1042,11 @@ export default function Dashboard({ view = 'timeline' }) {
           )}
           {/* Shift toggle = <Segmented> มาตรฐาน (06/11 · เดิมวาดเอง มุม 7px) · สีกะอยู่ที่ป้ายใต้ชื่อหน้าแทน */}
           <Segmented label={tr('กะ')} value={selectedShift} onChange={setSelectedShift}
-            options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
+            options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: tr("กะเช้า") }, { value: 'night', label: tr("กะดึก") }]} />
           {/* Date picker */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
-            background: 'var(--card)', border: '1px solid var(--border2)',
+            background: 'var(--card-surf)', border: '1px solid var(--border2)',
             padding: '8px 14px', borderRadius: 'var(--r-md)',
           }}>
             <span style={{ fontSize: 15, color: 'var(--muted)' }}>📅</span>
@@ -1054,7 +1056,7 @@ export default function Dashboard({ view = 'timeline' }) {
           </div>
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
-              style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
               {tr('กลับเป็นหมุนหน้า')}
             </button>
           )}
@@ -1075,12 +1077,12 @@ export default function Dashboard({ view = 'timeline' }) {
         }}>
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
             <div style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)' }}>
-              ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
+              ⚠️ {tr("เช็คชื่อแล้ว")} {noShiftLogs.length} {tr("คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้")}
             </div>
             {/* รายชื่อไลน์ = ข้อเท็จจริง ต้องอยู่บนจอ · ทางแก้พับไป tooltip ได้เพราะมีปุ่ม "ไปตั้งตารางกะ" ยืนอยู่ข้างๆ แล้ว · user 18/11 */}
             <div className="tv-hide" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}
               title={tr('ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง')}>
-              ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
+              {tr("ไลน์ที่ยังไม่มีตารางกะของวันที่เลือก")}: <b style={{ color: 'var(--text)' }}>{noShiftLineNames.join(' · ') || '—'}</b>
               {' '}<MoreMark text={tr('ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง')} />
             </div>
           </div>
@@ -1095,10 +1097,10 @@ export default function Dashboard({ view = 'timeline' }) {
           จอ TV/บอร์ดใช้บัญชีกลาง ⇒ ไม่ทักทายชื่อ · ค่าที่ยังไม่รู้ถูกนับเป็น "ยังไม่มีข้อมูล" ไม่ใช่ 0 (utils/statusLine.js) */}
       {!loading && (() => {
         const sl = buildStatusLine([
-          { label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', tone: attendRate == null ? 'none' : attendTone(attendRate), need: attendRate == null ? null : `อัตราการมาทำงาน ${attendRate}% (มา ${present.length} · ขาด ${absent.length})` },
-          { label: 'PPE ครบ', value: ppeRate, unit: '%', tone: ppeRate == null ? 'none' : ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad', need: ppeRate == null ? null : `PPE ครบแค่ ${ppeRate}% ของคนที่มา` },
-          { label: 'OT', value: otCount, unit: 'คน', tone: 'none' },
-          { label: '4M รอ', value: visibleFourMLogs.length, unit: 'รายการ', tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }), need: `4M รออนุมัติ ${visibleFourMLogs.length} รายการ` },
+          { label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', tone: attendRate == null ? 'none' : attendTone(attendRate), need: attendRate == null ? null : `${tr("อัตราการมาทำงาน")} ${attendRate}% (${tr("มา")} ${present.length} · ${tr("ขาด")} ${absent.length})` },
+          { label: 'PPE ครบ', value: ppeRate, unit: '%', tone: ppeRate == null ? 'none' : ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad', need: ppeRate == null ? null : `PPE ${tr("ครบแค่")} ${ppeRate}% ${tr("ของคนที่มา")}` },
+          { label: 'OT', value: otCount, unit: tr("คน"), tone: 'none' },
+          { label: '4M รอ', value: visibleFourMLogs.length, unit: tr("รายการ"), tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }), need: `4M ${tr("รออนุมัติ")} ${visibleFourMLogs.length} ${tr("รายการ")}` },
         ], { now });
         return (
           <div data-tv-item style={{ marginBottom: 12, fontSize: T(14, 22), lineHeight: 1.5, color: 'var(--text2)' }}>
@@ -1131,15 +1133,15 @@ export default function Dashboard({ view = 'timeline' }) {
                 รู้ว่าเขียวเพราะอะไร · คำว่า "เกณฑ์" ไม่ใช่ "เป้า" เพราะเป็นเกณฑ์ของจอนี้เอง
                 ยังไม่ใช่เป้าทางการจากทะเบียน KPI (ห้ามเขียน "เป้า" จนกว่าจะผูกของจริง) */
           {
-            label: 'พนักงานทั้งหมด', value: totalCapacity, unit: 'คน',
-            sub: `เช็คชื่อแล้ว ${present.length + absent.length} / ${totalCapacity} คน`,
+            label: 'พนักงานทั้งหมด', value: totalCapacity, unit: tr("คน"),
+            sub: `${tr("เช็คชื่อแล้ว")} ${present.length + absent.length} / ${totalCapacity} ${tr("คน")}`,
             tone: 'none',            // ยอดพนักงานในทะเบียน = ข้อเท็จจริง ไม่มีดี/แย่
             icon: '👥',
           },
           {
             label: 'อัตราการมาทำงาน', value: attendRate, unit: '%', primary: true,
-            sub: attendRate == null ? 'ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้'
-              : `มา ${present.length} · ขาด ${absent.length}${totalCapacity - present.length - absent.length > 0 ? ` · ยังไม่เช็ค ${totalCapacity - present.length - absent.length}` : ''} · จาก ${totalCapacity} คน`,
+            sub: attendRate == null ? tr("ยังไม่มีใครเช็คชื่อ — ตัวเลขยังตัดสินไม่ได้")
+              : `${tr("มา")} ${present.length} · ${tr("ขาด")} ${absent.length}${totalCapacity - present.length - absent.length > 0 ? ` · ${tr("ยังไม่เช็ค")} ${totalCapacity - present.length - absent.length}` : ''} · ${tr("จาก")} ${totalCapacity} ${tr("คน")}`,
             // เกณฑ์เดิมของหน้านี้ (90 / 75) — คงพฤติกรรมไว้ แต่ให้ "สี" มาจากชุดกลาง + เขียนบนจอ
             tone: attendRate == null ? 'none'
               : attendTone(attendRate),
@@ -1148,21 +1150,21 @@ export default function Dashboard({ view = 'timeline' }) {
           },
           {
             label: 'PPE ครบถ้วน', value: ppeRate, unit: '%',
-            sub: ppeRate == null ? 'ยังไม่มีคนมาให้ตรวจ' : `${ppeReady.length} / ${present.length} คนที่มา`,
+            sub: ppeRate == null ? tr("ยังไม่มีคนมาให้ตรวจ") : `${ppeReady.length} / ${present.length} ${tr("คนที่มา")}`,
             tone: ppeRate == null ? 'none'
               : ppeRate >= 90 ? 'good' : ppeRate >= 70 ? 'warn' : 'bad',
             basis: ppeRate == null ? null : 'เกณฑ์จอนี้: เขียว ≥ 90% · เหลือง ≥ 70%',
             icon: '🦺',
           },
           {
-            label: 'OT วันนี้', value: otCount, unit: 'คน',
-            sub: present.length > 0 ? `${Math.round(otCount/present.length*100)}% ของคนที่มา` : 'ไม่มีข้อมูล',
+            label: 'OT วันนี้', value: otCount, unit: tr("คน"),
+            sub: present.length > 0 ? `${Math.round(otCount/present.length*100)}% ${tr("ของคนที่มา")}` : tr("ไม่มีข้อมูล"),
             tone: 'none',            // OT เยอะ/น้อยไม่ได้แปลว่าดีหรือแย่ในตัวมันเอง ⇒ ห้ามทาส้มทิ้งไว้
             icon: '⏰',
           },
           {
-            label: '4M Alerts', value: visibleFourMLogs.length, unit: 'รายการ',
-            sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ไลน์ได้รับผลกระทบ` : 'ไม่มีการแจ้งเตือน',
+            label: '4M Alerts', value: visibleFourMLogs.length, unit: tr("รายการ"),
+            sub: visibleFourMLogs.length > 0 ? `${[...new Set(visibleFourMLogs.map(f => f.line_name))].length} ${tr("ไลน์ได้รับผลกระทบ")}` : 'ไม่มีการแจ้งเตือน',
             // เหลือง ไม่ใช่แดง — ให้ตรงกับการ์ด "4M รออนุมัติ" บนหน้าแรก (จอ 2 จอต้องพูดตรงกัน)
             tone: toneOf({ value: visibleFourMLogs.length, zeroIsGood: true, over: 'warn' }),
             icon: '🚨',
@@ -1173,7 +1175,7 @@ export default function Dashboard({ view = 'timeline' }) {
           <motion.div key={kpi.label} {...stagger(i + 2)}
             style={{ height: '100%', gridColumn: isWide && kpi.primary ? 'span 2' : 'auto' }}>
             <div className="kpi-lift" style={{
-              background: 'var(--card)', border: '1px solid var(--border2)',
+              background: 'var(--card-surf)', border: '1px solid var(--border2)',
               borderRadius: 'var(--r-lg)', padding: isMobile ? '13px 14px' : isWide ? '20px 24px' : '16px 18px',
               boxShadow: 'var(--shadow-sm)',
               borderTop: `3px solid ${statusColor(kpi.tone)}`,
@@ -1224,7 +1226,7 @@ export default function Dashboard({ view = 'timeline' }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span className="dt-alarm-icon" style={{ fontSize: T(20, 30) }}>🚨</span>
             <span style={{ fontSize: T(16, 26), fontWeight: 800, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>
-              เครื่องจักร Downtime {dtAlarmList.length} รายการ
+              {tr("เครื่องจักร")} Downtime {dtAlarmList.length} {tr("รายการ")}
             </span>
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -1283,7 +1285,7 @@ export default function Dashboard({ view = 'timeline' }) {
         return (
           <motion.div {...stagger(7)} style={{ marginBottom: 24 }}>
             <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>
-              สถานะไลน์ผลิต
+              {tr("สถานะไลน์ผลิต")}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: tv ? 'repeat(auto-fill, minmax(360px, 1fr))' : isUltra ? 'repeat(auto-fill, minmax(250px, 1fr))' : isWide ? 'repeat(auto-fill, minmax(230px, 1fr))' : 'repeat(auto-fill, minmax(200px, 1fr))', gap: isMobile ? 10 : 14 }}>
               {renderOrder.flatMap((line, i) => {
@@ -1292,9 +1294,9 @@ export default function Dashboard({ view = 'timeline' }) {
                 const judgeable = line.lineTotal > 0 && line.lineChecked > 0;
                 const color   = statusColor(judgeable ? attendTone(line.rate) : 'none');
                 const over    = line.linePresent - line.lineTotal;
-                const attendText = line.lineTotal === 0 ? 'ไม่ได้ตั้งกำลังคนมาตรฐาน'
-                  : line.lineChecked === 0 ? 'ยังไม่มีใครเช็คชื่อ'
-                  : `มาทำงาน ${Math.min(line.rate, 100)}%${over > 0 ? ` · เกินมาตรฐาน ${over} คน` : ''}`;
+                const attendText = line.lineTotal === 0 ? tr("ไม่ได้ตั้งกำลังคนมาตรฐาน")
+                  : line.lineChecked === 0 ? tr("ยังไม่มีใครเช็คชื่อ")
+                  : `${tr("มาทำงาน")} ${Math.min(line.rate, 100)}%${over > 0 ? ` · ${tr("เกินมาตรฐาน")} ${over} ${tr("คน")}` : ''}`;
                 const isExpanded = line._hasChildren && expandedLines.has(line.name);
                 // downtime alarm ของไลน์นี้ + ไลน์ย่อยที่ถูกรวมเข้าการ์ดเดียวกัน
                 const cardNames = [line.name, ...(line._children?.map(c => c.name) || [])];
@@ -1305,7 +1307,7 @@ export default function Dashboard({ view = 'timeline' }) {
                   <motion.div key={line.id} data-tv-item {...stagger(8 + i)} style={{ height: '100%' }}>
                     <div
                       style={{
-                        background: 'var(--card)',
+                        background: 'var(--card-surf)',
                         border: '1px solid var(--border2)',
                         borderLeft: line._hasChildren ? '4px solid var(--accent)' : '1px solid var(--border2)',
                         borderRadius: 'var(--r-lg)', padding: isWide ? '18px 20px' : '14px 16px',
@@ -1322,7 +1324,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           </div>
                           {line.section && (
                             <div style={{ fontSize: isWide ? 14 : 13, color: 'var(--blue)', marginTop: 2, fontWeight: 600 }}>
-                              {line.section}{line._hasChildren && ` · รวม ${line._children.length} ไลน์ย่อย`}
+                              {line.section}{line._hasChildren && ` · ${tr("รวม")} ${line._children.length} ${tr("ไลน์ย่อย")}`}
                             </div>
                           )}
                         </div>
@@ -1353,7 +1355,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         <span style={{ fontSize: T(isWide ? 42 : 34, 60), fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
                           {line.linePresent}
                         </span>
-                        <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} {tr('คน')}{line._hasChildren && ' (รวมย่อย)'}</span>
+                        <span style={{ fontSize: isWide ? 17 : 15, color: 'var(--muted)' }}>/ {line.lineTotal} {tr('คน')}{line._hasChildren && tr("(รวมย่อย)")}</span>
                       </div>
                       <MiniBar value={line.linePresent} max={line.lineTotal} color={color} />
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
@@ -1368,7 +1370,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               background: 'var(--accent-dim)', border: '1px solid var(--accent)',
                               borderRadius: 'var(--r-md)', padding: '4px 10px',
                             }}>
-                            {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
+                            {isExpanded ? tr("ซ่อนไลน์ย่อย") : tr("ดูไลน์ย่อย")}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
                           </button>
                         )}
@@ -1385,7 +1387,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 const nested = (
                   <motion.div key={`${line.id}-children`} data-tv-item {...stagger(8 + i)} style={{ gridColumn: '1 / -1' }}>
                     <div style={{
-                      background: 'var(--bg2)',
+                      background: 'var(--bg2-surf)',
                       border: '1px dashed var(--border2)',
                       borderLeft: '4px solid var(--accent)',
                       borderRadius: 'var(--r-lg)', padding: isWide ? '14px 16px' : '12px 14px',
@@ -1406,7 +1408,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           const csDT     = dtAlarmByLine[cs.name] || [];
                           const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
                           return (
-                            <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: isWide ? '12px 14px' : '10px 12px' }}>
+                            <div key={cs.id} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
                                   <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{tr('ไลน์ย่อย')}</span>
@@ -1437,11 +1439,11 @@ export default function Dashboard({ view = 'timeline' }) {
                               </div>
                               <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                                 <span style={{ fontSize: isWide ? 26 : 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>{pl.people}</span>
-                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>{tr('คน ·')} {pl.total > 0 ? `${pl.staffed}/${pl.total} จุด` : '—'}</span>
+                                <span style={{ fontSize: isWide ? 14 : 12, color: 'var(--muted)' }}>{tr('คน ·')} {pl.total > 0 ? `${pl.staffed}/${pl.total} ${tr("จุด")}` : '—'}</span>
                               </div>
                               <MiniBar value={pl.staffed} max={pl.total || 1} color={cColor} />
                               <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: cColor }}>
-                                {pl.total === 0 ? `${pl.people} คนบนไลน์` : pl.staffed >= pl.total ? '✓ เข้าครบทุกจุด' : `⚠ เข้า ${pl.staffed}/${pl.total} จุด`}
+                                {pl.total === 0 ? `${pl.people} ${tr("คนบนไลน์")}` : pl.staffed >= pl.total ? tr("✓ เข้าครบทุกจุด") : `⚠ ${tr("เข้า")} ${pl.staffed}/${pl.total} ${tr("จุด")}`}
                                 {cs.lineAlerts > 0 ? ' · ⚠ Risk' : ''}
                               </div>
                             </div>
@@ -1534,7 +1536,7 @@ export default function Dashboard({ view = 'timeline' }) {
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Heijunka Board — ไทม์ไลน์การผลิต
+                Heijunka Board — {tr("ไทม์ไลน์การผลิต")}
                 {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>{tr('ย้อนหลัง')} {boardDate}</span>}
                 {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>{tr('ล่วงหน้า')} {boardDate}</span>}
               </div>
@@ -1542,17 +1544,17 @@ export default function Dashboard({ view = 'timeline' }) {
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
                 {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกบรรทัด */}
                 <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
-                  style={{ width: 148, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  style={{ width: 148, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2-surf)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
                   <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>{tr('วันนี้')}</button>
                 )}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)' }}>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2-surf)', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)' }}>
               {[
                 /* 🎨 พาเลต 5 สี (05/11): "เสร็จช้า" = เขียวเหมือนเสร็จ แยกด้วยไอคอน ✓! (เดิมส้ม — เฉดที่ 6) */
-                { t: 'info', icon: '▶', label: 'กำลังผลิต' },
+                { t: 'info', icon: '▶', label: tr("กำลังผลิต") },
                 { t: 'good', icon: '✓', label: 'เสร็จแล้ว' },
                 { t: 'good', icon: '✓!', label: 'เสร็จ (ปิดช้ากว่ากำหนด)' },
                 { t: 'bad', icon: '!', label: 'ล่าช้า' },
@@ -1565,6 +1567,23 @@ export default function Dashboard({ view = 'timeline' }) {
                   <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{tr(item.label)}</span>
                 </div>
               ))}
+              {/* 🖼️ 24/11 · user "บางไลน์มีกรอบขาวบางไลน์ไม่มี" — กรอบเส้นประไม่เคยมีคำอธิบายในแถบนี้
+                  ⇒ คนอ่านว่าเป็น "แผนจากทีมวางแผน" ทั้งที่เป็นคิวที่ระบบไล่ให้เอง */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                title={tr('กรอบเส้นประ = คิวตามอุดมคติที่ระบบไล่ให้จากใบที่เปิดไว้แล้ว — ไม่ใช่แผนของทีมวางแผน')}>
+                <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 'var(--r-xs)', border: '2px dashed var(--text)', flexShrink: 0 }} />
+                <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{tr('หลุดกรอบคิว')}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                title={tr('ใบนี้อยู่ในกรอบคิวที่ระบบไล่ให้ — กรอบทับแท่งพอดี')}>
+                <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 'var(--r-xs)', border: '1px dashed var(--muted)', opacity: 0.35, flexShrink: 0 }} />
+                <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{tr('อยู่ในกรอบคิว')}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+                title={tr('ยังไม่รู้ cycle time ⇒ คำนวณกรอบคิวให้ไม่ได้ — ไม่ใช่ "อยู่ในกรอบ"')}>
+                <span style={{ width: T(16, 24), height: T(16, 24), borderLeft: '2px dotted var(--muted)', opacity: 0.8, flexShrink: 0 }} />
+                <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{tr('คำนวณกรอบคิวไม่ได้')}</span>
+              </div>
             </div>
 
             {/* ── ตัวกรองตู้รวม: ชิปกลุ่มไลน์ + ช่องค้นพาร์ท/MAT/เลขใบ ──
@@ -1585,9 +1604,9 @@ export default function Dashboard({ view = 'timeline' }) {
                   {/* แถวเลือกไลน์ = แท็บเส้นใต้มาตรฐาน (TabBar · 06/11) — เดิมชิปแคปซูล · ช่องค้นหา + ล้างตัวกรอง อยู่ปลายแถว */}
                   {lineNames.length > 1 && (
                     <TabBar size="sm" value={effSel} onChange={setBoardLineSel}
-                      tabs={[{ key: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ key: n, label: n }))]}
+                      tabs={[{ key: '', label: `${tr("ทุกไลน์")} (${lineNames.length})` }, ...lineNames.map(n => ({ key: n, label: n }))]}
                       right={<>
-                        <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
+                        <SearchInput value={boardQuery} onChange={setBoardQuery} fields={tr("พาร์ท / MAT / เลขใบ")} grow={false}
                           style={{ width: 210 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
                         {(effSel || boardQuery) && (
                           <button type="button" onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
@@ -1645,7 +1664,7 @@ export default function Dashboard({ view = 'timeline' }) {
               return (
                 <div key={lineName} data-tv-item style={{
                   marginBottom: 16,
-                  background: 'var(--card)',
+                  background: 'var(--card-surf)',
                   border: `1px solid ${totalDelayed > 0 ? 'var(--red-line)' : hasOpen ? 'var(--green-line)' : 'var(--border2)'}`,
                   borderRadius: 'var(--r-lg)', overflow: 'hidden',
                   boxShadow: totalDelayed > 0 ? '0 0 0 1px var(--red-dim)' : hasOpen ? '0 0 0 1px var(--green-dim)' : 'none',
@@ -1677,9 +1696,9 @@ export default function Dashboard({ view = 'timeline' }) {
                         if (!(unknown > 0) || !(cap > 0)) return null;
                         const shaky = parts.some(p => p.state !== 'ok');
                         return (
-                          <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
+                          <span title={`${tr("เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว")}${shaky ? tr(' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง') : ''}`}
                             style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)' }}>
-                            ⬜ ไม่รู้ {unknown} {tr('น. (')}{Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
+                            ⬜ {tr("ไม่รู้")} {unknown} {tr('น. (')}{Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
                           </span>
                         );
                       })()}
@@ -1700,7 +1719,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               color: anyOpen ? 'var(--green)' : 'var(--muted)' }}>
                               {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
                               {list.map(s => `${s.shift === 'day' ? '☀️' : '🌙'}${s.status === 'open' ? '●' : '✓'}`).join(' ')}
-                              {anyOpen ? ' Live' : ' ปิดแล้ว'}
+                              {anyOpen ? ' Live' : tr(" ปิดแล้ว")}
                             </span>
                           );
                         });
@@ -1729,12 +1748,12 @@ export default function Dashboard({ view = 'timeline' }) {
                     }).filter(Boolean)).sort((a, b) => a.s - b.s);
                     // การ์ดนี้มีหลาย sub-line มั้ย — ถ้ามี ให้ระบุชื่อไลน์กำกับใน label กันอ่านแล้วสับสน
                     const multiSubLine = new Set(sessions.map(s => s.line_name)).size > 1;
-                    const dtLabel = (w) => `⛔ ${multiSubLine && w.line_name ? `[${w.line_name}] ` : ''}${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}น.)${w.desc ? ` — ${w.desc}` : ''}`;
+                    const dtLabel = (w) => `⛔ ${multiSubLine && w.line_name ? `[${w.line_name}] ` : ''}${w.name}${w.machine ? ` @${w.machine}` : ''} ${fmtMs(w.s)}–${fmtMs(w.e)} (${w.min}${tr("น.")})${w.desc ? ` — ${w.desc}` : ''}`;
                     // downtime ที่คาบเกี่ยวช่วงเวลา [a,b] ของใบกัมบัง — เฉพาะของ sub-line เดียวกับใบนั้น
                     const dtTooltip = (a, b, lineName) => {
                       const hits = dtWindows.filter(w => w.s < b && w.e > a && (!lineName || w.line_name === lineName));
                       return hits.length
-                        ? ` · สาเหตุที่เป็นไปได้: ${hits.map(dtLabel).join(' · ')}`
+                        ? ` · ${tr("สาเหตุที่เป็นไปได้")}: ${hits.map(dtLabel).join(' · ')}`
                         : ' · ไม่มีบันทึก downtime ในช่วงนี้';
                     };
 
@@ -1796,8 +1815,8 @@ export default function Dashboard({ view = 'timeline' }) {
                          🔴 **วาดทุกใบ** — กรอบคือเส้นอ้างอิงที่ต้องอยู่เสมอ คนถึงจะเทียบได้ว่าแท่งจริง
                             "ล้นออกขวาเท่าไหร่ = หลุดเท่านั้น" (ใบที่ตรงแผน กรอบจะทับแท่งพอดี = เหมือนเส้นขอบ ไม่รก)
                          · `slipped` ใช้เน้นเฉพาะใบที่หลุดจริง (กรอบเข้ม + เส้นปิดท้ายกรอบให้เห็นจุดที่แผนจบ) */
-                      const { planLeftPct, planWidthPct, planSlipped } = planFramePct(item, hs, pctPerMs);
-                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped };
+                      const { planLeftPct, planWidthPct, planSlipped, planUnknown } = planFramePct(item, hs, pctPerMs);
+                      return { o: item.o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs: item.endMs, isDelayed: item.isDelayed, isLateDone: item.isLateDone, startMs: item.startMs, occupiedEndMs: item.occupiedEndMs, planLeftPct, planWidthPct, planStartMs: item.planStartMs, plannedEndMs: item.plannedEndMs, planSlipped, planUnknown };
                     };
 
                     // เรียงตามเวลาเริ่มจริง แล้วต่อคิวในแถวเดียวกัน (ไม่สร้างแถวใหม่) — แต่ละการ์ดเริ่มได้ไม่ก่อนการ์ดก่อนหน้าสิ้นสุด
@@ -1829,7 +1848,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               if (widthPct <= 0) return null;
                               const brkName = breakBandName(band);
                               return (
-                                <div key={`brk-${pi}`} title={`${breakBandTitle(band, rowLine)} — ไลน์ไม่รองรับ KANBAN`}
+                                <div key={`brk-${pi}`} title={`${breakBandTitle(band, rowLine)} — ${tr("ไลน์ไม่รองรับ")} KANBAN`}
                                   style={{
                                     position: 'absolute', top: 0, bottom: 0,
                                     left: `${leftPct}%`, width: `${widthPct}%`,
@@ -1874,7 +1893,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             const room = (i + 1 < positioned.length ? positioned[i + 1].leftPct : 100) - positioned[i].leftPct;
                             positioned[i].widthPct = Math.max(0, Math.min(Math.max(positioned[i].widthPct, Math.min(minPct, room)), room));
                           }
-                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
+                          return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped, planUnknown }, oi) => {
                           if (leftPct >= 100) return null;
                           const statusTone  = o.isDone ? 'good' : isDelayed ? 'bad' : o.isCarry ? 'warn' : 'info';   // เสร็จช้า = เขียว + ป้าย (พาเลต 5 สี)
                           const statusColor = toneVar(statusTone);
@@ -1899,11 +1918,11 @@ export default function Dashboard({ view = 'timeline' }) {
                           /* 🔗 "ใบฉันเลื่อนเพราะใคร" (คำขอทีมปั๊ม) — ต่อท้าย tooltip ของใบที่ถูกพาล */
                           const blame = blamedBy.get(orderKeyOf(o));
                           const blameText = blame
-                            ? ` · ⏴ ถูกเลื่อนเพราะใบ #${blame.root?.prod_no || blame.root?.mat_no || '—'} ค้าง (โทษได้ ${blame.blameMin} น. จากที่เลื่อนไป ${blame.pushedMin} น. — ส่วนต่างคือการเข้าคิวปกติ)`
+                            ? ` · ⏴ ${tr("ถูกเลื่อนเพราะใบ")} #${blame.root?.prod_no || blame.root?.mat_no || '—'} ${tr("ค้าง (โทษได้")} ${blame.blameMin} ${tr("น. จากที่เลื่อนไป")} ${blame.pushedMin} ${tr("น. — ส่วนต่างคือการเข้าคิวปกติ")})`
                             : '';
                           return (
                             <Fragment key={o.prod_no || oi}>
-                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs-realEndMs)/60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${blameText}${causeText}`}
+                            <div title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}${tr("ชิ้น")}${isLateDone ? ` ✓${tr("เสร็จ (ช้ากว่ากำหนด")}${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}${tr("นาที")})` : isDelayed ? ` ⚠️${tr("ช้า")}${Math.round((nowMs-realEndMs)/60000)}${tr("นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย")}` : o.isDone ? tr(' ✓เสร็จ') : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 ${tr("เป้าล้นกรอบวันงาน")} +${(overMs / 3600000).toFixed(1)} ${tr("ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต")}` : ''}${blameText}${causeText}`}
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
@@ -1932,7 +1951,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 </div>
                                 <div style={{ fontSize: T(11, 16), color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
-                                  {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
+                                  {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}{tr("ชิ้น")}
                                   {isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> {tr('🔴ล้น+')}{(overMs / 3600000).toFixed(1)}{tr('ชม.')}</span>}
                                 </div>
                               </div>
@@ -1940,6 +1959,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             </div>
                             {/* 🖼️ กรอบคิวตามอุดมคติของใบนี้ — ตัววาดตัวเดียวทั้งระบบ (ห้ามวาดเองในหน้า) */}
                             <PlanSlipFrame planLeftPct={planLeftPct} planWidthPct={planWidthPct} planSlipped={planSlipped}
+                              planUnknown={planUnknown} leftPct={leftPct}
                               planStartMs={planStartMs} plannedEndMs={plannedEndMs}
                               startMs={startMs} realEndMs={realEndMs} occupiedEndMs={occupiedEndMs} fmtMs={fmtMs} />
                             {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -2018,29 +2038,29 @@ export default function Dashboard({ view = 'timeline' }) {
                           });
                           const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
                           if (ediQty <= 0 && stockUsed > 0) {
-                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ${tr("ส่งพรุ่งนี้")} ${grossQty.toLocaleString()} ${tr("ชิ้น — stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้")}` });
                           }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
-                            const stockNote = stockUsed > 0 ? ` · หัก stock ${stockUsed.toLocaleString()} แล้ว` : '';
+                            const stockNote = stockUsed > 0 ? ` · ${tr("หัก")} stock ${stockUsed.toLocaleString()} ${tr("แล้ว")}` : '';
                             /* 🔴 ยืดคร่อมเวลาพัก = `stretchOverBreaks()` (utils/heijunkaQueue.js) เท่านั้น
                                คอมเมนต์ของมันเขียนไว้เองว่า "ต้องเป็นฟังก์ชันเดียว · ก๊อป 2 ที่แล้วดริฟท์แน่"
                                แต่ 13/11 เจอ **ก๊อปซ้ำ 3 ชุด**ในหน้า (MG 1 · DB 2) — ยุบแล้ว ห้าม inline กลับมา */
                             const finishFrom2 = (startMs, workMs) =>
                               stretchOverBreaks(startMs, startMs + workMs, allBreaksOnce(lineName));
                             if (w <= 0) {
-                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: งานส่งพรุ่งนี้ ${ediQty.toLocaleString()} ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้${stockNote}` });
+                              chips.push({ color: 'var(--muted)', text: `🌙📡 EDI: ${tr("งานส่งพรุ่งนี้")} ${ediQty.toLocaleString()} ${tr("ชิ้น แต่ไม่มี cycle time — คาดการณ์ไม่ได้")}${stockNote}` });
                             } else {
                               const nf = finishFrom2(Math.max(NIGHT_REG_IN2, nowMs), w);
-                              const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ชิ้นไม่มี CT)` : '';
+                              const tail = noCtQty > 0 ? ` (+${noCtQty.toLocaleString()} ${tr("ชิ้นไม่มี")} CT)` : '';
                               if (nf <= gridEndMs) {
-                                chips.push({ color: 'var(--green)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เข้าปกติ 22:30 ทัน คาดเสร็จ ~${fmtMs(nf)}${tail}` });
+                                chips.push({ color: 'var(--green)', text: `🌙📡 EDI ${tr("ต้องผลิตคืนนี้")} ${ediQty.toLocaleString()} ${tr("ชิ้น")}${stockNote} — ${tr("เข้าปกติ 22:30 ทัน คาดเสร็จ")} ~${fmtMs(nf)}${tail}` });
                               } else {
                                 const of2 = finishFrom2(Math.max(NIGHT_OT_IN2, nowMs), w);
                                 if (of2 <= gridEndMs) {
-                                  chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
+                                  chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ${tr("ต้องผลิตคืนนี้")} ${ediQty.toLocaleString()} ${tr("ชิ้น")}${stockNote} — ⏰ ${tr("ควรเรียกเข้า 20:00 (คาดเสร็จ")} ~${fmtMs(of2)} · ${tr("ถ้าเข้า 22:30 จบ")} ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ${tr("ต้องผลิตคืนนี้")} ${ediQty.toLocaleString()} ${tr("ชิ้น")}${stockNote} — ${tr("เกินกำลังแม้เข้า 20:00 (คาดเสร็จ")} ~${fmtMs(of2)}) ${tr("วางแผนล่วงหน้า")}${tail}` });
                                 }
                               }
                             }
@@ -2050,23 +2070,23 @@ export default function Dashboard({ view = 'timeline' }) {
                         if (!remainCards) return;
                         const sLabel = shift === 'day' ? '☀️' : '🌙';
                         if (isHistorical) {
-                          chips.push({ color: 'var(--red)', text: `${sLabel} งานไม่จบในกะ ${remainCards} ใบ (~${remainQty.toLocaleString()} ชิ้น)` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} ${tr("งานไม่จบในกะ")} ${remainCards} ${tr("ใบ")} (~${remainQty.toLocaleString()} ${tr("ชิ้น")})` });
                           return;
                         }
                         if (isFutureDay || projEndMs == null) return;
                         if (noCt === remainCards) {
-                          chips.push({ color: 'var(--muted)', text: `${sLabel} คาดการณ์ไม่ได้ — งานค้าง ${remainCards} ใบไม่มี cycle time` });
+                          chips.push({ color: 'var(--muted)', text: `${sLabel} ${tr("คาดการณ์ไม่ได้ — งานค้าง")} ${remainCards} ${tr("ใบไม่มี")} cycle time` });
                           return;
                         }
                         if (shift === 'day') {
                           const projLabel = `~${fmtMs(projEndMs)}`;
                           const otMin = Math.ceil((projEndMs - DAY_REG_END) / 60000);
                           if (projEndMs <= DAY_REG_END) {
-                            chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} ${tr("คาดเสร็จ")} ${projLabel} — ${tr("จบในเวลาปกติ (ก่อน 17:30) ไม่ต้องเปิด")} OT` });
                           } else if (projEndMs <= DAY_OT_END) {
-                            chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
+                            chips.push({ color: 'var(--amber)', text: `${sLabel} ${tr("คาดเสร็จ")} ${projLabel} — ⏰ ${tr("ต้องเปิด")} OT ~${otMin} ${tr("นาที (เลิก 17:30 → ผลิตถึง")} ${projLabel})` });
                           } else {
-                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                            chips.push({ color: 'var(--red)', text: `${sLabel} ${tr("คาดเสร็จ")} ${projLabel} — ${tr("เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต")}` });
                           }
                           return;
                         }
@@ -2075,13 +2095,13 @@ export default function Dashboard({ view = 'timeline' }) {
                           // ยังไม่เริ่มกะดึก → โหมดตัดสินใจ: เข้า 22:30 ทันมั้ย หรือต้องเรียกเข้า 20:00 (เปิด OT หัวกะ)
                           const normalFinish = finishFrom(Math.max(NIGHT_REG_IN, nowMs), workMs);
                           if (normalFinish <= FRAME_END) {
-                            chips.push({ color: 'var(--green)', text: `${sLabel} เข้างานปกติ 22:30 ทัน — คาดเสร็จ ~${fmtMs(normalFinish)} (ก่อน 08:00) ไม่ต้องเปิด OT` });
+                            chips.push({ color: 'var(--green)', text: `${sLabel} ${tr("เข้างานปกติ 22:30 ทัน — คาดเสร็จ")} ~${fmtMs(normalFinish)} (${tr("ก่อน 08:00) ไม่ต้องเปิด")} OT` });
                           } else {
                             const otFinish = finishFrom(Math.max(NIGHT_OT_IN, nowMs), workMs);
                             if (otFinish <= FRAME_END) {
-                              chips.push({ color: 'var(--amber)', text: `${sLabel} ⏰ ต้องเปิด OT เข้า 20:00 — คาดเสร็จ ~${fmtMs(otFinish)} (ถ้าเข้า 22:30 จะจบ ~${fmtMs(normalFinish)} เกิน 08:00)` });
+                              chips.push({ color: 'var(--amber)', text: `${sLabel} ⏰ ${tr("ต้องเปิด OT เข้า 20:00 — คาดเสร็จ")} ~${fmtMs(otFinish)} (${tr("ถ้าเข้า 22:30 จะจบ")} ~${fmtMs(normalFinish)} ${tr("เกิน")} 08:00)` });
                             } else {
-                              chips.push({ color: 'var(--red)', text: `${sLabel} 🚨 เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(otFinish)}) — ควรวางแผนยกยอด/เพิ่มกำลัง` });
+                              chips.push({ color: 'var(--red)', text: `${sLabel} 🚨 ${tr("เกินกำลังกะดึกแม้เข้า 20:00 (คาดเสร็จ")} ~${fmtMs(otFinish)}) — ${tr("ควรวางแผนยกยอด/เพิ่มกำลัง")}` });
                             }
                           }
                           return;
@@ -2089,9 +2109,9 @@ export default function Dashboard({ view = 'timeline' }) {
                         // กะดึกเริ่มผลิตแล้ว → ใช้คิวจริงเทียบขอบกะ 08:00
                         const projLabel = `~${fmtMs(projEndMs)}`;
                         if (projEndMs <= FRAME_END) {
-                          chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
+                          chips.push({ color: 'var(--green)', text: `${sLabel} ${tr("คาดเสร็จ")} ${projLabel} — ${tr("จบภายในกะ (ก่อน")} 08:00)` });
                         } else {
-                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} ${tr("คาดเสร็จ")} ${projLabel} — ${tr("เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป")}` });
                         }
                       });
                       return chips;
@@ -2101,7 +2121,7 @@ export default function Dashboard({ view = 'timeline' }) {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                         {plannerChips.map((c, i) => (
-                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
+                          <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', background: 'var(--card-surf)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
                           </span>
                         ))}
@@ -2118,8 +2138,8 @@ export default function Dashboard({ view = 'timeline' }) {
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
-                            <span>{tr('กะเช้า')}{isMobile ? '' : ' (แถบบน)'}</span>
-                            <span>{tr('กะดึก')}{isMobile ? '' : ' (แถบล่าง)'}</span>
+                            <span>{tr('กะเช้า')}{isMobile ? '' : tr(" (แถบบน)")}</span>
+                            <span>{tr('กะดึก')}{isMobile ? '' : tr(" (แถบล่าง)")}</span>
                           </div>
                           {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                           {(() => {
@@ -2153,7 +2173,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} {tr('พาร์ทของไลน์นี้')}{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            {tr("ตัวกรอง")} "{boardQuery.trim()}" — {tr("ซ่อน")} {hiddenRowCount} {tr('พาร์ทของไลน์นี้')}{qRows.length === 0 ? tr(" (ไม่มีพาร์ทที่ตรง)") : ''}
                           </div>
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
@@ -2167,7 +2187,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             <span style={{ fontWeight: 800, color: 'var(--text2)' }}>{showManualRows ? '▼' : '▶'}</span>
                             <span>{tr('✍️ ใบเปิดเอง (ไม่มีบัตรคัมบังให้สแกน) ·')} {manualRows.length} {tr('พาร์ท')}</span>
                             <span style={{ marginLeft: 'auto', fontWeight: 700, color: 'var(--accent)' }}>
-                              {showManualRows ? 'ยุบเก็บ (ทั้งบอร์ด)' : 'กางดู (ทั้งบอร์ด)'}
+                              {showManualRows ? tr("ยุบเก็บ (ทั้งบอร์ด)") : tr("กางดู (ทั้งบอร์ด)")}
                             </span>
                           </div>
                         )}
@@ -2210,7 +2230,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                     <span style={{ fontSize: T(15, 26), fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                                     <span style={{ fontSize: T(11, 18), color: 'var(--muted)' }}>/{rowDemand} {tr('ชิ้น ·')} {doneCount}/{row.cards.length}{tr('ใบ')}</span>
                                     {delayed > 0 && <span style={{ fontSize: T(11, 18), color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}{tr('ใบ')}</span>}
-                                    {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: 'var(--green)', fontWeight: 700 }}>● Live</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: 'var(--green)', fontWeight: 700 }}>● {tr('สด')}</span>}
                                   </div>
                                   {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
                                   <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
@@ -2338,8 +2358,8 @@ export default function Dashboard({ view = 'timeline' }) {
       {/* จอชื่อ "ไทม์ไลน์" ห้ามว่างเงียบ — ไม่มีกะของวันนั้น = เขียนบอก */}
       {visibleProdStatus.length === 0 && !loading && (
         <div style={{ marginBottom: 24, padding: '18px 20px', borderRadius: 'var(--r-lg)', border: '1px dashed var(--border2)',
-          background: 'var(--card)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
-          ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
+          background: 'var(--card-surf)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
+          {tr("ยังไม่มีไลน์ไหนเปิดกะของวันที่")} {boardDate}{!passAll ? tr(" (ในขอบเขต/ส่วนงานที่เลือก)") : ''}
         </div>
       )}
       </>)}
@@ -2357,11 +2377,11 @@ export default function Dashboard({ view = 'timeline' }) {
             </div>
             {visibleLayouts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
-                ยังไม่มีผัง — ไปตั้งค่าที่หน้า <strong>{tr('ตั้งค่าผังไลน์')}</strong>
+                {tr("ยังไม่มีผัง — ไปตั้งค่าที่หน้า")} <strong>{tr('ตั้งค่าผังไลน์')}</strong>
               </div>
             ) : floorCards.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
-                ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า <strong>{tr('จัดการไลน์ผลิต')}</strong>
+                {tr("ยังไม่มีคนถูกจัดลงจุดงานในผังกะนี้ — จัดคนลงจุดงานที่หน้า")} <strong>{tr('จัดการไลน์ผลิต')}</strong>
                 <div style={{ fontSize: T(12, 18), marginTop: 6, opacity: 0.7 }}>{tr('(สรุปกำลังคนรวมดูได้ที่การ์ดสถานะไลน์ด้านบน)')}</div>
               </div>
             ) : (
@@ -2416,7 +2436,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           {totalStations > 0 && (
                             <span title={tr('จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้')}
                               style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? 'var(--green)' : 'var(--amber)', background: allStaffed ? 'var(--green-dim)' : 'var(--amber-dim)', padding: '2px 6px', borderRadius: 'var(--r-xs)' }}>
-                              {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
+                              {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} {tr("จุด")}
                             </span>
                           )}
                         </div>
@@ -2464,7 +2484,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           </div>
                           {log.created_at && (
                             <div style={{ fontSize: T(12, 18), color: 'var(--muted)', marginTop: 4 }}>
-                              {new Date(log.created_at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(log.created_at).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' })}
                             </div>
                           )}
                         </div>
@@ -2487,7 +2507,7 @@ export default function Dashboard({ view = 'timeline' }) {
         const dts = andonLine.names.flatMap(n => dtAlarmByLine[n] || []);
         const fms = fourMLogs.filter(f => andonLine.names.includes(f.line_name));
         const CAT_ICON = { Man: '👤', Machine: '⚙️', Material: '📦', Method: '📋' };
-        const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : '—';
+        const fmtTime = (ts) => ts ? new Date(ts).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' }) : '—';
         // ── ระดับไฟ Andon: แดง = เครื่องหยุดค้างอยู่ · เหลือง = มีรายการรอดำเนินการ · เขียว = อนุมัติครบ/ปกติ ──
         const hasOngoingDT = dts.some(d => !d.ended_at && d.duration_min == null);
         const hasPendingFM = fms.some(f => f.status !== 'approved' && f.status !== 'rejected');
@@ -2521,7 +2541,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
               {/* เครื่องจักร Downtime — กระพริบแดง */}
               <div style={{ fontSize: 13, fontWeight: 800, color: hasOngoingDT ? 'var(--red)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
+                {tr("เครื่องจักรหยุด")} (Downtime) · {dts.length} {tr("รายการ")}
               </div>
               {dts.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>{tr('ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน')}</div>
@@ -2557,13 +2577,13 @@ export default function Dashboard({ view = 'timeline' }) {
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 7px' }}>
-                      หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
+                      {tr("หยุดตามแผน")} · {planned.length} {tr("รายการ (ไม่นับเป็น")} Andon)
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {planned.map(d => {
                         const el = dtElapsedMin(d, now.getTime());
                         return (
-                          <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+                          <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border2)' }}>
                             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>{d.machine_no || '—'}</span>
                             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || tr('หยุดตามแผน')}</span>
                             <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.line_name}</span>
@@ -2592,7 +2612,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? 'var(--amber)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                      คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
+                      {tr("คุณภาพ (Quality) · ของเสียวันนี้")} {q.ng.toLocaleString()} {tr("ชิ้น")}
                     </div>
                     {types.length === 0 ? (
                       <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>{tr('ไม่มีของเสียวันนี้ 👍')}</div>
@@ -2615,7 +2635,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
               {/* 4M Alerts */}
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                4M Changes · {fms.length} รายการ
+                4M Changes · {fms.length} {tr("รายการ")}
               </div>
               {fms.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>{tr('ไม่มีรายการ 4M ของวันนี้')}</div>
@@ -2625,7 +2645,7 @@ export default function Dashboard({ view = 'timeline' }) {
                     <div key={f.id} style={{
                       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
                       padding: '10px 14px', borderRadius: 'var(--r-md)',
-                      background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      background: 'var(--bg3-surf)', border: '1px solid var(--border2)',
                       borderLeft: `3px solid ${f.status === 'approved' ? 'var(--green)' : f.status === 'rejected' ? 'var(--red)' : 'var(--amber)'}`,
                     }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{CAT_ICON[f.category] || '🔧'} {f.category}</span>
@@ -2636,7 +2656,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         background: f.status === 'approved' ? 'var(--green-dim)' : f.status === 'rejected' ? 'var(--red-dim)' : 'var(--amber-dim)',
                         color: f.status === 'approved' ? 'var(--green)' : f.status === 'rejected' ? 'var(--red)' : 'var(--amber)',
                       }}>
-                        {f.status === 'approved' ? '✓ อนุมัติแล้ว' : f.status === 'rejected' ? '✕ ปฏิเสธ' : f.status === 'pending_qa' ? '🔍 รอ QA' : f.status === 'pending_doc' ? '📎 รอแนบเอกสาร' : '⏳ รออนุมัติ'}
+                        {f.status === 'approved' ? tr("✓ อนุมัติแล้ว") : f.status === 'rejected' ? tr("✕ ปฏิเสธ") : f.status === 'pending_qa' ? tr("🔍 รอ QA") : f.status === 'pending_doc' ? tr("📎 รอแนบเอกสาร") : tr("⏳ รออนุมัติ")}
                       </span>
                       {f.description && <span style={{ fontSize: 13, color: 'var(--text)', width: '100%' }}>{f.description}</span>}
                     </div>
@@ -2823,7 +2843,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 background: pAlarm.kind === 'red' ? 'var(--red-line)' : 'var(--amber-line)',
                                 padding: '1px 6px', borderRadius: 'var(--r-xs)', marginTop: 2,
                               }}>
-                                {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
+                                {pAlarm.icon} {pAlarm.kind === 'red' ? tr("PPE ไม่ครบ") : tr("รอ 4M")}
                               </div>
                             )}
                             </div>
@@ -2873,7 +2893,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: 'var(--red)',
                                 whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
-                                {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
+                                {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} ${tr("นาที")}` : ''}
                               </div>
                               </div>
                             </div>
@@ -2943,7 +2963,7 @@ function AttendCol({ title, tone = 'info', items, absent }) {
                 {l.employees?.name || '—'}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {absent ? 'ขาดงาน' : (l.has_helmet && l.has_boots && l.has_gloves ? '🟢 PPE ครบ' : '🟡 PPE ไม่ครบ')}
+                {absent ? tr("ขาดงาน") : (l.has_helmet && l.has_boots && l.has_gloves ? tr("🟢 PPE ครบ") : tr("🟡 PPE ไม่ครบ"))}
               </div>
             </div>
           </div>

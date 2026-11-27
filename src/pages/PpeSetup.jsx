@@ -158,7 +158,7 @@ export default function PpeSetup() {
     setSaving('');
   };
 
-  const scopeName = kind === 'plant' ? 'ทั้งโรงงาน'
+  const scopeName = kind === 'plant' ? tr("ทั้งโรงงาน")
     : kind === 'section' ? (secKey || '—')
     : kind === 'line' ? (lineById[String(lineKey)]?.name || '—')
     : (stations.find(st => String(st.id) === String(stKey))?.station_name || '—');
@@ -168,7 +168,7 @@ export default function PpeSetup() {
   return (
     <Page>
       <PageHeader icon="🦺" title={tr('ข้อกำหนด PPE ของแต่ละหน่วยงาน')}
-        subtitle="ตั้งว่าหน่วยไหนต้องใส่อะไร — ตกทอด ทั้งโรงงาน → ส่วนงาน → ไลน์ (แม่→ลูก) → จุดงาน · ชั้นล่างชนะชั้นบน"
+        subtitle={tr("ตั้งว่าหน่วยไหนต้องใส่อะไร — ตกทอด ทั้งโรงงาน → ส่วนงาน → ไลน์ (แม่→ลูก) → จุดงาน · ชั้นล่างชนะชั้นบน")}
         filters={(
           <FilterBar>
             <Segmented label={tr('ตั้งค่าที่ชั้น')} value={kind} options={SCOPE_OPTS}
@@ -187,10 +187,10 @@ export default function PpeSetup() {
             {kind === 'station' && (
               <select value={stKey} onChange={e => setStKey(e.target.value)} disabled={!lineKey || !stations.length}>
                 <option value="">
-                  {!lineKey ? 'เลือกไลน์ก่อน'
-                    : stFail ? '⚠ อ่านทะเบียนจุดงานไม่ได้'
-                    : !stations.length ? 'ไลน์นี้ยังไม่มีจุดงาน'
-                    : '— เลือกจุดงาน —'}
+                  {!lineKey ? tr("เลือกไลน์ก่อน")
+                    : stFail ? tr("⚠ อ่านทะเบียนจุดงานไม่ได้")
+                    : !stations.length ? tr("ไลน์นี้ยังไม่มีจุดงาน")
+                    : tr("— เลือกจุดงาน —")}
                 </option>
                 {stations.map(st => <option key={st.id} value={st.id}>{st.station_name || tr('(ไม่มีชื่อ)')}</option>)}
               </select>
@@ -200,13 +200,13 @@ export default function PpeSetup() {
 
       {loadErr && (
         <NoticeBar tone="bad">
-          <b>{tr('อ่านทะเบียน PPE ไม่สำเร็จ')}</b> — ยังตั้งค่าไม่ได้ และหน้าจอนี้ไม่ได้แปลว่า "ไม่มีข้อกำหนด"
+          <b>{tr('อ่านทะเบียน PPE ไม่สำเร็จ')}</b> — {tr("ยังตั้งค่าไม่ได้ และหน้าจอนี้ไม่ได้แปลว่า \"ไม่มีข้อกำหนด")}"
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{loadErr} {tr('· โหลดหน้าใหม่อีกครั้ง')}</div>
         </NoticeBar>
       )}
-      {linesFailed && <NoticeBar tone="warn">อ่านทะเบียนไลน์ไม่สำเร็จ — ชั้น "ไลน์/จุดงาน" อาจไม่ครบ</NoticeBar>}
+      {linesFailed && <NoticeBar tone="warn">{tr("อ่านทะเบียนไลน์ไม่สำเร็จ — ชั้น \"ไลน์/จุดงาน\" อาจไม่ครบ")}</NoticeBar>}
       {!canEdit && !loadErr && (
-        <NoticeBar tone="warn">{tr('บัญชีนี้ดูได้อย่างเดียว (ต้องมีสิทธิ์')} <code>ppe:manage</code>) — ขอสิทธิ์ที่หน้าจัดการสิทธิ์</NoticeBar>
+        <NoticeBar tone="warn">{tr('บัญชีนี้ดูได้อย่างเดียว (ต้องมีสิทธิ์')} <code>ppe:manage</code>) — {tr("ขอสิทธิ์ที่หน้าจัดการสิทธิ์")}</NoticeBar>
       )}
       {loading && <div style={{ ...card, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}
 
@@ -218,15 +218,15 @@ export default function PpeSetup() {
       )}
       {kind === 'station' && !!lineKey && !stFail && !stations.length && (
         <NoticeBar tone="warn">
-          ไลน์ <b>{lineById[String(lineKey)]?.name || lineKey}</b> ยังไม่ได้ตั้งจุดงานไว้ จึงตั้งข้อกำหนดรายจุดงานไม่ได้
+          {tr("ไลน์")} <b>{lineById[String(lineKey)]?.name || lineKey}</b> {tr("ยังไม่ได้ตั้งจุดงานไว้ จึงตั้งข้อกำหนดรายจุดงานไม่ได้")}
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-            ตั้งจุดงานที่หน้า <b>{tr('ตั้งค่าผัง/Floorplan')}</b> {tr('→ แท็บผังไลน์ · หรือตั้งข้อกำหนดที่ชั้น')} <b>{tr('ไลน์')}</b> แทน (ตกทอดถึงทุกจุดงานในไลน์)
+            {tr("ตั้งจุดงานที่หน้า")} <b>{tr('ตั้งค่าผัง/Floorplan')}</b> {tr('→ แท็บผังไลน์ · หรือตั้งข้อกำหนดที่ชั้น')} <b>{tr('ไลน์')}</b> {tr("แทน (ตกทอดถึงทุกจุดงานในไลน์")})
           </div>
         </NoticeBar>
       )}
       {!loading && !loadErr && kind !== 'plant' && !scopeKey && !(kind === 'station' && lineKey) && (
         <div style={{ ...card, color: 'var(--muted)' }}>
-          เลือก{PPE_SCOPE_LABEL[kind]}ที่ต้องการตั้งค่าก่อน — ระหว่างนี้ยังไม่แสดงรายการ เพราะแต่ละหน่วยตกทอดคนละชุด
+          {tr("เลือก")}{PPE_SCOPE_LABEL[kind]}{tr("ที่ต้องการตั้งค่าก่อน — ระหว่างนี้ยังไม่แสดงรายการ เพราะแต่ละหน่วยตกทอดคนละชุด")}
         </div>
       )}
 
@@ -235,7 +235,7 @@ export default function PpeSetup() {
           <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('กำลังตั้งค่าที่')}</div>
           <div style={{ fontSize: 20, fontWeight: 900 }}>{PPE_SCOPE_LABEL[kind]} · {scopeName}</div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>
-            ผลสุดท้ายของหน่วยนี้ = ต้องใส่ <b style={{ color: 'var(--green)' }}>{effective.required.length}</b> ชิ้น
+            {tr("ผลสุดท้ายของหน่วยนี้ = ต้องใส่")} <b style={{ color: 'var(--green)' }}>{effective.required.length}</b> {tr("ชิ้น")}
             {effective.required.length > 0 && <> — {effective.required.map(i => i.name_th).join(' · ')}</>}
           </div>
         </div>
@@ -257,9 +257,9 @@ export default function PpeSetup() {
                   {/* 🔴 กฎข้อ 3 — ต้องบอกเสมอว่าค่าที่เห็นมาจากชั้นไหน */}
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
                     {v === 'inherit'
-                      ? (inhSrc ? `${inhOn ? 'บังคับ' : 'ยกเว้น'} — ${ppeSourceText(inhSrc, { nameOfLine: id => lineById[String(id)]?.name })}`
-                        : 'ไม่มีชั้นไหนบังคับ')
-                      : `ตั้งไว้ที่${PPE_SCOPE_LABEL[kind]}นี้เอง`}
+                      ? (inhSrc ? `${inhOn ? tr('บังคับ') : tr('ยกเว้น')} — ${ppeSourceText(inhSrc, { nameOfLine: id => lineById[String(id)]?.name })}`
+                        : tr("ไม่มีชั้นไหนบังคับ"))
+                      : `${tr("ตั้งไว้ที่")}${PPE_SCOPE_LABEL[kind]}${tr("นี้เอง")}`}
                   </div>
                 </div>
                 <Segmented size="sm" value={v} options={VAL_OPTS} label={item.name_th}
@@ -271,9 +271,9 @@ export default function PpeSetup() {
         </div>
 
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.8, marginTop: 10 }}>
-          <b>{tr('ตกทอด')}</b> = ใช้ตามชั้นบน (ไม่ได้ตั้งที่นี่) · <b>{tr('บังคับ')}</b> = หน่วยนี้ต้องใส่ ·
-          <b> {tr('ยกเว้น')}</b> = หน่วยนี้ไม่ต้องใส่ แม้ชั้นบนจะบังคับ<br />
-          รายการที่ตั้งไว้จะไปขึ้นให้ติ๊กตอน <b>{tr('สแกนบัตรเช็คชื่อ')}</b> — ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ
+          <b>{tr('ตกทอด')}</b> = {tr("ใช้ตามชั้นบน (ไม่ได้ตั้งที่นี่")}) · <b>{tr('บังคับ')}</b> = {tr("หน่วยนี้ต้องใส่")} ·
+          <b> {tr('ยกเว้น')}</b> = {tr("หน่วยนี้ไม่ต้องใส่ แม้ชั้นบนจะบังคับ")}<br />
+          {tr("รายการที่ตั้งไว้จะไปขึ้นให้ติ๊กตอน")} <b>{tr('สแกนบัตรเช็คชื่อ')}</b> — {tr("ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ")}
         </p>
       </>)}
     </Page>

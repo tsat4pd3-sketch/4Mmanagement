@@ -16,6 +16,7 @@
       `utils/qaSpcSource.js` ที่จอ SPC ใช้) แต่ **ยังอยู่ในไฟล์ผลตรวจรายพาร์ท** (เป็นข้อเท็จจริงว่าไม่ได้ตรวจ)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 import { stageLabel } from './qaStages.js';   // ⚠️ ต้องมี `.js` — ไฟล์นี้ถูก `node --test` โหลดตรงๆ (ไม่ผ่าน vite resolver)
+import { tr } from './i18n.js';
 
 export const SHIFT_TH = { day: 'เช้า', night: 'ดึก' };
 export const JUDGE_TH = { ok: 'ผ่าน', ng: 'ไม่ผ่าน', na: 'ข้าม (ไม่ได้ตรวจ)' };
@@ -170,7 +171,7 @@ export function spcPointVerdict(st) {
   if (!st?.n) return 'ยังไม่มีค่าวัด';
   if (st.oos > 0) return 'มีค่าหลุด spec';
   if (st.cpk == null) return 'คิด Cpk ไม่ได้ (ค่าน้อยไป / ค่าเท่ากันหมด / ไม่มี spec)';
-  return st.cpk < CPK_OK ? `Cpk < ${CPK_OK}` : 'ปกติ';
+  return st.cpk < CPK_OK ? `Cpk < ${CPK_OK}` : tr("ปกติ");
 }
 
 /**

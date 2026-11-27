@@ -19,12 +19,12 @@ import useColumnHistory from '../utils/useColumnHistory';
 /* 📕 ทะเบียน QRs ↔ WI การซ่อม (WI-PD3-069 §6) — กติกาการจับคู่อยู่ใน util กลาง (pure + มีเทส) */
 import { matchRepairWi } from '../utils/repairWi';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 const TABLE = { downtime: 'downtime_logs', defect: 'defect_logs' };
 const TYPE_COL = { downtime: 'downtime_type_id', defect: 'defect_type_id' };
 
 const txt = v => String(v || '').trim();
-const dmy = iso => (iso ? new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }) : '');
+const dmy = iso => (iso ? new Date(iso).toLocaleDateString(dateLocale(), { day: '2-digit', month: 'short' }) : '');
 
 export default function ProblemFixModal({ kind, row, title, actorName, onClose, onSaved }) {
   const [fix, setFix]         = useState(row?.fix_action || '');
@@ -107,7 +107,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
     if (error) {
       toast.error(error.code === '42703'
         ? 'ยังบันทึกไม่ได้ — ต้อง apply migration 20260819_problem_fix_followup ก่อน (แจ้ง admin)'
-        : `บันทึกไม่สำเร็จ: ${error.message}`);
+        : `${tr("บันทึกไม่สำเร็จ")}: ${error.message}`);
       return;
     }
     if (!data?.length) { toast.error('บันทึกไม่สำเร็จ — ไม่พบรายการนี้แล้ว (อาจถูกลบไป)'); return; }
@@ -126,7 +126,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
   return (
     <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
+        background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         padding: 20, width: 'min(96vw, 620px)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
@@ -145,12 +145,12 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {wiHits.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>{tr('WI การซ่อม')}</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
+              {tr("อาการ/พาร์ทนี้มี")} <b style={{ color: 'var(--text)' }}>{tr('WI การซ่อม')}</b> {tr("ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้")}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {wiHits.map(w => (
                 <button key={w.code} type="button"
-                  onClick={() => setFix(v => (txt(v) ? `${v.replace(/\s+$/, '')} · ` : '') + `ซ่อมตาม ${w.wi_no}`)}
+                  onClick={() => setFix(v => (txt(v) ? `${v.replace(/\s+$/, '')} · ` : '') + `${tr("ซ่อมตาม")} ${w.wi_no}`)}
                   title={`${w.code} — ${w.symptom}\n${w.wi_no}${w.why === 'symptom' ? '\n\n(จับคู่จากคำในอาการ — ตรวจว่าตรงเล่มก่อนใช้)' : ''}`}
                   style={{ maxWidth: 280, textAlign: 'left', fontSize: 11.5, lineHeight: 1.35,
                     padding: '5px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', color: 'var(--text)',
@@ -158,7 +158,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                     border: `1px solid ${w.why === 'code' ? 'rgba(168,85,247,0.45)' : 'var(--border2)'}` }}>
                   <span style={{ display: 'block', fontWeight: 800, fontFamily: 'monospace' }}>{w.wi_no}</span>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    {w.code} · {w.symptom} · {w.why === 'code' ? 'ตรงเลขพาร์ท' : 'ตรงคำอาการ'}
+                    {w.code} · {w.symptom} · {w.why === 'code' ? tr("ตรงเลขพาร์ท") : tr("ตรงคำอาการ")}
                   </span>
                 </button>
               ))}
@@ -169,7 +169,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {past.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              เคยแก้ปัญหาชนิดนี้มาก่อน — กดเพื่อใช้ข้อความเดิม
+              {tr("เคยแก้ปัญหาชนิดนี้มาก่อน — กดเพื่อใช้ข้อความเดิม")}
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {past.map(p => (
@@ -216,7 +216,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 14, lineHeight: 1.5 }}>
-          ข้อความนี้จะถูกเติมลงใบรายงานปัญหาการผลิตให้อัตโนมัติ — ไม่ต้องปริ้นมาเขียนมือ
+          {tr("ข้อความนี้จะถูกเติมลงใบรายงานปัญหาการผลิตให้อัตโนมัติ — ไม่ต้องปริ้นมาเขียนมือ")}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>

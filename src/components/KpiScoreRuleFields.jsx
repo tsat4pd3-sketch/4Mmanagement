@@ -47,12 +47,12 @@ export default function KpiScoreRuleFields({ f, set, unit = '', summaryMode = 'a
         <div>
           <div style={lbl}>{tr('② Target')} <span style={{ fontWeight: 500 }}>{tr('= ○ ผ่าน')}</span></div>
           <input style={inp} type="number" step="any" value={f.target_value ?? ''} onChange={e => set('target_value', e.target.value)} placeholder={tr('ตัวเลข')} />
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{num(f.target_value) != null && dirCmp ? `บนใบ: ${fmtBar(dirCmp, num(f.target_value), unit)}` : ' '}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{num(f.target_value) != null && dirCmp ? `${tr("บนใบ")}: ${fmtBar(dirCmp, num(f.target_value), unit)}` : ' '}</div>
         </div>
         <div>
           <div style={lbl}>{tr('③ Commitment')} <span style={{ fontWeight: 500 }}>{tr('= △ ขั้นต่ำ')}</span></div>
           <input style={inp} type="number" step="any" value={f.commit_value ?? ''} onChange={e => set('commit_value', e.target.value)} placeholder={tr('เว้นว่าง = ไม่มี △')} />
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{num(f.commit_value) != null && dirCmp ? `บนใบ: ${fmtBar(dirCmp, num(f.commit_value), unit)}` : tr('ผ่อนกว่า Target เสมอ')}</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{num(f.commit_value) != null && dirCmp ? `${tr("บนใบ")}: ${fmtBar(dirCmp, num(f.commit_value), unit)}` : tr('ผ่อนกว่า Target เสมอ')}</div>
         </div>
       </div>
       <div>
@@ -72,7 +72,7 @@ export default function KpiScoreRuleFields({ f, set, unit = '', summaryMode = 'a
         <span style={{ color: 'var(--muted)' }}>{tr('⑤ สรุปทั้งปีรวมด้วย')}</span> <b>{summaryModeLabel(summaryMode)}</b>
         <span style={{ color: 'var(--muted)' }}> {tr('(ตั้งที่ 📘 ทะเบียนชื่อ KPI — เป็นของตัวตน KPI ทุกหน่วยเหมือนกัน)')}</span>
       </div>
-      <div style={{ padding: '8px 10px', borderRadius: 'var(--r-sm)', background: 'var(--card)', border: `1px solid ${rule.ok ? 'var(--border2)' : 'var(--amber)'}`, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
+      <div style={{ padding: '8px 10px', borderRadius: 'var(--r-sm)', background: 'var(--card-surf)', border: `1px solid ${rule.ok ? 'var(--border2)' : 'var(--amber)'}`, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
         <span style={{ color: 'var(--muted)' }}>{tr('กติกาที่จะใช้:')}</span> {rule.text}
       </div>
       {issues.length > 0 && (

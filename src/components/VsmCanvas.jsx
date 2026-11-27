@@ -15,7 +15,7 @@
 import { LIVE_STATUS } from '../lib/vsmLive';
 import { fmtMct, fmtMinSec } from '../lib/vsmModel';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
   box: '#ffffff', boxHead: '#dbeafe', data: '#f9fafb', inv: '#fde68a', invInk: '#78350f',
@@ -98,7 +98,7 @@ const Y_TOP = 16;
 const FEED_H = 78;                    // ความสูงต่อสายป้อน 1 สาย
 const FEED_BOX_W = 132, FEED_BOX_H = 40;
 
-const fmt = (v, d = 0) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: d }));
+const fmt = (v, d = 0) => (v == null ? '—' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: d }));
 
 /* ── ชิ้นส่วนย่อย ─────────────────────────────────────────────────────────── */
 const Fact = ({ x, y, P, title, sub, sub2, w = FACT_W }) => (
@@ -167,7 +167,7 @@ const InvPoint = ({ cx, y, P, inv }) => {
         strokeWidth="1.3" strokeDasharray={missing ? '3 2' : undefined} />
       <text x={cx} y={y + 23} fontSize="9" fontWeight="700" fill={missing ? P.nva : P.invInk} textAnchor="middle">I</text>
       <text x={cx} y={y + 39} fontSize="10" fontWeight="700" fill={P.ink} textAnchor="middle">
-        {missing ? 'ยังไม่กรอก' : `${fmt(inv.qty)} ${inv.uom || 'pcs'}`}
+        {missing ? tr("ยังไม่กรอก") : `${fmt(inv.qty)} ${inv.uom || 'pcs'}`}
       </text>
       {inv?.days != null && <text x={cx} y={y + 51} fontSize="9.5" fill={P.sub} textAnchor="middle">{fmt(inv.days, 2)} {tr('วัน')}</text>}
       {isPull && inv.kanban?.total_kanban != null && (
@@ -246,7 +246,7 @@ function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
       <rect x={x} y={yProc} width={w} height="15" fill={P.boxHead} stroke={P.line} strokeWidth="1.1" />
       <text x={x + w / 2} y={yProc + 11} fontSize="8.5" fill={P.ink} textAnchor="middle" fontWeight="600">
         {/* กล่อง fallback (ยังไม่ลง routing) ชื่อขั้น = ชื่อไลน์ — ไม่พิมพ์ซ้ำ 2 บรรทัด */}
-        {b.isOutsourced ? `จ้างนอก · ${b.vendor || 'ยังไม่ระบุ'}` : (b.line && b.line !== b.name ? b.line : (b.line ? '' : '—'))}
+        {b.isOutsourced ? `${tr("จ้างนอก")} · ${b.vendor || tr('ยังไม่ระบุ')}` : (b.line && b.line !== b.name ? b.line : (b.line ? '' : '—'))}
         {b.machineNo ? `${b.isOutsourced || (b.line && b.line !== b.name) ? ' · ' : ''}${b.machineNo}` : ''}
       </text>
       <text x={x + w / 2} y={yProc + (small ? 31 : 34)} fontSize={small ? 10 : 11.5} fontWeight="800" fill={P.ink} textAnchor="middle">
@@ -327,11 +327,11 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
           <Fact key={s.matNo} x={26} y={Y_TOP + i * 78} P={P}
             title={s.supplier || tr('ยังไม่ระบุผู้ส่งมอบ')}
             sub={s.deliveryPattern || tr('รอบส่ง: ยังไม่กรอก')}
-            sub2={s.qty != null ? `${fmt(s.qty)} pcs${s.days != null ? ` · ${fmt(s.days, 1)} วัน` : ''}` : null} />
+            sub2={s.qty != null ? `${fmt(s.qty)} pcs${s.days != null ? ` · ${fmt(s.days, 1)} ${tr("วัน")}` : ''}` : null} />
         ))}
       {sups.length > 3 && (
         <text x={26 + FACT_W / 2} y={Y_TOP + 3 * 78 + 10} fontSize="9.5" fill={P.sub} textAnchor="middle">
-          + ผู้ส่งมอบอีก {sups.length - 3} ราย
+          + {tr("ผู้ส่งมอบอีก")} {sups.length - 3} {tr("ราย")}
         </text>
       )}
 
@@ -340,19 +340,19 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
              ใช้ fallback จาก demandSource — ห้ามตีความ undefined เป็น "ไม่มี" ── */}
       {(() => {
         const oldSnap = I.forecastMonths === undefined && I.orderCount === undefined;
-        const fcTxt = I.forecastMonths ? `Forecast ${fmt(I.forecastMonths)} เดือน (${I.forecastSource})`
-          : (oldSnap && I.demandSource === 'forecast') ? 'Forecast: มีในระบบ'
-          : 'Forecast: ยังไม่มีในระบบ';
-        const soTxt = I.orderCount ? `Order เดือนนี้ ${fmt(I.orderCount)} ใบ${I.orderSource ? ` (${I.orderSource})` : ''}`
-          : (oldSnap && I.demandSource === 'order') ? 'Order: มีในระบบ'
-          : 'Order เดือนนี้: ยังไม่มีในระบบ';
+        const fcTxt = I.forecastMonths ? `Forecast ${fmt(I.forecastMonths)} ${tr("เดือน")} (${I.forecastSource})`
+          : (oldSnap && I.demandSource === 'forecast') ? tr("Forecast: มีในระบบ")
+          : tr("Forecast: ยังไม่มีในระบบ");
+        const soTxt = I.orderCount ? `Order ${tr("เดือนนี้")} ${fmt(I.orderCount)} ${tr("ใบ")}${I.orderSource ? ` (${I.orderSource})` : ''}`
+          : (oldSnap && I.demandSource === 'order') ? tr("Order: มีในระบบ")
+          : tr("Order เดือนนี้: ยังไม่มีในระบบ");
         const hasFc = !fcTxt.includes('ยังไม่มี'), hasSo = !soTxt.includes('ยังไม่มี');
         const custLabel = hasFc || hasSo
           ? [hasFc && 'Forecast', hasSo && 'Order'].filter(Boolean).join(' / ')
-          : 'ยังไม่มี forecast/order ในระบบ';
-        const planLabel = I.planDays === undefined ? 'สั่งผลิตรายวัน'      // snapshot เก่า — ไม่รู้ ไม่อ้างเลข
-          : I.planDays ? `สั่งผลิตรายวัน (เปิดกะ ${fmt(I.planDays)} วันในเดือน)`
-          : 'สั่งผลิต: เดือนนี้ยังไม่มีกะปิด';
+          : tr("ยังไม่มี forecast/order ในระบบ");
+        const planLabel = I.planDays === undefined ? tr("สั่งผลิตรายวัน")      // snapshot เก่า — ไม่รู้ ไม่อ้างเลข
+          : I.planDays ? `${tr("สั่งผลิตรายวัน (เปิดกะ")} ${fmt(I.planDays)} ${tr("วันในเดือน")})`
+          : tr("สั่งผลิต: เดือนนี้ยังไม่มีกะปิด");
         return <>
           <g>
             <rect x={planX} y={Y_TOP} width={PLAN_W} height={PLAN_H} fill={P.box} stroke={P.line} strokeWidth="1.4" />
@@ -375,7 +375,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
 
       <Fact x={custX} y={Y_TOP} P={P}
         title={model.customer.name || model.header.customer || 'CUSTOMER'}
-        sub={model.customer.pattern || (model.customer.roundsPerDay ? `${model.customer.roundsPerDay} รอบส่ง/วัน` : 'รอบส่ง: ยังไม่กรอก')} />
+        sub={model.customer.pattern || (model.customer.roundsPerDay ? `${model.customer.roundsPerDay} ${tr("รอบส่ง/วัน")}` : tr("รอบส่ง: ยังไม่กรอก"))} />
       {n > 1 && <InfoLine P={P} electronic={false}
         pts={[[planCx, Y_PROC - 34], [colX(n - 1) + BOX_W / 2, Y_PROC - 34], [colX(n - 1) + BOX_W / 2, Y_PROC - 6]]} />}
 
@@ -454,7 +454,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
             stroke={P.line} strokeWidth="1.2" fill="none" />}
           <text x={seg.x + seg.w / 2} y={up ? y - 5 : y + 12} fontSize="9.5"
             fill={up ? P.nva : P.va} textAnchor="middle" fontWeight="700">
-            {seg.v == null ? '—' : (up ? `${fmt(seg.v, 2)} วัน` : `${fmt(seg.v, 0)} s`)}
+            {seg.v == null ? '—' : (up ? `${fmt(seg.v, 2)} ${tr("วัน")}` : `${fmt(seg.v, 0)} s`)}
           </text>
         </g>;
       })}
@@ -466,7 +466,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
       <g>
         <rect x={W - 336} y={Y_LAD + 40} width="316" height="74" fill={P.data} stroke={P.line} strokeWidth="1.2" />
         <text x={W - 326} y={Y_LAD + 56} fontSize="10.5" fill={P.ink}>
-          PLT = <tspan fontWeight="800">{fmt(T.pltDays, 2)}</tspan> วัน
+          PLT = <tspan fontWeight="800">{fmt(T.pltDays, 2)}</tspan> {tr("วัน")}
           <tspan dx="16">PT = <tspan fontWeight="800">{fmtMinSec(T.ptSec) || '—'}</tspan></tspan>
         </text>
         <text x={W - 326} y={Y_LAD + 74} fontSize="12.5" fontWeight="900" fill={P.nva}>
@@ -484,9 +484,9 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
       <g>
         <rect x={planX + PLAN_W + 22} y={Y_TOP} width="228" height="92" fill={P.data} stroke={P.line} strokeWidth="1.2" />
         {[
-          ['Working day', I.workingDays ? `${I.workingDays} วัน/เดือน` : '—'],
+          ['Working day', I.workingDays ? `${I.workingDays} ${tr("วัน/เดือน")}` : '—'],
           /* < 12 เดือนมี forecast = ค่าประมาณ (เฉลี่ย × 12) — ขึ้น ≈ + จำนวนเดือนที่ใช้ (กล่องแคบ ห้ามข้อความยาว) */
-          ['Order/year', I.orderYear ? (I.orderYearMonths && I.orderYearMonths < 12 ? `≈${fmt(I.orderYear)} pcs (${I.orderYearMonths} ด.)` : `${fmt(I.orderYear)} pcs`) : '—'],
+          ['Order/year', I.orderYear ? (I.orderYearMonths && I.orderYearMonths < 12 ? `≈${fmt(I.orderYear)} pcs (${I.orderYearMonths} ${tr("ด.")})` : `${fmt(I.orderYear)} pcs`) : '—'],
           ['Order/month', I.orderMonth ? `${fmt(I.orderMonth)} pcs` : '—'],
           ['Order/day', I.orderDay ? `${fmt(I.orderDay)} pcs` : '—'],
           ['A/T', I.atSec == null ? '—' : `${fmt(I.atSec)} sec`],

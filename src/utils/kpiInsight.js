@@ -5,6 +5,7 @@
    applyFormulaEntries · คาดปลายปีจาก yearForecast · อัตราที่ต้องทำจาก neededRunRate) ตัวนี้แค่ "เรียบเรียง" **ไม่คิดเกณฑ์เอง**
    🔴 กฎความซื่อสัตย์: ไม่มีข้อมูลข้อไหน = ไม่เขียนข้อนั้น (ไม่เดา) · การคาดการณ์ต้องบอกสมมติฐานทุกครั้ง */
 import { baseVarOf, formulaOf } from './kpiSetup.js';
+import { tr } from './i18n.js';
 
 const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
 const pct = (a, b) => (a == null || b == null || b === 0 ? null : ((a - b) / Math.abs(b)) * 100);
@@ -33,8 +34,8 @@ export function formulaDrivers(info, month, prevMonth, { fmtIn = (v, x) => Strin
     driver = {
       numLabel, denLabel: den.label, numChg, denChg, main,
       text: main === 'num'
-        ? `ตัวตั้ง (${numLabel}) ${numUp ? 'เพิ่ม' : 'ลด'} ${Math.abs(numChg).toFixed(1)}% แรงกว่าตัวหาร (${den.label}) ${denUp ? 'เพิ่ม' : 'ลด'} ${Math.abs(denChg ?? 0).toFixed(1)}% ⇒ ค่าขยับเพราะ${numLabel}เป็นหลัก`
-        : `ตัวหาร (${den.label}) ${denUp ? 'เพิ่ม' : 'ลด'} ${Math.abs(denChg).toFixed(1)}% แรงกว่าตัวตั้ง (${numLabel}) ${numUp ? 'เพิ่ม' : 'ลด'} ${Math.abs(numChg ?? 0).toFixed(1)}% ⇒ ค่าขยับเพราะ${den.label}${denUp ? 'โต' : 'หด'}เป็นหลัก`,
+        ? `ตัวตั้ง (${numLabel}) ${numUp ? tr("เพิ่ม") : 'ลด'} ${Math.abs(numChg).toFixed(1)}% แรงกว่าตัวหาร (${den.label}) ${denUp ? tr("เพิ่ม") : 'ลด'} ${Math.abs(denChg ?? 0).toFixed(1)}% ⇒ ค่าขยับเพราะ${numLabel}เป็นหลัก`
+        : `ตัวหาร (${den.label}) ${denUp ? tr("เพิ่ม") : 'ลด'} ${Math.abs(denChg).toFixed(1)}% แรงกว่าตัวตั้ง (${numLabel}) ${numUp ? tr("เพิ่ม") : 'ลด'} ${Math.abs(numChg ?? 0).toFixed(1)}% ⇒ ค่าขยับเพราะ${den.label}${denUp ? 'โต' : 'หด'}เป็นหลัก`,
     };
   }
   return { vars, driver, lines: vars.map(v => `${v.label} ${fmtIn(v.key, v.prev)} → ${fmtIn(v.key, v.cur)} (${sgn(v.chg)}%)`) };
@@ -85,6 +86,7 @@ export function buildInsight({
       const ok = better(v, ref);
       const cmpSym = { '>=': '≥', '<=': '≤', '>': '>', '<': '<', '=': '=' }[targetCompare] || targetCompare || (down ? '≤' : '≥');
       out.push({ icon: ok ? '✅' : '❌', tone: ok ? 'good' : 'bad', kind: 'gap', prio: ok ? INSIGHT_PRIO.gapOk : INSIGHT_PRIO.gapBad,
+        data: { ok, value: v, ref, refName, cmpSym, gap, gapPct: gp, commitHit: c != null ? better(v, c) : null, down, label: mLabel },
         text: `${mLabel} ${fmt(v)} เทียบ ${refName} ${cmpSym} ${fmt(ref)} → ${ok ? (down ? 'ต่ำกว่าเป้า' : 'สูงกว่าเป้า') : (down ? 'เกินเป้า' : 'ต่ำกว่าเป้า')} ${fmt(Math.abs(gap))}${gp != null ? ` (${Math.abs(gp).toFixed(1)}%)` : ''}${!ok && c != null && better(v, c) ? ' · ยังถึง Commitment' : ''}${!ok && c != null && !better(v, c) ? ` · หลุด Commitment ${fmt(c)} ด้วย` : ''}` });
     }
   }
@@ -133,17 +135,26 @@ export function buildInsight({
     const assume = f.basis === 'plan' ? `แผนรายเดือน ${f.planMonths} ด.`
       : f.assumed?.kind === 'slope' ? `เดือนที่เหลือ ${f.assumedMonths.length} ด. เพิ่มต่อเท่าอัตราเดิม${f.planMonths ? ` + แผน ${f.planMonths} ด.` : ''}`
       : f.assumed ? `เดือนที่เหลือ ${f.assumedMonths.length} ด. ทำได้เท่าค่าเฉลี่ย ${fmt(f.assumed.rate)}${f.planMonths ? ` + แผน ${f.planMonths} ด.` : ''}` : 'ครบ 12 เดือนจริง';
-    const verdict = f.status === 'good' ? '✅ คาดถึงเป้า' : f.status === 'warn' ? '🟡 ถึงแค่ Commitment' : f.status === 'bad' ? '❌ คาดไม่ถึงเป้า' : 'ยังไม่มีเป้าให้ตัดสิน';
+    const verdict = f.status === 'good' ? tr("✅ คาดถึงเป้า") : f.status === 'warn' ? '🟡 ถึงแค่ Commitment' : f.status === 'bad' ? tr("❌ คาดไม่ถึงเป้า") : 'ยังไม่มีเป้าให้ตัดสิน';
     out.push({ icon: '🔮', tone: f.status === 'good' ? 'good' : f.status === 'bad' ? 'bad' : 'warn', kind: 'forecast',
+      data: { value: f.value, status: f.status, basis: f.basis, assumed: f.assumed, actualMonths: f.actualMonths, assumedMonths: f.assumedMonths, planMonths: f.planMonths, approx: f.approx, assume, verdict },
       prio: f.status === 'bad' ? INSIGHT_PRIO.fcBad : f.status === 'good' ? INSIGHT_PRIO.fcGood : INSIGHT_PRIO.fcWarn,
       text: `คาดปลายปี ${f.approx ? '≈ ' : ''}${fmt(f.value)} (จริง ${f.actualMonths} ด. · ถ้า${assume}) → ${verdict}` });
   }
-  if (needed && t != null) {
+  if (needed && t != null && needed.feasible === false) {
+    /* 🧱 20/11 (user): ที่ต้องทำหลุดช่วงที่เป็นไปได้ของทะเบียน (OEE > 100 % · MTTR ติดลบ) = **ไม่คาดการณ์ตัวเลข** บอกตรงๆ ว่าไม่ทันแล้ว */
     const n = needed;
-    if (n.kind === 'reach') out.push({ icon: '🏁', tone: better(0, n.add) ? 'good' : 'warn', kind: 'needed', prio: better(0, n.add) ? INSIGHT_PRIO.neededOk : INSIGHT_PRIO.needed, text: better(0, n.add) ? `ถึงเป้าทั้งปี ${fmt(t)} แล้ว (ตัวสะสมถอยไม่ได้)` : `ต้องไปให้ถึง ${fmt(t)} ภายใน ${n.remaining} เดือนที่เหลือ (เพิ่มอีก ${fmt(Math.abs(n.add))})` });
+    const lim = n.limit?.kind === 'max' ? `เพดาน ${fmt(n.limit.value)}` : `พื้น ${fmt(n.limit?.value)}`;
+    out.push({ icon: '🏁', tone: 'bad', kind: 'needed', prio: INSIGHT_PRIO.needed, data: { ...n, trivially: false, down },
+      text: n.kind === 'reach'
+        ? `ไม่ทัน Target ${fmt(t)} ทั้งปีแล้ว — ต้องไปให้ถึง ${fmt(t)} ซึ่ง${n.limit?.kind === 'max' ? 'เกิน' : 'ต่ำกว่า'}${lim} ที่เป็นไปได้`
+        : `ไม่ทัน Target ${fmt(t)} ทั้งปีแล้ว — ต่อให้ ${n.remaining} เดือนที่เหลือทำได้สุด${lim} ทุกเดือน ทั้งปีดีสุดได้แค่ ${fmt(n.bestCase)}` });
+  } else if (needed && t != null) {
+    const n = needed;
+    if (n.kind === 'reach') out.push({ icon: '🏁', tone: better(0, n.add) ? 'good' : 'warn', kind: 'needed', prio: better(0, n.add) ? INSIGHT_PRIO.neededOk : INSIGHT_PRIO.needed, data: { ...n, reached: better(0, n.add), down }, text: better(0, n.add) ? `ถึงเป้าทั้งปี ${fmt(t)} แล้ว (ตัวสะสมถอยไม่ได้)` : `ต้องไปให้ถึง ${fmt(t)} ภายใน ${n.remaining} เดือนที่เหลือ (เพิ่มอีก ${fmt(Math.abs(n.add))})` });
     else {
-      const trivially = down ? false : n.perMonth <= 0;   // ตัวยิ่งสูงยิ่งดี: ที่ต้องทำ ≤ 0 = ผ่านแล้วแม้เดือนที่เหลือเป็น 0
-      out.push({ icon: '🏁', tone: trivially ? 'good' : 'warn', kind: 'needed', prio: trivially ? INSIGHT_PRIO.neededOk : INSIGHT_PRIO.needed,
+      const trivially = n.trivial === true || (down ? false : n.perMonth <= 0);   // ตัวยิ่งสูงยิ่งดี: ที่ต้องทำ ≤ 0 (หรือ ≤ พื้น/≥ เพดานของทะเบียน) = ผ่านแล้วแม้เดือนที่เหลือเป็น 0
+      out.push({ icon: '🏁', tone: trivially ? 'good' : 'warn', kind: 'needed', prio: trivially ? INSIGHT_PRIO.neededOk : INSIGHT_PRIO.needed, data: { ...n, trivially, down },
         text: trivially ? `เป้าทั้งปีถึงแล้ว — เดือนที่เหลือ ${n.remaining} ด. ได้ 0 ก็ยังผ่าน`
           : `เดือนที่เหลือ ${n.remaining} ด. ต้อง${down ? 'ไม่เกิน' : 'ได้อย่างน้อย'}${n.kind === 'sum' ? 'เดือนละ' : 'เฉลี่ยเดือนละ'} ${fmt(n.perMonth)} ถึงจะถึง Target ${fmt(t)} ทั้งปี` });
     }

@@ -6,16 +6,21 @@ const EXE='/opt/pw-browsers/chromium'; const b=await chromium.launch(fs.existsSy
 const res = fs.existsSync(OUT+'/boxes.json') ? JSON.parse(fs.readFileSync(OUT+'/boxes.json')) : {};
 async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
 let LOOSE=false;
-async function findVisible(label){
-  for (const loc of [pg.getByRole('button',{name:label}), pg.getByText(label,{exact:false})]) {
+// "=ป้าย" = ชื่อปุ่มตรงเป๊ะ + เลือกตัวท้ายสุดที่มองเห็น (ปุ่มในโมดัลอยู่ท้าย DOM — ชื่อซ้ำกับปุ่มบนหน้าหลังโมดัล)
+async function findVisible(raw){
+  const last = raw.startsWith('='); const label = last ? raw.slice(1) : raw;
+  for (const loc of [pg.getByRole('button',{name:label, exact:last}), pg.getByText(label,{exact:last})]) {
     const n = await loc.count();
-    for (let i=0;i<Math.min(n,30);i++){ const bb = await loc.nth(i).boundingBox().catch(()=>null);
+    for (let j=0;j<Math.min(n,30);j++){ const i = last ? n-1-j : j; const bb = await loc.nth(i).boundingBox().catch(()=>null);
       if (!(bb && bb.width>0 && bb.y>=0 && bb.y+bb.height<=1000 && bb.x>=0 && bb.x<1600)) continue;
       const txt = (await loc.nth(i).innerText().catch(()=>'')).trim();
       if (!LOOSE && txt.length > label.length + 28) continue;   // ข้อความยาว = ย่อหน้าคำอธิบาย ไม่ใช่ปุ่ม
       if (!LOOSE && bb.width > 700) continue;
       return bb; }
   }
+  // "=ป้าย" หาไม่เจอ → ลองช่อง <select> ที่ค่าที่เลือกอยู่ตรงป้าย (ช่องสถานะ — <option> ไม่มีกรอบให้ชี้)
+  if (last) return await pg.evaluate((t)=>{ const el=[...document.querySelectorAll('select')].reverse().find(s=>s.selectedOptions[0]?.text.trim()===t);
+    if(!el) return null; const r=el.getBoundingClientRect(); return (r.width>0 && r.y>=0 && r.y+r.height<=1000) ? {x:r.x,y:r.y,width:r.width,height:r.height} : null; }, label);
   return null;
 }
 for (const s of SPEC){

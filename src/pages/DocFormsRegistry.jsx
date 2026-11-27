@@ -17,6 +17,8 @@ import { DeleteButton } from '../components/IconButton';
 import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 import { askConfirm } from '../utils/askConfirm';
+import { BOUND_SUBJECTS } from '../utils/wfBound';
+import { PAPER_BASIS, BASIS_ORDER } from '../utils/paperBenefits';   // 📈 รอบการออกใบ (นับกระดาษที่ทดแทน · /live-benefits)   // ✍️ เอกสารที่สายเซ็นคุมโดย e-Workflow (25/11)
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -46,6 +48,28 @@ export default function DocFormsRegistry() {
   const [previewScope, setPreviewScope] = useState(''); // ส่วนงานที่จะใช้ตอนกดดูตัวอย่าง
   const emptyRev = { record_date: '', rev: '', issued_date: '', description: '', responsible: '', approved_name: '' };
   const [newRev, setNewRev] = useState(emptyRev);
+
+  /* ✍️ 25/11 (คำสั่ง user "รวมระบบเอกสารกับ e-workflow") — doc_key ไหนมีใบงาน e-Workflow คุมสายเซ็นอยู่
+     ช่องเซ็นบนใบพิมพ์ของเอกสารนั้น = ขั้นในใบงาน (ไม่ใช่ "ช่องลายเซ็น" ในทะเบียนนี้) ⇒ ต้องบอกบนแถว */
+  const [wfByDoc, setWfByDoc] = useState({});
+  const [wfErr, setWfErr] = useState('');
+  useEffect(() => {
+    let alive = true;
+    supabase.from('wf_defs').select('id, name, wf_versions!wf_defs_current_version_fk(flow_schema, form_schema)').eq('status', 'active')
+      .then(({ data, error }) => {
+        if (!alive) return;
+        if (error) { setWfErr(error.message); return; }
+        const m = {};
+        (data || []).forEach(d => {
+          const f = d.wf_versions?.flow_schema;
+          const dk = BOUND_SUBJECTS.find(b => b.subject === f?.binding?.subject)?.docKey
+            || (d.wf_versions?.form_schema?.fields || []).find(x => x.type === 'checkgrid')?.docKey;   // 🧩 ใบตรวจแบบตาราง (26/11)
+          if (dk) (m[dk] ||= []).push({ id: d.id, name: d.name, steps: (f.steps || []).map(x => x.sig_label || x.label) });
+        });
+        setWfByDoc(m);
+      });
+    return () => { alive = false; };
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -140,7 +164,7 @@ export default function DocFormsRegistry() {
     if (error) {
       toast.error(error.code === '42P01'
         ? 'ยังไม่ได้ apply migration doc_form_scopes — ใบพิมพ์ยังใช้ชุดกลางได้ปกติ'
-        : 'บันทึกไม่สำเร็จ: ' + error.message);
+        : (tr('บันทึกไม่สำเร็จ') + ': ') + error.message);
       return;
     }
     toast.success('บันทึกชุดของส่วนงานแล้ว');
@@ -149,7 +173,7 @@ export default function DocFormsRegistry() {
   const removeScope = async (sc) => {
     const w = canWriteUnit(docCtx, sc?.section);
     if (!w.ok) { toast.info(writeBlockText(w, { what: 'ชุดเอกสารของส่วนงานนี้', unit: sc?.section })); return; }
-    if (!await askConfirm(`ลบชุดของส่วนงาน "${sc.section}"? (กลับไปใช้ชุดกลาง)`)) return;
+    if (!await askConfirm(`${tr("ลบชุดของส่วนงาน")} "${sc.section}"? (${tr("กลับไปใช้ชุดกลาง")})`)) return;
     checkWriteRows(await supabase.from('doc_form_scopes').delete().eq('id', sc.id).select('id'), 'ลบขอบเขต');
     loadScopes(sc.doc_key); loadDocForms(true);
   };
@@ -161,12 +185,12 @@ export default function DocFormsRegistry() {
       description: newRev.description.trim() || null, responsible: newRev.responsible.trim() || null,
       approved_name: newRev.approved_name.trim() || null,
     }]);
-    if (error) { toast.error('เกิดข้อผิดพลาด: ' + error.message); return; }
+    if (error) { toast.error((tr('เกิดข้อผิดพลาด') + ': ') + error.message); return; }
     setNewRev(emptyRev);
     loadRevisions(editing.doc_key);
   };
   const removeRevision = async (r) => {
-    if (!await askConfirm(`ลบ Rev "${r.rev}"?`)) return;
+    if (!await askConfirm(`${tr("ลบ")} Rev "${r.rev}"?`)) return;
     checkWriteRows(await supabase.from('doc_form_revisions').delete().eq('id', r.id).select('id'), 'ลบ revision');
     loadRevisions(editing.doc_key);
   };
@@ -186,6 +210,8 @@ export default function DocFormsRegistry() {
         paper: editing.paper?.trim() || null,
         paper_size: editing.paper_size || null,
         orientation: editing.orientation || null,
+        paper_basis: editing.paper_basis || null,
+        paper_unit: editing.paper_unit?.trim() || null,
         sig_blocks: sig.length ? sig : null,
         footer_note: editing.footer_note?.trim() || null,
         notes: editing.notes?.trim() || null,
@@ -199,7 +225,7 @@ export default function DocFormsRegistry() {
       setEditing(null);
       await loadDocForms(true); // refresh cache ให้ฟังก์ชันพิมพ์ในแท็บนี้เห็นค่าใหม่
       load();
-    } catch (e) { toast.error('บันทึกไม่สำเร็จ: ' + e.message); }
+    } catch (e) { toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + e.message); }
     finally { setSaving(false); }
   };
 
@@ -213,6 +239,7 @@ export default function DocFormsRegistry() {
           {!canManage && ' · คุณมีสิทธิ์ดูอย่างเดียว'}
         </>} />
 
+      {wfErr && <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>⚠ {tr('อ่านใบงาน e-Workflow ไม่สำเร็จ — ป้าย "สายเซ็นคุมโดย e-Workflow" อาจไม่ครบ')}: {wfErr}</div>}
       {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 860 }}>
@@ -233,11 +260,17 @@ export default function DocFormsRegistry() {
                   <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.form_code || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{tr('— ไม่มีเลข —')}</span>}</td>
                   <td style={{ fontSize: 13 }}>{r.title || '—'}
                     {r.notes && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.notes}</div>}
+                    {(wfByDoc[r.doc_key] || []).map(w => (
+                      <div key={w.id} style={{ fontSize: 11, marginTop: 2 }}>
+                        <a href={`/workflow-designer?tab=edit&def=${w.id}`} style={{ color: 'var(--accent)', textDecoration: 'none' }}>✍️ {tr('สายเซ็นคุมโดย e-Workflow')}: {w.name}</a>
+                        <span style={{ color: 'var(--muted)' }}> · {w.steps.join(' → ')}</span>
+                      </div>
+                    ))}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 12 }}>{r.rev || '—'}</td>
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>{r.effective_date || '—'}</td>
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>
-                    {r.paper_size ? `${r.paper_size} ${r.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'}` : (r.paper || '—')}
+                    {r.paper_size ? `${r.paper_size} ${r.orientation === 'landscape' ? tr('แนวนอน') : tr('แนวตั้ง')}` : (r.paper || '—')}
                     {r.layout_locked === false && <div style={{ fontSize: 11, color: 'var(--accent)' }}>{tr('ปรับแนวได้')}</div>}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -247,10 +280,10 @@ export default function DocFormsRegistry() {
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button className="tbtn" onClick={() => preview(r)} title={tr('ทดลองพิมพ์ / บันทึกเป็น PDF (ตัวอย่าง มีลายน้ำ)')}
-                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>{tr('ตัวอย่าง')}</button>
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>{tr('ตัวอย่าง')}</button>
                     {canManage && (
                       <button className="tbtn" onClick={() => openEdit(r)}
-                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>{tr('แก้ไข')}</button>
+                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>{tr('แก้ไข')}</button>
                     )}
                   </td>
                 </tr>
@@ -261,13 +294,13 @@ export default function DocFormsRegistry() {
       )}
 
       <InfoMore label={tr('ฟอร์มใหม่เข้าทะเบียนยังไง')} size={11.5} style={{ marginTop: 10 }}>
-        💡 ฟอร์มใหม่จะถูกเพิ่มเข้าทะเบียนโดยทีมพัฒนาเมื่อสร้างฟอร์มในระบบ (คีย์อ้างอิงผูกกับโค้ด) — หน้านี้แก้ เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/หมายเหตุ ได้เอง
+        💡 {tr("ฟอร์มใหม่จะถูกเพิ่มเข้าทะเบียนโดยทีมพัฒนาเมื่อสร้างฟอร์มในระบบ (คีย์อ้างอิงผูกกับโค้ด) — หน้านี้แก้ เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/หมายเหตุ ได้เอง")}
       </InfoMore>
 
       {/* modal แก้ไข (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {editing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('✏️ แก้ไขทะเบียน —')} <span style={{ color: 'var(--accent)' }}>{editing.doc_key}</span></div>
               <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
@@ -294,20 +327,34 @@ export default function DocFormsRegistry() {
                   </div>
                   <div style={{ fontSize: 11, color: editing.layout_locked !== false ? 'var(--muted)' : 'var(--accent)', marginTop: 3, lineHeight: 1.5 }}>
                     {editing.layout_locked !== false
-                      ? '🔒 ฟอร์มนี้ layout ออกแบบมาตายตัวกับแนวกระดาษ (ตารางกว้างตามจำนวนวัน/คอลัมน์) — เปลี่ยนแนวแล้วใบพัง จึงล็อกไว้ ค่าที่แสดงใช้กับใบตัวอย่างเท่านั้น'
-                      : '✅ รายงานภายใน — เปลี่ยนแนวแล้วมีผลกับใบพิมพ์จริงทันที'}
+                      ? tr("🔒 ฟอร์มนี้ layout ออกแบบมาตายตัวกับแนวกระดาษ (ตารางกว้างตามจำนวนวัน/คอลัมน์) — เปลี่ยนแนวแล้วใบพัง จึงล็อกไว้ ค่าที่แสดงใช้กับใบตัวอย่างเท่านั้น")
+                      : tr("✅ รายงานภายใน — เปลี่ยนแนวแล้วมีผลกับใบพิมพ์จริงทันที")}
                   </div>
                 </div>
                 <div>
                   <div style={lb}>{tr('ใช้งาน')}</div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text)', cursor: 'pointer', paddingTop: 6 }}>
                     <input type="checkbox" checked={editing.is_active !== false} onChange={e => setF('is_active', e.target.checked)} style={{ width: 'auto' }} />
-                    เปิดใช้ (ปิด = ฟอร์มใช้ค่า default ในโค้ด)
+                    {tr("เปิดใช้ (ปิด = ฟอร์มใช้ค่า default ในโค้ด")})
                   </label>
                 </div>
               </div>
+              {/* 📈 รอบการออกใบ — หน้า /live-benefits นับกระดาษที่ทดแทนจากช่องนี้ (26/11) */}
+              <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={lb}>{tr('รอบการออกใบ (นับกระดาษที่ทดแทน)')}</div>
+                  <select value={editing.paper_basis || ''} onChange={e => setF('paper_basis', e.target.value || null)} style={{ width: '100%' }}>
+                    <option value="">{tr('— ยังไม่จัด —')}</option>
+                    {BASIS_ORDER.map(b => <option key={b} value={b}>{tr(PAPER_BASIS[b].label)}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div style={lb}>{tr('1 แผ่นต่อ (เช่น ไลน์ × กะ · เครื่อง × กะ)')}</div>
+                  <input type="text" value={editing.paper_unit || ''} onChange={e => setF('paper_unit', e.target.value)} placeholder={tr('ไลน์ × กะ')} style={{ width: '100%' }} />
+                </div>
+              </div>
               <div>
-                <div style={lb}>ช่องลายเซ็นหัวเอกสาร (บรรทัดละช่อง — เว้นว่าง = ใช้ default ของฟอร์ม)</div>
+                <div style={lb}>{tr("ช่องลายเซ็นหัวเอกสาร (บรรทัดละช่อง — เว้นว่าง = ใช้ default ของฟอร์ม")})</div>
                 <textarea rows={3} value={editing._sigText} onChange={e => setF('_sigText', e.target.value)} placeholder={'ผู้จัดทำ\nระดับจัดการอนุมัติ\nผู้รับทราบ'} style={{ width: '100%', fontSize: 13 }} />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('⚠️ จำนวนช่องต้องเท่าเดิมตาม layout ฟอร์ม (เปลี่ยนได้เฉพาะข้อความ)')}</div>
               </div>
@@ -331,22 +378,22 @@ export default function DocFormsRegistry() {
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>
-                    ✍️ ชุดช่องลายเซ็นเฉพาะส่วนงาน <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({scopes.length})</span>
+                    ✍️ {tr("ชุดช่องลายเซ็นเฉพาะส่วนงาน")} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({scopes.length})</span>
                   </div>
                   {canManage && (
                     <button onClick={() => openScope(editing, null)}
-                      style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>{tr('+ เพิ่มส่วนงาน')}</button>
+                      style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3-surf)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>{tr('+ เพิ่มส่วนงาน')}</button>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px', lineHeight: 1.6 }}>
-                  ส่วนงานที่ไม่ได้ตั้งไว้ = ใช้ช่องเซ็นชุดกลางด้านบน · ตั้งได้เฉพาะ <b>{tr('ข้อความป้าย')}</b> {tr('กับ')} <b>{tr('ชื่อผู้เซ็นประจำ')}</b> (จำนวนช่องเปลี่ยนไม่ได้ — ผูกกับ layout ฟอร์ม)
+                  {tr("ส่วนงานที่ไม่ได้ตั้งไว้ = ใช้ช่องเซ็นชุดกลางด้านบน · ตั้งได้เฉพาะ")} <b>{tr('ข้อความป้าย')}</b> {tr('กับ')} <b>{tr('ชื่อผู้เซ็นประจำ')}</b> ({tr("จำนวนช่องเปลี่ยนไม่ได้ — ผูกกับ layout ฟอร์ม")})
                 </div>
                 {scopes.length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>{tr('ยังไม่มี — ทุกส่วนงานใช้ชุดกลาง')}</div>
                 ) : (
                   <div style={{ display: 'grid', gap: 5 }}>
                     {scopes.map(sc => (
-                      <div key={sc.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div key={sc.id} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <b style={{ fontSize: 12.5, color: 'var(--accent)' }}>{sc.section}</b>
                         <span style={{ fontSize: 11.5, color: 'var(--text2)', flex: 1, minWidth: 160 }}>
                           {(sc.sig_names || []).filter(Boolean).length
@@ -414,7 +461,7 @@ export default function DocFormsRegistry() {
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '...' : tr('บันทึก')}
                 </button>
@@ -427,7 +474,7 @@ export default function DocFormsRegistry() {
       {/* modal ชุดช่องเซ็นของส่วนงานเดียว (ซ้อนบน modal ทะเบียน) */}
       {scopeEdit && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text)' }}>{tr('✍️ ชุดช่องลายเซ็นของส่วนงาน')}</div>
               <button onClick={() => setScopeEdit(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
@@ -441,7 +488,7 @@ export default function DocFormsRegistry() {
                   {sections.map(sc => {
                     const code = sc.code || sc.name;
                     const used = scopes.some(x => x.section === code && x.id !== scopeEdit.id);
-                    return <option key={sc.id} value={code} disabled={used}>{code}{sc.name && sc.name !== code ? ` — ${sc.name}` : ''}{used ? ' (ตั้งไว้แล้ว)' : ''}</option>;
+                    return <option key={sc.id} value={code} disabled={used}>{code}{sc.name && sc.name !== code ? ` — ${sc.name}` : ''}{used ? tr(" (ตั้งไว้แล้ว)") : ''}</option>;
                   })}
                 </select>
                 {!!scopeEdit.id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เปลี่ยนส่วนงานไม่ได้ — ถ้าผิดให้ลบแล้วเพิ่มใหม่')}</div>}
@@ -461,20 +508,20 @@ export default function DocFormsRegistry() {
                   </div>
                 ))}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
-                  ⚠️ จำนวนช่องล็อกตาม layout ฟอร์ม · ป้ายที่ไม่แก้ = ตามชุดกลาง (ชุดกลางเปลี่ยนแล้วตามเอง) · ชื่อที่กรอกจะพิมพ์ใต้เส้นลงชื่อ
+                  ⚠️ {tr("จำนวนช่องล็อกตาม layout ฟอร์ม · ป้ายที่ไม่แก้ = ตามชุดกลาง (ชุดกลางเปลี่ยนแล้วตามเอง) · ชื่อที่กรอกจะพิมพ์ใต้เส้นลงชื่อ")}
                 </div>
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div><div style={lb}>footer เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
+                <div><div style={lb}>footer {tr("เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง")})</div>
                   <input type="text" value={scopeEdit.footer_note} onChange={e => setScopeEdit(v => ({ ...v, footer_note: e.target.value }))} style={{ width: '100%' }} /></div>
                 <div><div style={lb}>{tr('ผู้ออกเอกสารเฉพาะส่วนงาน')}</div>
                   <SearchSelect value={scopeEdit.issued_by || ''} placeholder={tr('— ใช้ของกลาง (พิมพ์ค้นหาชื่อ) —')}
                     options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setScopeEdit(v => ({ ...v, issued_by: id }))} /></div>
               </div>
-              <div><div style={lb}>Legend เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
+              <div><div style={lb}>Legend {tr("เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง")})</div>
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>{tr('บันทึก')}</button>
               </div>
             </div>

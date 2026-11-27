@@ -22,22 +22,22 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
     setSaving(true);
     const { error } = await supabase.from('pe_fmea_items').insert(chosen);
     setSaving(false);
-    if (error) return toast.error(`ดึงไม่สำเร็จ: ${error.message}`);
-    toast.success(`เพิ่ม ${chosen.length} failure mode จาก master เข้า OP ${proc.op_no} แล้ว`);
+    if (error) return toast.error(`${tr("ดึงไม่สำเร็จ")}: ${error.message}`);
+    toast.success(`${tr("เพิ่ม")} ${chosen.length} failure mode ${tr("จาก master เข้า")} OP ${proc.op_no} ${tr("แล้ว")}`);
     onDone?.(); onClose();
   };
 
   return (
     <Modal title={tr('เติม failure mode จาก master')} onClose={onClose} width={760}
-      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
-      {!linked.length ? <WarnBar color="#f59e0b">ยังไม่มี OP ไหนผูกกระบวนการมาตรฐาน — ไปที่แท็บ Flow → ✏️ OP → เลือก "กระบวนการมาตรฐาน" ก่อน</WarnBar> : (
+      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? tr("กำลังเพิ่ม…") : `➕ ${tr("เพิ่ม")} ${chosen.length} ${tr("รายการ")}`}</button></>}>
+      {!linked.length ? <WarnBar color="#f59e0b">{tr("ยังไม่มี OP ไหนผูกกระบวนการมาตรฐาน — ไปที่แท็บ Flow → ✏️ OP → เลือก \"กระบวนการมาตรฐาน\" ก่อน")}</WarnBar> : (
         <>
           <select style={{ ...inp, marginBottom: 8 }} value={procId} onChange={e => { setProcId(e.target.value); setPicked(null); }}>
             {linked.map(p => <option key={p.id} value={p.id}>OP {p.op_no} · {p.name} → 📚 {(masters || []).find(m => m.id === p.master_process_id)?.name || '?'}</option>)}
           </select>
           {master && !master.confirmed_at && <WarnBar color="#f59e0b">{tr('กระบวนการมาตรฐานนี้ยังไม่ผ่านการยืนยันจาก PE (seed จากชื่อ OP) — ดึงได้ แต่ควรตรวจว่าใช่กระบวนการเดียวกันจริง')}</WarnBar>}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>
-            ดึงได้ {rows.length} {tr('รายการ')}{skipped ? ` · ข้าม ${skipped} ที่ OP นี้มี failure mode เดียวกันอยู่แล้ว` : ''} · ค่า S/O/D และ controls จะเป็นค่าตั้งต้น แก้ในพาร์ทได้อิสระ
+            {tr("ดึงได้")} {rows.length} {tr('รายการ')}{skipped ? ` · ${tr("ข้าม")} ${skipped} ${tr("ที่ OP นี้มี failure mode เดียวกันอยู่แล้ว")}` : ''} · {tr("ค่า S/O/D และ controls จะเป็นค่าตั้งต้น แก้ในพาร์ทได้อิสระ")}
           </div>
           {!rows.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีรายการใหม่ให้ดึง')}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '50vh', overflowY: 'auto' }}>
@@ -52,7 +52,7 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>S{r.severity ?? '—'}·O{r.occurrence ?? '—'}·D{r.detection ?? '—'} · RPN {rpnOf(r) ?? '—'} · v{r.master_version}</span>
                     </div>
                     {(r.prevention || r.detection_ctrl) && <div style={{ fontSize: 11, color: 'var(--text2)' }}>{r.prevention ? `🛡 ${r.prevention} ` : ''}{r.detection_ctrl ? `🔍 ${r.detection_ctrl}` : ''}</div>}
-                    {r.recommended_action && <div style={{ fontSize: 11, color: '#22c55e' }}>✔ best practice: {r.recommended_action}</div>}
+                    {r.recommended_action && <div style={{ fontSize: 11, color: 'var(--green)' }}>✔ best practice: {r.recommended_action}</div>}
                   </div>
                 </label>
               );

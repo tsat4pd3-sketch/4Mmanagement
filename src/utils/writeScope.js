@@ -14,8 +14,10 @@
  *   = ช่างแก้ได้ทั้งโรงงาน (เคสที่ user แจ้ง) · ถ้าไปบีบ `sections` ให้แคบ = ช่างมองไม่เห็นงานซ่อม
  *   ⇒ **ต้องเป็นคนละแกน** — ต้นแบบที่ทำถูกอยู่แล้วคือ `operator.jsx` (`homeSection`)
  *
- * ══ 🔑 คนที่งานเป็นงานทั้งโรงงานจริง = คีย์ `scope:all_units` ═══════════════════════════
- *   QA · สโตร์/วางแผน · PE/NPI · document control — ปรับเองได้ที่ `/permissions` **ห้าม hardcode role**
+ * ══ 🔑 คนที่งานเป็นงานทั้งโรงงานจริง = ใบผ่านข้ามหน่วย **รายคน** (13/11 · คำสั่ง user) ═══════════
+ *   `profiles.all_units` ตั้งที่ `/add-user` ช่อง 🌐 · หรือมอบหมาย `org_assignments.scope_depth='all'`
+ *   🔴 **ห้ามแจกตาม role** — "manager ไม่ได้แปลว่าแก้ข้ามแผนกได้" · ความกว้างของการแก้มาจากขอบเขตรายคน
+ *      (บ้าน · Cost Center · มอบหมาย · ใบผ่าน) เท่านั้น ห้ามมาจากชื่อ role หรือชื่อคีย์
  *   (role `admin` ยัง hardcode เป็นตาข่ายกันตาย — หลักเดียวกับ `hasPermission()`)
  *
  * ══ 💰 แกนที่ 2 — **Cost Center + ลำดับชั้น** (2026-10-19 · คำสั่ง user) ═══════════════════
@@ -63,16 +65,21 @@ function ccDecide(ctx, target, opts) {
   return canWriteScope(idx, ctx, sc, opts);
 }
 
-/** หน่วยงาน "บ้านจริง" ที่คนนี้แก้ข้อมูลได้ — **`[]` = ยังตัดสินไม่ได้ (ไม่ใช่ "ได้ทุกหน่วย")**
- *  🔴 ต่างจาก `effectiveSections()` ตรงนี้: ที่นั่น `[]` = ไม่จำกัด · ที่นี่ `[]` = ไม่รู้ ⇒ บล็อก */
-export function writeUnitsOf({ section, sections } = {}) {
-  const arr = Array.isArray(sections) ? sections.filter(Boolean) : [];
+/** หน่วยงานที่คนนี้แก้ข้อมูลได้ — **`[]` = ยังตัดสินไม่ได้ (ไม่ใช่ "ได้ทุกหน่วย")**
+ *  🔴 ต่างจาก `effectiveSections()` ตรงนี้: ที่นั่น `[]` = ไม่จำกัด · ที่นี่ `[]` = ไม่รู้ ⇒ บล็อก
+ *  🔴 13/11 (audit role↔scope · คำสั่ง user): **`sections` = ขอบเขตที่ "เห็น" ห้ามเอามาตัดสินการแก้**
+ *     แหล่งของ "แก้ได้" = `ctx.writeUnits` (บ้าน ∪ ส่วนงานของหน่วยที่ได้รับมอบหมาย — `assignmentOverlay.js`
+ *     ประกอบให้ · `UserContext.writeUnits`) · ไม่มี = บ้าน `profiles.section` ตัวเดียว
+ *     (ฝั่ง DB = `app_write_units()` ตรรกะเดียวกัน · migration 20261113_role_scope_p1) */
+export function writeUnitsOf({ section, writeUnits } = {}) {
+  const arr = Array.isArray(writeUnits) ? writeUnits.filter(Boolean) : [];
   if (arr.length) return arr;
   const one = String(section || '').trim();
   return one ? [one] : [];
 }
 
-/** ถือใบผ่านข้ามหน่วยงานไหม (คีย์ `scope:all_units` หรือ admin) */
+/** ถือใบผ่านข้ามหน่วยงานไหม — **รายคน** (`profiles.all_units` / มอบหมาย `scope_depth='all'`) หรือ admin
+ *  🔴 13/11: ไม่ใช่คีย์ของ role อีกต่อไป (`scope:all_units` ถูกถอดจาก role_permissions) — ตั้งที่ /add-user ช่อง 🌐 */
 export function hasAllUnits({ role, allUnits } = {}) {
   return role === 'admin' || allUnits === true;
 }

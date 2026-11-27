@@ -9,6 +9,8 @@
    · pure ทั้งไฟล์ · ไม่แตะ supabase · เทส `__tests__/kpiFormula.test.mjs` */
 import { KPI_BASE_VARS, baseVarOf, formulaOf, evalFormula, fmtKpi } from './kpiSetup.js';
 import { scopeKey, scopeOfDef, canonicalScope, isPlant } from './orgScope.js';
+import { dateLocale } from './i18n.js';
+import { tr } from './i18n.js';
 
 export const PLANT_BASE_KEY = 'plant';
 /** คีย์ขอบเขตของตัวเลขฐาน — ทั้งโรงงาน = 'plant' · อื่นๆ = `kind:value` (ต้อง canonical ก่อนส่งเข้า) */
@@ -117,8 +119,8 @@ export const formulaMonthMode = (info, month) => {
   return info.months?.[m] != null ? 'computed' : 'manual';
 };
 
-const fmtBaht = (v) => (v == null ? '–' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
-const scopeText = (sk, labelOf) => (sk === PLANT_BASE_KEY ? 'ทั้งโรงงาน' : (labelOf ? labelOf(sk) : sk));
+const fmtBaht = (v) => (v == null ? '–' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: 2 }));
+const scopeText = (sk, labelOf) => (sk === PLANT_BASE_KEY ? tr("ทั้งโรงงาน") : (labelOf ? labelOf(sk) : sk));
 
 /** ข้อความอธิบาย 1 เดือน — คำนวณได้: "DL 1,200,000 + OH 800,000 ÷ ยอดขายจากสินค้า 150,000,000 (ทั้งโรงงาน)" · ขาด: "ขาด ยอดขายจากสินค้า (ทั้งโรงงาน)" */
 export function formulaNoteText(info, month, { labelOf = null, def = null } = {}) {
@@ -169,7 +171,7 @@ export const amountVarOf = (d) => {
 export function fmtMoney(x) {
   if (x == null || !Number.isFinite(Number(x))) return '—';
   const n = Number(x);
-  return Math.abs(n) >= 1e6 ? `${(n / 1e6).toLocaleString('th-TH', { maximumFractionDigits: 2 })} MB` : `${Math.round(n).toLocaleString('th-TH')} บ.`;
+  return Math.abs(n) >= 1e6 ? `${(n / 1e6).toLocaleString(dateLocale(), { maximumFractionDigits: 2 })} MB` : `${Math.round(n).toLocaleString(dateLocale())} บ.`;
 }
 export function amountCompanion({ def, scope, base, month }) {
   const v = amountVarOf(def);

@@ -105,7 +105,7 @@ export default function StorageLocPanel() {
           .filter(r => (Number(r.in_bom) || 0) + (Number(r.in_ledger) || 0) + (Number(r.in_delivery) || 0) > 0)
           .map(r => slocLabel(r.code))
           .filter(Boolean))]);
-    if (r3.error) toast.error('โหลดทะเบียนไลน์ (Main) ไม่ได้: ' + r3.error.message);
+    if (r3.error) toast.error((tr('โหลดทะเบียนไลน์ (Main) ไม่ได้') + ': ') + r3.error.message);
     setLines(r3.data || []);
     setUntagged(r4.error ? null : (r4.count ?? 0));
   }, []);
@@ -139,12 +139,12 @@ export default function StorageLocPanel() {
   const save = async (form) => {
     const code = slocLabel(form.code);
     if (!code) { toast.error('ใส่รหัสคลัง'); return false; }
-    if (!slocValid(code)) { toast.error(`รหัสไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return false; }
+    if (!slocValid(code)) { toast.error(`${tr("รหัสไม่ถูกรูปแบบ")} — ${SLOC_FORMAT_HINT}`); return false; }
     if (!form.name.trim()) { toast.error('ใส่ชื่อพื้นที่'); return false; }
     const lineNames = [...new Set((form.line_names || []).map(s => String(s).trim()).filter(Boolean))];
     // ไลน์เดียวผูก 2 SLoc ตรงๆ ไม่ได้ (ตกทอดจากแม่แล้วผูกเองที่ลูกได้ — ลูกชนะแม่)
     const clash = rows.filter(r => r.code !== edit?.code && r.is_active !== false && (r.line_names || []).some(n => lineNames.includes(n)));
-    if (clash.length) { toast.error(`${clash.map(r => r.code).join(', ')} ผูกไลน์เดียวกันอยู่แล้ว — ไลน์หนึ่งอยู่ได้พื้นที่เดียว เอาออกจากตัวเก่าก่อน`); return false; }
+    if (clash.length) { toast.error(`${clash.map(r => r.code).join(', ')} ${tr("ผูกไลน์เดียวกันอยู่แล้ว — ไลน์หนึ่งอยู่ได้พื้นที่เดียว เอาออกจากตัวเก่าก่อน")}`); return false; }
     /* 🔴 12/10: trigger `fn_stock_txn_fill_sloc` (DR) จับคู่ชื่อไลน์ "ตรงตัว" — DR ไม่มีผังไลน์ให้ไล่หาแม่
        ⇒ ผูกที่แม่อย่างเดียว แถว ledger ที่ฟังก์ชันฝั่ง DB เขียน (ปิดใบผลิต/ระเบิด BOM/กดรับ) ได้ SLoc ว่าง
        (เคยค้าง 1,044 แถวที่ Line 60/61/HDF1/LASER E50) ⇒ เก็บไลน์ลูกที่ตกทอดลงทะเบียนด้วยตอนบันทึก
@@ -167,16 +167,16 @@ export default function StorageLocPanel() {
       : supabaseDR.from('storage_locations').insert(payload);
     const { error } = await q;
     if (error) {
-      toast.error(error.code === '23505' ? `รหัส ${code} มีอยู่แล้วในทะเบียน`
-        : error.code === '23514' ? `รหัสไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`
+      toast.error(error.code === '23505' ? `${tr("รหัส")} ${code} ${tr("มีอยู่แล้วในทะเบียน")}`
+        : error.code === '23514' ? `${tr("รหัสไม่ถูกรูปแบบ")} — ${SLOC_FORMAT_HINT}`
         : error.message);
       return false;
     }
-    toast.success(edit?.code ? 'แก้ไขแล้ว' : `เพิ่มรหัส ${code} แล้ว`);
+    toast.success(edit?.code ? 'แก้ไขแล้ว' : `${tr("เพิ่มรหัส")} ${code} ${tr("แล้ว")}`);
     /* 🔴 13/10: trigger ฝั่ง DB เติม SLoc ได้แค่ "ตอน insert" ⇒ แถวที่เขียนก่อนวันลงทะเบียนค้างว่างต่อไป
        (เคยค้าง 602 แถวที่ไลน์ปั๊ม ตั้งแต่ลงทะเบียน 4 รหัสจนถึงรอบ backfill ถัดไป) ⇒ ผูกไลน์เสร็จต้องชวนกด ♻️ เลย
        ไม่แปะให้เองเพราะปุ่มนั้นเขียนทีเดียวทั้งทะเบียน (ต้องให้คนเห็นพรีวิว+ยืนยันก่อน) */
-    if (storedNames.length && untagged > 0) toast.info(`ยังมีรายการเก่า ${untagged.toLocaleString()} แถวไม่มีมุม SAP — กด ♻️ แปะรหัสย้อนหลัง`);
+    if (storedNames.length && untagged > 0) toast.info(`${tr("ยังมีรายการเก่า")} ${untagged.toLocaleString()} ${tr("แถวไม่มีมุม SAP — กด ♻️ แปะรหัสย้อนหลัง")}`);
     setEdit(null); load();
     return true;
   };
@@ -185,8 +185,8 @@ export default function StorageLocPanel() {
     /* 🔴 fail-closed — นับการใช้งานไม่ได้ = ห้ามลบ (QC audit 06/10)
        เดิมคิวรีนับล้มแล้วถือว่า "ไม่มีใครใช้" ⇒ ลบรหัสที่ BOM/ledger/จุดส่ง ยังอ้างอยู่ได้ */
     if (countFailed) { toast.error('ตรวจการใช้งานของรหัสนี้ไม่ได้ — ยังลบไม่ได้ (กดรีเฟรชแล้วลองอีกครั้ง)'); return; }
-    if (usedCount[slocLabel(r.code)]) { toast.error(`รหัส ${r.code} ถูกใช้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ (กดแก้ไข → เอาติ๊ก "ใช้งาน" ออก)`); return; }
-    if (!await askConfirm(`ลบรหัส ${r.code} · ${r.name}?`)) return;
+    if (usedCount[slocLabel(r.code)]) { toast.error(`${tr("รหัส")} ${r.code} ${tr("ถูกใช้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ (กดแก้ไข → เอาติ๊ก \"ใช้งาน\" ออก")})`); return; }
+    if (!await askConfirm(`${tr("ลบรหัส")} ${r.code} · ${r.name}?`)) return;
     const { error } = await supabaseDR.from('storage_locations').delete().eq('code', r.code);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบแล้ว'); load();
@@ -198,8 +198,8 @@ export default function StorageLocPanel() {
     const active = rows.filter(r => r.is_active !== false);
     const plan = active.map(r => ({ code: slocLabel(r.code), names: coverOf(r) })).filter(p => p.names.length);
     if (!plan.length) { toast.error('ยังไม่มีรหัสคลังที่ผูกไลน์ไว้ — ผูกก่อน (กด ✏️ ที่รหัส)'); return; }
-    const preview = plan.map(p => `${p.code} ← ${p.names.length} ไลน์`).join('\n');
-    if (!await askConfirm(`แปะรหัสคลังให้รายการเก่าที่ยังไม่มีมุม SAP (${untagged ?? '?'} แถว)\n\n${preview}\n\nเฉพาะแถวที่ยังว่าง — ไม่ทับที่แปะแล้ว · ดำเนินการ?`)) return;
+    const preview = plan.map(p => `${p.code} ← ${p.names.length} ${tr("ไลน์")}`).join('\n');
+    if (!await askConfirm(`${tr("แปะรหัสคลังให้รายการเก่าที่ยังไม่มีมุม")} SAP (${untagged ?? '?'} ${tr("แถว")})\n\n${preview}\n\n${tr("เฉพาะแถวที่ยังว่าง — ไม่ทับที่แปะแล้ว · ดำเนินการ")}?`)) return;
     setBusy(true);
     let total = 0, pts = 0;
     const errs = [];
@@ -211,40 +211,39 @@ export default function StorageLocPanel() {
     }
     // จุดส่งเก่า — tag ตามไลน์แรกของจุด (ไลน์ในจุดเดียวต้องพื้นที่เดียวกันอยู่แล้ว — กฎของแผงจุดส่ง)
     const { data: dps, error: dpErr } = await supabaseDR.from('line_delivery_points').select('id, line_names').is('storage_location', null);
-    if (dpErr && !['42P01', '42703'].includes(dpErr.code)) errs.push(`จุดส่ง: ${dpErr.message}`);
+    if (dpErr && !['42P01', '42703'].includes(dpErr.code)) errs.push(`${tr("จุดส่ง")}: ${dpErr.message}`);
     for (const d of dps || []) {
       const code = slocOfLine(rows, lines, (d.line_names || [])[0])?.code;
       if (!code) continue;
       const { error } = await supabaseDR.from('line_delivery_points').update({ storage_location: code }).eq('id', d.id);
-      if (error) errs.push(`จุดส่ง ${d.id.slice(0, 8)}: ${error.message}`); else pts++;
+      if (error) errs.push(`${tr("จุดส่ง")} ${d.id.slice(0, 8)}: ${error.message}`); else pts++;
     }
     if (pts) invalidateTable('line_delivery_points');   // แก้จุดส่งแล้ว จออื่นอ่านจาก cache ต้องล้าง
     setBusy(false);
-    if (errs.length) toast.error(`แปะไม่สำเร็จบางส่วน: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1})` : ''}`);
-    toast.success(`แปะรหัสคลังแล้ว — ledger ${total.toLocaleString()} แถว · จุดส่ง ${pts} จุด`);
+    if (errs.length) toast.error(`${tr("แปะไม่สำเร็จบางส่วน")}: ${errs[0]}${errs.length > 1 ? ` (+${errs.length - 1})` : ''}`);
+    toast.success(`${tr("แปะรหัสคลังแล้ว")} — ledger ${total.toLocaleString()} ${tr("แถว · จุดส่ง")} ${pts} ${tr("จุด")}`);
     load();
   };
 
   const untaggedTip = untagged == null ? null : untagged > 0
-    ? `ledger เก่า ${untagged.toLocaleString()} แถวยังไม่มีมุม SAP (เขียนก่อนมีชั้นนี้ หรือไลน์ยังไม่ผูก) — ยอดใน v_sloc_stock จะต่ำกว่าจริงจนกว่าจะแปะ`
-    : 'ledger ทุกแถวมีมุม SAP แล้ว';
+    ? `ledger ${tr("เก่า")} ${untagged.toLocaleString()} ${tr("แถวยังไม่มีมุม SAP (เขียนก่อนมีชั้นนี้ หรือไลน์ยังไม่ผูก) — ยอดใน v_sloc_stock จะต่ำกว่าจริงจนกว่าจะแปะ")}`
+    : tr("ledger ทุกแถวมีมุม SAP แล้ว");
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16 }}>
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <div>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('พื้นที่ SAP · ทะเบียนรหัสคลัง (Storage Location)')}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-            รหัสบัญชีคลังแบบ SAP ที่อ้างในทุกบรรทัดของ BOM · {SLOC_FORMAT_HINT}
-            <br />🔗 <b>{tr('ผูกไลน์แม่ครั้งเดียว ไลน์ลูกตกทอด')}</b> (P411 = ทั้ง Apron Assy) — ระบบแปะรหัสคลังให้ใบขอเติม / ledger / จุดส่ง เองตอนเขียน
-            · ของยังนับที่ไลน์ย่อยที่สุดเหมือนเดิม (มุม SAP กับมุมไลน์คือรายการเดียวกัน) · คนละเรื่องกับ “โซนคลัง (ผัง)” ด้านล่าง
+            {tr("รหัสบัญชีคลังแบบ SAP ที่อ้างในทุกบรรทัดของ")} BOM · {SLOC_FORMAT_HINT}
+            <br />🔗 <b>{tr('ผูกไลน์แม่ครั้งเดียว ไลน์ลูกตกทอด')}</b> (P411 = {tr("ทั้ง Apron Assy) — ระบบแปะรหัสคลังให้ใบขอเติม / ledger / จุดส่ง เองตอนเขียน · ของยังนับที่ไลน์ย่อยที่สุดเหมือนเดิม (มุม SAP กับมุมไลน์คือรายการเดียวกัน) · คนละเรื่องกับ “โซนคลัง (ผัง)” ด้านล่าง")}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canManage && !missing && !noLineMap && untagged > 0 && (
             <button onClick={backfill} disabled={busy} title={untaggedTip}
               style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid rgba(245,158,11,0.5)', cursor: busy ? 'wait' : 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
-              {busy ? '…' : `🏷️ แปะรหัสคลังย้อนหลัง (${untagged.toLocaleString()} แถว)`}
+              {busy ? '…' : `🏷️ ${tr("แปะรหัสคลังย้อนหลัง")} (${untagged.toLocaleString()} ${tr("แถว")})`}
             </button>
           )}
           {canManage && !missing && (
@@ -256,16 +255,16 @@ export default function StorageLocPanel() {
         </div>
       </div>
 
-      <ReadOnlyNote show={!canManage && !missing} role={role} what="จัดการทะเบียนรหัสคลัง" permKey="storage:manage" />
+      <ReadOnlyNote show={!canManage && !missing} role={role} what={tr("จัดการทะเบียนรหัสคลัง")} permKey="storage:manage" />
 
       {missing && (
         <div style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12.5, color: '#f59e0b', fontWeight: 700 }}>
-          ⚠️ ยังไม่ได้ apply migration <code>20260902_storage_locations_master.sql</code> — ทะเบียนยังใช้ไม่ได้ (แจ้ง admin)
+          ⚠️ {tr("ยังไม่ได้")} apply migration <code>20260902_storage_locations_master.sql</code> — {tr("ทะเบียนยังใช้ไม่ได้ (แจ้ง")} admin)
         </div>
       )}
       {!missing && noLineMap && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-          ⚠️ ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — <b>{tr('ผูกไลน์กับรหัสคลังยังไม่ได้')}</b> ใบ/ledger จึงยังไม่มีมุม SAP (แจ้ง admin)
+          ⚠️ {tr("ยังไม่ได้")} apply migration <code>{MIG_DR}</code> (DR) — <b>{tr('ผูกไลน์กับรหัสคลังยังไม่ได้')}</b> {tr("ใบ/ledger จึงยังไม่มีมุม SAP (แจ้ง")} admin)
         </div>
       )}
 
@@ -273,14 +272,14 @@ export default function StorageLocPanel() {
           ที่ถูกบล็อกจะดูเหมือนบั๊ก) · ลบไม่ได้ทุกแถวตราบที่ยังนับไม่ได้ */}
       {!missing && countFailed && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#ef4444', marginBottom: 10 }}>
-          <b>{tr('⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่')}</b> — คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ
-          ⇒ <b>{tr('ปุ่มลบถูกปิดไว้ทั้งหมด')}</b> กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง
+          <b>{tr('⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่')}</b> — {tr("คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ")}
+          ⇒ <b>{tr('ปุ่มลบถูกปิดไว้ทั้งหมด')}</b> {tr("กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง")}
         </div>
       )}
 
       {!missing && orphan.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
-          <b>{tr('⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน')} {orphan.length} {tr('รหัส')}</b> — อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน
+          <b>{tr('⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน')} {orphan.length} {tr('รหัส')}</b> — {tr("อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน")}
           <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {orphan.map(c => (
               <span key={c} onClick={canManage ? () => setEdit({ code: c, name: '', kind: slocKindGuess(c) || '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] }) : undefined}
@@ -295,7 +294,7 @@ export default function StorageLocPanel() {
       {/* worklist: ไลน์ย่อยที่ยังไม่มีมุม SAP — ใบ/ledger ของไลน์พวกนี้จะไม่ถูกแปะรหัส (ห้ามซ่อน · ไม่เดาให้) */}
       {!missing && !noLineMap && !loading && unmappedLeaf.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-          <b style={{ color: '#3b82f6' }}>{tr('ไลน์ที่ยังไม่ผูกรหัสคลัง')} {unmappedLeaf.length} {tr('ไลน์')}</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
+          <b style={{ color: '#3b82f6' }}>{tr('ไลน์ที่ยังไม่ผูกรหัสคลัง')} {unmappedLeaf.length} {tr('ไลน์')}</b> — {tr("ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้")})
           <div style={{ marginTop: 4, color: 'var(--muted)', lineHeight: 1.6 }}>{unmappedLeaf.slice(0, 30).join(' · ')}{unmappedLeaf.length > 30 ? ` … (+${unmappedLeaf.length - 30})` : ''}</div>
         </div>
       )}
@@ -303,8 +302,8 @@ export default function StorageLocPanel() {
       {loading ? (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด...')}</div>
       ) : !missing && rows.length === 0 ? (
-        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border)' }}>
-          ยังไม่มีรหัสคลังในทะเบียน{canManage && ' — กด "+ เพิ่มรหัสคลัง"'}
+        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2-surf)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border)' }}>
+          {tr("ยังไม่มีรหัสคลังในทะเบียน")}{canManage && ' — กด "+ เพิ่มรหัสคลัง"'}
         </div>
       ) : !missing && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -316,7 +315,7 @@ export default function StorageLocPanel() {
             const inherited = cover.filter(n => !own.includes(n));
             return (
               <div key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 'var(--r-md)',
-                background: 'var(--bg2)', border: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.5 }}>
+                background: 'var(--bg2-surf)', border: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, padding: '3px 9px', borderRadius: 'var(--r-md)', background: `${meta.color}1f`, color: meta.color, flexShrink: 0 }}>
                   {r.code}
                 </span>
@@ -334,7 +333,7 @@ export default function StorageLocPanel() {
                         ? <><span style={{ color: '#3b82f6', fontWeight: 700 }}>{own.join(' · ')}</span>
                             {inherited.length > 0 && <span style={{ color: 'var(--muted)' }}> {tr('→ ตกทอด')} {inherited.length} {tr('ไลน์:')} {inherited.slice(0, 8).join(' · ')}{inherited.length > 8 ? ` … (+${inherited.length - 8})` : ''}</span>}</>
                         : isStoreKind(r.kind)
-                          ? <span style={{ color: 'var(--muted)' }}>{tr('ที่จัดเก็บหลักของ')} {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} {tr('พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)')}</span>
+                          ? <span style={{ color: 'var(--muted)' }}>{tr('ที่จัดเก็บหลักของ')} {homeCount == null ? tr("? (อ่านไม่ได้)") : (homeCount[slocLabel(r.code)] || 0)} {tr('พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)')}</span>
                           : <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)')}</span>}
                     </div>
                   )}
@@ -342,12 +341,12 @@ export default function StorageLocPanel() {
                 {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>{tr('มีคนใช้อยู่')}</span>}
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
                     {/* ลบได้เฉพาะตอน "นับการใช้งานได้ และไม่มีใครใช้" — นอกนั้นปิดไว้ (fail-closed)
                         ปุ่มยังอยู่ (ไม่ซ่อน) + title บอกเหตุผล ไม่งั้นดูเหมือนฟีเจอร์หาย */}
                     <DeleteButton onClick={() => remove(r)} disabled={countFailed || inUse}
-                      title={countFailed ? 'ตรวจการใช้งานไม่ได้ — ยังลบรหัสนี้ไม่ได้'
-                        : inUse ? 'มีคนใช้รหัสนี้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ' : 'ลบรหัสคลังนี้'} />
+                      title={countFailed ? tr("ตรวจการใช้งานไม่ได้ — ยังลบรหัสนี้ไม่ได้")
+                        : inUse ? tr("มีคนใช้รหัสนี้อยู่ (BOM / ledger / จุดส่ง) — ปิดใช้งานแทนการลบ") : tr("ลบรหัสคลังนี้")} />
                   </div>
                 )}
               </div>
@@ -384,9 +383,9 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(480px,100%)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(480px,100%)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 14 }}>
-          {isNew ? '➕ เพิ่มรหัสคลัง' : `✏️ แก้ไข ${init.code}`}
+          {isNew ? tr("➕ เพิ่มรหัสคลัง") : `✏️ ${tr("แก้ไข")} ${init.code}`}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
@@ -415,7 +414,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
             {guess && guess !== f.kind && (
               <div onClick={() => setF(v => ({ ...v, kind: guess }))} style={{ fontSize: 11, color: '#0ea5e9', cursor: 'pointer', marginTop: 3, fontWeight: 700 }}>
-                รหัสขึ้นต้น {code[0]} {tr('— น่าจะเป็น “')}{slocKindMeta(guess).label}” (กดเพื่อใช้)
+                {tr("รหัสขึ้นต้น")} {code[0]} {tr('— น่าจะเป็น “')}{slocKindMeta(guess).label}” ({tr("กดเพื่อใช้")})
               </div>
             )}
           </div>
@@ -436,11 +435,11 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                   ))}
                   <LineSelect lines={(lines || []).filter(l => !f.line_names.includes(l.name))} value={addLine} onChange={addName}
                     placeholder={tr('+ เพิ่มไลน์ (ใส่ไลน์แม่ = ครอบทั้งแผนก)')} role={role} lineId={lineId} sections={sections}
-                    style={{ width: 260, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
+                    style={{ width: 260, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', fontSize: 12.5 }} />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง "ที่จัดเก็บหลัก" ที่ทะเบียนพาร์ท (/products แท็บ Parts)</div>}
-                  ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว
+                  {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>{tr("รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง \"ที่จัดเก็บหลัก\" ที่ทะเบียนพาร์ท (/products แท็บ")} Parts)</div>}
+                  {tr("ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว")}
                   {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>{tr('→ ครอบเพิ่ม')} {preview.length} {tr('ไลน์:')} {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
                 </div>
               </>
@@ -453,11 +452,11 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
             <input type="checkbox" checked={!!f.is_active} onChange={e => setF(v => ({ ...v, is_active: e.target.checked }))} />
-            ใช้งาน (เอาติ๊กออก = ซ่อนจากตัวเลือก + ไลน์ที่ผูกไว้ไม่ถูกแปะรหัสนี้อีก แต่ BOM/ledger เดิมที่อ้างอยู่ยังอ่านได้)
+            {tr("ใช้งาน (เอาติ๊กออก = ซ่อนจากตัวเลือก + ไลน์ที่ผูกไว้ไม่ถูกแปะรหัสนี้อีก แต่ BOM/ledger เดิมที่อ้างอยู่ยังอ่านได้")})
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
           <button onClick={submit} disabled={busy || badFormat}
             style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
             {busy ? '...' : tr('💾 บันทึก')}

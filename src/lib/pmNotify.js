@@ -43,7 +43,7 @@ export async function createNotification(userId, { title, body, type = 'info', r
  * @param {{event:string,title:string,body?:string,type?:string,refTable?:string,refId?:string,lineName?:string}} p
  * @returns {Promise<{ownersCapped:boolean, owners:number}>} ให้หน้าจอเตือนได้เมื่อรายชื่อช่างถูกตัด
  */
-export async function notifyDepartment(department, { event, title, body, type = 'info', refTable, refId, lineName }) {
+export async function notifyDepartment(department, { event, title, body, type = 'info', refTable, refId, lineName, link }) {
   if (!event) throw new Error('notifyDepartment: ต้องระบุ event (คีย์ใน notification_rules)')
   /* ช่างของทีมนี้ = "เจ้าของงาน" ของใบตรวจ — อ่านไม่ได้ก็ยังยิงหัวหน้าตามทะเบียนต่อ (ห้ามเงียบทั้งใบ) */
   let owners = []
@@ -60,6 +60,7 @@ export async function notifyDepartment(department, { event, title, body, type = 
     type,
     line_name: lineName || undefined,
     ref_table: refTable, ref_id: refId,
+    ...(link ? { link } : {}),   // deep-link (edge กรอง safeInternalPath + จอเช็คสิทธิ์อีกชั้น) · 20/11
     extra_user_ids: owners.slice(0, 20),
   })
   return { owners: owners.length, ownersCapped: owners.length > 20 }

@@ -9,7 +9,7 @@
  const ROW = (i) => ({
    id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
    line_name: 'LINE APRON ASSY / HYDROFORM',
-@@ -460,7 +462,7 @@
+@@ -482,7 +484,7 @@
       🔴 ต้องมีทั้ง 2 ฟอร์ม: `mtn_dept` = ทีมที่ใช้ฟอร์ม MTN (8 ขั้น ไม่มี QA) และทีมอื่น (7 ขั้น มี QA)
          เพราะ **เลขขั้นเดียวกันคนละความหมาย** (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN)
          ⇒ ถอดทีมใดทีมหนึ่งออก = สาขา `stageOf` ฝั่งนั้นหลุดด่าน */
@@ -18,7 +18,7 @@
      ...r,
      mo_no: `MO-2610-${String(i).padStart(3, '0')}`,
      status: ['pending', 'assigned', 'repaired', 'checked', 'handover', 'closed'][i % 6],
-@@ -490,6 +492,16 @@
+@@ -512,6 +514,16 @@
            "กำลังซ่อม แต่ใบไม่มีชื่อช่าง" (`kind: 'no_target'`) ถูกเรนเดอร์จริงในด่าน
            ถ้าทุกแถวมีชื่อ = เส้นทางนั้นหลุดด่าน แล้วใบที่ชี้เป้าไม่ได้จะหายจากแผงโดยไม่มีใครรู้ */
      assigned_to: isNullish(r) || i % 7 === 0 ? null : 'ช่างเอก',
@@ -33,9 +33,9 @@
 +    ...(i === 10 ? { mtn_dept: 'production' } : {}),
 +    ...(i === 13 ? { status: 'handover', mtn_dept: 'maintenance', mtn_head_at: '2026-08-05T09:00:00+07:00', approve_at: '2026-08-06T09:00:00+07:00' } : {}),
    }),
-   line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
+   line_layouts: (r, i) => ({ ...r, line_id: i, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),   // 🔑 line_id เป็นเลข
    /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
-@@ -501,6 +513,8 @@
+@@ -523,6 +535,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -44,13 +44,27 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -1042,14 +1056,23 @@
+@@ -1089,14 +1103,37 @@
     ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
     ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 +/* WI-MTN patch: ใบขอซื้อของ MO เหลือ 2 แถว ให้ปุ่มเส้นทางงานซ่อมอยู่ในจอ */
 +const _wiPr = () => ROWS.slice(0, 2).map((r, k) => ({ ...r, status: k ? 'ordered' : 'requested', pr_no: k ? '1000123456' : null }))
++/* WI-MTN patch: แท็บ สรุปรายเดือน (/pm?tab=monthly) — 3 ทีมคนละสถานะ: MTN พร้อมอนุมัติ ③ · JIG อนุมัติแล้ว รอรับทราบ ④ · DIE ยังรอ ② */
++const _wiMonthly = typeof location !== 'undefined' && new URLSearchParams(location.search).get('tab') === 'monthly'
++const _wiMon = new Date(Date.now() - 3600e3).toISOString().slice(0, 7)   // วันทำงานไทย (UTC+7 · ก่อน 08:00 = เมื่อวาน)
++const _wiMonthlyRows = {
++  checklists: [{ id: 'cl-m', department: 'maintenance', module: 'mtn' }, { id: 'cl-j', department: 'jig_maintenance', module: 'mtn' }, { id: 'cl-d', department: 'die_maintenance', module: 'mtn' }],
++  inspections: [['cl-m', 'id-1', 'pass', 'approved'], ['cl-m', 'id-2', 'fail', 'approved'], ['cl-m', 'id-3', 'pass', 'approved'],
++    ['cl-j', 'id-1', 'pass', 'approved'], ['cl-j', 'id-2', 'pass', 'approved'], ['cl-d', 'id-3', 'pass', 'pending'], ['cl-d', 'id-1', 'pass', 'approved']]
++    .map(([c, j, s, a], k) => ({ id: `ins-${k}`, checklist_id: c, jig_id: j, status: s, approval_status: a, inspector_id: `emp-${k}`, inspected_at: `${_wiMon}-05T10:00:00+07:00` })),
++  jigs: [1, 2, 3].map(k => ({ id: `id-${k}`, line_name: LINE_NAME(1) })),
++  org_assignments: [{ id: 'oa-1', org_node_id: 'id-6', kind: 'head', starts_on: '2026-01-01', ends_on: null }, { id: 'oa-2', org_node_id: 'id-1', kind: 'head', starts_on: '2026-01-01', ends_on: null }],
++  pm_monthly_signoffs: [{ id: 'so-1', month: _wiMon, kind: 'team_approve', scope_key: 'jig_maintenance', status: 'signed', signed_by_name: 'ผจก.ช่าง ทดสอบ', position: 'manager', signed_at: `${_wiMon}-06T09:00:00+07:00`, snapshot: { total: 2, confirmed: 2, ng: 0, machines: 2, sections: 1 } }],
++}
  const rowsFor = (table) => {
++  if (_wiMonthly && _wiMonthlyRows[table]) return _wiMonthlyRows[table]
++  if (_wiMonthly && table === 'mtn_teams') return TABLE_FIXED.mtn_teams.map(t => (t.kind === 'pm' ? { ...t, org_node_id: 'id-6' } : t))
 +  if (table === 'mtn_purchase_requests') return _wiPr()
 +  if (table === 'mtn_order_handoffs') return []   // WI-MTN patch: ไม่ให้แถบส่งต่อขึ้นทุกใบ (mock ไม่สนตัวกรอง)
 +  if (table === 'mtn_outsource_parts') return ROWS.slice(0, 1)   // WI-MTN patch: ของส่งซ่อมนอก 1 แถว

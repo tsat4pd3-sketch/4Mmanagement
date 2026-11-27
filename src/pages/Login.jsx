@@ -45,8 +45,8 @@ export default function Login() {
          = ได้ลิสต์เป้าไปไล่ลองรหัสผ่าน (account enumeration) · ฟังก์ชันถูก drop ทิ้งแล้ว
          🔴 ห้ามเอากลับมา ไม่ว่าจะด้วย RPC ตัวใหม่ · ตาราง profiles · หรืออ่านจาก error ของ
             Supabase Auth — ชดเชย UX ด้วย "ข้อความบอกทางออก" แทน (มีด่าน login-no-email-oracle) */
-      msg = '❌ อีเมลหรือรหัสผ่านไม่ถูกต้อง — ตรวจตัวสะกดอีเมลอีกครั้ง'
-          + ' · ถ้าเพิ่งได้บัญชีใหม่ หรือลืมรหัสผ่าน ให้ติดต่อ admin';
+      msg = ('❌ ' + tr('อีเมลหรือรหัสผ่านไม่ถูกต้อง — ตรวจตัวสะกดอีเมลอีกครั้ง'))
+          + (' · ' + tr('ถ้าเพิ่งได้บัญชีใหม่ หรือลืมรหัสผ่าน ให้ติดต่อ') + ' admin');
     } else if (m.includes('email not confirmed')) {
       msg = '📧 บัญชีนี้ยังไม่ถูกยืนยัน — ติดต่อ admin';
     } else if (error.status === 429 || m.includes('too many') || m.includes('rate limit')) {
@@ -54,7 +54,7 @@ export default function Login() {
     } else if (m.includes('failed to fetch') || m.includes('network')) {
       msg = '📡 เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่';
     } else {
-      msg = 'เข้าสู่ระบบไม่สำเร็จ: ' + error.message;
+      msg = (tr('เข้าสู่ระบบไม่สำเร็จ') + ': ') + error.message;
     }
     setError(msg);
     setLoading(false);
@@ -73,7 +73,7 @@ export default function Login() {
       <div style={{
         width: '100%',
         maxWidth: 400,
-        background: 'var(--card)',
+        background: 'var(--card-surf)',
         border: '1px solid var(--border2)',
         borderRadius: 'var(--radius-lg)',
         padding: '40px 36px',

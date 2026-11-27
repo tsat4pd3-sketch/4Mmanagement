@@ -27,7 +27,7 @@ export default function StepFlow({ steps = [], waiting = null, unknown = false, 
   const DOT = compact ? 18 : 26;
   const COL = compact ? 26 : 84;
   const lastDone = steps.reduce((m, s, i) => (s.state === 'done' || s.state === 'current' || s.state === 'skipped' ? i : m), -1);
-  const titleOf = (s) => [`${s.n}. ${s.label}`, s.who ? `· ${s.who}` : '', s.state === 'skipped' ? '(ข้าม — ไม่ต้องทำ)' : s.state === 'current' ? '(ขั้นปัจจุบัน)' : ''].filter(Boolean).join(' ');
+  const titleOf = (s) => [`${s.n}. ${tr(s.label)}`, s.who ? `· ${tr(s.who)}` : '', s.state === 'skipped' ? tr('(ข้าม — ไม่ต้องทำ)') : s.state === 'current' ? tr('(ขั้นปัจจุบัน)') : ''].filter(Boolean).join(' ');
   return (
     <div style={{ ...style }}>
       <div style={{ overflowX: compact ? 'visible' : 'auto', paddingBottom: compact ? 0 : 2 }}>
@@ -46,7 +46,7 @@ export default function StepFlow({ steps = [], waiting = null, unknown = false, 
                 <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.2, padding: '0 3px',
                   color: s.state === 'current' ? 'var(--text)' : s.state === 'done' ? (s.tone ? statusColor(s.tone) : 'var(--text2)') : s.state === 'skipped' ? statusColor('warn') : 'var(--muted)',
                   fontWeight: s.state === 'current' ? 800 : 600 }}>
-                  {tr(s.label)}{s.state === 'skipped' ? ' (ข้าม)' : ''}
+                  {tr(s.label)}{s.state === 'skipped' ? tr(" (ข้าม)") : ''}
                   {s.who && s.state === 'current' && <div style={{ fontWeight: 600, color: 'var(--muted)' }}>{s.who}</div>}
                 </div>
               )}

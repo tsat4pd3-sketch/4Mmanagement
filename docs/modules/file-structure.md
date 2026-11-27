@@ -57,6 +57,7 @@ docs/                  # บังคับอ่าน: ENGINEERING-PRINCIPLES.
                        #       PERMISSIONS-DESIGN.md ห้ามแก้ข้ามไฟล์) · FINANCIAL-GAP-ANALYSIS
                        #       (⚠️ ห้ามใส่ราคาขายเป็นคอลัมน์ใน parts_master ฝั่ง DR — anon อ่านได้ทั้งตาราง) ·
                        #     LOCAL-SERVER-MIGRATION-SPEC (มี 8 จุด hardcode URL Supabase ที่ต้องแก้ก่อนย้าย)
+                       #     KPI-RAW-INPUT-DESIGN (26/11 · กรอกตัวเลขดิบให้ระบบคิด KPI — รอ user เคาะคำถาม §5 ก่อน)
                        #     E-WORKFLOW-DESIGN — **เฟส 1 ลงแล้ว 13/11** (docs/modules/e-workflow.md) · เฟส 2+ (bound/SLA/ขนาน/
                        #       มอบอำนาจ/เอา flow เดิมเข้า) ยังห้ามหยิบเองจนกว่า user สั่ง · ตาราง wf_* ต้องอยู่ Main
                        #     MARKETING-QNEX-DESIGN (ต้นน้ำ Marketing → NM → โรงงาน · ตาราง mkt_* ต้องอยู่ Main ·

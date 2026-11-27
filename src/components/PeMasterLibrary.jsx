@@ -38,8 +38,8 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
   const write = async (label, fn) => {
     setSaving(true); const { error } = await fn(); setSaving(false);
-    if (error) { toast.error(`${label}ไม่สำเร็จ: ${error.message}`); return false; }
-    toast.success(`${label}แล้ว`); onChanged(); return true;
+    if (error) { toast.error(`${label}${tr("ไม่สำเร็จ")}: ${error.message}`); return false; }
+    toast.success(`${label}${tr("แล้ว")}`); onChanged(); return true;
   };
   const confirmMaster = (m) => write('ยืนยันกระบวนการ', () => supabase.from('pe_master_processes').update({ confirmed_by: fullName || tr('ไม่ระบุชื่อ'), confirmed_at: new Date().toISOString() }).eq('id', m.id));
   const saveMp = async () => {
@@ -59,7 +59,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
       : supabase.from('pe_master_items').insert({ ...row, master_process_id: sel, created_by_name: fullName || null }));
     if (ok) setItemModal(null);
   };
-  const delItem = async (it) => { if (await askConfirm(`ลบ "${it.failure_mode}" ออกจาก master? (แถวในพาร์ทที่ผูกอยู่ไม่ถูกลบ แค่หลุดจาก master)`)) write('ลบรายการ', () => supabase.from('pe_master_items').delete().eq('id', it.id)); };
+  const delItem = async (it) => { if (await askConfirm(`${tr("ลบ")} "${it.failure_mode}" ${tr("ออกจาก master? (แถวในพาร์ทที่ผูกอยู่ไม่ถูกลบ แค่หลุดจาก")} master)`)) write('ลบรายการ', () => supabase.from('pe_master_items').delete().eq('id', it.id)); };
 
   /* รับข้อเสนอ = ทับค่า master + version+1 (improve) หรือเพิ่มแถวใหม่ (new_item) แล้วปิดข้อเสนอ
      🔴 claim ก่อน (compare-and-swap `status='proposed'` → 'accepted' นับแถว) แล้วค่อยเขียน master (QC 05/10)
@@ -76,7 +76,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
     const { data: claimed, error: eClaim } = await supabase.from('pe_master_proposals')
       .update({ status: 'accepted', decided_by: fullName || tr('ไม่ระบุชื่อ'), decided_at: new Date().toISOString() })
       .eq('id', p.id).eq('status', 'proposed').select('id');
-    if (eClaim) { setSaving(false); return toast.error(`รับข้อเสนอไม่สำเร็จ: ${eClaim.message}`); }
+    if (eClaim) { setSaving(false); return toast.error(`${tr("รับข้อเสนอไม่สำเร็จ")}: ${eClaim.message}`); }
     if (!claimed?.length) { setSaving(false); onChanged(); return toast.error('ข้อเสนอนี้ถูกตัดสินไปแล้ว (หรือไม่มีสิทธิ์) — โหลดรายการใหม่ให้แล้ว'); }
 
     let err;
@@ -96,14 +96,14 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
       const { data: back, error: eBack } = await supabase.from('pe_master_proposals')
         .update({ status: 'proposed', decided_by: null, decided_at: null }).eq('id', p.id).eq('status', 'accepted').select('id');
       setSaving(false); onChanged();
-      return toast.error(`รับข้อเสนอไม่สำเร็จ: ${err.message}${eBack || !back?.length ? ' — ⚠️ คืนสถานะข้อเสนอไม่สำเร็จ ข้อเสนอค้างเป็น "รับแล้ว" ทั้งที่ master ยังไม่เปลี่ยน แจ้ง admin' : ''}`);
+      return toast.error(`${tr("รับข้อเสนอไม่สำเร็จ")}: ${err.message}${eBack || !back?.length ? ' — ⚠️ คืนสถานะข้อเสนอไม่สำเร็จ ข้อเสนอค้างเป็น "รับแล้ว" ทั้งที่ master ยังไม่เปลี่ยน แจ้ง admin' : ''}`);
     }
     const { data: vRows, error: eVer } = await supabase.from('pe_master_processes')
       .update({ version: ((masters.find(x => x.id === p.master_process_id)?.version) || 1) + 1 })
       .eq('id', p.master_process_id).select('id');
     setSaving(false);
     onChanged();
-    if (eVer || !vRows?.length) return toast.error(`อัพเดท master แล้ว แต่ขึ้นเลข version กระบวนการไม่สำเร็จ${eVer ? `: ${eVer.message}` : ''} — พาร์ทอื่นจะยังไม่เห็นป้าย ⬆️ แจ้ง admin`);
+    if (eVer || !vRows?.length) return toast.error(`${tr("อัพเดท master แล้ว แต่ขึ้นเลข version กระบวนการไม่สำเร็จ")}${eVer ? `: ${eVer.message}` : ''} — ${tr("พาร์ทอื่นจะยังไม่เห็นป้าย ⬆️ แจ้ง")} admin`);
     toast.success('อัพเดท master แล้ว — พาร์ทอื่นที่ถือเวอร์ชันเก่าจะเห็นป้าย ⬆️');
   };
   const reject = async () => {
@@ -120,12 +120,12 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
   return (
     <div>
       {unconfirmed > 0 && <WarnBar color="#f59e0b">{tr('ระบบจับกลุ่ม OP ชื่อเดียวกันข้ามพาร์ทให้')} {unconfirmed} {tr('กระบวนการ ยังรอ PE ยืนยันว่าเป็นกระบวนการเดียวกันจริง — กระบวนการที่ยังไม่ยืนยันดึงไปใช้ได้แต่จะติดป้ายเตือน')}</WarnBar>}
-      {pending.length > 0 && <WarnBar color="#a855f7">{tr('📬 มีข้อเสนออัพเดท master ค้าง')} {pending.length} {tr('รายการ')}{canApprove ? '' : ' (ต้องมี pe:approve จึงตัดสินได้)'}</WarnBar>}
+      {pending.length > 0 && <WarnBar color="#a855f7">{tr('📬 มีข้อเสนออัพเดท master ค้าง')} {pending.length} {tr('รายการ')}{canApprove ? '' : tr(" (ต้องมี pe:approve จึงตัดสินได้)")}</WarnBar>}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 2fr)', gap: 12, alignItems: 'start' }}>
         {/* ── รายการกระบวนการมาตรฐาน ── */}
         <div style={card}>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <SearchInput value={q} onChange={setQ} fields="กระบวนการ / tag" style={{ minWidth: 140 }} />
+            <SearchInput value={q} onChange={setQ} fields={tr("กระบวนการ / tag")} style={{ minWidth: 140 }} />
             <label style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyUnconfirmed} onChange={e => setOnlyUnconfirmed(e.target.checked)} /> {tr('รอยืนยัน')}</label>
             {canApprove && <button style={btn()} onClick={() => setMpModal({ name: '', kind: 'process', process_type: '', tags: '', description: '', is_active: true })}>{tr('+ กระบวนการ')}</button>}
           </div>
@@ -160,8 +160,8 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                   <div>
                     <div style={{ fontSize: 15, fontWeight: 900 }}>{cur.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>v{cur.version} · {cur.key}</span></div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-                      {KIND_LABEL[cur.kind]}{cur.process_type ? ` · ${cur.process_type}` : ''}{cur.family_tags?.length ? ` · ตระกูล: ${cur.family_tags.join(', ')}` : ''}
-                      {cur.confirmed_at ? ` · ยืนยันโดย ${cur.confirmed_by} ${fmtDate(cur.confirmed_at)}` : ' · ⚠️ ยังไม่ยืนยัน'}
+                      {KIND_LABEL[cur.kind]}{cur.process_type ? ` · ${cur.process_type}` : ''}{cur.family_tags?.length ? ` · ${tr("ตระกูล")}: ${cur.family_tags.join(', ')}` : ''}
+                      {cur.confirmed_at ? ` · ${tr("ยืนยันโดย")} ${cur.confirmed_by} ${fmtDate(cur.confirmed_at)}` : tr(" · ⚠️ ยังไม่ยืนยัน")}
                     </div>
                     {cur.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>{cur.description}</div>}
                   </div>
@@ -187,13 +187,13 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                           <Pill label={p.kind === 'improve' ? tr('ปรับปรุง') : tr('รายการใหม่')} color={p.kind === 'improve' ? '#a855f7' : '#3b82f6'} small />
                           <b style={{ fontSize: 12.5 }}>{p.kind === 'improve' ? (itemById[p.master_item_id]?.failure_mode || tr('(master item หาย)')) : p.after?.failure_mode}</b>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จาก')} {setById[p.source_set_id]?.part_no || '—'} · {fmtDate(p.created_at)} · {p.created_by_name || 'ระบบ'}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จาก')} {setById[p.source_set_id]?.part_no || '—'} · {fmtDate(p.created_at)} · {p.created_by_name || tr("ระบบ")}</span>
                         </div>
                         <div style={{ fontSize: 12, marginTop: 3 }}>
                           RPN <b style={{ color: rpnColor(p.rpn_before) }}>{p.rpn_before ?? '—'}</b> → <b style={{ color: rpnColor(p.rpn_after) }}>{p.rpn_after ?? '—'}</b>
                           {p.kind === 'improve' && <span style={{ color: 'var(--muted)' }}> · {ctlDiff(p)}</span>}
                         </div>
-                        {p.after?.best_practice && <div style={{ fontSize: 11.5, color: '#22c55e', marginTop: 2 }}>✔ {p.after.best_practice}</div>}
+                        {p.after?.best_practice && <div style={{ fontSize: 11.5, color: 'var(--green)', marginTop: 2 }}>✔ {p.after.best_practice}</div>}
                         {p.after?.prevention && p.before?.prevention !== p.after?.prevention && <div style={{ fontSize: 11, color: 'var(--text2)' }}>Prevention: {p.after.prevention}</div>}
                         {p.after?.detection_ctrl && p.before?.detection_ctrl !== p.after?.detection_ctrl && <div style={{ fontSize: 11, color: 'var(--text2)' }}>Detection: {p.after.detection_ctrl}</div>}
                         {p.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.note}</div>}
@@ -222,7 +222,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                       <tr key={it.id} style={{ opacity: it.is_active === false ? 0.5 : 1 }}>
                         <td style={tdSt}>{it.seq}</td>
                         <td style={{ ...tdSt, minWidth: 180 }}><b style={{ color: 'var(--text)' }}>{it.failure_mode}</b>{it.classification && <Pill label={it.classification} color={it.classification === 'CC' ? '#ef4444' : '#f59e0b'} small />}{it.effects && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{it.effects}</div>}</td>
-                        <td style={{ ...tdSt, minWidth: 200, fontSize: 11.5 }}>{it.causes && <div>⚠ {it.causes}</div>}{it.prevention && <div>{it.prevention}</div>}{it.detection_ctrl && <div>{it.detection_ctrl}</div>}{it.best_practice && <div style={{ color: '#22c55e' }}>✔ {it.best_practice}</div>}</td>
+                        <td style={{ ...tdSt, minWidth: 200, fontSize: 11.5 }}>{it.causes && <div>⚠ {it.causes}</div>}{it.prevention && <div>{it.prevention}</div>}{it.detection_ctrl && <div>{it.detection_ctrl}</div>}{it.best_practice && <div style={{ color: 'var(--green)' }}>✔ {it.best_practice}</div>}</td>
                         <td style={{ ...tdSt, textAlign: 'center', whiteSpace: 'nowrap' }}>{it.severity ?? '—'}·{it.occurrence ?? '—'}·{it.detection ?? '—'}</td>
                         <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: rpnColor(rpnOf(it)) }}>{rpnOf(it) ?? '—'}</td>
                         <td style={tdSt}>v{it.version}</td>
@@ -252,7 +252,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
         </Modal>
       )}
       {itemModal && (
-        <Modal title={itemModal.id ? `แก้ master: ${itemModal.failure_mode}` : 'เพิ่ม failure mode มาตรฐาน'} onClose={() => setItemModal(null)} width={760}
+        <Modal title={itemModal.id ? `${tr("แก้")} master: ${itemModal.failure_mode}` : tr("เพิ่ม failure mode มาตรฐาน")} onClose={() => setItemModal(null)} width={760}
           footer={<><button style={ghost} onClick={() => setItemModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveItem}>{tr('บันทึก')}{itemModal.id ? ` (→ v${(itemModal.version || 1) + 1})` : ''}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label={tr('ลำดับ')}><input type="number" style={inp} value={itemModal.seq} onChange={e => setItemModal({ ...itemModal, seq: e.target.value })} /></Field>

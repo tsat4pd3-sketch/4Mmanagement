@@ -116,7 +116,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
   };
 
   const removeRow = async (r) => {
-    if (!await askConfirm(`ลบรอบ ${r.ship_to}${r.dock_code ? ` · ${r.dock_code}` : ''} · ${patLabel(r.pattern)}\n${r.period_start}-${r.period_end} → รับ ${r.pickup_time} ?\n\nไฟล์ e-SMART ช่วงนี้จะกลับไปใช้สูตรเดา (ปลายช่วง + lead_min)`)) return;
+    if (!await askConfirm(`${tr("ลบรอบ")} ${r.ship_to}${r.dock_code ? ` · ${r.dock_code}` : ''} · ${patLabel(r.pattern)}\n${r.period_start}-${r.period_end} → ${tr("รับ")} ${r.pickup_time} ?\n\n${tr("ไฟล์ e-SMART ช่วงนี้จะกลับไปใช้สูตรเดา (ปลายช่วง")} + lead_min)`)) return;
     setBusy(r.id);
     const res = await supabaseDR.from('customer_pull_rounds').delete().eq('id', r.id).select('id');
     setBusy(null);
@@ -131,7 +131,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
   const btn = (c) => ({ background: c, border: 'none', color: '#0b1220', fontWeight: 800, fontSize: 11, borderRadius: 6, padding: '4px 9px', cursor: 'pointer' });
 
   return (
-    <div style={{ marginTop: 18, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
+    <div style={{ marginTop: 18, background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('ตารางรอบรับของลูกค้า (milk-run)')}</div>
         {shipTos.length > 1 && (
@@ -147,26 +147,24 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-        e-SMART ใช้ตารางนี้หา <b>{tr('รอบที่รถลูกค้ามารับ')}</b> {tr('จากช่วงเวลาในไฟล์ —')} <b>{tr('ไม่ใช่สูตรคำนวณ')}</b>
-        (ระยะจากปลายช่วงถึงเวลารับไม่คงที่ 1–6 ชม. แล้วแต่รอบ) · ช่วงไหนไม่มีในตาราง ระบบจะเดาด้วย
-        “ปลายช่วง + lead_min” <b>{tr('พร้อมขึ้นคำเตือนบนจออัพโหลด')}</b>
+        e-SMART {tr("ใช้ตารางนี้หา")} <b>{tr('รอบที่รถลูกค้ามารับ')}</b> {tr('จากช่วงเวลาในไฟล์ —')} <b>{tr('ไม่ใช่สูตรคำนวณ')}</b>
+        ({tr("ระยะจากปลายช่วงถึงเวลารับไม่คงที่ 1–6 ชม. แล้วแต่รอบ) · ช่วงไหนไม่มีในตาราง ระบบจะเดาด้วย “ปลายช่วง")} + lead_min” <b>{tr('พร้อมขึ้นคำเตือนบนจออัพโหลด')}</b>
       </div>
 
       {missing && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12 }}>
-          ⚠️ ยังไม่ได้สร้างตาราง <code>customer_pull_rounds</code> — รัน migration
-          <code> 20260909_customer_pull_rounds.sql</code> {tr('ที่ project')} <b>Product DB (DR)</b> ก่อน
-          · ระหว่างนี้ระบบใช้สูตร lead_min เดารอบให้ และเตือนบนจออัพโหลดทุกครั้ง
+          ⚠️ {tr("ยังไม่ได้สร้างตาราง")} <code>customer_pull_rounds</code> — {tr("รัน")} migration
+          <code> 20260909_customer_pull_rounds.sql</code> {tr('ที่ project')} <b>Product DB (DR)</b> {tr("ก่อน · ระหว่างนี้ระบบใช้สูตร lead_min เดารอบให้ และเตือนบนจออัพโหลดทุกครั้ง")}
         </div>
       )}
       {loadErr && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12 }}>
-          🔴 โหลดตารางรอบรับไม่สำเร็จ: {loadErr}
+          🔴 {tr("โหลดตารางรอบรับไม่สำเร็จ")}: {loadErr}
         </div>
       )}
 
       {adding && (
-        <div style={{ background: 'var(--bg2)', border: '1px dashed var(--accent)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 10 }}>
+        <div style={{ background: 'var(--bg2-surf)', border: '1px dashed var(--accent)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 10 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
             {[['ship_to', 'ลูกค้า (code)', 'text'], ['dock_code', 'Dock', 'text'], ['supplier_code', 'รหัสผู้ส่ง', 'text']].map(([k, l]) => (
               <label key={k} style={{ fontSize: 11, color: 'var(--muted)' }}>{l}<br />
@@ -194,7 +192,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
         <div key={`${g.ship_to}|${g.dock_code}|${g.pattern}`} style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 4 }}>
             {shipToMap?.[g.ship_to]?.customer_name || g.ship_to}
-            {g.dock_code ? <> · Dock <b>{g.dock_code}</b></> : ' · ทุก Dock'}
+            {g.dock_code ? <> · Dock <b>{g.dock_code}</b></> : tr(" · ทุก Dock")}
             <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {patLabel(g.pattern)}</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -225,7 +223,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
                       {canEdit
                         ? <input type="time" value={hhmm(val(r, 'pickup_time'))} onChange={e => setVal(r, 'pickup_time', e.target.value)} style={{ ...inp, width: 80 }} />
                         : hhmm(r.pickup_time)}
-                      {Number(r.pickup_day_offset) ? <span style={{ color: '#f59e0b', fontSize: 11 }}> (+{r.pickup_day_offset}ว)</span> : null}
+                      {Number(r.pickup_day_offset) ? <span style={{ color: 'var(--amber)', fontSize: 11 }}> (+{r.pickup_day_offset}{tr("ว")})</span> : null}
                     </td>
                     <td style={{ ...td, color: 'var(--muted)' }}>
                       {canEdit

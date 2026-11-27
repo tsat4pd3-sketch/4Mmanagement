@@ -26,6 +26,13 @@ export const SHIFT_END_TOL_MIN = 2;
 /** ใบที่สั้นกว่านี้ไม่ต้องถาม — เศษเวลาท้ายกะเป็นเรื่องปกติ (เกณฑ์เดียวกับใบรายงานปัญหา 30 นาที) */
 export const DT_ASK_MIN = 30;
 
+/* ── 🧮 เกณฑ์ของกฎที่เพิ่ม 20/11 (หลังไล่ดู 7 กะที่คิด %A ไม่ได้ · คำสั่ง user "ทาง ค") ──
+   🔴 **เกณฑ์อยู่ที่นี่ที่เดียว ห้ามเขียนเลขในหน้า** · ปรับตรงนี้ = ปรับทั้งระบบ */
+/** ยาวเกินเพดานของประเภทกี่เท่าถึงถาม — 3 เท่า (cap 10 → ถามที่ 30 น.ขึ้นไป) */
+export const CAP_ASK_FACTOR = 3;
+/** นาทีที่ตกนอก "ช่วงที่มีใบผลิตเปิด" เกินเท่านี้ถึงถาม */
+export const OUTSIDE_ASK_MIN = 30;
+
 /* 🔴 `null`/`undefined`/`''` ต้องคืน `null` ไม่ใช่ 0 — `Number(null)` = 0 ซึ่งผ่าน isFinite
    ⇒ เขียนลวกๆ แล้วด่าน "ไม่รู้ = เงียบ" พังทั้งไฟล์ (เตือนทุกใบด้วยเวลา 1970) */
 const num = (v) => {
@@ -97,6 +104,89 @@ export function checkDtClosedAtShiftEnd({
   };
 }
 
+/**
+ * ใบ downtime ยาวเกิน "เพดานของประเภทนั้น" ในทะเบียนมากไหม
+ *
+ * ที่มา (20/11 · ไล่ดู 3 กะที่คิด %A ไม่ได้): `เปลี่ยนตะกร้าใส่งาน` เพดาน **10 น.** แต่ลงจริง
+ * **70 · 70 · 60** · `Set up Machine` เพดาน **30 น.** แต่ลง **345 น.**
+ * ⇒ ตามกฎ OEE ส่วนที่เกินเพดานถูกย้ายไปเป็น **"หยุดนอกแผน"** ⇒ หัก %A เต็มๆ
+ *   แต่คนกรอกไม่เคยรู้ว่าลงแบบนี้แล้วเกิดอะไรขึ้น
+ *
+ * 🔴 ไม่รู้เพดาน (`capMin` ว่าง) = **ไม่เตือน** — ประเภทที่ตั้งใจไม่มีเพดานมีจริง (เช่น "ไม่มีแผนผลิต")
+ *
+ * @param {object} p
+ * @param {number|null} p.durationMin  ความยาวใบที่กำลังจะบันทึก
+ * @param {number|null} p.capMin       `dr_downtime_types.planned_cap_min` ของประเภทที่เลือก
+ * @param {string}      [p.typeName]   ชื่อประเภท (ใส่ในข้อความ)
+ * @returns {null|{ capMin:number, durationMin:number, overMin:number, text:string }}
+ */
+export function checkDtOverCap({ durationMin, capMin, typeName = '' } = {}) {
+  const d = num(durationMin), c = num(capMin);
+  if (d == null || c == null || c <= 0) return null;   // ไม่รู้เพดาน = เงียบ (กฎข้อ 3)
+  if (d <= c * CAP_ASK_FACTOR) return null;
+  const overMin = Math.round(d - c);
+  const text = [
+    `${typeName ? `"${typeName}" ` : 'ประเภทนี้'}ตั้งเพดานไว้ ${c} นาที แต่ใบนี้ลง ${Math.round(d)} นาที`,
+    '',
+    `⚠️ ส่วนที่เกินเพดาน ${overMin} นาที จะถูกนับเป็น "หยุดนอกแผน" ⇒ หัก %A ของกะนี้เต็มจำนวน`,
+    '',
+    'ถ้าหยุดยาวจริง → ถูกแล้ว แต่ช่วยเขียนเหตุผลในช่องรายละเอียด',
+    'ถ้าลืมกดปิดใบ → แก้เวลาปิดให้ตรงตอนที่ไลน์กลับมาเดิน',
+    'ถ้าเป็นการหยุดเรื่องอื่น → เลือกประเภทให้ตรง เพราะประเภทเป็นตัวตัดสินว่าเข้าแผนหรือนอกแผน',
+  ].join('\n');
+  return { capMin: c, durationMin: Math.round(d), overMin, text };
+}
+
+/**
+ * ใบ downtime นี้ตกอยู่นอก "ช่วงที่มีใบผลิตเปิด" กี่นาที
+ *
+ * ที่มา (20/11): สูตร %A ราย MAT สร้างหน้าต่างจาก `เปิดใบแรก → ปิดใบสุดท้าย` ของแต่ละ MAT
+ * แล้วหักนาทีที่ตกนอกทุกหน้าต่างออกจาก **เวลาเดินเครื่อง** ⇒ ลงหยุดตอนที่ยังไม่มีใบผลิตเปิด
+ * = หักฟรีโดยไม่มีใครเห็น · เคสจริง BENDING EXPORT 02/11: ใบผลิตเปิด **12:50** ทั้งที่กะเริ่ม 08:00
+ * ⇒ DT 250 นาทีช่วงเช้าตกนอกหน้าต่างทั้งก้อน ⇒ **%A กลายเป็น 0**
+ *
+ * 🔴 ไม่รู้หน้าต่าง (ยังไม่มีใบผลิตปิดเลยในกะ) = **ไม่เตือน** — ต้นกะยังไม่มีใบปิดเป็นเรื่องปกติ
+ *
+ * @param {object} p
+ * @param {number|null} p.startedMs
+ * @param {number|null} p.endedMs
+ * @param {Array<[number,number]>} p.orderWindows ช่วง [เปิด, ปิด] ของใบผลิตในกะ (ms)
+ * @returns {null|{ outsideMin:number, totalMin:number, text:string }}
+ */
+export function checkDtOutsideOrders({ startedMs, endedMs, orderWindows = null } = {}) {
+  const s = num(startedMs), e = num(endedMs);
+  if (s == null || e == null || e <= s) return null;
+  if (!Array.isArray(orderWindows) || orderWindows.length === 0) return null;   // ไม่รู้ = เงียบ
+  const wins = orderWindows
+    .map(w => [num(w?.[0]), num(w?.[1])])
+    .filter(([a, b]) => a != null && b != null && b > a)
+    .sort((x, y) => x[0] - y[0]);
+  if (!wins.length) return null;
+
+  /* รวมช่วงที่ทับกับใบผลิต แล้วเอาความยาวใบลบออก = นาทีที่ "ไม่มีใบผลิตเปิด" */
+  let covered = 0, cursor = s;
+  for (const [a, b] of wins) {
+    const lo = Math.max(cursor, a), hi = Math.min(e, b);
+    if (hi > lo) { covered += hi - lo; cursor = Math.max(cursor, hi); }
+    if (cursor >= e) break;
+  }
+  const totalMin = Math.round((e - s) / 60000);
+  const outsideMin = Math.round(((e - s) - covered) / 60000);
+  if (outsideMin < OUTSIDE_ASK_MIN) return null;
+
+  const text = [
+    `ช่วงเวลาของใบนี้ ${outsideMin} นาที **ไม่มีใบผลิตเปิดอยู่เลย** (ใบยาว ${totalMin} นาที)`,
+    '',
+    '⚠️ สูตร %A นับเวลาเดินเครื่องจากช่วงที่มีใบผลิตเปิดเท่านั้น',
+    `   ${outsideMin} นาทีนี้จะถูกหักออกจากเวลาเดินเครื่องทั้งก้อน ⇒ %A ของกะต่ำกว่าความจริง`,
+    '   (เคยเจอจนถึงขั้น %A = 0 ทั้งที่กะนั้นผลิตของได้จริง)',
+    '',
+    'ถ้ากำลังผลิตอยู่จริง → เปิดใบผลิตให้ครอบเวลาทำงานจริงก่อน แล้วค่อยลงใบหยุด',
+    'ถ้ายังไม่เริ่มผลิต (เตรียมไลน์ / ไม่มีแผน) → ถูกแล้ว กดยืนยันได้เลย',
+  ].join('\n');
+  return { outsideMin, totalMin, text };
+}
+
 /* ── ⚠️ ด่าน "ตัวเลขกะนี้เชื่อได้ไหม" ตอนปิดกะ **ไม่ได้อยู่ที่นี่** ──────────────────
    มีอยู่แล้วใน `src/utils/closeChecks.js` → `buildCloseChecks()`:
      · `work_over_time`  = %P ทะลุ 100% ก่อนถูกตัด (`oee.pOver` + `dtOverstateMin`)
@@ -106,4 +196,7 @@ export function checkDtClosedAtShiftEnd({
    🔴 **ห้ามย้ายกลับมาที่นี่ ห้ามเขียนชุดที่ 2** — ด่านปิดกะต้องเป็นลิสต์เดียวที่คนติ๊กทีละข้อ
       (เคยเกือบทำซ้ำรอบนี้: เขียน `shiftDataSanity()` ทับของที่มีอยู่ แล้วถอดออก)        */
 
-export default { checkDtClosedAtShiftEnd, SHIFT_END_TOL_MIN, DT_ASK_MIN };
+export default {
+  checkDtClosedAtShiftEnd, checkDtOverCap, checkDtOutsideOrders,
+  SHIFT_END_TOL_MIN, DT_ASK_MIN, CAP_ASK_FACTOR, OUTSIDE_ASK_MIN,
+};

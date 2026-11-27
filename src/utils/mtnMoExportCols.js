@@ -17,11 +17,12 @@ import { assignedTechsOf, joinTechs, prNumbersOf, repairPathMeta } from './mtnPu
 import { causeText } from './mtnMoForm.js';   // 🔧 ป้าย "สาเหตุเกิดจาก" — ชุดเดียวกับ CAUSE_CATS บนฟอร์ม
 import { ioNoOf } from './moIoNo.js';   // 💳 ใบว่าง → ถอยไปทะเบียนเครื่อง (18/11)
 import { qaRelatedView } from './mtnStepPerm.js';   // 🔴 "เกี่ยวคุณภาพ" ตอบจากที่นี่ที่เดียว
+import { dateLocale } from './i18n.js';
 
 /** ไม่รู้ = ขีด ห้าม 0 */
 export const DASH = '–';
 
-const bkk = (v) => (v ? new Date(v).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH);
+const bkk = (v) => (v ? new Date(v).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok' }) : DASH);
 
 /**
  * ทะเบียนคอลัมน์ — ลำดับ = ลำดับในไฟล์

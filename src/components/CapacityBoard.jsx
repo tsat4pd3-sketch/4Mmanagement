@@ -1,6 +1,7 @@
 import { fmtAxis } from '../utils/chartAxis';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer, LabelList } from 'recharts';
+import { chartAnim } from '../utils/motion';
 import { supabaseDR } from '../supabaseClient';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
@@ -15,6 +16,7 @@ import {
 import { jphTable, jphSummary } from '../utils/jph';
 
 import { tr } from '../utils/i18n';
+import { monthsShort, yearDisplay } from '../utils/dateFormat';
 /* ─── 📊 Capacity — แท็บใน /production-plan (2026-09-24) ────────────────────────
    user ส่งสไลด์ `Capacity_TSATP.4_update_June_26.pptx` มาพร้อมภาพหน้านี้ แล้วบอกว่า
    *"capacity โรงงานเราดูกันแบบนี้ แต่ในโปรแกรมเราเป็นแบบนี้ คนจะดูไม่เข้าใจ"*
@@ -46,7 +48,7 @@ const FLAG_META = {
 };
 const monthLabel = (mk) => {
   const [y, m] = mk.split('-');
-  return `${['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'][Number(m) - 1]} ${String(Number(y) + 543).slice(-2)}`;
+  return `${monthsShort()[Number(m) - 1]} ${String(yearDisplay(Number(y))).slice(-2)}`;
 };
 
 export default function CapacityBoard({ role, scope, lines, months, calMap, demandByMonth, ctOf, lineOfMat, pairOf, lineOee, estOf, netMin, customerOf, nameOfMat }) {
@@ -176,12 +178,12 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
     for (const [key, patch] of dirty) {
       if (!ok) break;
       const hours = parseFloat(patch.hours_per_day);
-      if (!(hours > 0 && hours <= 24)) { toast.error(`${key}: ชั่วโมง/วัน ต้องอยู่ระหว่าง 0–24`); ok = false; break; }
+      if (!(hours > 0 && hours <= 24)) { toast.error(`${key}: ${tr("ชั่วโมง/วัน ต้องอยู่ระหว่าง")} 0–24`); ok = false; break; }
       // RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้อง .select() แล้วนับแถว
       const res = await supabaseDR.from('capacity_shift_patterns')
         .update({ hours_per_day: hours, day_source: patch.day_source, updated_at: new Date().toISOString() })
         .eq('key', key).select('key');
-      ok = checkWriteRows(res, 'บันทึกรูปแบบกะ', { zeroMsg: `${key}: บันทึกไม่สำเร็จ (0 แถว) — ตรวจสิทธิ์ หรือแถวนี้ถูกลบไปแล้ว` });
+      ok = checkWriteRows(res, 'บันทึกรูปแบบกะ', { zeroMsg: `${key}: ${tr("บันทึกไม่สำเร็จ (0 แถว) — ตรวจสิทธิ์ หรือแถวนี้ถูกลบไปแล้ว")}` });
     }
     setSaving(false);
     if (ok) { toast.success('✅ บันทึกทะเบียนรูปแบบกะแล้ว'); setDraft({}); load(); }
@@ -211,7 +213,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         <div>
           <div style={{ fontSize:11, color:'var(--muted)' }}>{tr('OEE จริง (median 60 วัน)')}</div>
           <div style={{ fontSize:20, fontWeight:800, color: oee.hasActual ? '#22c55e' : 'var(--muted)' }}>
-            {oee.hasActual ? `${(oee.actual * 100).toFixed(1)}%` : 'ยังไม่มีประวัติ'}
+            {oee.hasActual ? `${(oee.actual * 100).toFixed(1)}%` : tr("ยังไม่มีประวัติ")}
           </div>
         </div>
         <div style={{ fontSize:18, color:'var(--muted)' }}>vs</div>
@@ -222,11 +224,11 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         </div>
         {oee.hasActual && (
           <div style={{ fontSize:12, color: oee.actual >= oee.target ? '#22c55e' : '#ef4444', fontWeight:700 }}>
-            {oee.actual >= oee.target ? '▲ ถึงเป้า' : `▼ ต่ำกว่าเป้า ${((oee.target - oee.actual) * 100).toFixed(1)} จุด`}
+            {oee.actual >= oee.target ? tr("▲ ถึงเป้า") : `▼ ${tr("ต่ำกว่าเป้า")} ${((oee.target - oee.actual) * 100).toFixed(1)} ${tr("จุด")}`}
           </div>
         )}
         <div style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', maxWidth:340, lineHeight:1.6 }}>
-          ตัวเลขในตาราง/กราฟด้านล่างคิดจาก <b>{oeeMode === 'target' ? tr('OEE เป้า') : tr('OEE จริง')}</b> — สลับได้ที่แถบบน
+          {tr("ตัวเลขในตาราง/กราฟด้านล่างคิดจาก")} <b>{oeeMode === 'target' ? tr('OEE เป้า') : tr('OEE จริง')}</b> — {tr("สลับได้ที่แถบบน")}
           {!oee.hasActual && oeeMode === 'actual' && (
             <div style={{ color:'#f59e0b' }}>{tr('⚠️ ไลน์นี้ยังไม่มีประวัติ OEE — ช่องที่ต้องใช้ OEE จะว่าง สลับไปโหมดเป้าเพื่อดูภาพได้')}</div>
           )}
@@ -238,16 +240,15 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         <div style={card}>
           <div style={{ fontSize:14, fontWeight:800, marginBottom:4 }}>{tr('ทะเบียนรูปแบบกะ — เพดานกำลังผลิต')}</div>
           <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.65, marginBottom:10 }}>
-            ค่าเริ่มต้นถอดจากสไลด์ <b>Capacity_TSATP.4_update_June_26</b> {tr('— ทุกไลน์ในสไลด์ใช้')} <b>2 shift = วันทำงาน × 15.5 ชม.</b> ⇒ 1 กะ = 7.75 ชม. (465 นาที)
+            {tr("ค่าเริ่มต้นถอดจากสไลด์")} <b>Capacity_TSATP.4_update_June_26</b> {tr('— ทุกไลน์ในสไลด์ใช้')} <b>2 shift = {tr("วันทำงาน × 15.5 ชม.")}</b> ⇒ 1 {tr("กะ = 7.75 ชม. (465 นาที")})
             <br />
-            ⚠️ ตัวเลขนี้ <b>{tr('ตั้งใจให้ต่าง')}</b> จาก 490 นาที/กะ ที่แท็บรายวันใช้ (08:00–17:30 หักพัก 80 นาที) —
-            490 = เวลาเดินเครื่องได้ · 465 = เวลาที่ฝ่ายวางแผนใช้คิดเพดานรายเดือน
+            ⚠️ {tr("ตัวเลขนี้")} <b>{tr('ตั้งใจให้ต่าง')}</b> {tr("จาก 490 นาที/กะ ที่แท็บรายวันใช้ (08:00–17:30 หักพัก 80 นาที) — 490 = เวลาเดินเครื่องได้ · 465 = เวลาที่ฝ่ายวางแผนใช้คิดเพดานรายเดือน")}
             <br />
-            🔴 เพดานต่างกันที่ <b>{tr('จำนวนวัน')}</b> ด้วย ไม่ใช่แค่ชั่วโมง/วัน (“+ ทำเสาร์” เอาเสาร์มานับเพิ่ม · “Max” = ทุกวันในเดือน)
+            🔴 {tr("เพดานต่างกันที่")} <b>{tr('จำนวนวัน')}</b> {tr("ด้วย ไม่ใช่แค่ชั่วโมง/วัน (“+ ทำเสาร์” เอาเสาร์มานับเพิ่ม · “Max” = ทุกวันในเดือน")})
           </div>
           {patErr && (
             <div style={{ fontSize:12, color:'#f59e0b', marginBottom:8 }}>
-              ⚠️ อ่านทะเบียนจากฐานไม่ได้ — กำลังใช้ค่าเริ่มต้นในโค้ด (แก้แล้วจะบันทึกไม่ได้ · แจ้ง admin ว่ายังไม่ได้ apply migration 20260924_capacity_shift_patterns)
+              ⚠️ {tr("อ่านทะเบียนจากฐานไม่ได้ — กำลังใช้ค่าเริ่มต้นในโค้ด (แก้แล้วจะบันทึกไม่ได้ · แจ้ง admin ว่ายังไม่ได้")} apply migration 20260924_capacity_shift_patterns)
             </div>
           )}
           <div style={{ overflowX:'auto' }}>
@@ -293,7 +294,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           {canEdit && !patErr && (
             <button style={{ ...btn('var(--accent)'), marginTop:10, opacity: saving || !Object.keys(draft).length ? 0.5 : 1 }}
               disabled={saving || !Object.keys(draft).length} onClick={saveReg}>
-              {saving ? 'กำลังบันทึก…' : `💾 บันทึก (${Object.keys(draft).length})`}
+              {saving ? tr("กำลังบันทึก…") : `💾 ${tr("บันทึก")} (${Object.keys(draft).length})`}
             </button>
           )}
         </div>
@@ -303,9 +304,9 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       <div style={card}>
         <div style={{ fontSize:14, fontWeight:800 }}>{tr('ภาระงาน vs เพดานกำลังผลิต —')} {activeLine?.name}</div>
         <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
-          หน่วย = ชั่วโมง · <b>ActWorkload</b> = เวลามาตรฐานที่ต้องใช้ (จำนวนชิ้น × CT) ·
-          <b> RworkOEE</b> = เวลาจริงที่ต้องใช้เมื่อคิด OEE ({usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'}) ·
-          เส้นแนวนอน = เพดานของแต่ละรูปแบบกะ
+          {tr("หน่วย = ชั่วโมง")} · <b>ActWorkload</b> = {tr("เวลามาตรฐานที่ต้องใช้ (จำนวนชิ้น")} × CT) ·
+          <b> RworkOEE</b> = {tr("เวลาจริงที่ต้องใช้เมื่อคิด")} OEE ({usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'}) ·
+          {tr("เส้นแนวนอน = เพดานของแต่ละรูปแบบกะ")}
         </div>
         <div style={{ width:'100%', height:340 }}>
           <ResponsiveContainer>
@@ -313,19 +314,19 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />
               <XAxis dataKey="name" tick={{ fontSize:11, fill:'var(--muted)' }} />
               <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize:11, fill:'var(--muted)' }} label={{ value:'ชม.', angle:-90, position:'insideLeft', fontSize:11, fill:'var(--muted)' }} />
-              <Tooltip formatter={(v) => `${Number(v).toLocaleString()} ชม.`}
-                contentStyle={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }} />
+              <Tooltip formatter={(v) => `${Number(v).toLocaleString()} ${tr("ชม.")}`}
+                contentStyle={{ background: 'var(--card-surf)', border:'1px solid var(--border)', borderRadius:8, fontSize:12 }} />
               <Legend wrapperStyle={{ fontSize:11 }} />
               {refLines.map(p => (
                 <ReferenceLine key={p.key} y={p.hours} stroke={p.color || 'var(--muted)'} strokeDasharray="4 4"
                   label={{ value: p.label, position:'right', fontSize:11, fill:p.color || 'var(--muted)' }} />
               ))}
               {/* ป้ายชั่วโมงบนหัวแท่ง (คำขอ user 25/09) — จอ TV อ่านตัวเลขจากแท่งเองไม่ได้ */}
-              <Bar dataKey="ActWorkload" name="ภาระงาน (ActWorkload)" fill="#3b82f6">
+              <Bar {...chartAnim()} dataKey="ActWorkload" name="ภาระงาน (ActWorkload)" fill="#3b82f6">
                 <LabelList dataKey="ActWorkload" position="top" fontSize={11} fill="#3b82f6"
                   formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
               </Bar>
-              <Bar dataKey="RworkOEE"    name="ต้องใช้จริงเมื่อคิด OEE (RworkOEE)" fill="#ef4444">
+              <Bar {...chartAnim()} dataKey="RworkOEE"    name="ต้องใช้จริงเมื่อคิด OEE (RworkOEE)" fill="#ef4444">
                 <LabelList dataKey="RworkOEE" position="top" fontSize={11} fill="#ef4444"
                   formatter={(v) => (v > 0 ? Math.round(v).toLocaleString() : '')} />
               </Bar>
@@ -364,7 +365,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                     {r.pcs.toLocaleString()}
                     {r.noCt > 0 && (
                       <div style={{ fontSize:11, color:'#f59e0b' }} title={tr('พาร์ทที่ยังไม่มี CT — คิดภาระงานไม่ได้')}>
-                        ⚠️ {r.noCt.toLocaleString()} ชิ้นไม่มี CT
+                        ⚠️ {r.noCt.toLocaleString()} {tr("ชิ้นไม่มี")} CT
                       </div>
                     )}
                   </td>
@@ -391,9 +392,9 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           </table>
         </div>
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:8, lineHeight:1.7 }}>
-          🔴 <b>{tr('ActWorkload คิดจากเวลามาตรฐาน (ชิ้น × CT)')}</b> ไม่ใช่กำลังผลิตจริง — ถ้าใช้ของจริงแล้วหารด้วย OEE อีก จะคิด OEE ซ้ำสองรอบ
+          🔴 <b>{tr('ActWorkload คิดจากเวลามาตรฐาน (ชิ้น × CT)')}</b> {tr("ไม่ใช่กำลังผลิตจริง — ถ้าใช้ของจริงแล้วหารด้วย OEE อีก จะคิด OEE ซ้ำสองรอบ")}
           <br />
-          🔴 งานคู่ RH/LH ถูกยุบเป็น shot เดียวแล้ว (ปั๊มทีเดียวได้ 2 ชิ้น — บวกทั้งสองข้าง = ภาระ 2 เท่า)
+          🔴 {tr("งานคู่ RH/LH ถูกยุบเป็น shot เดียวแล้ว (ปั๊มทีเดียวได้ 2 ชิ้น — บวกทั้งสองข้าง = ภาระ 2 เท่า")})
         </div>
       </div>
 
@@ -401,14 +402,13 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       <div style={card}>
         <div style={{ fontSize:14, fontWeight:800 }}>{tr('⏱️ JPH — ชิ้น/ชั่วโมง: มาตรฐาน vs ของจริง')}</div>
         <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.7, marginBottom:10 }}>
-          <b>{tr('มาตรฐาน')}</b> = 3600 ÷ CT (เพดานทฤษฎี เครื่องเดินไม่หยุด) ·
-          <b> {tr('ควรได้ (×OEE)')}</b> = มาตรฐาน × OEE {usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'} ·
-          <b> {tr('ของจริง')}</b> = ยอดผลิตต่อกะ (median จากใบที่ปิดแล้ว) ÷ {netMin ? (netMin / 60).toFixed(2) : '—'} ชม.ทำงานสุทธิ
+          <b>{tr('มาตรฐาน')}</b> = 3600 ÷ CT ({tr("เพดานทฤษฎี เครื่องเดินไม่หยุด")}) ·
+          <b> {tr('ควรได้ (×OEE)')}</b> = {tr("มาตรฐาน")} × OEE {usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'} ·
+          <b> {tr('ของจริง')}</b> = {tr("ยอดผลิตต่อกะ (median จากใบที่ปิดแล้ว")}) ÷ {netMin ? (netMin / 60).toFixed(2) : '—'} {tr("ชม.ทำงานสุทธิ")}
           <br />
-          🔴 <b>{tr('“ของจริง” นับจากใบผลิตที่ปิดจริงเท่านั้น')}</b> — พาร์ทที่ใบปิดยังไม่ถึง 3 กะ ระบบมีแต่ค่าที่คำนวณจาก CT×OEE
-          ซึ่งเอามาเทียบกับ “ควรได้” ไม่ได้ (มันคือตัวเลขเดียวกัน) จึงขึ้นว่า <b>{tr('ไม่มีของจริง')}</b>
+          🔴 <b>{tr('“ของจริง” นับจากใบผลิตที่ปิดจริงเท่านั้น')}</b> — {tr("พาร์ทที่ใบปิดยังไม่ถึง 3 กะ ระบบมีแต่ค่าที่คำนวณจาก CT×OEE ซึ่งเอามาเทียบกับ “ควรได้” ไม่ได้ (มันคือตัวเลขเดียวกัน) จึงขึ้นว่า")} <b>{tr('ไม่มีของจริง')}</b>
           <br />
-          🔴 <b>{tr('งานคู่ RH/LH ไม่คูณ 2')}</b> — CT คือเวลาต่อ 1 จังหวะ ชั่วโมงนั้นได้พาร์ทคู่อีกเท่าตัวพร้อมกัน (ติดป้าย 👯 ไว้)
+          🔴 <b>{tr('งานคู่ RH/LH ไม่คูณ 2')}</b> — CT {tr("คือเวลาต่อ 1 จังหวะ ชั่วโมงนั้นได้พาร์ทคู่อีกเท่าตัวพร้อมกัน (ติดป้าย 👯 ไว้")})
         </div>
 
         {jph.sum && (
@@ -425,7 +425,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
               </div>
             ))}
             <div style={{ fontSize:11, color:'var(--muted)', marginLeft:'auto', maxWidth:330, lineHeight:1.6 }}>
-              เทียบได้ <b style={{ color:'var(--text)' }}>{jph.sum.comparable}</b> {tr('จาก')} {jph.sum.total} พาร์ท
+              {tr("เทียบได้")} <b style={{ color:'var(--text)' }}>{jph.sum.comparable}</b> {tr('จาก')} {jph.sum.total} {tr("พาร์ท")}
               {jph.sum.noCt > 0 && <> {tr('· ไม่มี CT')} {jph.sum.noCt}</>}
               {jph.sum.noActual > 0 && <> {tr('· ไม่มีของจริง')} {jph.sum.noActual}</>}
               {jph.sum.ctSuspect > 0 && <span style={{ color:'#ef4444' }}> {tr('· 🔴 CT น่าจะผิด')} {jph.sum.ctSuspect}</span>}

@@ -300,3 +300,6 @@ hover บนผังบอก "หยุด 3 ชม. 33 น." แต่ modal 
 - จำลองกับข้อมูลจริง 24 กรอบ (aspect ≈1.58 ประมาณจากจอ): ทุกกรอบเข้าโหมดคงมุมฉาก · จัดให้ตรงขยับ 22 กรอบ ไม่เกิน 1.26% (มากสุด UTLITY STEEL)
 - **ทดสอบในเบราว์เซอร์ (13/11):** `node audit/polydragsweep.mjs` (ต้องเปิด vite audit ค้าง) — 8 เคสผ่านครบ · แก้การลาก/ด่าน/ปุ่มจัดให้ตรง ให้รันตัวนี้ก่อน merge
 - **🕓 audit (11/11):** `factory_line_regions` ผูก `trg_audit` (`fn_audit`) + `updated_at` แล้ว (migration `20261111_factory_line_regions_audit.sql` · Main · **apply แล้ว** · เทสด้วย uid จริง: actor มีชื่อ) · ดูที่ `/audit-log` (ป้าย 🗺️ กรอบไลน์บนผังรวมโรงงาน)
+
+- 🔢 **`<FactoryMiniMap badgeOf>` (2026-11-20)** — prop ไม่บังคับ: วงกลมเลขกลางกรอบแทนชื่อไลน์ (ใช้ที่ Manpower Board แท็บผัง LAYOUT ภาพรวมโรงงาน) · ไม่ส่ง = พฤติกรรมเดิม (จอ MTN Andon)
+  + `dimMap` / `focusNames` / `onHover` / `badgeOf().pct` (วงแหวน %) — ไม่บังคับทั้งหมด · ภาพจอ Andon ก่อน/หลังต่างกัน 0 พิกเซล (วัด 20/11)

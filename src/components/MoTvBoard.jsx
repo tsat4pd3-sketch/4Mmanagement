@@ -66,8 +66,8 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
   }), [rows, group, team, inScope, now]);
 
   const g = moTvGroupMeta(group);
-  const title = g ? `${g.icon} ${g.label}` : '🧾 ใบแจ้งซ่อม MO ที่ยังไม่ปิด · ทุกขั้น';
-  const teamLabel = team ? deptNameOf(team) : 'ทุกทีมช่าง';
+  const title = g ? `${g.icon} ${g.label}` : tr("🧾 ใบแจ้งซ่อม MO ที่ยังไม่ปิด · ทุกขั้น");
+  const teamLabel = team ? deptNameOf(team) : tr("ทุกทีมช่าง");
 
   const boxRef = useRef(null);
   const pager = useTvPager(boxRef, {
@@ -122,24 +122,24 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
 
       {/* 🔴 ความซื่อสัตย์ของจอ — ห้ามซ่อนบน TV (ย่อเป็นบรรทัดสั้นตัวใหญ่) */}
       {err && <Warn tv={tv} fz={fz}>{tr('⚠ โหลดใบ MO ไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง (')}{err})</Warn>}
-      {board.badGroup && <Warn tv={tv} fz={fz}>⚠ ค่า mo=&quot;{group}&quot; ไม่รู้จัก — แสดงทุกขั้นแทน (แก้ลิงก์ที่หน้าตั้งค่าจอวน)</Warn>}
+      {board.badGroup && <Warn tv={tv} fz={fz}>⚠ {tr("ค่า")} mo=&quot;{group}&quot; {tr("ไม่รู้จัก — แสดงทุกขั้นแทน (แก้ลิงก์ที่หน้าตั้งค่าจอวน")})</Warn>}
       {rows && rows.length >= CAP && <Warn tv={tv} fz={fz}>{tr('⚠ ใบเปิดเกิน')} {CAP} {tr('ใบ — จออาจแสดงไม่ครบ')}</Warn>}
 
       {/* ที่ซ่อน/ประมาณ — เขียนให้เห็นเสมอ (กรองแล้วต้องบอกว่าซ่อนกี่รายการ)
           วางก่อนกล่องแบ่งหน้า: useTvPager ตั้งความสูงกล่องถึงขอบล่างจอ ⇒ ของที่อยู่ใต้กล่องตกจอ */}
       {(board.hiddenScope > 0 || board.hiddenTeam > 0 || board.approxAge > 0 || board.unknownAge > 0) && (
         <div style={{ fontSize: fz(11.5, 20), color: 'var(--text2)' }}>
-          {board.hiddenTeam > 0 && `ไม่นับใบของทีมอื่น ${board.hiddenTeam} ใบ · `}
-          {board.hiddenScope > 0 && `ไม่นับใบนอกส่วนงานของจอนี้ ${board.hiddenScope} ใบ · `}
-          {board.approxAge > 0 && `≈ ${board.approxAge} ใบนับจากเวลาแจ้ง (ไม่มีเวลาเข้าขั้น) · `}
-          {board.unknownAge > 0 && `${board.unknownAge} ใบไม่รู้ว่าค้างมานานเท่าไหร่ · `}
-          ค้างมา = นับจากเวลาที่ใบเข้าขั้นปัจจุบัน
+          {board.hiddenTeam > 0 && `${tr("ไม่นับใบของทีมอื่น")} ${board.hiddenTeam} ${tr("ใบ")} · `}
+          {board.hiddenScope > 0 && `${tr("ไม่นับใบนอกส่วนงานของจอนี้")} ${board.hiddenScope} ${tr("ใบ")} · `}
+          {board.approxAge > 0 && `≈ ${board.approxAge} ${tr("ใบนับจากเวลาแจ้ง (ไม่มีเวลาเข้าขั้น")}) · `}
+          {board.unknownAge > 0 && `${board.unknownAge} ${tr("ใบไม่รู้ว่าค้างมานานเท่าไหร่")} · `}
+          {tr("ค้างมา = นับจากเวลาที่ใบเข้าขั้นปัจจุบัน")}
         </div>
       )}
       <div ref={boxRef}>
         {rows && board.rows.length === 0 && !err && (
           <div data-tv-item style={{ textAlign: 'center', padding: tv ? 48 : 28, color: 'var(--text2)', fontSize: fz(15, 32), fontWeight: 800 }}>
-            ✅ ไม่มีใบค้างในกองนี้
+            ✅ {tr("ไม่มีใบค้างในกองนี้")}
           </div>
         )}
         {!rows && !err && <div style={{ textAlign: 'center', padding: 28, color: 'var(--muted)', fontSize: fz(14, 26) }}>{tr('กำลังโหลด...')}</div>}
@@ -155,7 +155,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
 
 function Warn({ tv, fz, children }) {
   return (
-    <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
+    <div role="alert" style={{ background: 'var(--card-surf)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
       {children}
     </div>
   );
@@ -168,7 +168,7 @@ function MoCard({ r, tv, fz, showStage }) {
   const reporter = o.reported_by_name || o.reporter_prod || '';
   return (
     <div data-tv-item style={{
-      background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `6px solid ${r.tone === 'none' ? 'var(--border2)' : ink}`,
+      background: 'var(--card-surf)', border: '1px solid var(--border)', borderLeft: `6px solid ${r.tone === 'none' ? 'var(--border2)' : ink}`,
       borderRadius: 'var(--r-lg)', padding: tv ? '14px 18px' : '10px 12px', boxShadow: 'var(--shadow-sm)',
       display: 'flex', flexDirection: 'column', gap: tv ? 6 : 4, minWidth: 0,
     }}>

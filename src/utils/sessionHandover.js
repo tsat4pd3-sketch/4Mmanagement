@@ -18,6 +18,7 @@
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 import { shiftFrameOf } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 import { isVoidSession, SESSION_STATUSES_LIVE } from './sessionStatus.js';
+import { tr } from './i18n.js';
 
 /** ผ่อนผัน: ยิงใบปิดท้ายกะหลังกะใหม่เริ่มไปไม่เกินนี้ = เรื่องปกติ (ส่งกะ/เก็บของค้าง) ไม่ต้องขัด */
 export const HANDOVER_GRACE_MIN = 20;
@@ -63,7 +64,7 @@ export function handoverOf(sel, sessions, nowMs = Date.now()) {
 /** ป้ายกะสั้นๆ สำหรับข้อความเตือน — 'กะดึก 06/11 เริ่ม 20:00' */
 export function sessionLabel(s) {
   if (!s) return '—';
-  const sh = s.shift === 'night' ? 'กะดึก' : s.shift === 'day' ? 'กะเช้า' : (s.shift || 'กะ');
+  const sh = s.shift === 'night' ? 'กะดึก' : s.shift === 'day' ? tr("กะเช้า") : (s.shift || tr("กะ"));
   const d = String(s.work_date || '').slice(5).split('-').reverse().join('/');
   const st = String(s.start_time || '').slice(0, 5);
   return `${sh}${d ? ` ${d}` : ''}${st ? ` เริ่ม ${st}` : ''}`;

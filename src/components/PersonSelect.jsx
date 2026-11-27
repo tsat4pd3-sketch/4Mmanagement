@@ -20,7 +20,7 @@
 import { useMemo } from 'react';
 import SearchSelect from './SearchSelect';
 import usePeople from '../utils/usePeople';
-import { positionLabel } from '../utils/positions';
+import { positionLabel, levelOfPosition } from '../utils/positions';
 import { roleLabel } from '../utils/roleMeta';
 import { personOptions, sameName, appendHistoryOptions } from '../utils/pickerOptions';
 
@@ -29,16 +29,16 @@ export { personOptions };
 
 export default function PersonSelect({ scan,
   value = '', onChange, source = 'profiles',
-  lines, lineIds, section, roles, teams, strict = false,
-  allowFree = true, placeholder = 'ค้นชื่อ / รหัสพนักงาน…', freeHint = '', emptyText,
+  lines, lineIds, section, roles, teams, levels, strict = false,
+  allowFree = true, placeholder = tr("ค้นชื่อ / รหัสพนักงาน…"), freeHint = '', emptyText,
   history = [],          // ชื่อที่เคยบันทึกในคอลัมน์ปลายทาง (useColumnHistory) — คนนอกทะเบียนที่เคยกรอกยังเลือกซ้ำได้ (กลุ่ม 📜)
   disabled, inputStyle, style, wrapRows = false, maxRows = 60,
 }) {
   const { profiles, employees, failed } = usePeople({ profiles: source !== 'employees', employees: source !== 'profiles' });
   const options = useMemo(() => {
-    const base = personOptions({ profiles, employees, source, lines, lineIds, section, roles, teams, strict, posLabel: positionLabel, roleLabel });
+    const base = personOptions({ profiles, employees, source, lines, lineIds, section, roles, teams, levels, levelOf: levelOfPosition, strict, posLabel: positionLabel, roleLabel });
     return appendHistoryOptions(base, { history, current: '', keyOf: (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase(), make: () => ({ kind: 'free', uid: null, employee_id: null, employee_code: null, signature_url: null, section: null, position: null, role: null }) });
-  }, [profiles, employees, source, lines, lineIds, section, roles, teams, strict, history]);
+  }, [profiles, employees, source, lines, lineIds, section, roles, teams, levels, strict, history]);
   // ค่าที่เก็บอยู่คือ "ชื่อ" → หา option ที่ชื่อตรงกัน (ชื่อเดิมที่พิมพ์มาก่อนก็ยังโชว์ได้ผ่าน text)
   const sel = useMemo(() => options.find(o => sameName(o.label, value)) || null, [options, value]);
   const emit = ({ id, text, opt }) => {
@@ -49,7 +49,7 @@ export default function PersonSelect({ scan,
   return (
     <SearchSelect
       value={sel ? sel.id : ''} text={value || ''} options={options} onChange={emit}
-      scan={scan === false ? undefined : (scan || 'บัตรพนักงาน')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
+      scan={scan === false ? undefined : (scan || tr("บัตรพนักงาน"))}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} placeholder={placeholder} freeHint={freeHint}
       emptyText={emptyText || (failed ? tr('โหลดทะเบียนคนไม่สำเร็จ') : tr('ไม่พบชื่อที่ค้นหา'))}
       disabled={disabled} inputStyle={inputStyle} style={style} wrapRows={wrapRows} maxRows={maxRows}

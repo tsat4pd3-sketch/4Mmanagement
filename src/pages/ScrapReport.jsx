@@ -58,7 +58,7 @@ import useIsMobile from '../utils/useIsMobile';
    ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
 import QualityBins from '../components/QualityBins';
 import useTabParam from '../utils/useTabParam';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import { askConfirm } from '../utils/askConfirm';
 
@@ -71,7 +71,7 @@ function getWorkDate() {
   if (now.getHours() < 8) { const y = new Date(now); y.setDate(y.getDate() - 1); return localDateStr(y); }
   return localDateStr(now);
 }
-const fmtD = s => s ? new Date(s + 'T00:00:00').toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
+const fmtD = s => s ? new Date(s + 'T00:00:00').toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: '2-digit' }) : '—';
 
 const inputSt = { width: '100%', padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' };
 const btnSt = (bg = 'var(--accent)', color = bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, background: bg, color });
@@ -107,7 +107,7 @@ function Modal({ title, onClose, children, width = 560 }) {
   const isMobile = useIsMobile();
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 12px', overflowY: 'auto' }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -298,7 +298,7 @@ export default function ScrapReport() {
     const so = sapByMat.get(String(mat_no).toUpperCase());
     const isSub = String(opt.id).startsWith('x:');
     setItem(key, { mat_no, source: isSub ? 'sub' : 'main', part_no: so ? so.part_no : (p_no || mat_no), part_name: so ? so.part_name : (name || '') });
-    if (so?.badMaster) toast.error(`พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "${so.badMaster}" — ต้องกรอก PART NO. เอง แล้วไปแก้ที่ /products`);
+    if (so?.badMaster) toast.error(`${tr("พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง")} "${so.badMaster}" — ${tr("ต้องกรอก PART NO. เอง แล้วไปแก้ที่")} /products`);
   };
 
   const sapMatches = useMemo(() => {
@@ -355,10 +355,10 @@ export default function ScrapReport() {
       }));
     });
     if (done) setEditor(e => (e ? { ...e, items: out } : e));
-    if (done) toast.success(`ระเบิดขั้นตอน ${done} รายการเป็นเลข SAP ที่ตัดสต๊อกได้แล้ว ✓`);
+    if (done) toast.success(`${tr("ระเบิดขั้นตอน")} ${done} ${tr("รายการเป็นเลข SAP ที่ตัดสต๊อกได้แล้ว")} ✓`);
     else if (!quiet && !blocked.length) toast.info('ไม่มีแถวที่เป็นขั้นตอน (OP) ให้ระเบิด');
-    if (blocked.length) toast.error(`ยังไม่ได้ผูกสูตรของขั้น: ${[...new Set(blocked)].join(', ')} — ไปตั้งที่ /products แท็บ BOM (เลือกแถว 🔩 ขั้นตอน) แล้วกดระเบิดอีกครั้ง`);
-    if (dup.size) toast.info(`⚠ ${[...dup].join(', ')} ถูกผูกไว้หลายขั้น ระบบรวมยอดให้ — เช็คว่าคีย์สูตรแบบสะสมหรือเปล่า`);
+    if (blocked.length) toast.error(`${tr("ยังไม่ได้ผูกสูตรของขั้น")}: ${[...new Set(blocked)].join(', ')} — ${tr("ไปตั้งที่ /products แท็บ BOM (เลือกแถว 🔩 ขั้นตอน) แล้วกดระเบิดอีกครั้ง")}`);
+    if (dup.size) toast.info(`⚠ ${[...dup].join(', ')} ${tr("ถูกผูกไว้หลายขั้น ระบบรวมยอดให้ — เช็คว่าคีย์สูตรแบบสะสมหรือเปล่า")}`);
     return { items: out, done, blocked };
   };
 
@@ -399,7 +399,7 @@ export default function ScrapReport() {
    *  หรือกดบันทึกทับช่องที่ไม่ได้โหลด = เอกสารผิด) */
   const loadFullReport = async (id) => {
     const { data, error } = await supabaseDR.from('scrap_reports').select('*').eq('id', id).single();
-    if (error || !data) { toast.error(`อ่านใบไม่สำเร็จ: ${error?.message || 'ไม่พบใบนี้'} — ลองใหม่อีกครั้ง`); return null; }
+    if (error || !data) { toast.error(`${tr("อ่านใบไม่สำเร็จ")}: ${error?.message || tr('ไม่พบใบนี้')} — ${tr("ลองใหม่อีกครั้ง")}`); return null; }
     return data;
   };
 
@@ -407,7 +407,7 @@ export default function ScrapReport() {
     const full = await loadFullReport(rep.id);
     if (!full) return;
     const { data: items, error: itErr } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    if (itErr) { toast.error(`อ่านรายการในใบไม่สำเร็จ: ${itErr.message} — ยังไม่เปิดฟอร์ม (กันบันทึกทับของเดิม)`); return; }
+    if (itErr) { toast.error(`${tr("อ่านรายการในใบไม่สำเร็จ")}: ${itErr.message} — ${tr("ยังไม่เปิดฟอร์ม (กันบันทึกทับของเดิม")})`); return; }
     setEditor({ report: { ...full, product_categories: full.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
   };
 
@@ -424,7 +424,7 @@ export default function ScrapReport() {
     if (error) {
       toast.error(error.code === '42P01'
         ? 'ยังไม่ได้ apply migration ของใบเบิก — แจ้งผู้ดูแลระบบ'
-        : 'โหลดใบเบิกไม่สำเร็จ: ' + error.message);
+        : (tr('โหลดใบเบิกไม่สำเร็จ') + ': ') + error.message);
       return;
     }
     // ใบของไลน์นี้ขึ้นก่อน แต่ไม่ตัดใบอื่นทิ้ง (ใบเบิกอาจไม่ได้ระบุไลน์ — ไม่ใช่ช่องบังคับบนใบกระดาษ)
@@ -437,7 +437,7 @@ export default function ScrapReport() {
   const applyRequest = async (r) => {
     const { data, error } = await supabaseDR.from('material_request_items')
       .select('*').eq('request_id', r.id).order('seq');
-    if (error) { toast.error('โหลดรายการในใบเบิกไม่สำเร็จ: ' + error.message); return; }
+    if (error) { toast.error((tr('โหลดรายการในใบเบิกไม่สำเร็จ') + ': ') + error.message); return; }
     const src = (data || []).filter(it => effQty(it) > 0);
     if (!src.length) { toast.info('ใบนี้ไม่มีรายการที่มีจำนวน'); return; }
 
@@ -452,7 +452,7 @@ export default function ScrapReport() {
         src_request_item_id: it.id,
       }));
       if (!add.length) { toast.info('รายการของใบนี้ถูกดึงเข้าใบแล้วทั้งหมด'); return e; }
-      toast.success(`ดึง ${add.length} รายการจากใบเบิก ${r.doc_no || ''} ✓`);
+      toast.success(`${tr("ดึง")} ${add.length} ${tr("รายการจากใบเบิก")} ${r.doc_no || ''} ✓`);
       return { ...e, items: [...e.items, ...add] };
     });
     setReqPicker(null);
@@ -465,12 +465,12 @@ export default function ScrapReport() {
     //    = บอกข้อเท็จจริงที่ผิดบนใบรายงานของเสีย ซึ่งเป็นบันทึกคุณภาพ (ห้ามล้มเหลวเงียบ)
     const { data: sess, error: sErr } = await supabaseDR.from('production_sessions').select('id')
       .eq('line_name', report.line_name).eq('work_date', report.report_date);
-    if (sErr) { toast.error('ดึงข้อมูลกะไม่สำเร็จ: ' + sErr.message); return; }
+    if (sErr) { toast.error((tr('ดึงข้อมูลกะไม่สำเร็จ') + ': ') + sErr.message); return; }
     const ids = (sess || []).map(s => s.id);
     if (!ids.length) { toast.info('ไม่พบ session ผลิตของไลน์/วันนี้'); return; }
     const { data: defs, error: dErr } = await supabaseDR.from('defect_logs')
       .select('qty_ng, prod_orders(mat_no, part_name)').in('session_id', ids);
-    if (dErr) { toast.error('ดึงข้อมูลของเสียไม่สำเร็จ: ' + dErr.message); return; }
+    if (dErr) { toast.error((tr('ดึงข้อมูลของเสียไม่สำเร็จ') + ': ') + dErr.message); return; }
     const byMat = new Map();
     (defs || []).forEach(d => {
       const mat = d.prod_orders?.mat_no || '—';
@@ -485,7 +485,7 @@ export default function ScrapReport() {
     const auto = pulled.map(v => ({ ...EMPTY_ITEM(), source: 'main', mat_no: v.mat_no, part_name: v.part_name, qty: v.qty, confirm_qty: v.qty, src_defect_from_logs: true }));
     const next = [...auto, ...manual];
     setEditor(e => (e ? { ...e, items: next } : e));
-    toast.success(`ดึงของเสีย ${pulled.length} ชิ้นงานจาก Daily Report ✓`);
+    toast.success(`${tr("ดึงของเสีย")} ${pulled.length} ${tr("ชิ้นงานจาก")} Daily Report ✓`);
     /* 🧩 ของเสียที่หลุดที่ "ขั้นตอน (OP)" ถูกดึงมาด้วยเลขของขั้น ซึ่ง SAP ไม่มี ⇒ ระเบิดเป็นวัตถุดิบจริงทันที
        (user 2026-09-15: "มันต้องดึง BOM ที่มันประกอบมาตัด ไม่ใช่ตัดตัวมันเอง")
        quiet = ไม่ต้องบอกว่า "ไม่มีอะไรให้ระเบิด" — ไลน์ส่วนใหญ่ไม่มีชั้น OP อยู่แล้ว
@@ -507,7 +507,7 @@ export default function ScrapReport() {
       .eq('bin', 'red').eq('is_active', true)
       .eq('line_name', report.line_name).eq('work_date', report.report_date)
       .is('scrap_report_id', null);
-    if (error) { toast.error('ดึงรายการถังแดงไม่สำเร็จ: ' + error.message); return; }
+    if (error) { toast.error((tr('ดึงรายการถังแดงไม่สำเร็จ') + ': ') + error.message); return; }
     if (!bins?.length) {
       toast.info('ไม่มีรายการในถังแดงของไลน์/วันนี้ที่ยังไม่ได้ออกใบ — ถ้ายังไม่ได้ลงถัง ให้ลงที่ Daily Report ปุ่ม 🗑️ ลงถัง ก่อน');
       return;
@@ -525,7 +525,7 @@ export default function ScrapReport() {
     if (!add.length) { toast.info('รายการถังแดงทั้งหมดถูกดึงเข้าใบนี้แล้ว'); return; }
     const next = [...editor.items, ...add];
     setEditor(e => (e ? { ...e, items: next } : e));
-    toast.success(`ดึงจากถังแดง ${add.length} รายการ ✓ — บันทึกใบแล้วระบบจะผูกใบถังกลับให้อัตโนมัติ`);
+    toast.success(`${tr("ดึงจากถังแดง")} ${add.length} ${tr("รายการ ✓ — บันทึกใบแล้วระบบจะผูกใบถังกลับให้อัตโนมัติ")}`);
     explodeOpItems(next, null, true);
   };
 
@@ -543,7 +543,7 @@ export default function ScrapReport() {
     else setEditor(e => ({ ...e, items: [...e.items, { ...EMPTY_ITEM(), source: o.source, mat_no: o.mat_no, part_no: o.part_no, part_name: o.part_name }] }));
     setSapPicker(null); setSapSearch('');
     // master ผิด (p_no = หมายเลขเครื่อง) → part no. ว่าง บอกให้รู้ตัว ไม่ปล่อยพิมพ์ใบผิดออกไปเงียบๆ
-    if (o.badMaster) toast.error(`พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "${o.badMaster}" — ต้องกรอก PART NO. เอง แล้วไปแก้ที่ /products`);
+    if (o.badMaster) toast.error(`${tr("พาร์ทนี้ใน Product Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง")} "${o.badMaster}" — ${tr("ต้องกรอก PART NO. เอง แล้วไปแก้ที่")} /products`);
   };
 
   const totals = useMemo(() => {
@@ -563,17 +563,17 @@ export default function ScrapReport() {
     const { report, items } = editor;
     if (items.some(it => Number(it.qty) < 0 || Number(it.confirm_qty) < 0)) { toast.error('จำนวนของเสียติดลบไม่ได้ — แก้ช่อง Q\'TY / ยืนยัน ที่มีเครื่องหมายลบ'); return; }
     if (!report.line_name) { toast.error('เลือกไลน์'); return; }
-    if (!slocValid(report.storage_location)) { toast.error(`Storage Location ไม่ถูกรูปแบบ — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
+    if (!slocValid(report.storage_location)) { toast.error(`Storage Location ${tr("ไม่ถูกรูปแบบ")} — ${SLOC_FORMAT_HINT}`); return; } // 2026-09-07
     /* 🔩 ส่งอนุมัติ/อนุมัติทั้งที่ยังมีเลขขั้นตอน (OP) ค้างอยู่ = ใบนี้สโตร์เอาไปตัด SAP ไม่ได้
        ไม่บล็อก (บางใบอาจตั้งใจบันทึกไว้ก่อน) แต่ต้องถามให้คนกดรู้ตัว — ห้ามผ่านเงียบ (2026-09-15) */
     if (report.status !== 'draft' && opScan.opRowsCount > 0) {
       const mats = [...new Set([...opScan.ready, ...opScan.blocked].map(x => x.item.mat_no))].join(', ');
-      if (!await askConfirm(`ใบนี้ยังมี ${opScan.opRowsCount} รายการที่เป็นเลขขั้นตอน (OP): ${mats}\n\nเลขพวกนี้ไม่มีใน SAP — สโตร์ตัดสต๊อกไม่ได้\nกด "🧩 ระเบิดขั้นตอน" ก่อนจะตรงกว่า\n\nยืนยันบันทึกทั้งที่ยังไม่ระเบิด?`)) return;
+      if (!await askConfirm(`${tr("ใบนี้ยังมี")} ${opScan.opRowsCount} ${tr("รายการที่เป็นเลขขั้นตอน")} (OP): ${mats}\n\n${tr("เลขพวกนี้ไม่มีใน SAP — สโตร์ตัดสต๊อกไม่ได้\\nกด \"🧩 ระเบิดขั้นตอน\" ก่อนจะตรงกว่า\\n\\nยืนยันบันทึกทั้งที่ยังไม่ระเบิด")}?`)) return;
     }
     let doc_no = report.doc_no;
     if (!doc_no) {
       try { doc_no = await nextDocNo(report.report_date); }
-      catch (e) { toast.error(`${e.message} — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง`); return; }
+      catch (e) { toast.error(`${e.message} — ${tr("ยังไม่ได้บันทึก ลองใหม่อีกครั้ง")}`); return; }
     }
     const payload = {
       report_date: report.report_date, line_name: report.line_name, dept: report.dept || null,
@@ -611,14 +611,14 @@ export default function ScrapReport() {
         )));
         setEditor(e => (e ? { ...e, items: items2 } : e));   // อัปแล้วอย่าให้ค้างเป็นไฟล์ กดบันทึกซ้ำจะอัปซ้ำ
       } catch (e2) {
-        toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e2.message} — รายการเดิมยังอยู่ครบ ไม่ถูกลบ — แก้แล้วกดบันทึกอีกครั้ง`);
+        toast.error(`${tr("อัปโหลดรูปไม่สำเร็จ")}: ${e2.message} — ${tr("รายการเดิมยังอยู่ครบ ไม่ถูกลบ — แก้แล้วกดบันทึกอีกครั้ง")}`);
         return;
       }
     }
     // replace items ทั้งชุด — เช็ค error ของ delete ก่อน insert ใหม่
     // (ถ้า delete ล้มแล้วปล่อยผ่าน อาจได้ item ซ้ำ · ถ้า insert ล้มหลัง delete สำเร็จ รายการหายหมด — เตือนให้กดบันทึกใหม่)
     const { error: eDel } = await supabaseDR.from('scrap_report_items').delete().eq('report_id', repId);
-    if (eDel) { toast.error('ลบรายการเดิมไม่สำเร็จ: ' + eDel.message); return; }
+    if (eDel) { toast.error((tr('ลบรายการเดิมไม่สำเร็จ') + ': ') + eDel.message); return; }
     if (items2.length) {
       const rows = items2.map((it, i) => ({
         report_id: repId, seq: i + 1, source: it.source, part_no: it.part_no || null, part_name: it.part_name || null,
@@ -646,9 +646,9 @@ export default function ScrapReport() {
       if (binIds.length) {
         const { data: linked, error: bErr } = await supabaseDR.from('quality_bin_records')
           .update({ scrap_report_id: repId }).in('id', binIds).select('id');
-        if (bErr) toast.error(`บันทึกใบแล้ว แต่ผูกใบถังแดงไม่สำเร็จ: ${bErr.message} — ของในถังจะยังขึ้นว่า "ยังไม่ออกใบ"`);
+        if (bErr) toast.error(`${tr("บันทึกใบแล้ว แต่ผูกใบถังแดงไม่สำเร็จ")}: ${bErr.message} — ${tr("ของในถังจะยังขึ้นว่า \"ยังไม่ออกใบ")}"`);
         else if ((linked?.length || 0) < binIds.length)
-          toast.error(`ผูกใบถังแดงได้ ${linked?.length || 0}/${binIds.length} รายการ — ที่เหลืออาจไม่มีสิทธิ์แก้ แจ้ง admin`);
+          toast.error(`${tr("ผูกใบถังแดงได้")} ${linked?.length || 0}/${binIds.length} ${tr("รายการ — ที่เหลืออาจไม่มีสิทธิ์แก้ แจ้ง")} admin`);
       }
     }
     /* 🔴 รายการถังแดงที่ถูกเอาออกจากใบ ต้องปลดการผูกด้วย (บั๊ก B 10/11)
@@ -660,18 +660,18 @@ export default function ScrapReport() {
       let uq = supabaseDR.from('quality_bin_records').update({ scrap_report_id: null }).eq('scrap_report_id', repId);
       if (keep.length) uq = uq.not('id', 'in', `(${keep.join(',')})`);
       const { error: uErr } = await uq.select('id');
-      if (uErr) toast.error(`บันทึกใบแล้ว แต่ปลดใบถังแดงที่เอาออกจากใบไม่สำเร็จ: ${uErr.message} — ถังพวกนั้นอาจขึ้นว่าออกใบแล้วทั้งที่ไม่อยู่ในใบ แจ้ง admin`);
+      if (uErr) toast.error(`${tr("บันทึกใบแล้ว แต่ปลดใบถังแดงที่เอาออกจากใบไม่สำเร็จ")}: ${uErr.message} — ${tr("ถังพวกนั้นอาจขึ้นว่าออกใบแล้วทั้งที่ไม่อยู่ในใบ แจ้ง")} admin`);
     }
     if (report.status === 'submitted') notifyEvent({
       event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
       line_name: report.line_name || null, section: report.section || null, actor: fullName,
       lines: [
-        `📄 ใบ ${doc_no}`,
-        `🏭 ไลน์: ${report.line_name || '—'}${report.section ? ` · ${report.section}` : ''}`,
-        `🗑️ ${items.length} รายการ · รวม ${items.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
+        `📄 ${tr("ใบ")} ${doc_no}`,
+        `🏭 ${tr("ไลน์")}: ${report.line_name || '—'}${report.section ? ` · ${report.section}` : ''}`,
+        `🗑️ ${items.length} ${tr("รายการ · รวม")} ${items.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ${tr("ชิ้น")}`,
       ],
     });
-    toast.success(`บันทึกใบ ${doc_no} แล้ว ✓`);
+    toast.success(`${tr("บันทึกใบ")} ${doc_no} ${tr("แล้ว")} ✓`);
     setEditor(null);
     loadReports();
   };
@@ -680,15 +680,15 @@ export default function ScrapReport() {
     /* 🔴 ลบได้เฉพาะใบ "ร่าง" (บั๊ก B 10/11) — ใบที่ส่งอนุมัติ/อนุมัติแล้วคือบันทึกตามฟอร์ม FM-PD2-002 (เก็บ 10 ปี)
        การลบจริงทำให้สืบย้อนไม่ได้ · ใบส่งอนุมัติที่ทำผิด ให้เปลี่ยนกลับเป็นร่างก่อน (คนที่มีสิทธิ์แก้ใบ) */
     if (rep.status && rep.status !== 'draft') {
-      toast.error(`ใบ ${rep.doc_no || ''} อยู่สถานะ "${rep.status === 'approved' ? 'อนุมัติแล้ว' : 'ส่งอนุมัติ'}" — ลบไม่ได้ (เป็นบันทึกที่ต้องเก็บ) · ถ้าทำผิด ให้เปิดใบเปลี่ยนกลับเป็นร่างก่อน`);
+      toast.error(`${tr("ใบ")} ${rep.doc_no || ''} ${tr("อยู่สถานะ")} "${rep.status === 'approved' ? tr('อนุมัติแล้ว') : tr('ส่งอนุมัติ')}" — ${tr("ลบไม่ได้ (เป็นบันทึกที่ต้องเก็บ) · ถ้าทำผิด ให้เปิดใบเปลี่ยนกลับเป็นร่างก่อน")}`);
       return;
     }
-    if (!await askConfirm(`ลบใบ ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
+    if (!await askConfirm(`${tr("ลบใบ")} ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
     /* 🔴 ปลดการผูกถังแดงก่อนลบใบ — `scrap_report_id` ไม่มี FK ⇒ ลบใบเฉยๆ = ถังชี้ใบที่ไม่มีอยู่
        แล้วขึ้น "ออกใบแล้ว" ตลอดกาล · ปลดไม่สำเร็จ = ห้ามลบ (fail-closed) */
     const { error: unErr } = await supabaseDR.from('quality_bin_records')
       .update({ scrap_report_id: null }).eq('scrap_report_id', rep.id).select('id');
-    if (unErr) { toast.error(`ปลดใบถังแดงที่ผูกกับใบนี้ไม่สำเร็จ: ${unErr.message} — ยังไม่ได้ลบใบ`); return; }
+    if (unErr) { toast.error(`${tr("ปลดใบถังแดงที่ผูกกับใบนี้ไม่สำเร็จ")}: ${unErr.message} — ${tr("ยังไม่ได้ลบใบ")}`); return; }
     /* 🔴 DELETE ที่ถูก RLS ปฏิเสธ = 0 แถวไม่มี error ⇒ ต้องนับ ไม่งั้นขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ */
     if (!checkWriteRows(await supabaseDR.from('scrap_reports').delete().eq('id', rep.id).select('id'),
       'ลบใบรายงานของเสีย',
@@ -749,7 +749,7 @@ export default function ScrapReport() {
       && !await askConfirm('ปิดใบนี้โดยไม่บันทึก? — ที่กรอก/แก้ไว้จะหายทั้งหมด')) return;
     setEditor(null);
   };
-  const STATUS_META = { draft: { label: 'ร่าง', color: '#6b7280' }, submitted: { label: 'ส่งอนุมัติ', color: '#f59e0b' }, approved: { label: 'อนุมัติแล้ว', color: '#22c55e' } };
+  const STATUS_META = { draft: { label: 'ร่าง', color: 'var(--muted)' }, submitted: { label: 'ส่งอนุมัติ', color: 'var(--amber)' }, approved: { label: 'อนุมัติแล้ว', color: 'var(--green)' } };
   /* รายการที่ผ่านตัวกรอง C4 — ไลน์เทียบชื่อตรงตัว (ตัวเลือกมาจากทะเบียนไลน์เดียวกับที่เขียนลงใบ) */
   const ql = q.trim().toLowerCase();
   const shown = reports.filter(rep => (!stFilter || rep.status === stFilter)
@@ -757,13 +757,13 @@ export default function ScrapReport() {
     && (!ql || [rep.doc_no, rep.line_name].some(v => String(v || '').toLowerCase().includes(ql))));
 
   return (
-    <Page className="scrap-page">
-      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบรายงานของเสีย"
+    <Page>
+      <ReadOnlyNote show={!canRecord} role={role} what={tr("สร้าง/แก้ใบรายงานของเสีย")}
         permKey="scrap:record" hint={tr('ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ')} />
       <PageHeader title={tr('ของเสีย — ใบรายงาน & ถังเหลือง/แดง')} icon="♻️"
         sub={tab === 'bins'
-          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — เอกสารตัวจริงอยู่ที่นี่ · QA เห็นเฉพาะคิวรอพิจารณาใน /qa'
-          : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
+          ? tr("ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — เอกสารตัวจริงอยู่ที่นี่ · QA เห็นเฉพาะคิวรอพิจารณาใน /qa")
+          : `${scrapFormNo} — ${tr("ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม")}`}
         tabs={TABS} tab={tab} onTab={setTab} />
 
       {/* 🗑️ ถังเหลือง/แดง — **บ้านของเอกสาร อยู่ที่หน้านี้ (ฝ่ายผลิต)** · คำสั่ง user 06/11
@@ -779,7 +779,7 @@ export default function ScrapReport() {
         <Segmented label={tr('สถานะ')} value={stFilter} onChange={setStFilter}
           options={[{ value: '', label: ALL.status }, ...Object.entries(STATUS_META).map(([v, m]) => ({ value: v, label: tr(m.label) }))]} />
         <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
-        <SearchInput value={q} onChange={setQ} fields="เลขที่ / ไลน์" />
+        <SearchInput value={q} onChange={setQ} fields={tr("เลขที่ / ไลน์")} />
         <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={openNew}>{tr('+ เปิดใบใหม่')}</button>}
       </TimeRangeBar>
@@ -795,10 +795,10 @@ export default function ScrapReport() {
       {scopeRes.unsure && (
         <div style={{ ...cardSt, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--amber)',
           border: '1px solid var(--amber-line)', background: 'var(--amber-dim)' }}>
-          ⚠️ ยังตัดขอบเขตไลน์ไม่ชัด ({scopeRes.reason === 'registry_unloaded' ? 'โหลดทะเบียนไลน์ไม่สำเร็จ'
-            : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
-            : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) —
-          รายการด้านล่างอาจกว้าง/แคบกว่าขอบเขตจริงของคุณ
+          ⚠️ {tr("ยังตัดขอบเขตไลน์ไม่ชัด")} ({scopeRes.reason === 'registry_unloaded' ? tr("โหลดทะเบียนไลน์ไม่สำเร็จ")
+            : scopeRes.reason === 'own_line_unknown' ? tr("ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน")
+            : tr("ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน")}) —
+          {tr("รายการด้านล่างอาจกว้าง/แคบกว่าขอบเขตจริงของคุณ")}
         </div>
       )}
 
@@ -831,10 +831,10 @@ export default function ScrapReport() {
           )}
           {reports.length === 0 && (
             <div style={{ ...cardSt, fontSize: 13 }}>
-              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — {tr("ไม่ใช่ \"ไม่มีใบ\" ให้ลองใหม่อีกครั้ง")}</span>
                 : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
-                    ไม่มีใบในช่วงนี้ — แต่<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    {tr("ไม่มีใบในช่วงนี้ — แต่")}<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => listRange.setView({ from: outside.latest, to: getWorkDate() })}
                       style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
@@ -882,10 +882,10 @@ export default function ScrapReport() {
             {reports.length === 0 && (
               <tr><td style={tdSt} colSpan={7}>
                 {listErr ? (
-                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠️ โหลดรายการไม่สำเร็จ:')} {listErr} — {tr("ไม่ใช่ \"ไม่มีใบ\" ให้ลองใหม่อีกครั้ง")}</span>
                 ) : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
-                    ไม่มีใบในช่วงนี้ — แต่<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
+                    {tr("ไม่มีใบในช่วงนี้ — แต่")}<b>{tr('มีใบอยู่นอกช่วง')}</b> {tr('ล่าสุด')} <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => listRange.setView({ from: outside.latest, to: getWorkDate() })}
                       style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
@@ -928,12 +928,12 @@ export default function ScrapReport() {
             return (<>
               <div style={{ marginBottom: 12 }}><StepFlow steps={flow.steps} waiting={flow.waiting} unknown={!flow.known} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginBottom: 14, alignContent: 'start' }}>
-                <KV k="วันที่" v={fmtD(f.report_date)} />
-                <KV k="ไลน์" v={f.line_name} />
-                <KV k="ส่วน / แผนก" v={[f.section, f.dept].filter(Boolean).join(' / ')} />
+                <KV k={tr("วันที่")} v={fmtD(f.report_date)} />
+                <KV k={tr("ไลน์")} v={f.line_name} />
+                <KV k={tr("ส่วน / แผนก")} v={[f.section, f.dept].filter(Boolean).join(' / ')} />
                 <KV k="Storage Location" v={f.storage_location} />
-                <KV k="ประเภทชิ้นงาน" v={(f.product_categories || []).map(c => catLbl[c] || c).join(', ')} />
-                <KV k="ผู้เปิดใบ" v={f.created_by} />
+                <KV k={tr("ประเภทชิ้นงาน")} v={(f.product_categories || []).map(c => catLbl[c] || c).join(', ')} />
+                <KV k={tr("ผู้เปิดใบ")} v={f.created_by} />
                 <div><div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('สถานะ')}</div>
                   <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{tr(sm?.label) || f.status || '—'}</span></div>
               </div>
@@ -950,7 +950,7 @@ export default function ScrapReport() {
               <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
                   <thead><tr>
-                    {['#', 'รูป', 'ชิ้นงาน', 'Code', 'จำนวน', 'ยืนยัน', 'สาเหตุ (4M)', 'ช่วง', 'รหัสงานเสีย'].map(h => <th key={h} style={thSt}>{tr(h)}</th>)}
+                    {['#', tr("รูป"), tr("ชิ้นงาน"), 'Code', tr("จำนวน"), tr("ยืนยัน"), tr("สาเหตุ (4M)"), tr("ช่วง"), tr("รหัสงานเสีย")].map(h => <th key={h} style={thSt}>{tr(h)}</th>)}
                   </tr></thead>
                   <tbody>
                     {its.map((it, i) => (
@@ -982,7 +982,7 @@ export default function ScrapReport() {
       )}
 
       {editor && (
-        <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
+        <Modal title={editor.report.id ? `✏️ ${tr("แก้ใบ")} ${editor.report.doc_no || ''}` : tr("➕ เปิดใบรายงานของเสียใหม่")} onClose={closeEditor} width={1180}>
           {/* 🪜 ถึงขั้นไหน — กฎ scrapReportFlow() (utils/stepFlow.js) · UI §6.30 */}
           {editor.report.id && (() => { const f = scrapReportFlow(editor.report); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           {/* หัวใบ */}
@@ -1025,7 +1025,7 @@ export default function ScrapReport() {
                   <label key={v} style={{ fontSize: 12.5, display: 'flex', gap: 4, alignItems: 'center', cursor: 'pointer' }}>
                     <input type="checkbox" style={{ width: 'auto' }} checked={(editor.report.product_categories || []).includes(v)}
                       onChange={e => setRep({ product_categories: e.target.checked ? [...(editor.report.product_categories || []), v] : (editor.report.product_categories || []).filter(x => x !== v) })} />
-                    {l}
+                    {tr(l)}
                   </label>
                 ))}
               </div>
@@ -1063,13 +1063,12 @@ export default function ScrapReport() {
               border: `1px solid ${opScan.blocked.length ? 'var(--red-line)' : 'var(--amber-line)'}`,
               color: opScan.blocked.length ? 'var(--red)' : 'var(--amber)',
             }}>
-              <b>{opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
-              จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
+              <b>{opScan.opRowsCount} {tr("รายการเป็น \"ขั้นตอน (OP)\" ไม่ใช่เลข")} SAP</b> — {tr("ชิ้นงานยังไม่สมบูรณ์ จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน")}
               {opScan.ready.length > 0 && <> {tr('· กด')} <b>{tr('ระเบิดขั้นตอน')}</b> {tr('เพื่อแปลงให้อัตโนมัติ')}</>}
               {opScan.blocked.length > 0 && (
                 <div style={{ marginTop: 4 }}>
-                  ⛔ ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
-                  {' '}{tr('— ไปตั้งที่')} <a href="/products?tab=bom" style={{ color: 'inherit', fontWeight: 800 }}>{tr('/products → แท็บ BOM')}</a> (เลือกแถวที่ติดป้าย 🔩 ขั้นตอน) แล้วกลับมากดระเบิด
+                  ⛔ {tr("ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร")}: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
+                  {' '}{tr('— ไปตั้งที่')} <a href="/products?tab=bom" style={{ color: 'inherit', fontWeight: 800 }}>{tr('/products → แท็บ BOM')}</a> ({tr("เลือกแถวที่ติดป้าย 🔩 ขั้นตอน) แล้วกลับมากดระเบิด")}
                 </div>
               )}
             </div>
@@ -1093,7 +1092,7 @@ export default function ScrapReport() {
                       {it.src_request_item_id && <span title={tr('ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)')} style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>📦</span>}
                       {it.src_bin_id && <span title={tr('ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5')} style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
                       {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title={tr('ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน')} style={{ marginLeft: 3, fontSize: 11, color: 'var(--red)' }}>🔩</span>}
-                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: 'var(--amber)' }}>🧩</span>}</td>
+                      {it.src_op_mat && <span title={`${tr("ระเบิดมาจากขั้น")} ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: 'var(--amber)' }}>🧩</span>}</td>
                     <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? 'var(--amber)' : 'var(--blue)' }}>{it.source === 'sub' ? tr('ย่อย') : tr('หลัก')}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
@@ -1107,7 +1106,7 @@ export default function ScrapReport() {
                         <td style={tdSt} data-l="MAT SAP" className="sr-c sr-full">
                           <div style={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
                             <ProductSelect value={it.mat_no} extraOptions={sapExtra} history={itemMatHist} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined}
-                              allowFree freeHint="พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง" placeholder="MAT SAP"
+                              allowFree freeHint={tr("พาร์ทที่ไม่อยู่ในทะเบียน / master กรอกเลขเครื่อง")} placeholder="MAT SAP"
                               style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 7px', fontSize: 12 }}
                               onChange={r => pickSapForItem(it._key, r)} />
                             <button style={{ ...ghostBtn, padding: '4px 6px' }} title={tr('เลือกจาก SAP/BOM')} onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
@@ -1157,7 +1156,7 @@ export default function ScrapReport() {
                       {(it.defect_img || it._imgFile) ? (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                           <img src={it._imgFile ? URL.createObjectURL(it._imgFile) : it.defect_img}
-                            alt="รูปของเสีย" loading="lazy" title={it._imgFile ? tr('ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ') : tr('กดเพื่อเปลี่ยน/ดูรูป')}
+                            alt={tr("รูปของเสีย")} loading="lazy" title={it._imgFile ? tr('ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ') : tr('กดเพื่อเปลี่ยน/ดูรูป')}
                             onClick={() => setPhotoItem(it._key)}
                             style={{ height: 30, width: 40, objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
                               border: `1px solid ${it._imgFile ? 'var(--amber)' : 'var(--border)'}` }} />
@@ -1170,7 +1169,7 @@ export default function ScrapReport() {
                     <td style={tdSt} data-l="" className="sr-c sr-del"><DeleteButton onClick={() => delItem(it._key)} title={tr('ลบ')} /></td>
                   </tr>
                 ))}
-                {editor.items.length === 0 && <tr><td style={tdSt} colSpan={15}><span style={{ color: 'var(--muted)' }}>ยังไม่มีรายการ — กด "ดึงจาก Daily Report" หรือ "เพิ่มจาก SAP/BOM"</span></td></tr>}
+                {editor.items.length === 0 && <tr><td style={tdSt} colSpan={15}><span style={{ color: 'var(--muted)' }}>{tr("ยังไม่มีรายการ — กด \"ดึงจาก Daily Report\" หรือ \"เพิ่มจาก")} SAP/BOM"</span></td></tr>}
               </tbody>
               {editor.items.length > 0 && (
                 <tfoot><tr>
@@ -1210,16 +1209,16 @@ export default function ScrapReport() {
       {sapPicker && (
         <Modal title={tr('เลือกจาก SAP / BOM')} onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
           <input autoFocus style={inputSt} value={sapSearch} onChange={e => setSapSearch(e.target.value)}
-            placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
+            placeholder={sapOptions === null ? tr("กำลังโหลด…") : `${tr("พิมพ์ค้นหา MAT SAP / Part No / ชื่อ")} (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
-              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card-surf)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-pill)', color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? tr('ย่อย') : tr('หลัก')}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.part_no || o.part_name || o.mat_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_no ? o.part_name : ''}{o.mat_no ? ` · MAT ${o.mat_no}` : ''}</span></div>
                   {o.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.line_name}</div>}
-                  {o.badMaster && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
+                  {o.badMaster && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>⚠ Master {tr("กรอกเลขพาร์ทเป็นหมายเลขเครื่อง")} "{o.badMaster}" — {tr("ต้องกรอก PART NO. เอง")}</div>}
                 </div>
               </button>
             ))}
@@ -1232,8 +1231,8 @@ export default function ScrapReport() {
       {reqPicker && (
         <Modal title={tr('เลือกใบเบิกทดสอบ (FM-STO-003)')} onClose={() => setReqPicker(null)} width={640}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-            แสดงเฉพาะใบที่<b>{tr('อนุมัติแล้ว')}</b>{tr('ขึ้นไป · ใบของไลน์ “')}{editor.report.line_name || '—'}{tr('” ขึ้นก่อน')}<br />
-            จำนวนที่ดึงใช้ <b>{tr('จำนวนที่จ่ายจริง')}</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
+            {tr("แสดงเฉพาะใบที่")}<b>{tr('อนุมัติแล้ว')}</b>{tr('ขึ้นไป · ใบของไลน์ “')}{editor.report.line_name || '—'}{tr('” ขึ้นก่อน')}<br />
+            {tr("จำนวนที่ดึงใช้")} <b>{tr('จำนวนที่จ่ายจริง')}</b> {tr("ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ")}
           </div>
           <div style={{ maxHeight: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {reqPicker.map(r => {
@@ -1242,10 +1241,10 @@ export default function ScrapReport() {
               return (
                 <button key={r.id} onClick={() => applyRequest(r)} style={{
                   textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                  background: 'var(--card)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
+                  background: 'var(--card-surf)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>
-                    {r.doc_no || '(ไม่มีเลขที่)'}
+                    {r.doc_no || tr("(ไม่มีเลขที่)")}
                     <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{tr(st.label)}</span>
                     {mine && <span style={{ color: 'var(--blue)', marginLeft: 6, fontSize: 11 }}>{tr('· ไลน์นี้')}</span>}
                   </div>
@@ -1277,12 +1276,11 @@ export default function ScrapReport() {
         if (!it) return null;
         const fromBin = !!it.src_bin_id;
         return (
-          <Modal title={`รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
+          <Modal title={`${tr("รูปของเสีย")} — ${it.part_name || it.mat_no || tr('รายการที่เลือก')}`} onClose={() => setPhotoItem(null)} width={460}>
             <div style={{ padding: 16 }}>
               {fromBin && (
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
-                  🔴 รายการนี้ดึงมาจากแท็กแดง — รูปที่เห็นคือรูปตอนลงถัง เปลี่ยนที่นี่จะมีผลเฉพาะใบนี้
-                  (ไม่ย้อนกลับไปแก้ใบถัง)
+                  🔴 {tr("รายการนี้ดึงมาจากแท็กแดง — รูปที่เห็นคือรูปตอนลงถัง เปลี่ยนที่นี่จะมีผลเฉพาะใบนี้ (ไม่ย้อนกลับไปแก้ใบถัง")})
                 </div>
               )}
               <QualityPhotoField
@@ -1351,7 +1349,7 @@ function DefectPicker({ types, value, onClose, onSave }) {
 function ItemCount({ reportId }) {
   const [n, setN] = useState(null);
   useEffect(() => { supabaseDR.from('scrap_report_items').select('id', { count: 'exact', head: true }).eq('report_id', reportId).then(({ count }) => setN(count || 0)); }, [reportId]);
-  return <span>{n == null ? '…' : `${n} รายการ`}</span>;
+  return <span>{n == null ? '…' : `${n} ${tr("รายการ")}`}</span>;
 }
 function ScrapSum({ reportId }) {
   const [s, setS] = useState(null);

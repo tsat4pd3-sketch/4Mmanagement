@@ -31,9 +31,9 @@ export default function CustomerSelect({
       if (c.is_active === false && customerKey(value) !== k) continue;
       out.push({
         id: k, label: c.name, aliases: (c.aliases || []).map(customerKey),
-        badge: c.is_active === false ? '⏸' : (c.n ? `${c.n} สินค้า` : (c.history ? '⚠ นอกทะเบียน' : null)),
+        badge: c.is_active === false ? '⏸' : (c.n ? `${c.n} ${tr("สินค้า")}` : (c.history ? '⚠ นอกทะเบียน' : null)),
         badgeColor: c.history ? 'var(--accent2)' : undefined,
-        sub: c.note || ((c.aliases || []).length ? `สะกดอื่น: ${c.aliases.join(', ')}` : ''),
+        sub: c.note || ((c.aliases || []).length ? `${tr("สะกดอื่น")}: ${c.aliases.join(', ')}` : ''),
         keywords: `${k} ${(c.aliases || []).join(' ')}`, group: c.history ? '📜 เคยบันทึกไว้ (ไม่มีในทะเบียน)' : undefined,
       });
     }

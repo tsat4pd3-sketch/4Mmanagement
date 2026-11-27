@@ -21,7 +21,8 @@ import { can } from '../utils/permissions';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { areaLinesOf } from '../utils/storageLoc';
-import { opInputsOf, parentKidsAfterOps, isFirstOpInChain } from '../utils/opInputs';
+import { opInputsOf, parentKidsAfterOps, isFirstOpInChain, resolveOpParent } from '../utils/opInputs';
+import { opFamilyKey } from '../utils/partGroup';
 import { askConfirm } from '../utils/askConfirm';
 
 const key = (s) => String(s ?? '').trim();
@@ -121,9 +122,16 @@ export async function loadOpenOrderDemand(lineNames, products = null) {
   });
   const fgs = [...qtyByFg.keys()];
   const want = new Set(fgs);
+  /* 🔩 20/11 — FG ต่างลูกค้าของพาร์ทเดียวกัน (ไม่มี OP ของตัวเอง) ใช้โซ่ OP ของแม่ในกลุ่ม · กฎเดียวกับ SQL `fn_op_parent_resolve` */
+  const familyOf = (m) => opFamilyKey(prodOf.get(key(m))?.p_no);
+  const famCands = (fg) => (opsOf.get(fg) || []).length || !familyOf(fg) ? []
+    : [...opsOf.keys()].filter(p => p !== fg && familyOf(p) === familyOf(fg));
   fgs.forEach(fg => {
     if (isOp(fg)) { const par = key(prodOf.get(fg)?.op_parent_mat); if (par) want.add(par); }
-    else (opsOf.get(fg) || []).forEach(op => want.add(op));
+    else {
+      (opsOf.get(fg) || []).forEach(op => want.add(op));
+      famCands(fg).forEach(p => { want.add(p); (opsOf.get(p) || []).forEach(op => want.add(op)); });
+    }
   });
   const mats = [...want];
   const { kidsOf, error: bomErr } = await bomKidsOf(mats);
@@ -145,8 +153,11 @@ export async function loadOpenOrderDemand(lineNames, products = null) {
     } else {
       const own = kidsOf.get(fg) || [];
       if (!own.length) { noBom.push({ mat_no: fg, qty }); return; }
-      const sibs = (opsOf.get(fg) || []).map(m => prodOf.get(m)).filter(Boolean);
-      const eaten = (opsOf.get(fg) || []).map(op => opInputsOf({ ownKids: kidsOf.get(op) || [], parentKids: own,
+      const isPre = (op, p) => !(kidsOf.get(op) || []).some(x => key(x.mat_no) === p);
+      const par = resolveOpParent(fg, { opsOf, familyOf, isPre });
+      const ops = par === fg ? (opsOf.get(fg) || []) : (opsOf.get(par) || []).filter(op => isPre(op, par));
+      const sibs = ops.map(m => prodOf.get(m)).filter(Boolean);
+      const eaten = ops.map(op => opInputsOf({ ownKids: kidsOf.get(op) || [], parentKids: par === fg ? own : (kidsOf.get(par) || []),
         firstInChain: isFirstOpInChain(prodOf.get(op), sibs) }).kids);
       kids = parentKidsAfterOps(own, eaten);
     }

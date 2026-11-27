@@ -26,7 +26,7 @@ export default function SupplierSelect({
     if (strict && pref.size) list = list.filter(r => pref.has(r.kind));
     const tagged = list.map(r => ({
       id: r.code, key: up(r.name), label: r.name,
-      sub: [SUPPLIER_KINDS[r.kind]?.label, r.contact, r.lead_time_days != null ? `LT ${r.lead_time_days} วัน` : null].filter(Boolean).join(' · '),
+      sub: [tr(SUPPLIER_KINDS[r.kind]?.label), r.contact, r.lead_time_days != null ? `LT ${r.lead_time_days} วัน` : null].filter(Boolean).join(' · '),
       keywords: `${r.kind || ''} ${r.contact || ''} ${r.note || ''}`,
       badge: r.is_active === false ? '⏸' : (SUPPLIER_KINDS[r.kind]?.icon || null),
       kind: r.kind, _pref: pref.size ? pref.has(r.kind) : false,

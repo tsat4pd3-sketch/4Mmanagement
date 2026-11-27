@@ -118,9 +118,9 @@ export default function TimeRangeBar({
                   onClick={() => { const r = periodRange(p.key, today); if (r) applyRange(r.from, r.to, p.key); }}
                   style={{ ...on(curPeriod === p.key), opacity: locked ? 0.45 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}
                   title={locked
-                    ? (multiYearNote || 'ยังไม่เปิด — จอนี้ยังไม่มีตัวสรุปฝั่งเซิร์ฟเวอร์ (RPC rollup) '
-                      + 'การดึงข้อมูลดิบหลายปีลงเบราว์เซอร์ทำให้โควต้าข้อมูลบานปลาย')
-                    : `ดู${p.label} — แท่งละ 1 ${scaleOf(capBucket(p.bucket, finest, coarsest))?.short}`}>
+                    ? (multiYearNote || (tr('ยังไม่เปิด — จอนี้ยังไม่มีตัวสรุปฝั่งเซิร์ฟเวอร์') + ' (RPC rollup) ')
+                      + tr('การดึงข้อมูลดิบหลายปีลงเบราว์เซอร์ทำให้โควต้าข้อมูลบานปลาย'))
+                    : `${tr("ดู")}${p.label} — ${tr("แท่งละ")} 1 ${scaleOf(capBucket(p.bucket, finest, coarsest))?.short}`}>
                   {locked ? `🔒 ${tr(p.label)}` : tr(p.label)}
                 </button>
               );
@@ -183,7 +183,7 @@ export default function TimeRangeBar({
           {/* กฎความซื่อสัตย์: ละเอียดกว่านี้ไม่ได้ ต้องบอกว่าทำไม ห้ามให้คนกดแล้วงงว่าปุ่มเสีย */}
           {capped && finest !== 'hour' && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              · จอนี้ละเอียดสุดได้ราย{finestLabel} (ข้อมูลต้นทางไม่ได้เก็บเวลาที่ละเอียดกว่านี้)
+              · {tr("จอนี้ละเอียดสุดได้ราย")}{finestLabel} ({tr("ข้อมูลต้นทางไม่ได้เก็บเวลาที่ละเอียดกว่านี้")})
             </span>
           )}
         </div>
@@ -191,7 +191,7 @@ export default function TimeRangeBar({
 
       {/* เตือนเท่านั้น — ไม่บล็อก ไม่แก้สเกลให้เอง (ข้อ 2 ด้านบน) */}
       {warn && !isMobile && (
-        <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>⚠️ {warn}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.6 }}>⚠️ {warn}</div>
       )}
       {note && <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>{note}</div>}
   </>);
@@ -200,10 +200,10 @@ export default function TimeRangeBar({
     return (
       <div className="filter-bar trb" style={style}>
         <MobileFilterFold search={split.search} tail={split.tail}
-          summary={`${dm(from)}–${dm(to)}${days != null ? ` (${days.toLocaleString()} วัน)` : ''}`}>
+          summary={`${dm(from)}–${dm(to)}${days != null ? ` (${days.toLocaleString()} ${tr("วัน")})` : ''}`}>
           {rows(split.fold)}
         </MobileFilterFold>
-        {warn && <div style={{ fontSize: 11.5, color: '#f59e0b', lineHeight: 1.6 }}>⚠️ {warn}</div>}
+        {warn && <div style={{ fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.6 }}>⚠️ {warn}</div>}
         {!noClear && <ClearFiltersBtn keep={clearKeep} onClear={onClear} />}
       </div>
     );
@@ -220,5 +220,5 @@ export default function TimeRangeBar({
 export function rangeText(scale, from, to) {
   const n = rangeDays(from, to);
   const s = scaleOf(scale);
-  return `${from} ถึง ${to}${n != null ? ` (${n.toLocaleString()} วัน)` : ''}${s ? ` · ${s.label}` : ''}`;
+  return `${from} ${tr("ถึง")} ${to}${n != null ? ` (${n.toLocaleString()} ${tr("วัน")})` : ''}${s ? ` · ${s.label}` : ''}`;
 }

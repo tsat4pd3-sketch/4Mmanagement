@@ -5,12 +5,13 @@ import { supabaseDR } from '../supabaseClient';
 
 const PAGE = 1000;
 
-/** @param {string} from ISO · @param {boolean} inclusive true = รวมนาที from (โหลดทั้งวัน) · false = เฉพาะที่ใหม่กว่า (รอบ poll) */
-export async function fetchReadingsSince(from, inclusive) {
+/** @param {string} from ISO · @param {boolean} inclusive true = รวมนาที from (โหลดทั้งวัน) · false = เฉพาะที่ใหม่กว่า (รอบ poll)
+ *  @param {{ kwh?: boolean }} [opt] kwh = ดึงเลขมิเตอร์ด้วย (Demand 15 นาทีบนบอร์ดค่าไฟสด · 25/11) — ผังโรงงานไม่ใช้ ไม่ต้องดึง (egress) */
+export async function fetchReadingsSince(from, inclusive, opt = {}) {
   const out = [];
   for (let off = 0; off < 20 * PAGE; off += PAGE) {
     const { data, error } = await supabaseDR.from('energy_readings')
-      .select('scope_kind, scope_name, bucket_at, kw')
+      .select(opt.kwh ? 'scope_kind, scope_name, bucket_at, kw, kwh_total' : 'scope_kind, scope_name, bucket_at, kw')
       .filter('bucket_at', inclusive ? 'gte' : 'gt', from).order('bucket_at').range(off, off + PAGE - 1);
     if (error) throw error;
     out.push(...(data || []));

@@ -17,11 +17,11 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 const COLS = 'id, line_name, mat_no, part_name, request_qty, picked_qty, delivered_at, delivered_by, status, sap_pending_qty, sap_pending_note, sap_pending_at, sap_pending_by_name, sap_cleared_at, sap_cleared_by_name';
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
-const dt = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
+const dt = (iso) => (iso ? new Date(iso).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { textAlign: 'left', fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', borderBottom: '1px solid var(--border)' };
 const td = { fontSize: 12.5, color: 'var(--text)', padding: '7px 8px', borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
@@ -55,14 +55,14 @@ export default function SapPendingReport() {
 
   const clear = async (r) => {
     if (!canClear) { toast.error('ไม่มีสิทธิ์ (heijunka:operate)'); return; }
-    if (!await askConfirm(`ยืนยันว่าตัดใน SAP แล้ว?\n\n${r.part_name || ''} MAT ${r.mat_no} × ${fmt(r.sap_pending_qty)} → ${r.line_name}`)) return;
+    if (!await askConfirm(`${tr("ยืนยันว่าตัดใน SAP แล้ว")}?\n\n${r.part_name || ''} MAT ${r.mat_no} × ${fmt(r.sap_pending_qty)} → ${r.line_name}`)) return;
     setBusy(r.id);
     const ok = checkWriteRows(await supabase.from('wip_replenish_requests')
       .update({ sap_cleared_at: new Date().toISOString(), sap_cleared_by_name: fullName || null })
       .eq('id', r.id).is('sap_cleared_at', null).select('id'), 'บันทึกตัด SAP',
       { zeroMsg: 'ใบนี้ถูกเคลียร์ไปแล้ว หรือไม่มีสิทธิ์ — กดรีเฟรช' });
     setBusy(null);
-    if (ok) toast.success(`✔ เคลียร์ยอดค้าง SAP ของ ${r.mat_no} แล้ว`);
+    if (ok) toast.success(`✔ ${tr("เคลียร์ยอดค้าง SAP ของ")} ${r.mat_no} ${tr("แล้ว")}`);
     load();
   };
 
@@ -75,18 +75,17 @@ export default function SapPendingReport() {
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{fmt(sum.parts.length)} {tr('พาร์ท')}</div>
         </div>
         <div style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 240 }}>
-          ใบที่สโตร์ส่งถึงไลน์แล้ว แต่ <b>{tr('ตัดจ่ายใน SAP ไม่ได้')}</b> (ติ๊ก 🧾 ในป๊อปอัป "ถึงไลน์แล้ว") — ตัดใน SAP เสร็จแล้วกด "✔ ตัดใน SAP แล้ว" ·
-          ยอดสต็อกในระบบนี้ขยับไปตั้งแต่ตอนส่งแล้ว ไม่เปลี่ยนอีก
+          {tr("ใบที่สโตร์ส่งถึงไลน์แล้ว แต่")} <b>{tr('ตัดจ่ายใน SAP ไม่ได้')}</b> ({tr("ติ๊ก 🧾 ในป๊อปอัป \"ถึงไลน์แล้ว\") — ตัดใน SAP เสร็จแล้วกด \"✔ ตัดใน SAP แล้ว\" · ยอดสต็อกในระบบนี้ขยับไปตั้งแต่ตอนส่งแล้ว ไม่เปลี่ยนอีก")}
         </div>
-        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>{tr('↻ รีเฟรช')}</button>
+        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>{tr('↻ รีเฟรช')}</button>
       </div>
 
       {err && <div style={{ ...card, color: 'var(--red)', fontSize: 13 }}>{tr('โหลดไม่สำเร็จ —')} {err}</div>}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <Segmented value={view} onChange={setView} label={tr('สถานะ')}
-          options={[{ value: 'open', label: `ยังค้าง (${sum.open.length})` }, { value: 'cleared', label: `เคลียร์แล้ว (${rows.length - sum.open.length})` }]} />
-        <SearchInput value={q} onChange={setQ} fields="MAT / ชื่อพาร์ท / ไลน์ / สาเหตุ" grow={false} />
+          options={[{ value: 'open', label: `${tr("ยังค้าง")} (${sum.open.length})` }, { value: 'cleared', label: `${tr("เคลียร์แล้ว")} (${rows.length - sum.open.length})` }]} />
+        <SearchInput value={q} onChange={setQ} fields={tr("MAT / ชื่อพาร์ท / ไลน์ / สาเหตุ")} grow={false} />
       </div>
 
       {view === 'open' && parts.length > 0 && (
@@ -112,7 +111,7 @@ export default function SapPendingReport() {
       <div style={card}>
         <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>{view === 'open' ? tr('รายใบที่ยังค้าง') : tr('รายใบที่เคลียร์แล้ว')}</div>
         {loading ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
-          : !list.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{view === 'open' ? 'ไม่มียอดค้างตัด SAP' : 'ยังไม่มีใบที่เคลียร์'}{hidden > 0 ? ` · ซ่อนอยู่ ${hidden} ใบ (ไม่ตรงคำค้น)` : ''}</div>
+          : !list.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{view === 'open' ? tr("ไม่มียอดค้างตัด SAP") : tr("ยังไม่มีใบที่เคลียร์")}{hidden > 0 ? ` · ${tr("ซ่อนอยู่")} ${hidden} ${tr("ใบ (ไม่ตรงคำค้น")})` : ''}</div>
           : (
             <>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>

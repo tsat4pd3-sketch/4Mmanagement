@@ -348,3 +348,12 @@ tail -5 build.log
 ⇒ มีด่าน `harness-lineid-matches-mock` คุมไว้ · 📄 `audit/README.md` §`CTX.lineId`
 
 **ต้นทุน:** sweep ยาวขึ้น ~50% (รอบ 2-3 โหลดหน้าแรกอย่างเดียว ไม่กดปุ่ม) — user เคาะแล้วว่าคุ้ม
+
+## 🔑 ด่าน "คีย์สิทธิ์ที่โค้ดเรียกต้องมี permission_catalog" — `permissionCatalogCoverage.test.mjs` (2026-11-18)
+
+- เคสจริง: audit หน้า /permissions (คำสั่ง user "เหมือนไม่ได้อัพเดทตาม project") พบ 5 คีย์ที่ใช้งานจริงแต่ไม่โผล่ให้ติ๊ก
+  (`monitoring:manage` · `production_plan:write` · `mtn_repair:spare_master` · `ppe:manage` · `org:manage`) — หลุดซ้ำจากรอบ 06/08 (8 คีย์)
+  เพราะ migration seed `role_permissions` แล้วเชื่อว่า "จอจะโผล่เอง" ทั้งที่จออ่านจาก `permission_catalog`
+- ตรวจ 2 ข้อโดยอ่านซอร์สเป็นข้อความ (ไม่ต่อฐาน): ① `can()`/`canSeeded()`/`hasPermission()` literal ใน `src/` ⊆ catalog ที่ไล่จาก migration
+  (insert เพิ่ม · delete ถอด · ตัดคอมเมนต์ก่อน) ② คีย์ `'a:b'` ใน `insert into role_permissions` ⊆ catalog เว้นลิสต์ `RETIRED_SEEDED` (ต้องไม่มีโค้ดเรียก)
+- ตก = เขียน migration เติม catalog (ห้ามแก้ด้วยการขยายลิสต์ยกเว้น) · call แบบ dynamic (`approve_${role}` · `STEP_PERM[step]`) ด่านนี้ไม่เห็น — ตรวจมือตาม role-system.md

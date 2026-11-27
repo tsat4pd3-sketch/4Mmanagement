@@ -149,7 +149,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
           failed = true;
           toast.error(error.code === '42703'
             ? 'ยังเติมกะไม่ได้ — ยังไม่ได้ apply migration ของคอลัมน์ที่ใช้ (แจ้ง admin)'
-            : 'เติมกะไม่สำเร็จ: ' + error.message);
+            : (tr('เติมกะไม่สำเร็จ') + ': ') + error.message);
           return;
         }
       }
@@ -158,7 +158,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
     if (!failed && deptRowsToSave.length) await chunk(deptRowsToSave, 'work_date,dept_name');
     setSaving(false);
     if (!failed) {
-      toast.success(`เติมตารางกะแล้ว ${ready.length} รายการ · ${weeks} สัปดาห์`);
+      toast.success(`${tr("เติมตารางกะแล้ว")} ${ready.length} ${tr("รายการ")} · ${weeks} ${tr("สัปดาห์")}`);
       onDone?.();
     }
   };
@@ -180,10 +180,10 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         background: 'var(--bg3)', border: '2px solid rgba(77,159,255,0.5)', borderRadius: 'var(--r-lg)',
         padding: 22, width: 'min(96vw,860px)', maxHeight: '92vh', overflowY: 'auto',
       }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>{tr('เติมตารางกะล่วงหน้า')}</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--blue)' }}>{tr('เติมตารางกะล่วงหน้า')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.7 }}>
-          ระบบดูรอบสลับที่ตั้งไว้จริงย้อนหลัง แล้วต่อไปข้างหน้าให้ — <b style={{ color: 'var(--text)' }}>{tr('เริ่มจากสัปดาห์ที่เปิดอยู่ (')}{weekStart})</b>
-          {' '}· <b style={{ color: 'var(--text)' }}>{tr('ไม่ทับสัปดาห์ที่ตั้งไว้แล้ว')}</b> · เป็นค่าตั้งต้นให้ระบบมีอะไรใช้ ถ้าจริงๆ สลับต่างไป แก้ทับได้ตลอด
+          {tr("ระบบดูรอบสลับที่ตั้งไว้จริงย้อนหลัง แล้วต่อไปข้างหน้าให้")} — <b style={{ color: 'var(--text)' }}>{tr('เริ่มจากสัปดาห์ที่เปิดอยู่ (')}{weekStart})</b>
+          {' '}· <b style={{ color: 'var(--text)' }}>{tr('ไม่ทับสัปดาห์ที่ตั้งไว้แล้ว')}</b> · {tr("เป็นค่าตั้งต้นให้ระบบมีอะไรใช้ ถ้าจริงๆ สลับต่างไป แก้ทับได้ตลอด")}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
@@ -201,16 +201,16 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         {loading && <div style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>{tr('กำลังอ่านประวัติตารางกะ...')}</div>}
 
         {err && (
-          <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12.5, color: '#ef4444' }}>
-            ⚠️ อ่านประวัติตารางกะไม่ได้ — {err} · ยังเติมกะไม่ได้ ลองใหม่อีกครั้ง
+          <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12.5, color: 'var(--red)' }}>
+            ⚠️ {tr("อ่านประวัติตารางกะไม่ได้")} — {err} · {tr("ยังเติมกะไม่ได้ ลองใหม่อีกครั้ง")}
           </div>
         )}
 
         {!loading && !err && (
           <>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-              <Stat label={tr('ต่อรอบให้ได้')} value={`${ready.length} รายการ`} color="#22c55e" />
-              <Stat label={tr('ตรวจรอบไม่ได้')} value={`${blocked.filter(b => !b.done).length} รายการ`} color={blocked.filter(b => !b.done).length ? '#f59e0b' : 'var(--muted)'} />
+              <Stat label={tr('ต่อรอบให้ได้')} value={`${ready.length} ${tr("รายการ")}`} color="#22c55e" />
+              <Stat label={tr('ตรวจรอบไม่ได้')} value={`${blocked.filter(b => !b.done).length} ${tr("รายการ")}`} color={blocked.filter(b => !b.done).length ? '#f59e0b' : 'var(--muted)'} />
               <Stat label={tr('สัปดาห์ที่ข้าม (ตั้งไว้แล้ว)')} value={`${skipped}`} color="var(--muted)" />
               <Stat label={tr('แถวที่จะเขียน')} value={`${rowCount}`} color="#4d9fff" />
             </div>
@@ -232,8 +232,8 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
                           {r.kind === 'dept' ? '🏢 ' : ''}{tr(r.label)}
                         </td>
                         <td style={{ ...td, color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap' }}>
-                          สลับทุก {r.rot.periodWeeks} {tr('สัปดาห์ · จาก')} {r.rot.weeksSeen} สัปดาห์ที่ตั้งไว้
-                          {r.inheritFrom && <span style={{ color: '#4d9fff' }}> {tr('· ↳ ตามไลน์แม่')} {r.inheritFrom}</span>}
+                          {tr("สลับทุก")} {r.rot.periodWeeks} {tr('สัปดาห์ · จาก')} {r.rot.weeksSeen} {tr("สัปดาห์ที่ตั้งไว้")}
+                          {r.inheritFrom && <span style={{ color: 'var(--blue)' }}> {tr('· ↳ ตามไลน์แม่')} {r.inheritFrom}</span>}
                         </td>
                         {r.weeks.slice(0, 8).map(w => (
                           <td key={w.monday} style={{ ...td, textAlign: 'center' }}>{chip(w.team)}</td>
@@ -244,7 +244,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
                 </table>
                 {ready.some(r => r.weeks.length > 8) && (
                   <div style={{ padding: '6px 10px', fontSize: 11, color: 'var(--muted)' }}>
-                    แสดง 8 สัปดาห์แรก — ที่เหลือต่อรอบเดิมไปจนครบ {weeks} สัปดาห์
+                    {tr("แสดง 8 สัปดาห์แรก — ที่เหลือต่อรอบเดิมไปจนครบ")} {weeks} {tr("สัปดาห์")}
                   </div>
                 )}
               </div>
@@ -253,8 +253,8 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
             {/* ตรวจ pattern ไม่ได้ = ต้องเห็น ห้ามข้ามเงียบ */}
             {blocked.filter(b => !b.done).length > 0 && (
               <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>
-                  ⚠️ ต่อรอบให้ไม่ได้ {blocked.filter(b => !b.done).length} รายการ — ต้องตั้งเองในตาราง
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)', marginBottom: 6 }}>
+                  ⚠️ {tr("ต่อรอบให้ไม่ได้")} {blocked.filter(b => !b.done).length} {tr("รายการ — ต้องตั้งเองในตาราง")}
                 </div>
                 <div style={{ display: 'grid', gap: 3 }}>
                   {blocked.filter(b => !b.done).map(b => (
@@ -267,8 +267,8 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
             )}
 
             {ready.length === 0 && blocked.every(b => b.done) && blocked.length > 0 && (
-              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 12.5, color: '#22c55e' }}>
-                ✅ ตั้งกะครบทุกสัปดาห์ในช่วงนี้แล้ว ไม่มีอะไรต้องเติม
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 12.5, color: 'var(--green)' }}>
+                ✅ {tr("ตั้งกะครบทุกสัปดาห์ในช่วงนี้แล้ว ไม่มีอะไรต้องเติม")}
               </div>
             )}
           </>
@@ -284,7 +284,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
               fontSize: 13, fontWeight: 700, cursor: (saving || !ready.length) ? 'not-allowed' : 'pointer',
               opacity: (saving || loading || !ready.length) ? 0.5 : 1,
             }}>
-            {saving ? 'กำลังเติม...' : `✓ เติม ${rowCount} แถว`}
+            {saving ? tr("กำลังเติม...") : `✓ ${tr("เติม")} ${rowCount} ${tr("แถว")}`}
           </button>
         </div>
       </div>
@@ -294,7 +294,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
 
 function Stat({ label, value, color }) {
   return (
-    <div style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+    <div style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)', border: '1px solid var(--border)' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 800, color }}>{value}</div>
     </div>

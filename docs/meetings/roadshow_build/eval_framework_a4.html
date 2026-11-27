@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<title>ESM Trial Evaluation — A4</title>
+<!-- สรุป 1 หน้า A4 แนวนอน: วิธีประเมินผลหลังทดลองใช้ ESM ทั้งโรงงาน 1–2 เดือน (2026-11-23)
+     render: python3/playwright → ../TSAT_ESM_Trial_Evaluation_A4_2026-11-23.{png,pdf} · สี TSG R01 -->
+<style>
+  @page { size: A4 landscape; margin: 0; }
+  :root { --g:#068734; --gd:#0D3D14; --o:#D95323; --gr:#555; --bd:#D9D9D9; --tint:#F2F2F2; --amb:#C88A00; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; background:#fff; }
+  body { width:297mm; height:210mm; padding:8mm 9mm 7mm; font-family:'Tahoma','Loma',sans-serif; color:#222; font-size:9.6pt; line-height:1.35;
+         display:flex; flex-direction:column; gap:3.2mm; overflow:hidden; }
+  .top { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:2.5px solid var(--g); padding-bottom:2mm; }
+  .top h1 { margin:0; font-size:19pt; color:var(--g); line-height:1.15; }
+  .top .sub { color:var(--o); font-weight:700; font-size:10.5pt; margin-top:1mm; }
+  .brand { text-align:right; color:var(--g); font-weight:700; font-size:10pt; }
+  .brand small { display:block; color:var(--gr); font-weight:400; font-size:8.5pt; }
+
+  .ev { display:grid; grid-template-columns: auto 1fr 1fr 1fr; gap:2.5mm; align-items:stretch; }
+  .ev .lead { background:var(--gd); color:#fff; font-weight:700; padding:2mm 3mm; display:flex; align-items:center; font-size:10pt; border-radius:2mm; }
+  .chip { border:1.5px solid; border-radius:2mm; padding:1.6mm 2.6mm; display:flex; gap:2mm; align-items:center; }
+  .chip b { font-size:10.5pt; white-space:nowrap; }
+  .chip span { font-size:8.8pt; color:#333; }
+  .c1 { border-color:var(--g); background:#EAF6EE; } .c1 b { color:var(--g); }
+  .c2 { border-color:var(--amb); background:#FFF7E3; } .c2 b { color:#8a5f00; }
+  .c3 { border-color:#4f6fb0; background:#EEF2FA; } .c3 b { color:#2f4f90; }
+
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2.6mm; flex:1; min-height:0; }
+  .card { border:1px solid var(--bd); border-radius:2.5mm; overflow:hidden; display:flex; flex-direction:column; }
+  .card .hd { background:var(--g); color:#fff; padding:1.6mm 3mm; display:flex; align-items:center; gap:2mm; }
+  .card .hd .n { background:#fff; color:var(--g); border-radius:50%; width:6.2mm; height:6.2mm; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:10pt; flex:none; }
+  .card .hd .t { font-weight:700; font-size:12.5pt; }
+  .card .hd .tag { margin-left:auto; display:flex; gap:1mm; }
+  .tg { font-size:7.6pt; font-weight:700; padding:0.4mm 1.6mm; border-radius:1.2mm; background:#fff; }
+  .tg.s1 { color:var(--g); } .tg.s2 { color:#8a5f00; } .tg.s3 { color:#2f4f90; }
+  .card ul { margin:0; padding:3mm 3.5mm 2mm 7mm; flex:1; }
+  .card li { margin:0 0 2.2mm; font-size:11pt; line-height:1.4; }
+  .card .why { background:var(--tint); padding:1.6mm 3mm; font-size:9.6pt; color:var(--gr); border-top:1px solid var(--bd); }
+  .card.key .hd { background:var(--gd); }
+  .card.key { border:1.5px solid var(--o); }
+  .card.key .hd .n { color:var(--gd); }
+
+  .bottom { display:grid; grid-template-columns: 1.35fr 1fr; gap:2.6mm; }
+  .box { border-radius:2.5mm; padding:2mm 3.2mm; }
+  .warn { border:1.5px solid var(--o); background:#FDF3EE; }
+  .warn h3, .plan h3 { margin:0 0 1.2mm; font-size:10.5pt; }
+  .warn h3 { color:var(--o); }
+  .warn ol { margin:0; padding-left:4.5mm; }
+  .warn li { font-size:8.9pt; margin-bottom:0.7mm; }
+  .plan { border:1.5px solid var(--gd); }
+  .plan h3 { color:var(--gd); }
+  .wk { display:flex; gap:2mm; margin-bottom:1.3mm; align-items:flex-start; }
+  .wk .w { background:var(--gd); color:#fff; font-weight:700; font-size:8.8pt; border-radius:1.5mm; padding:0.6mm 2mm; white-space:nowrap; }
+  .wk div { font-size:8.9pt; }
+  .out { margin-top:1.3mm; font-size:8.9pt; background:var(--tint); border-radius:1.5mm; padding:1.2mm 2mm; }
+  .out b { color:var(--g); }
+  .foot { display:flex; justify-content:space-between; color:var(--gr); font-size:7.8pt; }
+  .foot b { color:var(--g); font-size:9pt; }
+</style></head>
+<body>
+  <div class="top">
+    <div>
+      <h1>ประเมินผล ESM หลังทดลองใช้ทั้งโรงงาน 1–2 เดือน</h1>
+      <div class="sub">ได้อะไรจริง · วัดอย่างไร · ตัวเลขไหนเชื่อได้แค่ไหน</div>
+    </div>
+    <div class="brand">THAI SUMMIT GROUP<small>TSAT · Enterprise Shopfloor Management</small></div>
+  </div>
+
+  <div class="ev">
+    <div class="lead">หลักฐาน 3 แบบ — แยกคอลัมน์ในรายงานเสมอ</div>
+    <div class="chip c1"><b>วัดจากระบบ</b><span>ดึงจากฐานข้อมูล ตัวเลขแน่น</span></div>
+    <div class="chip c2"><b>เทียบก่อน/หลัง</b><span>ต้องจับเวลา/สัมภาษณ์ยุคกระดาษ</span></div>
+    <div class="chip c3"><b>ความเห็นผู้ใช้</b><span>แบบสอบถาม 5 ข้อ แยกตำแหน่ง</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="card key">
+      <div class="hd"><span class="n">1</span><span class="t">ใช้งานจริงแค่ไหน</span><span class="tag"><span class="tg s1">ระบบ</span></span></div>
+      <ul>
+        <li>กะที่เปิดในระบบ ÷ กะที่ผลิตจริง</li>
+        <li>ยอดจากใบงานที่สแกน เทียบยอด SAP</li>
+        <li>ผู้ใช้ active ต่อสัปดาห์ แยกแผนก</li>
+        <li>ตรวจ AM ครบ + ทันเวลา (%) · ใบซ่อมปิดในระบบ (%)</li>
+      </ul>
+      <div class="why">ต้องผ่านข้อนี้ก่อน ข้ออื่นถึงมีความหมาย</div>
+    </div>
+    <div class="card">
+      <div class="hd"><span class="n">2</span><span class="t">ข้อมูลเร็วขึ้นแค่ไหน</span><span class="tag"><span class="tg s1">ระบบ</span><span class="tg s2">ก่อน/หลัง</span></span></div>
+      <ul>
+        <li>เครื่องหยุด → ลงระบบห่างกี่นาที</li>
+        <li>ปิดกะได้ตัวเลขกี่โมง (เดิมได้วันถัดไป)</li>
+        <li>ประชุมเช้าใช้ตัวเลขจากไหน เตรียมกี่นาที</li>
+      </ul>
+      <div class="why">ตอบ "ตัดสินใจได้เร็วขึ้นไหม"</div>
+    </div>
+    <div class="card key">
+      <div class="hd"><span class="n">3</span><span class="t">ประหยัดเวลาคน</span><span class="tag"><span class="tg s2">ก่อน/หลัง</span></span></div>
+      <ul>
+        <li>ชั่วโมงทำเอกสาร/คน/กะ แยกตำแหน่ง</li>
+        <li>หัวหน้ากลุ่มเขียนรายงาน · คีย์ Excel · หาเอกสาร</li>
+        <li>จับเวลาตำแหน่งละ 3–5 คน → ชั่วโมงคน/เดือน</li>
+      </ul>
+      <div class="why">ข้อเดียวที่แปลงเป็น "เงิน" ได้ (+ ค่ากระดาษ)</div>
+    </div>
+    <div class="card">
+      <div class="hd"><span class="n">4</span><span class="t">ผลการผลิต</span><span class="tag"><span class="tg s1">ระบบ</span></span></div>
+      <ul>
+        <li>แนวโน้ม OEE รายสัปดาห์</li>
+        <li>เวลาซ่อมเฉลี่ย · เวลาระหว่างเสีย · ใบซ่อมค้าง</li>
+        <li>ของเสีย / PPM</li>
+      </ul>
+      <div class="why">ดูแนวโน้มประกอบ — 1–2 เดือนสั้นเกินอ้างผล</div>
+    </div>
+    <div class="card">
+      <div class="hd"><span class="n">5</span><span class="t">สอบกลับ + เอกสาร</span><span class="tag"><span class="tg s1">ระบบ</span><span class="tg s2">ก่อน/หลัง</span></span></div>
+      <ul>
+        <li>สุ่ม 5 เคส "ล็อตนี้ใครตรวจ เครื่องไหน วันไหน" จับเวลาหา</li>
+        <li>ฟอร์มกระดาษที่เลิกใช้ × แผ่นต่อเดือน</li>
+        <li>ใบที่มีลายเซ็นครบในระบบ (%)</li>
+      </ul>
+      <div class="why">ตอบลูกค้า / ผู้ตรวจประเมินได้เร็วแค่ไหน</div>
+    </div>
+    <div class="card">
+      <div class="hd"><span class="n">6</span><span class="t">ความเห็นผู้ใช้</span><span class="tag"><span class="tg s3">ผู้ใช้</span><span class="tg s1">ระบบ</span></span></div>
+      <ul>
+        <li>แบบสอบถาม 5 ข้อ คะแนน 1–5 แยกตำแหน่ง</li>
+        <li>เรื่องในกล่อง feedback · แก้แล้วกี่เรื่อง</li>
+        <li>จุดที่ยังติด / อยากให้เพิ่ม</li>
+      </ul>
+      <div class="why">ใช้วางแผนรอบถัดไป ไม่ใช่แค่ให้คะแนน</div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="box warn">
+      <h3>⚠ กับดักที่ต้องเขียนกำกับในรายงาน</h3>
+      <ol>
+        <li><b>ตัวเลขอาจดู "แย่ลง" ทั้งที่ดีขึ้น</b> — นาทีเครื่องหยุด/ของเสียที่บันทึกได้เพิ่ม เพราะเดิมไม่ได้จด = มองเห็นมากขึ้น</li>
+        <li><b>OEE ใน 1–2 เดือน</b> มีปัจจัยอื่นปน (ยอดสั่ง · รุ่นใหม่ · คน) — รายงานเป็นแนวโน้ม ห้ามอ้างว่าระบบทำให้ขึ้น X%</li>
+        <li><b>โชว์ความน่าเชื่อถือคู่กันเสมอ</b> — ใบงานไม่เคยปิด · downtime "อื่นๆ/ไม่ระบุ" · ใบลงเวลาย้อนหลัง</li>
+        <li><b>ตัวเลขเงิน = ประมาณการ</b> จากชั่วโมงคน + กระดาษเท่านั้น และบอกวิธีคิดทุกครั้ง</li>
+      </ol>
+    </div>
+    <div class="box plan">
+      <h3>แผนประเมิน ~2 สัปดาห์</h3>
+      <div class="wk"><span class="w">สัปดาห์ 1</span><div>ดึงตัวเลขข้อ 1 · 2 · 4 · 5 จากระบบ &nbsp;|&nbsp; ทีมจับเวลา/สัมภาษณ์ข้อ 3</div></div>
+      <div class="wk"><span class="w">สัปดาห์ 2</span><div>ส่งแบบสอบถามข้อ 6 &nbsp;→&nbsp; รวมเป็นเด็คผลการทดลองใช้ (TSG R01)</div></div>
+      <div class="out">ทุกข้อแบ่ง 3 ช่อง: <b>วัดได้จริง</b> · <b>ประมาณการ</b> · <b>ยังวัดไม่ได้ (เพราะอะไร)</b><br>
+        ต้องการก่อนเริ่ม: <b>วันที่เริ่มทดลองทั้งโรงงาน</b> + <b>ไลน์/แผนกที่เริ่มทีหลัง</b></div>
+    </div>
+  </div>
+
+  <div class="foot"><span><b>THAI SUMMIT GROUP</b> &nbsp;· ESM — บันทึกครั้งเดียวที่หน้างาน ใช้ได้ทั้งโรงงาน</span><span>ฉบับร่างเพื่อหารือ · 23/11/2026</span></div>
+</body></html>

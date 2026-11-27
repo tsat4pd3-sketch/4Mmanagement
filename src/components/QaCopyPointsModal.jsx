@@ -61,7 +61,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
   const toggle = (p) => {
     const w = writeOf(p);
     if (!w.ok) { toast.info(writeBlockText(w, { what: 'พาร์ทของไลน์นี้' })); return; }
-    if (counts?.[p.id]?.items > 0) { toast.info(`${partLabel(p)} มีจุดตรวจอยู่แล้ว — จะไม่ทับ แก้ที่พาร์ทนั้นแทน`); return; }
+    if (counts?.[p.id]?.items > 0) { toast.info(`${partLabel(p)} ${tr("มีจุดตรวจอยู่แล้ว — จะไม่ทับ แก้ที่พาร์ทนั้นแทน")}`); return; }
     setPicked(s => s.includes(p.id) ? s.filter(x => x !== p.id) : [...s, p.id]);
   };
 
@@ -70,7 +70,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
     const targets = others.filter(p => picked.includes(p.id) && writeOf(p).ok);
     if (!targets.length) { toast.info('เลือกพาร์ทปลายทางก่อน'); return; }
     if (!await askConfirm(
-      `คัดลอก ${itemCount} จุดตรวจของ ${partLabel(part)} ไปอีก ${targets.length} พาร์ท\n`
+      `${tr("คัดลอก")} ${itemCount} ${tr("จุดตรวจของ")} ${partLabel(part)} ${tr("ไปอีก")} ${targets.length} ${tr("พาร์ท")}\n`
       + (withDrawings ? '+ แผ่นแบบ (เฉพาะพาร์ทที่ยังไม่มีแบบ — หมุดอยู่ตำแหน่งเดิม)\n' : '(ไม่คัดลอกแบบ — ต้องปักหมุดใหม่บนแบบของพาร์ทนั้น)\n')
       + '\n⚠️ พาร์ทที่ "มีจุดตรวจอยู่แล้ว" จะถูกข้าม ไม่ทับของเดิม\n\nยืนยัน?')) return;
     setBusy(true); setReport(null);
@@ -80,7 +80,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
       setReport(results.map(r => ({ ...r, label: nameOf(r.partId) })));
       if (results.some(r => r.copied)) { setPicked([]); onDone?.(); }
     } catch (e) {
-      toast.error(`คัดลอกไม่สำเร็จ: ${e.message}`);
+      toast.error(`${tr("คัดลอกไม่สำเร็จ")}: ${e.message}`);
     } finally { setBusy(false); }
   };
 
@@ -88,13 +88,13 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
   const skip = (report || []).filter(r => !r.copied);
 
   return (
-    <InspectEditorModal title={`คัดลอกจุดตรวจของ ${partLabel(part)} ไปพาร์ทอื่น`}
-      subtitle={`${itemCount} จุด · สเปค/Rank/Stage/ความถี่ไปครบ · รูปโคลสอัพคัดลอกไปด้วย`}
+    <InspectEditorModal title={`${tr("คัดลอกจุดตรวจของ")} ${partLabel(part)} ${tr("ไปพาร์ทอื่น")}`}
+      subtitle={`${itemCount} ${tr("จุด · สเปค/Rank/Stage/ความถี่ไปครบ · รูปโคลสอัพคัดลอกไปด้วย")}`}
       onClose={onClose} onSave={run} saving={busy}
-      saveLabel={picked.length ? `📋 คัดลอกไป ${picked.length} พาร์ท` : 'เลือกพาร์ทปลายทาง'}>
-      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
-        ใช้กับพาร์ทพี่น้องที่สเปคเหมือนกัน (เช่น RH/LH · ต่างลูกค้า) — ตั้งพาร์ทเดียวแล้วคัดลอก ไม่ต้องพิมพ์ซ้ำ
-        <br />📍 <b>{tr('หมุด')}</b>: พาร์ทปลายทางใช้แบบคนละแผ่น ⇒ หมุดถูกถอดออก จุดตรวจขึ้นเป็น "ยังไม่วางตำแหน่ง" ให้ปักใหม่ใน 🎯
+      saveLabel={picked.length ? `📋 ${tr("คัดลอกไป")} ${picked.length} ${tr("พาร์ท")}` : tr("เลือกพาร์ทปลายทาง")}>
+      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+        {tr("ใช้กับพาร์ทพี่น้องที่สเปคเหมือนกัน (เช่น RH/LH · ต่างลูกค้า) — ตั้งพาร์ทเดียวแล้วคัดลอก ไม่ต้องพิมพ์ซ้ำ")}
+        <br />📍 <b>{tr('หมุด')}</b>: {tr("พาร์ทปลายทางใช้แบบคนละแผ่น ⇒ หมุดถูกถอดออก จุดตรวจขึ้นเป็น \"ยังไม่วางตำแหน่ง\" ให้ปักใหม่ใน")} 🎯
       </div>
 
       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, cursor: 'pointer' }}>
@@ -125,7 +125,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
                 </div>
               </div>
               <span style={{ fontSize: 11, color: has ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' }}>
-                {!counts ? '…' : c?.items == null ? 'นับไม่ได้' : has ? `มี ${c.items} จุดแล้ว` : 'ยังไม่มีจุด'}
+                {!counts ? '…' : c?.items == null ? tr("นับไม่ได้") : has ? `${tr("มี")} ${c.items} ${tr("จุดแล้ว")}` : tr("ยังไม่มีจุด")}
                 {counts && c?.dwgs != null && <><br />{tr('แบบ')} {c.dwgs} {tr('แผ่น')}</>}
               </span>
             </div>
@@ -135,17 +135,17 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
       </div>
 
       {report && (
-        <div style={{ fontSize: 12, lineHeight: 1.8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+        <div style={{ fontSize: 12, lineHeight: 1.8, background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
           <b style={{ color: 'var(--accent)' }}>{tr('✅ คัดลอกสำเร็จ')} {ok.length} {tr('พาร์ท')}</b>
           {ok.map(r => (
             <div key={r.partId}>
-              · {r.label} — {r.count} {tr('จุด')}{r.drawings ? ` + แบบ ${r.drawings} แผ่น (หมุดตามเดิม)` : ' · ต้องปักหมุดใหม่'}
-              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('เปิดพาร์ทนี้ →')}</button>}
+              · {r.label} — {r.count} {tr('จุด')}{r.drawings ? ` + ${tr("แบบ")} ${r.drawings} ${tr("แผ่น (หมุดตามเดิม")})` : tr(" · ต้องปักหมุดใหม่")}
+              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card-surf)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('เปิดพาร์ทนี้ →')}</button>}
             </div>
           ))}
           {!!skip.length && (
             <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
-              ⚠️ ข้าม {skip.length} {tr('พาร์ท —')} {skip.map(r => `${r.label} (${QA_COPY_SKIP[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
+              ⚠️ {tr("ข้าม")} {skip.length} {tr('พาร์ท —')} {skip.map(r => `${r.label} (${QA_COPY_SKIP[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
             </div>
           )}
         </div>

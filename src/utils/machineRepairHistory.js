@@ -17,6 +17,7 @@ import { techRepairMin, vendorState } from './mtnVendor.js';
 import { orderCostTotal } from './mtnMoForm.js';
 import { assignedTechsOf, prNumbersOf, repairPathMeta } from './mtnPurchase.js';
 import { isVague, UNGROUPED_LABEL } from './unclassified.js';
+import { tr } from './i18n.js';
 
 const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
@@ -56,7 +57,7 @@ export function summarizeMachineHistory(orders = [], { prsBy = {}, laborBy = nul
   const costs = live.map(r => r.cost).filter(v => v != null);
   const byType = {}; const byProb = {};
   for (const r of live) {
-    const t = r.o.repair_type || 'ไม่ระบุประเภท';
+    const t = r.o.repair_type || tr("ไม่ระบุประเภท");
     byType[t] = (byType[t] || 0) + 1;
     byProb[r.problem] = (byProb[r.problem] || 0) + 1;
   }

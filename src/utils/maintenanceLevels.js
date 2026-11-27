@@ -28,6 +28,8 @@
 import { machineReliability, normEquipKey, resolveEquip, buildEquipIndex } from './mtnMetrics.js';
 import { resolvePlanDue, ymdBangkok, STATUS_META } from '../lib/pmSchedule.js';
 import { addDaysStr } from './workDate.js';
+import { dateLocale } from './i18n.js';
+import { tr } from './i18n.js';
 
 /** หน้าต่างเปรียบเทียบ: 30 วันล่าสุด vs 60 วันก่อนหน้า (รวม 90 = เท่ากับที่ downtime มีข้อมูลสม่ำเสมอ
  *  เริ่ม 19/06) · ช่วงก่อนยาวกว่า 2 เท่าเพื่อให้ฐานนิ่ง ไม่แกว่งตามเดือนเดียว — เทียบกันด้วย "ต่อชั่วโมงเดิน" */
@@ -165,11 +167,11 @@ export function preventiveOf(checks = []) {
   };
 }
 
-const fmtN = (n, d = 1) => (n == null ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: d }));
+const fmtN = (n, d = 1) => (n == null ? '—' : Number(n).toLocaleString(dateLocale(), { maximumFractionDigits: d }));
 const fmtYmd = (ymd) => {
   if (!ymd) return '—';
   const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('th-TH', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(dateLocale(), { timeZone: 'UTC', day: 'numeric', month: 'short' });
 };
 const trendWhy = (pd) => (pd.trend === 'new'
   ? `ช่วงก่อนไม่เสียเลย · 30 วันล่าสุดเสีย ${pd.stopsR} ครั้ง`
@@ -185,9 +187,9 @@ export const RULES = [
     key: 'pm_overdue',
     when: ({ pv }) => pv.status === 'overdue',
     make: ({ pv, todayStr }) => ({
-      priority: 1, action: 'ทำ PM ที่เลยกำหนด',
+      priority: 1, action: tr("ทำ PM ที่เลยกำหนด"),
       why: `แผน PM ครบกำหนด ${fmtYmd(pv.dueYmd)} — เลยมา ${Math.abs(pv.daysTo ?? 0)} วัน`,
-      byYmd: todayStr, link: '/pm?tab=plan', linkLabel: 'แผน PM',
+      byYmd: todayStr, link: '/pm?tab=plan', linkLabel: tr("แผน PM"),
     }),
   },
   {

@@ -14,6 +14,7 @@ import CommitInput from '../components/CommitInput';
 import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { addDays as addDaysYmd } from '../utils/pmUsage'
 import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache, isAmTeam, teamLabel } from '../utils/pmTeams'
+import { AM_FREQS, AM_FREQ_META, amFreqOf, amFreqSetupIssue } from '../utils/amCheckFreq'   // 🗓️ รอบตรวจรายหัวข้อ AM (26/11)
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
@@ -54,6 +55,8 @@ import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import { askConfirm } from '../utils/askConfirm';
+import { loadDeptFrames, ownsFrame } from '../utils/jigFrames';
+import { identityPatch, deleteMode, ownerTeamOf, canEditIdentity, IDENTITY_FIELDS, IDENTITY_LABEL } from '../utils/sharedEquipment';   // ตัวตนใช้ร่วม · มุมมองแยก (26/11)   // รูปเครื่องแยกตามแผนก (26/11)
 /* สีจาก token (var(--red) …) ต่อ alpha-hex ไม่ได้ (SVG/CSS parse พัง = ดำ · UI §6.17) ⇒ ย่อยเป็น -dim/-line · hex จาก DB ยังต่อ alpha ได้เหมือนเดิม */
 const tintOf = (c, lvl) => {
   const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
@@ -73,7 +76,7 @@ const DEPT_COLORS = {
 
 const CATEGORY_TYPE_META = {
   production: { label: 'Production', color: '#3dd65c', icon: '🏭' },
-  facility:   { label: 'Facility',   color: '#f59a3f', icon: '🔧' },
+  facility:   { label: 'Facility',   color: 'var(--amber)', icon: '🔧' },
   utility:    { label: 'Utility',    color: '#9b8de8', icon: '⚡' },
 }
 
@@ -96,7 +99,7 @@ function equipTypeOfMachine(m) {
 
 function newCheckpoint(extra = {}) {
   return {
-    _key: crypto.randomUUID(), name: '', type: 'variable', calc: null,   // _key จุดใหม่ = id ตอน insert (จุดคำนวณอ้างได้ก่อนบันทึก)
+    _key: crypto.randomUUID(), name: '', type: 'variable', calc: null, am_check_freq: 'shift', spc_enabled: true,   // _key จุดใหม่ = id ตอน insert (จุดคำนวณอ้างได้ก่อนบันทึก)
     axis: null, category: null, checking_method: null, unit: '', nominal: '', lsl: '', usl: '', lcl: '', ucl: '',
     // โหมดเกณฑ์ของจุดชนิด "ค่าวัด" — client-only (ขึ้นต้น _ = ไม่ลง DB) เพราะ DB มีแค่ lsl/usl
     // ⚠️ ต้องเป็น state จริง ห้าม derive จาก lsl/usl (ดู mMode ด้านล่าง — เคยทำแล้วกดปุ่มไม่ติด)
@@ -176,7 +179,7 @@ const S = {
 }
 
 // ─── CheckpointCard ───────────────────────────────────────────────────────────
-function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods, calcOptions, calcIssues }) {
+function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage, isPinning, onPinToggle, onUnpin, hasImage, categories, allCategories, methods, calcOptions, calcIssues, isAm = false }) {
   const isVar = cp.type === 'variable'
   // ถ้าหมวดที่เลือกไว้เดิมไม่อยู่ในลิสต์ที่กรองแล้ว (เช่น jig เก่า) ยังต้องโชว์ไม่ให้หาย
   const catOpts = cp.category && !(categories ?? []).some(c => c.code === cp.category)
@@ -188,7 +191,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       closeup={{ preview: cp._imgPreview, onPick: onCpImage, onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}
       extra={isVar && (
         <button type="button" onClick={onDuplicate} title={tr('ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec')}
-          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
+          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--muted)' }}>
           {tr('⧉ อีกแกน')}
         </button>
       )}>
@@ -217,6 +220,25 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           </select>
         </div>
       </div>
+      {/* 📈 SPC อุปกรณ์ (26/11 · utils/equipSpc.js) — ข้อตัวเลขขึ้นกราฟอัตโนมัติ · ปิดได้สำหรับตัวนับ/ข้อที่ไม่ใช่ค่ากระบวนการ */}
+      {(cp.type === 'variable' || cp.type === 'measure') && (
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', marginBottom: 10, cursor: 'pointer' }}>
+          <input type="checkbox" checked={cp.spc_enabled !== false} onChange={e => onChange({ spc_enabled: e.target.checked })} />
+          {tr('ขึ้นกราฟ SPC (ปิดถ้าข้อนี้เป็นตัวนับ เช่น รอบการใช้งาน)')}
+        </label>
+      )}
+      {/* 🗓️ รอบตรวจรายหัวข้อ — เฉพาะใบของทีม AM (26/11 · utils/amCheckFreq.js) · ใบ PM ของช่างตามรอบแผนทั้งใบ ไม่มีช่องนี้ */}
+      {isAm && (
+        <div style={{ marginBottom: 10 }}>
+          <label style={S.label}>{tr('รอบตรวจ (AM)')}</label>
+          <div style={S.freqBtns}>
+            {AM_FREQS.map(f => (
+              <button key={f} type="button" onClick={() => onChange({ am_check_freq: f })} style={S.freqBtn(amFreqOf(cp) === f)}
+                title={tr(AM_FREQ_META[f].short)}>{tr(AM_FREQ_META[f].label)}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 6, marginBottom: (isVar || cp.type === 'measure') ? 10 : 0, flexWrap: 'wrap' }}>
         {['variable', 'measure', 'attribute', 'note'].map(t => {
@@ -278,8 +300,8 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             <div><label style={{ ...S.label, color: 'var(--red)' }}>USL</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
           </div>
           <div className="mgrid" style={S.inputRow}>
-            <div><label style={{ ...S.label, color: '#f59a3f' }}>LCL</label><input type="number" value={cp.lcl} onChange={e => onChange({ lcl: e.target.value })} placeholder="—" /></div>
-            <div><label style={{ ...S.label, color: '#f59a3f' }}>UCL</label><input type="number" value={cp.ucl} onChange={e => onChange({ ucl: e.target.value })} placeholder="—" /></div>
+            <div><label style={{ ...S.label, color: 'var(--amber)' }}>LCL</label><input type="number" value={cp.lcl} onChange={e => onChange({ lcl: e.target.value })} placeholder="—" /></div>
+            <div><label style={{ ...S.label, color: 'var(--amber)' }}>UCL</label><input type="number" value={cp.ucl} onChange={e => onChange({ ucl: e.target.value })} placeholder="—" /></div>
           </div>
         </div>
       )}
@@ -289,7 +311,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           <div style={{ display: 'flex', gap: 8 }}>
             <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
             <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 11, fontWeight: 700, border: '1px solid var(--red-line)' }}>NG</span>
-            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>{tr('+ ข้อความ')}</span>}
+            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>{tr('+ ข้อความ')}</span>}
           </div>
           <div>
             <label style={S.label}>{tr('เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้')}</label>
@@ -352,6 +374,8 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [checkpoints, setCheckpoints] = useState([])
   const [layoutType, setLayoutType] = useState(editJig?.layout_type ?? 'image_pin')
   // รูปหลายมุมต่ออุปกรณ์ (1 รูป = ปกติ, ≥2 รูป = ปัดดูรอบเครื่อง — ไม่บังคับจำนวน)
+  const [idLock, setIdLock] = useState(null)   // { owner, error } = หัวเครื่องเป็นของทีมอื่น ⇒ ช่องหัวเครื่องล็อก (แบบ ก. 26/11)
+  const [framesLoadErr, setFramesLoadErr] = useState('')   // โหลดรูปของแผนกไม่ได้ = ห้ามบันทึก (26/11)
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
@@ -454,11 +478,20 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     //    เครื่องนี้อาจยังไม่มี checklist ของแผนกที่เลือก = ฟอร์มเปล่าให้เริ่มลงจุดตรวจใหม่ (สร้างจริงตอน save)
     ;(async () => {
       const cl = await findChecklist(editJig.id, 'mtn', department)
+      // 🔒 แบบ ก. (26/11 · utils/sharedEquipment.js) — หัวเครื่องแก้ได้เฉพาะทีมเจ้าของ · ล็อกช่องให้เห็นตั้งแต่เปิด
+      {
+        const rCl = await supabaseDR.from('checklists').select('id, department, created_at').eq('equipment_id', editJig.id)
+        const owner = rCl.error ? null : ownerTeamOf(rCl.data)
+        setIdLock(canEditIdentity({ owner, department, error: rCl.error }) ? null : { owner, error: rCl.error ? (rCl.error.message || String(rCl.error)) : '' })
+      }
       setOrigFreq(cl?.frequency ?? null)
       setCycleDays(''); setNextDue(''); setNextDueDirty(false); setOrigCycle(null); setLastDoneYmd(null)
       // load spin frames (jig_images); fall back to jigs.image_path as one frame
-      // — รูปเป็นของ "เครื่อง" ไม่ใช่ของ checklist จึงต้องโหลดเสมอแม้แผนกนี้ยังไม่มี checklist
-      const { data: imgs } = await supabaseDR.from('jig_images').select('*').eq('jig_id', editJig.id).order('sort')
+      // 🔴 รูปเป็นของ "แผนก" (26/11) — เห็นแค่ชุดของแผนกนี้ผ่าน loadDeptFrames (utils/jigFrames.js)
+      //    เดิมโหลดทุกรูปของเครื่อง ⇒ AM กดบันทึกแล้วลบรูปของ JIG MTN ทิ้ง (จุดตรวจ 1,567 จุดหลุดรูป)
+      //    โหลดไม่ได้ = ล็อกปุ่มบันทึก (บันทึกด้วยชุดรูปว่าง = ทับของเดิม)
+      const { rows: imgs, error: imgErr } = await loadDeptFrames([editJig.id], department)
+      setFramesLoadErr(imgErr ? (imgErr.message || String(imgErr)) : '')
       let fr = (imgs ?? []).map(im => ({ _key: im.id, id: im.id, image_path: im.image_path, _preview: getPublicUrl(im.image_path), title: im.title }))
       if (!fr.length && editJig.image_path) fr = [{ _key: 'legacy', image_path: editJig.image_path, _preview: getPublicUrl(editJig.image_path), title: null }]
       setFrames(fr); setFrameIdx(0)
@@ -518,9 +551,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     if (!copyTo.length) { setError('เลือกเครื่องปลายทางก่อน'); return }
     const nameOf = (id) => { const e = allEquip.find(x => x.id === id); return e ? (e.machine_no || e.jig_no || e.name || id) : id }
     if (!await askConfirm(
-      `คัดลอก ${cur.checkpointCount} จุดตรวจ ไปอีก ${copyTo.length} เครื่อง\n`
-      + `(แผนก ${pmTeamsSync().find(t => t.key === department)?.label ?? department})\n\n`
-      + `⚠️ เครื่องที่ "มีจุดตรวจอยู่แล้ว" จะถูกข้าม ไม่ทับของเดิม\n\nยืนยัน?`)) return
+      `${tr("คัดลอก")} ${cur.checkpointCount} ${tr("จุดตรวจ ไปอีก")} ${copyTo.length} ${tr("เครื่อง")}\n`
+      + `(${tr("แผนก")} ${pmTeamsSync().find(t => t.key === department)?.label ?? department})\n\n`
+      + `⚠️ ${tr("เครื่องที่ \"มีจุดตรวจอยู่แล้ว\" จะถูกข้าม ไม่ทับของเดิม\\n\\nยืนยัน")}?`)) return
     setCopyBusy(true); setError(''); setCopyReport(null)
     try {
       const { results } = await copyChecklistToEquipment(cur.id, copyTo, userId, { replace: false })
@@ -541,7 +574,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     /* 🔐 ด่านชั้น 2 ก่อนเขียน — **ปลายทางเสมอ** (สร้าง/ทับของทีมนั้น) + **ต้นทางเมื่อย้าย**
        (ย้าย = ยกรายการตรวจ + ประวัติการตรวจของทีมที่เปิดอยู่ออกไปทั้งก้อน) */
     const dstWrite = teamWriteOf?.(moveTo)
-    if (dstWrite && !dstWrite.ok) { setError(teamBlockText(dstWrite, `รายการตรวจของทีม "${toLabel}"`)); return }
+    if (dstWrite && !dstWrite.ok) { setError(teamBlockText(dstWrite, `${tr("รายการตรวจของทีม")} "${toLabel}"`)); return }
     if (mode === 'move' && deptWrite && !deptWrite.ok) {
       setError(teamBlockText(deptWrite, 'รายการตรวจของทีมนี้')); return
     }
@@ -556,18 +589,18 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         //    ลบ checklist ปลายทาง = รอบเวลา/วันตรวจล่าสุด/วันครบกำหนด/เกณฑ์ยอดผลิต หายตามไปทั้งหมด
         //    (เดิมถามแค่จำนวนจุดตรวจ → คนกดตกลงโดยไม่รู้ว่ากำลังลบแผน PM ทิ้ง)
         const ok = await askConfirm(
-          `${toLabel} มีของอยู่แล้ว: รายการตรวจ ${res.targetCheckpoints} จุด`
-          + (res.targetPlans > 0 ? ` · แผน PM ${res.targetPlans} แผน` : '')
-          + `\nดำเนินการต่อจะ "แทนที่ของเดิม" ทั้งหมด`
+          `${toLabel} ${tr("มีของอยู่แล้ว: รายการตรวจ")} ${res.targetCheckpoints} ${tr("จุด")}`
+          + (res.targetPlans > 0 ? ` · ${tr("แผน")} PM ${res.targetPlans} ${tr("แผน")}` : '')
+          + `\n${tr("ดำเนินการต่อจะ \"แทนที่ของเดิม\" ทั้งหมด")}`
           + (res.targetPlans > 0 ? ' (รวมรอบเวลา/วันครบกำหนดของแผน PM ที่จะหายถาวร)' : '')
-          + ` — ยืนยันหรือไม่?`)
+          + ` — ${tr("ยืนยันหรือไม่")}?`)
         if (!ok) { setMoveBusy(false); return }
         res = await run(true)
       }
       if (res.reason === 'empty') { setError('แผนกนี้ยังไม่มีจุดตรวจให้คัดลอก'); setMoveBusy(false); return }
       toast.success(mode === 'move'
-        ? `ย้ายรายการตรวจไป ${toLabel} แล้ว (ประวัติการตรวจย้ายตามไปด้วย)`
-        : `คัดลอก ${res.count} จุดตรวจไป ${toLabel} แล้ว`)
+        ? `${tr("ย้ายรายการตรวจไป")} ${toLabel} ${tr("แล้ว (ประวัติการตรวจย้ายตามไปด้วย")})`
+        : `${tr("คัดลอก")} ${res.count} ${tr("จุดตรวจไป")} ${toLabel} ${tr("แล้ว")}`)
       setMoveTo('')
       reloadDeptSummary()
       onSaved()   // รีเฟรชลิสต์เครื่องด้านหลัง — ย้ายแล้วเครื่องจะย้ายแท็บ
@@ -658,7 +691,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     if (i < 0) return prev
     const src = prev[i]
     const copy = newCheckpoint({
-      name: src.name, type: src.type, category: src.category, checking_method: src.checking_method,
+      name: src.name, type: src.type, category: src.category, checking_method: src.checking_method, am_check_freq: amFreqOf(src),
       unit: src.unit, group_name: src.group_name, axis: src.axis === 'Y' ? 'X' : 'Y',
       x_pos: src.x_pos, y_pos: src.y_pos, _frameKey: src._frameKey,
       image_path: src.image_path, _imgPreview: src._imgPreview,
@@ -723,14 +756,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     {
       const blank = groupCheckpoints(checkpoints).ordered.filter(c => !c.name.trim())
       if (blank.length) {
-        setError(`กรุณาใส่ชื่อทุกจุดตรวจสอบ (ยังว่าง ${blank.length} จุด — พาไปจุดแรกให้แล้ว)`)
+        setError(`${tr("กรุณาใส่ชื่อทุกจุดตรวจสอบ (ยังว่าง")} ${blank.length} ${tr("จุด — พาไปจุดแรกให้แล้ว")})`)
         jumpToCp(blank[0]._key)
         return
       }
     }
     {
       const bad = calcIssueList[0]
-      if (bad) { setError(`จุดตรวจ ${cpLabels[bad.key] || ''} (คำนวณ): ${bad.msg}`); jumpToCp(bad.key); return }
+      if (bad) { setError(`${tr("จุดตรวจ")} ${cpLabels[bad.key] || ''} (${tr("คำนวณ")}): ${bad.msg}`); jumpToCp(bad.key); return }
     }
     /* จุดชนิด "ค่าวัด" ต้องมีเกณฑ์ — ไม่มีเกณฑ์ = measureStatus ไม่มีอะไรให้ fail → **ผ่านตลอดกาล**
        (จุดตรวจที่ตัดสินอะไรไม่ได้เลย แต่หน้าจอขึ้นเขียวว่าตรวจแล้ว = หลอกคนอ่านผลตรวจ) */
@@ -738,10 +771,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
     for (const c of checkpoints) {
       if (c.type !== 'measure') continue
       const lo = num(c.lsl), hi = num(c.usl)
-      if (lo == null && hi == null) { setError(`จุดตรวจ "${c.name.trim()}" เป็นชนิดค่าวัด — ต้องกรอกเกณฑ์อย่างน้อย 1 ช่อง (ไม่งั้นจะขึ้น OK ทุกครั้งที่ตรวจ)`); return }
-      if (lo != null && hi != null && lo >= hi) { setError(`จุดตรวจ "${c.name.trim()}" ค่าต่ำสุด (${lo}) ต้องน้อยกว่าค่าสูงสุด (${hi}) — ไม่งั้นจะขึ้น NG ทุกครั้ง`); return }
+      if (lo == null && hi == null) { setError(`${tr("จุดตรวจ")} "${c.name.trim()}" ${tr("เป็นชนิดค่าวัด — ต้องกรอกเกณฑ์อย่างน้อย 1 ช่อง (ไม่งั้นจะขึ้น OK ทุกครั้งที่ตรวจ")})`); return }
+      if (lo != null && hi != null && lo >= hi) { setError(`${tr("จุดตรวจ")} "${c.name.trim()}" ${tr("ค่าต่ำสุด")} (${lo}) ${tr("ต้องน้อยกว่าค่าสูงสุด")} (${hi}) — ${tr("ไม่งั้นจะขึ้น NG ทุกครั้ง")}`); return }
     }
     // รูปหลายมุมได้ตั้งแต่ 1 รูปขึ้นไป ไม่บังคับจำนวน — 2 รูปขึ้นไปปัดดูรอบเครื่องได้ ยิ่งเยอะยิ่งลื่น
+    if (isAmTeam(department)) { const fIssue = amFreqSetupIssue(checkpoints); if (fIssue) { setError(tr(fIssue)); return } }
+    if (editJig?.id && framesLoadErr) { setError(`${tr('โหลดรูปเครื่องไม่สำเร็จ')} (${framesLoadErr}) — ${tr('ยังบันทึกไม่ได้ กันรูปของแผนกอื่นถูกทับ · ปิดแล้วเปิดใหม่')}`); return }
     setSaving(true); setError('')
     try {
       // ⚠️ เครื่องเดียวกันต้องเป็นแถว jigs แถวเดียว แม้ตรวจหลายแผนก — ถ้าเครื่องจาก Machine Master
@@ -753,7 +788,46 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           .select('id').eq('module', 'mtn').eq('machine_id', machineId).maybeSingle()
         if (existJig) jigId = existJig.id
       }
+      const existing = !!jigId
       if (!jigId) jigId = crypto.randomUUID()
+
+      /* 🔗 ตัวตนใช้ร่วม · มุมมองแยก (26/11 · utils/sharedEquipment.js) — เช็คก่อนอัปโหลดอะไร
+         เครื่องที่แผนกอื่นใช้อยู่: เพิ่มใหม่ = เติมแค่ช่องว่าง · แก้ไข = เขียนแค่ช่องที่แก้จริง + ถามยืนยัน
+         อ่านไม่ได้ = ถือว่าใช้ร่วม (ไม่ทับ) */
+      let sharedJig = false, curJig = null, otherDepts = [], ownerTeam = null, idEditable = true
+      if (existing) {
+        const [rCl, rCur] = await Promise.all([
+          supabaseDR.from('checklists').select('id, department, created_at').eq('equipment_id', jigId),
+          supabaseDR.from('jigs').select(['image_path', ...IDENTITY_FIELDS].join(', ')).eq('id', jigId).maybeSingle(),
+        ])
+        if (rCur.error) throw rCur.error
+        curJig = rCur.data
+        otherDepts = [...new Set((rCl.data ?? []).map(r => r.department).filter(d => d !== department))]
+        sharedJig = !!rCl.error || otherDepts.length > 0
+        // 🔒 แบบ ก. (user 26/11): หัวเครื่องแก้ได้เฉพาะ "ทีมที่ตั้งเครื่องนี้เป็นทีมแรก" · อ่านไม่ได้ = แก้ไม่ได้
+        ownerTeam = rCl.error ? null : ownerTeamOf(rCl.data)
+        idEditable = canEditIdentity({ owner: ownerTeam, department, error: rCl.error })
+      }
+      const idForm = {
+        name: name.trim(), description: description.trim() || null,
+        jig_no: jigNo.trim() || null, process: process.trim() || null,
+        model: model.trim() || null, part_name: partName.trim() || null,
+        part_no: partNo.trim() || null, line_name: lineName || null,
+        machine_no: machineNo || null, machine_id: machineId || null,
+        equipment_type: equipType, equipment_category: equipCategory,
+      }
+      const { patch: idPatch, changes: idChanges, blocked: idBlocked } = identityPatch({ cur: curJig, orig: editJig?.id ? editJig : null, form: idForm, shared: sharedJig && !!curJig, canEdit: idEditable })
+      if (sharedJig && idBlocked.length) {
+        const ownerLabel = ownerTeam ? (pmTeamsSync().find(t => t.key === ownerTeam)?.label ?? ownerTeam) : tr('(อ่านไม่ได้)')
+        toast.info(`${tr('ข้อมูลตัวเครื่องเป็นของทีม')} ${ownerLabel} — ${tr('ช่องที่ไม่ถูกบันทึก')}: ${idBlocked.map(f => tr(IDENTITY_LABEL[f] ?? f)).join(', ')}`)
+      }
+      if (sharedJig && idChanges.length) {
+        const deptNames = otherDepts.map(d => pmTeamsSync().find(t => t.key === d)?.label ?? d).join(', ') || tr('แผนกอื่น (อ่านรายชื่อไม่ได้)')
+        const lines = idChanges.map(c => `• ${tr(IDENTITY_LABEL[c.field] ?? c.field)}: ${c.from ?? '—'} → ${c.to ?? '—'}`).join('\n')
+        if (!await askConfirm(`${tr('เครื่องนี้ใช้ร่วมกับ')} ${deptNames}\n${tr('ข้อมูลตัวเครื่องต่อไปนี้จะเปลี่ยนให้ทุกแผนกเห็นเหมือนกัน')}:\n\n${lines}\n\n${tr('ยืนยันเปลี่ยน?')}`)) {
+          setSaving(false); return
+        }
+      }
 
       // ── resolve spin frames: upload new files, keep existing paths ──
       const spinMode = layoutType === 'image_pin' && frames.length >= 2
@@ -773,24 +847,22 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         }
       }
       const imagePath = layoutType === 'list' ? null : (resolvedFrames[0]?.path ?? null)
-
-      const { error: jigErr } = await supabaseDR.from('jigs').upsert({
-        id: jigId, name: name.trim(), description: description.trim() || null,
-        image_path: imagePath,
-        created_by: userId, module: editJig?.module ?? 'mtn',
-        jig_no: jigNo.trim() || null, process: process.trim() || null,
-        model: model.trim() || null, part_name: partName.trim() || null,
-        part_no: partNo.trim() || null, line_name: lineName || null,
-        machine_no: machineNo || null, machine_id: machineId || null,
-        equipment_type: equipType, equipment_category: equipCategory,
-      })
+      /* 🔴 รูปหลัก `jigs.image_path` ใช้ร่วมทุกแผนก (26/11) — เครื่องที่แผนกอื่นใช้อยู่ ห้ามทับรูปที่มีอยู่แล้ว
+         (เดิม AM บันทึกแล้วรูปหลักของ JIG MTN กลายเป็นรูป AM) */
+      const keepMainImage = sharedJig && !!curJig?.image_path
+      const { error: jigErr } = curJig
+        ? await supabaseDR.from('jigs').update({ ...idPatch, ...(keepMainImage ? {} : { image_path: imagePath }) }).eq('id', jigId)
+        : await supabaseDR.from('jigs').upsert({
+            id: jigId, ...idForm, image_path: imagePath,
+            created_by: userId, module: editJig?.module ?? 'mtn',
+          })
       if (jigErr) throw jigErr
       invalidateTable('jigs')   // ทะเบียนเข้า cache แล้ว (13/10) — บอร์ด AM อ่านจากคีย์ 'jigs:am'
       /* 🔗 ย้ายไลน์ของอุปกรณ์ ⇒ ทะเบียน AM รายวันต้องตามไป (08/10 audit) — เดิมค้างไลน์เก่า ⇒ ไลน์เก่าเตือนค้าง/ไลน์ใหม่ไม่เตือน
          (กติกาเดียวกับ assignJigLine ใน DailyPM.jsx) · ล้ม = บอก ไม่เงียบ แต่ไม่ยกเลิกการบันทึกอุปกรณ์ */
-      if (editJig?.id && (editJig.line_name || null) !== (lineName || null)) {
-        const { error: tgErr } = await supabaseDR.from('pm_daily_line_targets').update({ line_name: lineName || null }).eq('jig_id', editJig.id).eq('is_active', true)
-        if (tgErr) toast.error('ย้ายรายการลงทะเบียน AM ตามไลน์ใหม่ไม่สำเร็จ: ' + tgErr.message + ' — ไปแก้ที่จอ AM รายวัน')
+      if (editJig?.id && 'line_name' in idPatch && (editJig.line_name || null) !== (idPatch.line_name || null)) {
+        const { error: tgErr } = await supabaseDR.from('pm_daily_line_targets').update({ line_name: idPatch.line_name || null }).eq('jig_id', editJig.id).eq('is_active', true)
+        if (tgErr) toast.error((tr('ย้ายรายการลงทะเบียน AM ตามไลน์ใหม่ไม่สำเร็จ') + ': ') + tgErr.message + (' — ' + tr('ไปแก้ที่จอ AM รายวัน')))
         else invalidateTable('pm_daily_line_targets')
       }
 
@@ -798,23 +870,28 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       //    เดิม delete-all ⇒ fixture_points.image_id / jig_checkpoints.image_id (ON DELETE SET NULL) หลุดทุกครั้งที่กดบันทึก
       const frameIdByKey = {}
       {
-        const { data: curImgs, error: eCur } = await supabaseDR.from('jig_images').select('id').eq('jig_id', jigId)
+        /* 🔴 แยกตามแผนก (26/11 · utils/jigFrames.js) — แก้/ลบได้เฉพาะรูปที่ department = แผนกนี้
+           รูปของแผนกอื่น/ไม่รู้เจ้าของ (null) ห้ามแตะ — เดิมลบทุกรูปที่ไม่อยู่ในชุดใหม่ ⇒ ลบรูป JIG MTN ทิ้ง */
+        const { data: curImgs, error: eCur } = await supabaseDR.from('jig_images').select('id, department').eq('jig_id', jigId)
         if (eCur) throw eCur
+        const curById = Object.fromEntries((curImgs ?? []).map(r => [r.id, r]))
         const keepIds = new Set()
         for (let i = 0; i < resolvedFrames.length; i++) {
           const f = resolvedFrames[i]
           const row = { image_path: f.path, sort: i, is_spin_frame: spinMode, title: f.title }
           if (f.id) {
-            const { error: eU } = await supabaseDR.from('jig_images').update(row).eq('id', f.id)
-            if (eU) throw eU
+            if (ownsFrame(curById[f.id], department)) {
+              const { error: eU } = await supabaseDR.from('jig_images').update(row).eq('id', f.id)
+              if (eU) throw eU
+            }
             keepIds.add(f.id); frameIdByKey[f.key] = f.id
           } else {
-            const { data: ins, error: eI } = await supabaseDR.from('jig_images').insert({ jig_id: jigId, ...row }).select('id').single()
+            const { data: ins, error: eI } = await supabaseDR.from('jig_images').insert({ jig_id: jigId, department, ...row }).select('id').single()
             if (eI) throw eI
             frameIdByKey[f.key] = ins.id
           }
         }
-        const dropImg = (curImgs ?? []).map(r => r.id).filter(id => !keepIds.has(id))
+        const dropImg = (curImgs ?? []).filter(r => ownsFrame(r, department)).map(r => r.id).filter(id => !keepIds.has(id))
         if (dropImg.length) {
           const { error: eD } = await supabaseDR.from('jig_images').delete().in('id', dropImg)
           if (eD) throw eD
@@ -837,8 +914,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
       } catch (e) {
         const constraint = e?.code === '23514' || /check constraint|violates/i.test(e?.message || '')
         freqWarn = constraint
-          ? `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบเป็น “${cycleLabel(null, cycleN)}” ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ · แจ้ง admin ให้รัน migration 20260821_checklists_frequency_values`
-          : `บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบไม่ได้: ${e?.message || e}`
+          ? `${tr("บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบเป็น")} “${cycleLabel(null, cycleN)}” ${tr("ไม่ได้ — ฐานข้อมูลยังไม่รับค่านี้ · แจ้ง admin ให้รัน")} migration 20260821_checklists_frequency_values`
+          : `${tr("บันทึกจุดตรวจเรียบร้อย แต่ตั้งรอบไม่ได้")}: ${e?.message || e}`
       }
 
       // Phase 2 — persist the plan type + usage rule (row exists via trigger; upsert on checklist_id)
@@ -890,6 +967,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             checklist_id: cl.id, jig_id: jigId, name: c.name.trim(), type: c.type,
             axis: c.type === 'variable' ? (c.axis ?? null) : null,
             category: c.category ?? null, checking_method: c.checking_method ?? null, unit: c.unit || null,
+            am_check_freq: isAmTeam(department) ? amFreqOf(c) : 'shift',   // 🗓️ ใบ PM ไม่ใช้ — เก็บค่าเดิมทุกกะ
+            spc_enabled: c.spc_enabled !== false,   // 📈 SPC อุปกรณ์ (26/11) — ปิดรายข้อได้ (ตัวนับ/ข้อที่ไม่ใช่ค่ากระบวนการ)
             nominal: c.nominal !== '' && c.nominal != null ? Number(c.nominal) : null,
             lsl: c.lsl !== '' && c.lsl != null ? Number(c.lsl) : null,
             usl: c.usl !== '' && c.usl != null ? Number(c.usl) : null,
@@ -921,8 +1000,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           .select('id', { count: 'exact', head: true }).in('checkpoint_id', dropCp.map(r => r.id))
         if (eHist) throw eHist
         if (histN > 0 && !await askConfirm(
-          `จุดตรวจที่ถูกลบ ${dropCp.length} จุด (${dropCp.map(r => r.name).slice(0, 5).join(', ')}${dropCp.length > 5 ? ' …' : ''})\n` +
-          `มีประวัติผลตรวจผูกอยู่ ${histN} รายการ — ลบจุดแล้ว **ประวัติผลตรวจของจุดนั้นจะหายถาวร**\n\nยืนยันลบ?`)) {
+          `${tr("จุดตรวจที่ถูกลบ")} ${dropCp.length} ${tr("จุด")} (${dropCp.map(r => r.name).slice(0, 5).join(', ')}${dropCp.length > 5 ? ' …' : ''})\n` +
+          `${tr("มีประวัติผลตรวจผูกอยู่")} ${histN} ${tr("รายการ — ลบจุดแล้ว **ประวัติผลตรวจของจุดนั้นจะหายถาวร**\\n\\nยืนยันลบ")}?`)) {
           toast.info('ยังไม่บันทึก — จุดตรวจเดิมยังอยู่ครบ'); return
         }
       }
@@ -994,7 +1073,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   })
   const calcOptionsFor = (selfKey) => checkpoints
     .filter(c => c._key !== selfKey && PM_CALC_REF_TYPES.includes(c.type) && !c.calc)
-    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}${c.type === 'measure' ? ' · ค่าวัด' : ''}`.trim() }))
+    .map(c => ({ key: c._key, label: `${cpLabels[c._key] || '?'} ${c.name || ''}${c.axis ? ` (${c.axis})` : ''}${c.type === 'measure' ? tr(' · ค่าวัด') : ''}`.trim() }))
   const groupHeaderStyle = {
     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
     background: 'var(--accent-dim)', border: '1px solid var(--border2)',
@@ -1014,7 +1093,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
         onDuplicate={() => duplicateCp(cp._key)} onCpImage={f => handleCpImage(cp._key, f)}
         isPinning={activePinKey === cp._key} onPinToggle={() => togglePin(cp._key)} hasImage={frames.length > 0}
         onUnpin={() => { updateCp(cp._key, { x_pos: null, y_pos: null }); if (activePinKey === cp._key) setActivePinKey(null) }}
-        categories={scopedCategories} allCategories={categories} methods={methods} />
+        categories={scopedCategories} allCategories={categories} methods={methods} isAm={isAmTeam(department)} />
     </div>
   )
 
@@ -1045,9 +1124,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               )
             }
             return (
-              <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
+              <div style={{ padding: '10px 12px', background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
-                  รายการตรวจของเครื่องนี้ (แยกตามแผนก)
+                  {tr("รายการตรวจของเครื่องนี้ (แยกตามแผนก")})
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {deptSummary.length === 0
@@ -1055,19 +1134,19 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     : deptSummary.sort((a, b) => b.checkpointCount - a.checkpointCount).map(chip)}
                   {deptSummary.length > 0 && !cur && (
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>
-                      · <b style={{ color: deptColor }}>{deptLabel}</b> ยังไม่มี (ลงจุดตรวจด้านล่างแล้วบันทึกเพื่อสร้าง)
+                      · <b style={{ color: deptColor }}>{deptLabel}</b> {tr("ยังไม่มี (ลงจุดตรวจด้านล่างแล้วบันทึกเพื่อสร้าง")})
                     </span>
                   )}
                 </div>
                 <p style={{ fontSize: 11, color: 'var(--muted)', margin: '7px 0 0', lineHeight: 1.6 }}>
-                  1 เครื่องมีรายการตรวจได้หลายแผนก (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — เครื่องจะโผล่ในแท็บของแผนกที่มีรายการตรวจ
+                  1 {tr("เครื่องมีรายการตรวจได้หลายแผนก (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ) — เครื่องจะโผล่ในแท็บของแผนกที่มีรายการตรวจ")}
                 </p>
 
                 {/* 🧰 ปุ่มเปิดเครื่องมือ — พับไว้เป็นค่าเริ่มต้น (14/10) · บอก "ทิศ" ในป้ายเสมอ: ของเครื่องนี้ → ไปที่อื่น */}
                 {cur && cur.checkpointCount > 0 && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {[
-                      ['equip', `📋 คัดลอก ${cur.checkpointCount} จุดตรวจนี้ ไปเครื่องอื่น…`, 'เครื่องชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง'],
+                      ['equip', `📋 ${tr("คัดลอก")} ${cur.checkpointCount} ${tr("จุดตรวจนี้ ไปเครื่องอื่น")}…`, 'เครื่องชนิดเดียวกัน จุด PM เหมือนกัน — ไม่ต้องพิมพ์ใหม่ทุกเครื่อง'],
                       ['dept', '↔ ลงผิดแผนก? ย้าย/คัดลอกไปแผนกอื่น…', 'เปลี่ยนเจ้าของรายการตรวจ หรือทำสำเนาให้อีกแผนก'],
                     ].map(([k, label, tip]) => (
                       <button key={k} type="button" title={tip} aria-expanded={toolOpen === k}
@@ -1133,17 +1212,17 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   return (
                     <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
-                        ติ๊กเครื่อง<b>{tr('ปลายทาง')}</b>{tr('ที่จะได้รับ')} {cur.checkpointCount} จุดตรวจของเครื่องนี้ (ตั้งต้นแสดงเฉพาะชนิดเดียวกัน)
+                        {tr("ติ๊กเครื่อง")}<b>{tr('ปลายทาง')}</b>{tr('ที่จะได้รับ')} {cur.checkpointCount} {tr("จุดตรวจของเครื่องนี้ (ตั้งต้นแสดงเฉพาะชนิดเดียวกัน")})
                       </div>
                       {/* 🔴 โหลดรายชื่อเครื่องล้ม = เขียนบนจอ ห้ามปล่อยให้ลิสต์ว่างแล้วอ่านว่า "ไม่มีเครื่อง" (08/10) */}
                       {allEquipErr && (
                         <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
-                          ⚠ โหลดรายชื่อเครื่องไม่สำเร็จ ({allEquipErr}) — ลิสต์ด้านล่าง<b>{tr('ไม่ครบ')}</b> ยังเลือกปลายทางไม่ได้อย่างมั่นใจ
+                          ⚠ {tr("โหลดรายชื่อเครื่องไม่สำเร็จ")} ({allEquipErr}) — {tr("ลิสต์ด้านล่าง")}<b>{tr('ไม่ครบ')}</b> {tr("ยังเลือกปลายทางไม่ได้อย่างมั่นใจ")}
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
                         {/* ตัวกรองลิสต์ติ๊กหลายเครื่อง ⇒ ใช้ <SearchInput> (ไม่ใช่ MachineSelect ซึ่งเลือกได้ตัวเดียว) · UI-STANDARD §4 */}
-                        <SearchInput value={copyQ} onChange={setCopyQ} fields="เลขเครื่อง / ไลน์" grow={false} />
+                        <SearchInput value={copyQ} onChange={setCopyQ} fields={tr("เลขเครื่อง / ไลน์")} grow={false} />
                         <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('var(--blue)')}>
                           {tr('เลือกที่เห็นทั้งหมด (')}{shown.length})
                         </button>
@@ -1151,19 +1230,18 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         <span className="spacer" style={{ flex: 1 }} />
                         <button type="button" disabled={!copyTo.length || copyBusy} onClick={handleCopyToEquipment}
                           style={{ ...S.btnSm('var(--blue)'), opacity: (!copyTo.length || copyBusy) ? 0.5 : 1, fontWeight: 800 }}>
-                          {copyBusy ? '…' : `⧉ คัดลอกไป ${copyTo.length} เครื่อง`}
+                          {copyBusy ? '…' : `⧉ ${tr("คัดลอกไป")} ${copyTo.length} ${tr("เครื่อง")}`}
                         </button>
                       </div>
                       {/* 🔴 ตัดรายการต้องบอกจำนวนที่ซ่อน **เสมอ** (UI §5.1.1) — ฐานจริง 325 เครื่อง
                            เดิมไม่ค้น = โชว์เฉพาะชนิดเดียวกันโดยไม่บอกว่าซ่อนไปกี่ตัว ⇒ ตัวกรองที่มองไม่เห็น */}
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                        แสดง <b style={{ color: 'var(--text2)' }}>{shown.length}</b> {tr('จาก')} {cands.length}
+                        {tr("แสดง")} <b style={{ color: 'var(--text2)' }}>{shown.length}</b> {tr('จาก')} {cands.length}
                         {!q && cands.length > shown.length
                           ? <> {tr('· ซ่อนเครื่องชนิดอื่น')} {cands.length - shown.length} {tr('ตัว —')} <b>{tr('พิมพ์ค้นเพื่อดูทุกชนิด')}</b></>
-                          : q ? ' · กรองด้วยคำค้น (ทุกชนิด)' : ' · ครบทุกเครื่องแล้ว'}
+                          : q ? tr(" · กรองด้วยคำค้น (ทุกชนิด)") : tr(" · ครบทุกเครื่องแล้ว")}
                         {/* 🔴 "ค้นไม่เจอ" กับ "ยังไม่ได้เพิ่มเข้า PM" คนละเรื่อง — ต้องแยกให้เห็น */}
-                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>{tr('อีก')} {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
-                          ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> {tr('จึงยังคัดลอกไปไม่ได้')}</>}
+                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>{tr('อีก')} {notPmYet.length} {tr("เครื่องที่ค้นเจอในทะเบียนเครื่องจักร ยังไม่ได้เพิ่มเป็นอุปกรณ์")} PM</b> {tr('จึงยังคัดลอกไปไม่ได้')}</>}
                       </div>
                       <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
@@ -1175,7 +1253,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                                 setCopyTo(p => on ? p.filter(x => x !== e.id) : [...p, e.id])} />
                               {/* 🔴 รหัสเครื่องห้ามถูกตัด (UI §6.21 ข้อ 1) — ตัดได้แค่ชื่อไลน์ */}
                               <span style={{ display: 'flex', minWidth: 0, gap: 3 }}
-                                title={`${e.machine_no || e.jig_no || e.name} · ${e.line_name || 'ไม่ระบุไลน์'}`}>
+                                title={`${e.machine_no || e.jig_no || e.name} · ${e.line_name || tr('ไม่ระบุไลน์')}`}>
                                 <b style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>{e.machine_no || e.jig_no || e.name}</b>
                                 <span style={{ color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· {e.line_name || '—'}</span>
                               </span>
@@ -1183,16 +1261,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                           )
                         })}
                         {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4, lineHeight: 1.7 }}>
-                          {!q ? 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'
-                            : notPmYet.length ? <>{tr('ไม่พบใน')}<b>{tr('ทะเบียนอุปกรณ์ PM')}</b> {tr('— แต่เจอ')} <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} {tr('เครื่อง')}</b> ใน
-                                ทะเบียนเครื่องจักร ({notPmYet.slice(0, 4).map(m => m.machine_no || m.machine_name).join(' · ')}{notPmYet.length > 4 ? ' …' : ''})
-                                <br />{tr('⇒ เครื่องพวกนี้')}<b>{tr('ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM')}</b> จึงยังไม่มีให้ติ๊ก —
-                                ปิดหน้าต่างนี้แล้วกด <b>{tr('“+ เพิ่มอุปกรณ์”')}</b> {tr('ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก')}</>
+                          {!q ? tr("ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น")
+                            : notPmYet.length ? <>{tr('ไม่พบใน')}<b>{tr('ทะเบียนอุปกรณ์ PM')}</b> {tr('— แต่เจอ')} <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} {tr('เครื่อง')}</b> {tr("ใน ทะเบียนเครื่องจักร")} ({notPmYet.slice(0, 4).map(m => m.machine_no || m.machine_name).join(' · ')}{notPmYet.length > 4 ? ' …' : ''})
+                                <br />{tr('⇒ เครื่องพวกนี้')}<b>{tr('ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM')}</b> {tr("จึงยังไม่มีให้ติ๊ก — ปิดหน้าต่างนี้แล้วกด")} <b>{tr('“+ เพิ่มอุปกรณ์”')}</b> {tr('ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก')}</>
                             : <>{tr('ไม่พบ “')}{copyQ.trim()}{tr('” ทั้งใน')}<b>{tr('ทะเบียนอุปกรณ์ PM')}</b>{tr('และ')}<b>{tr('ทะเบียนเครื่องจักร')}</b> {tr('— ตรวจว่าพิมพ์เลขเครื่องถูกไหม')}</>}</span>}
                       </div>
                       <p style={{ fontSize: 11, color: 'var(--muted)', margin: '5px 0 0', lineHeight: 1.6 }}>
-                        เครื่องที่<b>{tr('มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม')}</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)
-                        · คัดลอกเฉพาะ<b>{tr('นิยามจุดตรวจ')}</b> รอบเวลา/วันครบกำหนดของแต่ละเครื่องตั้งแยกกันเหมือนเดิม
+                        {tr("เครื่องที่")}<b>{tr('มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม')}</b> ({tr("ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร) · คัดลอกเฉพาะ")}<b>{tr('นิยามจุดตรวจ')}</b> {tr("รอบเวลา/วันครบกำหนดของแต่ละเครื่องตั้งแยกกันเหมือนเดิม")}
                       </p>
                       {/* 🔴 ผลรายเครื่อง — ห้ามสรุปเป็น "สำเร็จ" ก้อนเดียว */}
                       {copyReport && (() => {
@@ -1200,11 +1275,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         const skip = copyReport.filter(r => !r.copied)
                         const why = { target_has_checkpoints: 'มีจุดตรวจอยู่แล้ว', target_has_history: 'มีประวัติผลตรวจแล้ว', same: 'เครื่องต้นทาง', empty: 'ต้นทางไม่มีจุดตรวจ', error: 'ผิดพลาด' }
                         return (
-                          <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
+                          <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
                             <b style={{ color: 'var(--accent)' }}>{tr('✅ คัดลอกสำเร็จ')} {ok.length} {tr('เครื่อง')}</b>
                             {!!ok.length && <span style={{ color: 'var(--muted)' }}> — {ok.map(r => r.label).join(' · ')}</span>}
                             {!!skip.length && <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
-                              ⚠️ ข้าม {skip.length} {tr('เครื่อง —')} {skip.map(r => `${r.label} (${why[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
+                              ⚠️ {tr("ข้าม")} {skip.length} {tr('เครื่อง —')} {skip.map(r => `${r.label} (${why[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
                             </div>}
                           </div>
                         )
@@ -1214,7 +1289,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 })()}
                 {others.length > 0 && (
                   <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>
-                    จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)
+                    {tr("จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า")})
                   </p>
                 )}
               </div>
@@ -1229,7 +1304,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>{tr('Facility / อื่นๆ')}</button>
               </div>
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                {addMode === 'workstation' ? 'เลือกเครื่องจักรจริงจาก Daily Report Machine Master' : 'เพิ่มเครื่องจักร/JIG ที่ไม่ได้อยู่ใน Machine Master เช่น Air Pump, Compressor'}
+                {addMode === 'workstation' ? tr("เลือกเครื่องจักรจริงจาก Daily Report Machine Master") : tr("เพิ่มเครื่องจักร/JIG ที่ไม่ได้อยู่ใน Machine Master เช่น Air Pump, Compressor")}
               </p>
             </div>
           )}
@@ -1261,16 +1336,16 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   (ของเดิมเป็น <select> ที่ optgroup ตามไลน์อยู่แล้ว — ตอนเปลี่ยนเป็นช่องค้นหาแล้วกลุ่มหายไป)
                   maxRows สูง เพราะจอนี้คน "ไล่ดูตามไลน์" ไม่ได้พิมพ์ค้นอย่างเดียว */}
               <MachineSelect valueKey="id" value={machineId ?? ''} machines={machineOptionsShown} groupByLine maxRows={999}
-                placeholder={kindFilter === 'all' ? '— ค้นหา / เลือกอุปกรณ์ (รหัส · ชื่อ · ไลน์) —' : `— ค้นหา / เลือก${EQUIP_TYPE_LABEL[kindFilter] ?? ''} (รหัส · ชื่อ · ไลน์) —`}
+                placeholder={kindFilter === 'all' ? tr("— ค้นหา / เลือกอุปกรณ์ (รหัส · ชื่อ · ไลน์) —") : `— ${tr("ค้นหา / เลือก")}${EQUIP_TYPE_LABEL[kindFilter] ?? ''} (${tr("รหัส · ชื่อ · ไลน์")}) —`}
                 onChange={({ id }) => { const v = id || null; if (v !== (machineId ?? null)) handleMachineSelect(v) }} />
               {machineId && (
                 <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
                   {existingNote?.length > 0 && (
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border2)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)' }}>
-                      ℹ️ เครื่องนี้ขึ้นทะเบียน PM ไว้แล้วโดย{' '}
-                      {existingNote.map(r => `${pmTeamsSync().find(t => t.key === r.department)?.label ?? r.department} (${r.checkpointCount} จุด)`).join(' · ')}
-                      <br />{tr('บันทึกครั้งนี้จะ')}<b style={{ color: 'var(--text2)' }}>{tr('เพิ่มรายการตรวจของ')} {deptLabel}</b> ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ
+                      ℹ️ {tr("เครื่องนี้ขึ้นทะเบียน PM ไว้แล้วโดย")}{' '}
+                      {existingNote.map(r => `${pmTeamsSync().find(t => t.key === r.department)?.label ?? r.department} (${r.checkpointCount} ${tr("จุด")})`).join(' · ')}
+                      <br />{tr('บันทึกครั้งนี้จะ')}<b style={{ color: 'var(--text2)' }}>{tr('เพิ่มรายการตรวจของ')} {deptLabel}</b> {tr("ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ")}
                       {' · '}{tr('อยากได้จุดตรวจชุดเดิม ให้เปิดแก้ไขเครื่องนี้ในแท็บแผนกนั้นแล้วกด')} <b style={{ color: 'var(--text2)' }}>{tr('⧉ คัดลอก')}</b>
                     </div>
                   )}
@@ -1313,6 +1388,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
           )}
 
+          {isEdit && idLock && (
+            <div style={{ fontSize: 12, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text2)' }}>
+              🔒 {idLock.error
+                ? `${tr('อ่านไม่ได้ว่าทีมไหนเป็นเจ้าของเครื่องนี้ — ล็อกข้อมูลตัวเครื่องไว้ก่อน')} (${idLock.error})`
+                : `${tr('ข้อมูลตัวเครื่อง (ชื่อ · No. · Part · ไลน์) เป็นของทีม')} ${pmTeamsSync().find(t => t.key === idLock.owner)?.label ?? idLock.owner} — ${tr('ทีมนี้แก้ได้เฉพาะจุดตรวจ/รูป/รอบ PM ของตัวเอง')}`}
+            </div>
+          )}
+          <fieldset disabled={!!(isEdit && idLock)} style={{ display: 'contents', border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <div>
             <label style={S.label}>{tr('ชื่ออุปกรณ์ *')}</label>
             <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น JIG-001 ตรวจ Pin Diameter')}
@@ -1341,7 +1424,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <div><label style={S.label}>Machine No.</label>
               <MachineSelect value={machineNo} machines={machineOptions} lines={lineName ? [lineName] : undefined} groupByLine allowFree history={jigMachineHist}
                 disabled={addMode === 'workstation' && !isEdit}
-                freeHint="(อุปกรณ์ที่ไม่อยู่ใน Machine Master — จะไม่ผูก machine_id)"
+                freeHint={tr("(อุปกรณ์ที่ไม่อยู่ใน Machine Master — จะไม่ผูก machine_id)")}
                 onChange={res => {
                   setMachineNo(res.machine_no || '')
                   setMachineId(res.opt ? res.id : null)
@@ -1356,7 +1439,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             {/* ค้นพาร์ทจาก Product Master → เติม Part Name/No. ให้ (jigs ไม่เก็บ mat_no) · พิมพ์ทับได้ = จิ๊กที่ใช้กับหลายพาร์ท · 2026-09-07 */}
             <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>{tr('เลือกพาร์ทจาก Product Master (เติม Part Name / Part No. ให้)')}</label>
               <ProductSelect value={partMat} lines={lineName ? [lineName] : undefined} allowFree
-                freeHint="(พาร์ทที่ยังไม่อยู่ใน Product Master — กรอก Part Name/No. เองด้านบน)"
+                freeHint={tr("(พาร์ทที่ยังไม่อยู่ใน Product Master — กรอก Part Name/No. เองด้านบน)")}
                 onChange={res => {
                   setPartMat(res.mat_no || '')
                   if (res.opt) { setPartName(res.name || res.mat_no || ''); setPartNo(res.p_no || res.mat_no || '') }
@@ -1369,10 +1452,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               {/* <LineSelect> แทนช่องพิมพ์เอง — jigs.line_name เป็นคีย์จัดกลุ่ม DailyPM/PMSchedule/FactoryMap · พื้นที่ facility
                   แยก optgroup จาก pm_facility_areas · ค่าเก่าที่ไม่อยู่ในทะเบียนยังโชว์ ⚠ ไม่หายเงียบ · 2026-09-07 */}
               <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder={tr('— เลือกไลน์ / พื้นที่ —')} includeRetired
-                extraGroups={[{ label: 'พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
+                extraGroups={[{ label: tr("พื้นที่ Facility / Utility"), options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
                 style={{ width: '100%' }} />
             </div>
           )}
+          </fieldset>
 
           <div>
             <label style={S.label}>{tr('รอบ PM — ทำซ้ำทุกกี่วัน (')}{deptLabel})</label>
@@ -1391,8 +1475,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
             <div style={{ marginTop: 6, fontSize: 11.5, color: Number(cycleDays) > 0 ? 'var(--muted)' : '#f59a3f' }}>
               {Number(cycleDays) > 0
-                ? <>{tr('รอบ:')} <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · ครบกำหนด = {nextDue ? 'วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ' : 'วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)'}</>
-                : <>⚠️ ยังไม่ตั้งรอบ = ระบบคิดวันครบกำหนดและเตือนล่วงหน้าไม่ได้{planType === 'usage' ? ' (แผนตามการใช้งานอย่างเดียวไม่ต้องมีรอบวันก็ได้)' : ''}</>}
+                ? <>{tr('รอบ:')} <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · {tr("ครบกำหนด")} = {nextDue ? tr("วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ") : tr("วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)")}</>
+                : <>⚠️ {tr("ยังไม่ตั้งรอบ = ระบบคิดวันครบกำหนดและเตือนล่วงหน้าไม่ได้")}{planType === 'usage' ? tr(" (แผนตามการใช้งานอย่างเดียวไม่ต้องมีรอบวันก็ได้)") : ''}</>}
             </div>
           </div>
 
@@ -1410,7 +1494,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
             {(planType === 'time' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                🗓️ <b>{tr('ตามเวลา')}</b> = ใช้ “รอบ PM” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+                🗓️ <b>{tr('ตามเวลา')}</b> = {tr("ใช้ “รอบ PM” ด้านบน (ตอนนี้")}: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → {tr("ครบกำหนด = วันตรวจล่าสุด + รอบนั้น")}
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
@@ -1424,10 +1508,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   {/* <LineSelect> ไม่ส่ง scope (ตั้งใจ — นับ shot อ้างไลน์ข้ามส่วนงานได้) · includeRetired + ค่าเก่าที่ไม่อยู่ในทะเบียน
                       ยังเลือกค้างได้ (guarantee #4 ของ LineSelect) · 2026-09-07 */}
                   <LineSelect lines={lineOptions} value={usageLine} onChange={setUsageLine} includeRetired
-                    placeholder={`— ใช้ไลน์ของอุปกรณ์${lineName ? ` (${lineName})` : ''} —`} style={{ width: '100%' }} />
+                    placeholder={`— ${tr("ใช้ไลน์ของอุปกรณ์")}${lineName ? ` (${lineName})` : ''} —`} style={{ width: '100%' }} />
                 </div>
                 <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)' }}>
-                  ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score · เลือกไลน์จากฐานข้อมูลไลน์ผลิต (เว้นว่าง = ใช้ไลน์ของอุปกรณ์)
+                  {tr("ระบบนับ prod_orders.qty ของไลน์นี้ตั้งแต่ PM ครั้งก่อน เทียบ threshold → คำนวณวันครบ + health score · เลือกไลน์จากฐานข้อมูลไลน์ผลิต (เว้นว่าง = ใช้ไลน์ของอุปกรณ์")})
                 </div>
               </div>
             )}
@@ -1448,8 +1532,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             {[...new Set(checkpoints.map(c => (c.group_name || '').trim()).filter(Boolean))].map(g => <option key={g} value={g} />)}
           </datalist>
           <PinWorkspace twoCol={twoColSetup} stickyRef={jumpStickyRef}
-            boardTitle="รูปอุปกรณ์ (หลายมุม) + จุดตรวจ"
-            boardBadge={frames.length > 0 && pinnedCount > 0 ? `📍 ${pinnedCount}/${checkpoints.length} จุดวางแล้ว` : null}
+            boardTitle={tr("รูปอุปกรณ์ (หลายมุม) + จุดตรวจ")}
+            boardBadge={frames.length > 0 && pinnedCount > 0 ? `📍 ${pinnedCount}/${checkpoints.length} ${tr("จุดวางแล้ว")}` : null}
             board={layoutType === 'image_pin' && (
                 <SpinAnnotator
                   frames={frames} frameIdx={frameIdx} setFrameIdx={setFrameIdx}
@@ -1481,24 +1565,24 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                      ถ้าพลิก aspect เฉยๆ cap จะตกจาก 1200 เหลือ 900 = รูปเก่าคมกว่ารูปใหม่ */
                   file={cropQueue[0]} aspect={4 / 3} outputSize={1200} quality={0.82}
                   /* ไม่ใส่ fullDefault — จอนี้ส่วนใหญ่ครอบเฉพาะจุดตรวจ พฤติกรรมเดิมคือเริ่มที่โหมดครอบ */
-                  allowFull fullHint="เก็บทั้งภาพไว้ — สำหรับรูปภาพรวมเครื่องที่จุดตรวจกระจายทั้งภาพ"
-                  title={`จัดกรอบรูป${cropQueue.length > 1 ? ` (เหลืออีก ${cropQueue.length - 1} รูป)` : ''}`}
+                  allowFull fullHint={tr("เก็บทั้งภาพไว้ — สำหรับรูปภาพรวมเครื่องที่จุดตรวจกระจายทั้งภาพ")}
+                  title={`${tr("จัดกรอบรูป")}${cropQueue.length > 1 ? ` (${tr("เหลืออีก")} ${cropQueue.length - 1} ${tr("รูป")})` : ''}`}
                   onCancel={() => setCropQueue(q => q.slice(1))}
                   onConfirm={pushFrame} />
               )}
               </>
             )}
-            listTitle={`จุดตรวจสอบ (${checkpoints.length})`} onAdd={addCp}
+            listTitle={`${tr("จุดตรวจสอบ")} (${checkpoints.length})`} onAdd={addCp}
             jump={{ points: grouped.ordered, labels: cpLabels, onJump: jumpToCp, flashKey, onTop: scrollTop }}>
               {/* ══ 📋 แพทเทินการสร้างใบตรวจ (2026-11-10 · คำสั่ง user) ══════════════════
                   "เริ่มจากรูปมุมที่ 1 → ปักหมุดทุกจุดของมุมนั้น + ใส่รูปขยาย → แล้วค่อยไปมุมที่ 2"
                   🔴 แถบนี้เป็น **ตัวบอก ไม่ใช่ด่าน** — ใบที่ยังไม่ครบก็ยังบันทึก/ใช้ตรวจได้
                      (จอตรวจไม่ได้บังคับว่าต้องปักหมุดครบแล้ว · ดู docs/modules/pm-hub-check-setup.md) */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', marginBottom: 2,
-                            borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+                            borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)' }}>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--text2)' }}>
                   <b style={{ color: comp.done ? 'var(--accent)' : 'var(--text)' }}>
-                    {comp.done ? '✅ ใบนี้ครบตามแพทเทินแล้ว' : '📋 ความครบของใบนี้'}
+                    {comp.done ? tr("✅ ใบนี้ครบตามแพทเทินแล้ว") : tr("📋 ความครบของใบนี้")}
                   </b>
                   <span>{tr('มุม')} <b>{comp.frames}</b></span>
                   <span>{tr('จุดตรวจ')} <b>{comp.cps}</b></span>
@@ -1510,12 +1594,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 )}
                 {!comp.done && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
-                    แพทเทินที่แนะนำ: ① เพิ่มรูป<b>{tr('มุมที่ 1')}</b> → ② <b>{tr('+ เพิ่มจุดตรวจ')}</b> แล้วกด 🔘 วางตำแหน่ง แตะบนรูป
-                    → ③ แนบ 📷 <b>{tr('รูปขยาย')}</b>{tr('ของจุดนั้น → ④ ครบมุมนี้แล้วค่อยไป')}<b>{tr('มุมที่ 2')}</b>
+                    {tr("แพทเทินที่แนะนำ: ① เพิ่มรูป")}<b>{tr('มุมที่ 1')}</b> → ② <b>{tr('+ เพิ่มจุดตรวจ')}</b> {tr("แล้วกด 🔘 วางตำแหน่ง แตะบนรูป → ③ แนบ")} 📷 <b>{tr('รูปขยาย')}</b>{tr('ของจุดนั้น → ④ ครบมุมนี้แล้วค่อยไป')}<b>{tr('มุมที่ 2')}</b>
                     {sheetExample && (
                       <> {tr('· ตัวอย่างใบที่ทำครบ:')} <b>{sheetExample.equipment_name}</b>{' '}
-                        ({sheetExample.frames} {tr('มุม ·')} {sheetExample.cps} จุด · ปักครบ · รูปขยายครบ
-                        {sheetExample.same_team ? '' : ` · ใบของ${teamLabel(sheetExample.department)}`})
+                        ({sheetExample.frames} {tr('มุม ·')} {sheetExample.cps} {tr("จุด · ปักครบ · รูปขยายครบ")}
+                        {sheetExample.same_team ? '' : ` · ${tr("ใบของ")}${teamLabel(sheetExample.department)}`})
                       </>
                     )}
                   </div>
@@ -1524,9 +1607,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 {comp.frames > 0 && (
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ดูเฉพาะ:')}</span>
-                    {[{ k: null, t: `ทุกมุม (${comp.cps})` },
+                    {[{ k: null, t: `${tr("ทุกมุม")} (${comp.cps})` },
                       ...comp.byFrame.map(f => ({ k: f.key, t: `${f.title} (${f.n})`, idx: f.idx })),
-                      ...(comp.unpinned > 0 ? [{ k: UNPINNED, t: `ยังไม่ปักหมุด (${comp.unpinned})`, warn: true }] : []),
+                      ...(comp.unpinned > 0 ? [{ k: UNPINNED, t: `${tr("ยังไม่ปักหมุด")} (${comp.unpinned})`, warn: true }] : []),
                     ].map(ch => {
                       const on = frameFilter === ch.k
                       return (
@@ -1550,7 +1633,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 if (!items.length) return null
                 return (
                   <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({items.length}{items.length !== g.items.length ? ` จาก ${g.items.length}` : ''} จุด)</span></div>
+                    <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({items.length}{items.length !== g.items.length ? ` ${tr("จาก")} ${g.items.length}` : ''} {tr("จุด")})</span></div>
                     {items.map(renderCard)}
                   </div>
                 )
@@ -1568,11 +1651,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     {frameFilter != null && !anyNamed && un.length === 0 && (
                       <div style={{ textAlign: 'center', padding: '18px 12px', fontSize: 12, color: 'var(--muted)',
                                     border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-                        มุมนี้ยังไม่มีจุดตรวจ — กด <b>{tr('+ เพิ่มจุดตรวจ')}</b> แล้วกด 🔘 วางตำแหน่ง เพื่อปักหมุดบนรูปมุมนี้
+                        {tr("มุมนี้ยังไม่มีจุดตรวจ — กด")} <b>{tr('+ เพิ่มจุดตรวจ')}</b> {tr("แล้วกด 🔘 วางตำแหน่ง เพื่อปักหมุดบนรูปมุมนี้")}
                         <div style={{ marginTop: 8 }}>
                           <button type="button" onClick={() => setFrameFilter(null)}
                             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
-                                     border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
+                                     border: '1px solid var(--border2)', background: 'var(--card-surf)', color: 'var(--text2)' }}>
                             {tr('ดูทุกมุม')}
                           </button>
                         </div>
@@ -1595,7 +1678,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
   const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: 'var(--red)' }
   const cols = canSetup ? 8 : 7   // ต้องเท่าจำนวน <th> — ขาด 1 = แถบหัวกลุ่มไลน์ไม่เต็มแถว
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
       <table className="rec-list" style={{ minWidth: 760 }}>
         <thead><tr>
           <th style={{ width: 44 }} aria-label={tr('รูป')}></th><th>{tr('อุปกรณ์')}</th><th>No.</th><th>{tr('ชนิด')}</th><th>{tr('เครื่อง')}</th>
@@ -1636,7 +1719,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
                       {r.cpCount}{r.hasPins && <span title={tr('ปักหมุดบนรูปแล้ว')} style={{ marginLeft: 4 }}>📍</span>}
                     </td>
                     <td style={{ whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700, color: st?.color ?? 'var(--muted)' }}>
-                      {st ? `${st.icon} ${st.label}` : '✓ พร้อม'}
+                      {st ? `${st.icon} ${tr(st.label)}` : tr("✓ พร้อม")}
                       {r.status === 'am_pending' && <> · <Link to="/daily-checker?tab=pm" onClick={e => e.stopPropagation()} style={{ color: st.color, textDecoration: 'underline' }}>{tr('ลงทะเบียน')}</Link></>}
                     </td>
                     {canSetup && (
@@ -1695,14 +1778,14 @@ export default function PMSetup() {
     const cur = teamKindOf(department)
     const next = cur === 'am' ? 'pm' : 'am'
     const name = teams.find(t => t.key === department)?.label ?? department
-    if (!await askConfirm(`เปลี่ยน "${name}" จาก ${cur.toUpperCase()} → ${next.toUpperCase()}?\n\n`
+    if (!await askConfirm(`${tr("เปลี่ยน")} "${name}" ${tr("จาก")} ${cur.toUpperCase()} → ${next.toUpperCase()}?\n\n`
       + (next === 'am' ? 'AM = พนักงานหน้างานตรวจเองทุกต้นกะ' : 'PM = ช่าง (technician/engineer) ตรวจตามรอบเวลา/ยอดผลิต/เงื่อนไข')
-      + `\nมีผลกับสิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้ (${next}:record)`)) return
+      + `\n${tr("มีผลกับสิทธิ์ที่ใช้บันทึกผลตรวจของทีมนี้")} (${next}:record)`)) return
     const { error } = await supabaseDR.from('mtn_teams').update({ kind: next }).eq('key', department)
-    if (error) return toast.error('เปลี่ยนไม่สำเร็จ: ' + error.message)
+    if (error) return toast.error((tr('เปลี่ยนไม่สำเร็จ') + ': ') + error.message)
     clearPmTeamsCache()
     setTeams(await loadPmTeams())
-    toast.success(`ตั้งเป็น ${next.toUpperCase()} แล้ว`)
+    toast.success(`${tr("ตั้งเป็น")} ${next.toUpperCase()} ${tr("แล้ว")}`)
   }
   useEffect(() => { loadPmTeams().then(setTeams) }, [])
 
@@ -1730,14 +1813,14 @@ export default function PMSetup() {
         .eq('module', 'mtn')),
       fetchAllPages(() => supabaseDR.from('checklists').select('id, equipment_id').eq('module', 'mtn').eq('department', department)),
     ])
-    if (jr.error || jr.truncated) errs.push(`ทะเบียนอุปกรณ์: ${jr.error || 'เกินเพดาน โหลดไม่ครบ'}`)
-    if (cr.error || cr.truncated) errs.push(`checklist: ${cr.error || 'เกินเพดาน โหลดไม่ครบ'}`)
+    if (jr.error || jr.truncated) errs.push(`${tr("ทะเบียนอุปกรณ์")}: ${jr.error || tr('เกินเพดาน โหลดไม่ครบ')}`)
+    if (cr.error || cr.truncated) errs.push(`checklist: ${cr.error || tr('เกินเพดาน โหลดไม่ครบ')}`)
     const clMap = {}, eqOfCl = {}
     cr.rows.forEach(c => { clMap[c.equipment_id] = c.id; eqOfCl[c.id] = c.equipment_id })
 
     const counts = {}, pins = {}
     const cpr = await fetchByIds(Object.values(clMap), part => supabaseDR.from('jig_checkpoints').select('id, checklist_id, x_pos').in('checklist_id', part))
-    if (cpr.error || cpr.truncated) errs.push(`จำนวนจุดตรวจ: ${cpr.error || 'เกินเพดาน โหลดไม่ครบ'}`)
+    if (cpr.error || cpr.truncated) errs.push(`${tr("จำนวนจุดตรวจ")}: ${cpr.error || tr('เกินเพดาน โหลดไม่ครบ')}`)
     cpr.rows.forEach(c => {
       const eqId = eqOfCl[c.checklist_id]
       if (!eqId) return
@@ -1750,7 +1833,7 @@ export default function PMSetup() {
     let reg = null
     if (isAmTeam(department)) {   // ทีม AM ผ่าน mtn_teams.kind — ห้าม hardcode 'production' (08/10)
       const tg = await fetchAllPages(() => supabaseDR.from('pm_daily_line_targets').select('id, jig_id').eq('is_active', true))
-      if (tg.error) errs.push(`ทะเบียน AM: ${tg.error} — สถานะ "ยังไม่ลงทะเบียน AM" ไม่ได้ตรวจ`)
+      if (tg.error) errs.push(`${tr("ทะเบียน")} AM: ${tg.error} — ${tr("สถานะ \"ยังไม่ลงทะเบียน AM\" ไม่ได้ตรวจ")}`)
       else reg = new Set(tg.rows.map(t => t.jig_id))
     }
     if (req !== reqRef.current) return
@@ -1798,16 +1881,66 @@ export default function PMSetup() {
   const filtered = !!(fQ.trim() || fScope.names?.length || fStatus)
   const clearFilters = () => { setFQ(''); setFScope({ section: '', line: '', names: null }); setFStatus('') }
   const statusOptions = [
-    { value: '', label: `ทั้งหมด (${allRows.length})` },
-    { value: 'ready', label: `✓ พร้อม (${statusCount.ready})` },
-    { value: 'no_cp', label: `⚪ ไม่มีจุดตรวจ (${statusCount.no_cp})` },
-    amRegistered ? { value: 'am_pending', label: `⚠ ยังไม่ลงทะเบียน AM (${statusCount.am_pending})` } : null,
-    statusCount.no_line ? { value: 'no_line', label: `ไลน์นอกทะเบียน (${statusCount.no_line})`, title: 'ช่องไลน์ว่าง หรือชื่อไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้' } : null,
+    { value: '', label: `${tr('ทั้งหมด')} (${allRows.length})` },
+    { value: 'ready', label: `✓ ${tr('พร้อม')} (${statusCount.ready})` },
+    { value: 'no_cp', label: `⚪ ${tr('ไม่มีจุดตรวจ')} (${statusCount.no_cp})` },
+    amRegistered ? { value: 'am_pending', label: `⚠ ${tr('ยังไม่ลงทะเบียน AM')} (${statusCount.am_pending})` } : null,
+    statusCount.no_line ? { value: 'no_line', label: `${tr('ไลน์นอกทะเบียน')} (${statusCount.no_line})`, title: 'ช่องไลน์ว่าง หรือชื่อไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้' } : null,
   ].filter(Boolean)
 
   const handleDelete = async (jig) => {
     if (!deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'อุปกรณ์ของทีมนี้')); return }
-    if (!await askConfirm(`ลบ "${jig.name}" ?`)) return
+    /* 🔗 ตัวตนใช้ร่วม · มุมมองแยก (26/11 · utils/sharedEquipment.js) — แผนกอื่นยังใช้เครื่องนี้ = ถอดแค่ใบตรวจของแผนกนี้
+       เดิมลบแถว jigs ทั้งแถว ⇒ cascade ลบใบตรวจ/จุดตรวจ/แผน/รูป ของ "ทุกแผนก" ไปด้วย · นับไม่ได้ = ไม่ลบ */
+    const rOther = await supabaseDR.from('checklists').select('department').eq('equipment_id', jig.id).neq('department', department)
+    const mode = deleteMode(rOther.data?.length, rOther.error)
+    if (mode === 'unknown') { toast.error(tr('ตรวจไม่ได้ว่าแผนกอื่นใช้เครื่องนี้อยู่ไหม — ยังไม่ลบ') + (rOther.error ? `: ${rOther.error.message}` : '')); return }
+    if (mode === 'view') {
+      const names = [...new Set(rOther.data.map(r => r.department))].map(d => pmTeamsSync().find(t => t.key === d)?.label ?? d).join(', ')
+      if (!await askConfirm(`${tr("ถอด")} "${jig.name}" ${tr("ออกจากแผนกนี้")} ?\n\n${tr('เครื่องนี้ยังใช้อยู่ที่')} ${names} — ${tr('ตัวเครื่องและข้อมูลของแผนกนั้นไม่ถูกแตะ')}\n${tr('ที่หายคือจุดตรวจ/แผน/รูปของแผนกนี้เท่านั้น')}${isAmTeam(department) ? '\n' + tr('และปิดรายการ AM รายวัน + ถอดออกจากสถานี AM ของเครื่องนี้') : ''}`)) return
+      const cl = await findChecklist(jig.id, 'mtn', department)
+      if (cl) {
+        const r = await supabaseDR.from('checklists').delete().eq('id', cl.id).select('id')
+        if (!checkWrite(r, 'ถอดใบตรวจของแผนกนี้')) return
+        if (!(r.data || []).length) { toast.error(tr('ถอดไม่สำเร็จ (0 แถว)')); return }
+      }
+      // รูปของแผนกนี้ — ลบตาม id ที่เป็นของแผนกนี้จริง (ownsFrame) ไม่ลบด้วยคีย์แม่
+      const { rows: myFrames, error: eFr } = await loadDeptFrames([jig.id], department)
+      const dropIds = eFr ? [] : myFrames.filter(r => ownsFrame(r, department)).map(r => r.id)
+      const ri = dropIds.length ? await supabaseDR.from('jig_images').delete().in('id', dropIds) : { error: eFr }
+      if (ri.error) toast.error(tr('ถอดใบตรวจแล้ว แต่ลบรูปของแผนกนี้ไม่สำเร็จ (รูปยังค้าง ไม่กระทบแผนกอื่น)') + `: ${ri.error.message || ri.error}`)
+      /* 📋 ถอดฝั่ง AM ⇒ ปิดรายการ AM รายวันของเครื่องนี้ด้วย (user 26/11) — ไม่งั้นบอร์ด AM เตือน "ยังไม่มีจุดตรวจ" ค้าง
+         ปิด = is_active false (ไม่ลบ · กติกาเดียวกับเอาออกที่ /daily-pm) · ล้ม = บอก ไม่ยกเลิกการถอด */
+      let amNote = ''
+      if (isAmTeam(department)) {
+        const rt = await supabaseDR.from('pm_daily_line_targets').update({ is_active: false }).eq('jig_id', jig.id).eq('is_active', true).select('id')
+        if (rt.error) toast.error(tr('ถอดแล้ว แต่ปิดรายการ AM รายวันไม่สำเร็จ — ไปเอาออกที่จอ AM รายวัน') + `: ${rt.error.message}`)
+        else if ((rt.data || []).length) { invalidateTable('pm_daily_line_targets'); amNote = ` · ${tr('ปิดรายการ AM รายวัน')} ${rt.data.length} ${tr('รายการ')}` }
+        /* 🧩 ถอดออกจากสถานี AM ด้วย (user 27/11) — สถานีต้องมี ≥2 อุปกรณ์ (`validateStation` · utils/amStations.js)
+           เหลือไม่ถึง 2 ⇒ ปิดสถานีตามกติกาเดียวกับปุ่ม "ลบสถานี" (ตัวที่เหลือกลับไปตรวจทีละใบ) · ล้ม = บอก ไม่ยกเลิกการถอด */
+        const rm = await supabaseDR.from('am_station_members').select('id, station_id').eq('jig_id', jig.id)
+        if (rm.error) toast.error(tr('ถอดแล้ว แต่อ่านสถานี AM ไม่ได้ — ไปถอดเองที่ตั้งค่าสถานี AM') + `: ${rm.error.message}`)
+        for (const m of rm.data || []) {
+          const d = await supabaseDR.from('am_station_members').delete().eq('id', m.id).select('id')
+          if (d.error || !(d.data || []).length) { toast.error(tr('ถอดออกจากสถานี AM ไม่สำเร็จ — ไปถอดเองที่ตั้งค่าสถานี AM') + (d.error ? `: ${d.error.message}` : '')); continue }
+          amNote += ` · ${tr('ถอดจากสถานี AM')}`
+          const left = await supabaseDR.from('am_station_members').select('id').eq('station_id', m.station_id)
+          if (left.error) { toast.error(tr('ถอดจากสถานีแล้ว แต่นับอุปกรณ์ที่เหลือไม่ได้ — เช็คที่ตั้งค่าสถานี AM') + `: ${left.error.message}`); continue }
+          if ((left.data || []).length < 2) {
+            const ids = (left.data || []).map(r => r.id)
+            const d2 = ids.length ? await supabaseDR.from('am_station_members').delete().in('id', ids).select('id') : { error: null }
+            const off = d2.error ? d2 : await supabaseDR.from('am_stations').update({ is_active: false }).eq('id', m.station_id).select('id')
+            if (off.error || !(off.data || []).length) toast.error(tr('สถานีเหลืออุปกรณ์ไม่ถึง 2 ตัว แต่ปิดสถานีไม่สำเร็จ — ลบสถานีเองที่ตั้งค่าสถานี AM') + (off.error ? `: ${off.error.message}` : ''))
+            else amNote += ` (${tr('สถานีเหลือไม่ถึง 2 ตัว — ปิดสถานี ตัวที่เหลือกลับไปตรวจทีละใบ')})`
+          }
+        }
+      }
+      invalidateTable('checklists')
+      toast.success(tr('ถอดออกจากแผนกนี้แล้ว') + amNote)
+      fetchData()
+      return
+    }
+    if (!await askConfirm(`${tr("ลบ")} "${jig.name}" ?`)) return
     /* 🔴 นับแถวก่อนแตะ storage (QC audit 06/10) — ไม่นับ = แถว jig ยังอยู่
        แต่รูปทั้งชุด (เฟรม + จุดตรวจ + โมเดล 3D) ถูกลบ ⇒ ทะเบียนจิ๊กเสียรูปถาวร */
     const dres = await supabaseDR.from('jigs').delete().eq('id', jig.id).select('id')
@@ -1836,11 +1969,11 @@ export default function PMSetup() {
             const { error: eRm } = await supabaseDR.storage.from('jig-images').remove(orphan)
             if (eRm) imgNote = ' — แต่ลบไฟล์รูปไม่สำเร็จ (ไฟล์ยังค้างใน storage)'
           }
-          if (stillUsed.length) imgNote = ` — เก็บรูปไว้ ${stillUsed.length} ไฟล์ เพราะเครื่องอื่นที่คัดลอกจุดตรวจไปยังใช้อยู่`
+          if (stillUsed.length) imgNote = ` — ${tr("เก็บรูปไว้")} ${stillUsed.length} ${tr("ไฟล์ เพราะเครื่องอื่นที่คัดลอกจุดตรวจไปยังใช้อยู่")}`
         }
       }
     } catch { imgNote = ' — แต่เก็บกวาดไฟล์รูปไม่สำเร็จ (ไฟล์ยังค้างใน storage)' }
-    toast.success('ลบแล้ว' + imgNote)
+    toast.success(tr('ลบแล้ว') + imgNote)
     fetchData()
   }
 
@@ -1878,17 +2011,17 @@ export default function PMSetup() {
           <select value={fStatus} onChange={e => setFStatus(e.target.value)} aria-label={tr('สถานะ')}>
             {statusOptions.map(o => <option key={o.value} value={o.value} title={o.title}>{tr(o.label)}</option>)}
           </select>
-          <SearchInput value={fQ} onChange={setFQ} fields="ชื่อ / No. / เลขเครื่อง / ไลน์" />
+          <SearchInput value={fQ} onChange={setFQ} fields={tr("ชื่อ / No. / เลขเครื่อง / ไลน์")} />
           <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> {tr('จาก')} {allRows.length}
+            {tr("แสดง")} <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> {tr('จาก')} {allRows.length}
           </span>
           {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>{tr('ล้างตัวกรอง')}</button>}
         </>}
         actions={canSetup && <>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [+ เพิ่มอุปกรณ์] · ทะเบียนประเภท/วิธีตรวจ → ⋯ */}
           <OverflowMenu items={[
-            { key: 'cat', icon: '⚙️', label: 'ทะเบียนประเภท', onClick: () => setTaxModal('category') },
-            { key: 'method', icon: '📋', label: 'ทะเบียนวิธีตรวจ', onClick: () => setTaxModal('method') },
+            { key: 'cat', icon: '⚙️', label: tr("ทะเบียนประเภท"), onClick: () => setTaxModal('category') },
+            { key: 'method', icon: '📋', label: tr("ทะเบียนวิธีตรวจ"), onClick: () => setTaxModal('method') },
           ]} />
           <button type="button" className="pg-btn primary" onClick={openCreate}>{tr('+ เพิ่มอุปกรณ์')}</button>
         </>} />
@@ -1896,13 +2029,13 @@ export default function PMSetup() {
       {/* 🔴 โหลดไม่ครบต้องเขียนบนจอ — ห้ามปล่อยลิสต์ว่างแล้วอ่านว่า "ยังไม่มีอุปกรณ์" */}
       {loadErr && !loading && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
-          ⚠ โหลดข้อมูลไม่ครบ — ตัวเลข/รายการด้านล่างอาจขาด: {loadErr}
+          ⚠ {tr("โหลดข้อมูลไม่ครบ — ตัวเลข/รายการด้านล่างอาจขาด")}: {loadErr}
           <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>{tr('ลองใหม่')}</button>
         </div>
       )}
       {droppedNoLine > 0 && fStatus !== 'no_line' && (
         <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--muted)' }}>
-          ℹ️ มีอีก <b>{droppedNoLine}</b> อุปกรณ์ที่ตรงคำค้น/สถานะ แต่ช่องไลน์ว่างหรือชื่อไม่ตรงทะเบียน จึงไม่อยู่ในผลกรองไลน์ —
+          ℹ️ {tr("มีอีก")} <b>{droppedNoLine}</b> {tr("อุปกรณ์ที่ตรงคำค้น/สถานะ แต่ช่องไลน์ว่างหรือชื่อไม่ตรงทะเบียน จึงไม่อยู่ในผลกรองไลน์")} —
           <button type="button" onClick={() => setFStatus('no_line')} style={{ ...S.jumpBtn, marginLeft: 6 }}>{tr('ดูรายการนี้')}</button>
         </div>
       )}
@@ -1915,7 +2048,7 @@ export default function PMSetup() {
         <div style={S.empty}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔩</div>
           <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{tr('ยังไม่มีอุปกรณ์')}</p>
-          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>กดปุ่ม "เพิ่มอุปกรณ์" เพื่อเริ่มต้น</p>
+          <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>{tr("กดปุ่ม \"เพิ่มอุปกรณ์\" เพื่อเริ่มต้น")}</p>
           {canSetup && <button onClick={openCreate} style={S.primaryBtn}>{tr('+ เพิ่มอุปกรณ์')}</button>}
         </div>
       ) : (
@@ -1933,11 +2066,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} teamWriteOf={teamWriteOf} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title={tr('จัดการประเภทจุดตรวจ (Category)')} extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} allUnits={allUnits} myTeams={pmUserTeams} table="pm_checkpoint_categories" title={tr('จัดการประเภทจุดตรวจ (Category)')} extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title={tr('จัดการวิธีการตรวจสอบ')} extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} allUnits={allUnits} myTeams={pmUserTeams} table="pm_checking_methods" title={tr('จัดการวิธีการตรวจสอบ')} extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

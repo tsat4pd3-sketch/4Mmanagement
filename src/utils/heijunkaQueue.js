@@ -485,14 +485,19 @@ export const PLAN_SLIP_TOLERANCE_MS = 2 * 60000;
  *          `planWidthPct = 0` = ไม่มีอะไรให้วาด (ไม่รู้กรอบ หรือกรอบอยู่นอกราง)
  */
 export function planFramePct(item, hs, pctPerMs) {
-  const none = { planLeftPct: 0, planWidthPct: 0, planSlipped: false };
-  if (!item || item.planStartMs == null || item.plannedEndMs == null) return none;
+  const none = { planLeftPct: 0, planWidthPct: 0, planSlipped: false, planUnknown: false };
+  /* 🔴 24/11 · user "บางไลน์มีกรอบขาวบางไลน์ไม่มี" — เดิม 3 สถานะยุบเหลือหน้าตาเดียว "ไม่เห็นกรอบ":
+       ① อยู่ในกรอบ (จาง 35%) ② **ระบบคำนวณคิวไม่ได้** (ไม่รู้ CT ⇒ ไม่มี planStartMs) ③ หลุดกรอบ (ขาว)
+     ① กับ ② แยกไม่ออกด้วยตา = จอไม่บอกว่า "ตอบไม่ได้" ซึ่งผิดกฎความซื่อสัตย์
+     ⇒ แยก `planUnknown` ออกมาให้ตัววาดเขียนบนจอได้ **ห้ามเดาเวลาแทน** */
+  if (!item) return none;
+  if (item.planStartMs == null || item.plannedEndMs == null) return { ...none, planUnknown: true };
   const pl = Math.max(0, Math.min(100, (item.planStartMs - hs) * pctPerMs));
   const pr = Math.max(0, Math.min(100, (item.plannedEndMs - hs) * pctPerMs));
   /* หลุดกรอบ = เริ่มช้ากว่าที่ควร **หรือ** กินรางยาวกว่าที่ควร (ครองไลน์ถึง occupiedEndMs) */
   const planSlipped = (item.startMs - item.planStartMs) > PLAN_SLIP_TOLERANCE_MS
     || (Math.max(item.endMs, item.occupiedEndMs) - item.plannedEndMs) > PLAN_SLIP_TOLERANCE_MS;
   return pr > pl
-    ? { planLeftPct: pl, planWidthPct: pr - pl, planSlipped }
+    ? { planLeftPct: pl, planWidthPct: pr - pl, planSlipped, planUnknown: false }
     : { ...none, planSlipped };
 }

@@ -310,6 +310,15 @@ export function decimalsOf(d) {
   return 2;
 }
 
+/** 🧱 ช่วงค่าที่ "เป็นไปได้" ของตัวตน KPI (20/11 · user: "เดือนที่เหลือ ถ้าเป็นไปไม่ได้ ไม่ควรคาดการณ์ — OEE > 100 % · MTTR ติดลบ")
+    อ่านจากทะเบียน `kpi_catalog.value_min/value_max` เท่านั้น (ตั้งที่ปุ่ม 📘 ทะเบียน · seed: ทุกตัว ≥ 0 · % ≤ 100 · PPM ≤ 1e6)
+    · null = ไม่จำกัดด้านนั้น · **ห้าม hardcode "% = 100" ในหน้า** — ทะเบียนแก้ได้รายตัว (เช่น % เติบโตเกิน 100 ได้) */
+export function valueBoundsOf(d) {
+  const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const c = d?.kpi_catalog || d;
+  return { min: num(c?.value_min), max: num(c?.value_max) };
+}
+
 /** วิธีรวมของแถว — อ่านจากทะเบียนเท่านั้น · คีย์แปลก/ไม่มี = `average` (ไม่ใช่พัง) */
 export function summaryModeOf(d) {
   const k = d?.kpi_catalog?.summary_mode || d?.summary_mode;
@@ -458,12 +467,34 @@ export function neededRunRate({ actual = [], target = null, def = null } = {}) {
   const mode0 = summaryModeOf(def);
   const sum = have.reduce((s, x) => s + x, 0);
   if (mode0 === 'rate') return null;
+  /* 🧱 เป็นไปได้ไหม (20/11): ที่ต้องทำต่อเดือนหลุดช่วง `valueBoundsOf()` ของทะเบียน = **เป็นไปไม่ได้** (`feasible:false` + `limit` ด้านที่ชน)
+     · ตัวยิ่งสูงยิ่งดี: ต้องได้ ≤ พื้น = ผ่านแน่ (`trivial`) · เกินเพดาน = ไม่ทัน
+     · ตัวยิ่งต่ำยิ่งดี: ต้องไม่เกิน ≥ เพดาน = ผ่านแน่ · ต่ำกว่าพื้น = ไม่ทัน
+     · ไม่มีขอบด้านนั้นในทะเบียน = ไม่ตัดสิน (feasible ตามเดิม) — จอยังโชว์ตัวเลข */
+  const down = String(def?.direction || def?.kpi_catalog?.direction || '').toLowerCase() === 'down';
+  const b = valueBoundsOf(def);
+  const judge = (perMonth) => {
+    if (down) {
+      if (b.min != null && perMonth < b.min) return { feasible: false, limit: { kind: 'min', value: b.min } };
+      if (b.max != null && perMonth >= b.max) return { feasible: true, trivial: true, limit: { kind: 'max', value: b.max } };
+    } else {
+      if (b.max != null && perMonth > b.max) return { feasible: false, limit: { kind: 'max', value: b.max } };
+      if (b.min != null && perMonth <= b.min) return { feasible: true, trivial: true, limit: { kind: 'min', value: b.min } };
+    }
+    return { feasible: true, trivial: false, limit: null };
+  };
+  /* `bestCase` (เฉพาะเป็นไปไม่ได้) = ค่าสรุปทั้งปี "ดีที่สุดที่ยังเป็นไปได้" ถ้าเดือนที่เหลือทำได้สุดขอบทุกเดือน — จอโชว์ตัวนี้แทนตัวเลขติดลบ/เกิน 100 */
   if (mode0 === 'max' || mode0 === 'as_of') {
     const last = a[a.map((x, i) => (x != null ? i : -1)).reduce((m, i) => Math.max(m, i), -1)];
-    return { kind: 'reach', perMonth: t, remaining, add: t - last };
+    const j = judge(t);
+    return { kind: 'reach', perMonth: t, remaining, add: t - last, ...j, bounds: b, bestCase: j.feasible ? null : j.limit.value };
   }
-  if (mode0 === 'sum') return { kind: 'sum', perMonth: (t - sum) / remaining, remaining };
-  return { kind: 'avg', perMonth: (t * 12 - sum) / remaining, remaining };
+  if (mode0 === 'sum') {
+    const pm = (t - sum) / remaining; const j = judge(pm);
+    return { kind: 'sum', perMonth: pm, remaining, ...j, bounds: b, bestCase: j.feasible ? null : sum + remaining * j.limit.value };
+  }
+  const pm = (t * 12 - sum) / remaining; const j = judge(pm);
+  return { kind: 'avg', perMonth: pm, remaining, ...j, bounds: b, bestCase: j.feasible ? null : (sum + remaining * j.limit.value) / 12 };
 }
 
 /** จัดรูปตัวเลขตามทศนิยมของแถว — `null`/ไม่ใช่ตัวเลข = สตริงว่าง **ห้ามคืน 0** */

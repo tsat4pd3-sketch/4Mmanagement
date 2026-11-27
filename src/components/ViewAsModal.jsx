@@ -73,11 +73,10 @@ export default function ViewAsModal({ current, onClose, onApply }) {
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
-          ดูระบบเหมือนที่ user role นั้นเห็น (เมนู/ปุ่ม/ขอบเขตข้อมูล) — เฉพาะแท็บนี้ · ออกได้จากป้าย 🎭 ล่างจอ
+          {tr("ดูระบบเหมือนที่ user role นั้นเห็น (เมนู/ปุ่ม/ขอบเขตข้อมูล) — เฉพาะแท็บนี้ · ออกได้จากป้าย 🎭 ล่างจอ")}
         </div>
         <div style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.55 }}>
-          ⚠️ จำลองเฉพาะ "การมองเห็น" ฝั่งจอ — ถ้ากดบันทึก ระบบยังบันทึกด้วยสิทธิ์จริงของบัญชี admin
-          (ฝั่งฐานข้อมูลไม่ได้ถูกจำลอง) จึงควรใช้ดูอย่างเดียว
+          ⚠️ {tr("จำลองเฉพาะ \"การมองเห็น\" ฝั่งจอ — ถ้ากดบันทึก ระบบยังบันทึกด้วยสิทธิ์จริงของบัญชี admin (ฝั่งฐานข้อมูลไม่ได้ถูกจำลอง) จึงควรใช้ดูอย่างเดียว")}
         </div>
 
         <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 10 }}>
@@ -88,7 +87,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         </label>
 
         {role !== 'display' && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#eab308', marginBottom: 12, cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 12, cursor: 'pointer' }}>
             <input type="checkbox" checked={deptAdmin} onChange={e => setDeptAdmin(e.target.checked)}
               style={{ width: 16, height: 16, accentColor: '#eab308' }} />
             {tr('🛡️ เป็นแอดมินหน่วยงานด้วย (ได้ action เพิ่มตามคอลัมน์ในหน้าจัดการสิทธิ์)')}
@@ -98,7 +97,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         {isLeader ? (
           <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 2, minWidth: 200 }}>
-              ไลน์ของหัวหน้ากลุ่ม (scope = ทั้งครอบครัวไลน์)
+              {tr("ไลน์ของหัวหน้ากลุ่ม (scope = ทั้งครอบครัวไลน์")})
               {/* picker กลาง (UI §5.1.2) — ไม่ส่ง role/sections เพราะจอนี้คือ "สวมบทบาท" ต้องเห็นทุกไลน์
                   includeRetired: คงพฤติกรรมเดิม (เดิม map จาก lines ดิบ ไม่กรอง is_active) */}
               <LineSelect lines={lines} value={lineId} onChange={setLineId} valueKey="id"
@@ -117,7 +116,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         ) : role !== 'display' && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
-              จำกัดขอบเขตส่วนงาน (ไม่ติ๊ก = ไม่จำกัด — เห็นทั้งโรงงานตามกติกา role)
+              {tr("จำกัดขอบเขตส่วนงาน (ไม่ติ๊ก = ไม่จำกัด — เห็นทั้งโรงงานตามกติกา")} role)
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {orgSections.map(s => (
@@ -138,7 +137,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         {role !== 'display' && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
-              ทีมช่างซ่อมที่สังกัด (ไม่ติ๊ก = ไม่ได้ถูกตั้งทีม — ใบซ่อมขั้น 2-4 จะทำไม่ได้)
+              {tr("ทีมช่างซ่อมที่สังกัด (ไม่ติ๊ก = ไม่ได้ถูกตั้งทีม — ใบซ่อมขั้น 2-4 จะทำไม่ได้")})
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(teamRows || []).map(t => (
@@ -156,7 +155,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
 
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button onClick={onClose}
-            style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
             {tr('ยกเลิก')}
           </button>
           <button onClick={apply}

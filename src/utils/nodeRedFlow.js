@@ -73,10 +73,18 @@ export function buildNodeRedFlow({ source, kinds = [], ingestUrl }) {
 `msg.topic = \`
 SELECT machine,
        COUNT(*) AS n,
+       SUBSTRING_INDEX(GROUP_CONCAT(power ORDER BY log_time DESC), ',', 1) AS w_last,
        MAX(power) AS w_max,
        SUBSTRING_INDEX(GROUP_CONCAT(energy ORDER BY log_time DESC), ',', 1) AS kwh_last,
        AVG((voltageA + voltageB + voltageC) / 3) AS v_avg,
-       MAX(GREATEST(currentA, currentB, currentC)) AS a_max
+       SUBSTRING_INDEX(GROUP_CONCAT((currentA + currentB + currentC) / 3 ORDER BY log_time DESC), ',', 1) AS a_last,
+       MAX(GREATEST(currentA, currentB, currentC)) AS a_max,
+       SUBSTRING_INDEX(GROUP_CONCAT(voltageA ORDER BY log_time DESC), ',', 1) AS v1,
+       SUBSTRING_INDEX(GROUP_CONCAT(voltageB ORDER BY log_time DESC), ',', 1) AS v2,
+       SUBSTRING_INDEX(GROUP_CONCAT(voltageC ORDER BY log_time DESC), ',', 1) AS v3,
+       SUBSTRING_INDEX(GROUP_CONCAT(currentA ORDER BY log_time DESC), ',', 1) AS a1,
+       SUBSTRING_INDEX(GROUP_CONCAT(currentB ORDER BY log_time DESC), ',', 1) AS a2,
+       SUBSTRING_INDEX(GROUP_CONCAT(currentC ORDER BY log_time DESC), ',', 1) AS a3
 FROM energy_sec
 WHERE log_time >= NOW() - INTERVAL 60 SECOND
 GROUP BY machine\`;
@@ -89,15 +97,21 @@ const readings = [];
 for (const r of rows) {
   if (!r || !r.n || !r.machine) continue;
   const m = String(r.machine).trim();
-  const add = (f, v) => {
-    if (v === null || v === undefined || v === '') return;   // ไม่รู้ = ไม่ส่ง (ห้ามกลายเป็น 0)
-    const x = Number(v);
-    if (Number.isFinite(x)) readings.push({ topic: \`${code}/\${m}/\${f}\`, last: x });
+  const ok = (v) => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v));
+  // last = ค่าล่าสุด (ตรงจอ Node-RED) · max = สูงสุดในนาที (โหลดกระชาก → ESM เก็บแยกเป็น kw_max/a_max)
+  const add = (f, v, mx) => {
+    if (!ok(v)) return;                                       // ไม่รู้ = ไม่ส่ง (ห้ามกลายเป็น 0)
+    const one = { topic: \`${code}/\${m}/\${f}\`, last: Number(v) };
+    if (ok(mx)) one.max = Number(mx);
+    readings.push(one);
   };
-  add('kw', r.w_max === null || r.w_max === undefined ? null : Number(r.w_max) / 1000); // W → kW
+  const kw = (w) => (ok(w) ? Number(w) / 1000 : null);       // W → kW
+  add('kw', kw(r.w_last), kw(r.w_max));
   add('kwh_total', r.kwh_last);
   add('v', r.v_avg);
-  add('a', r.a_max);
+  add('a', r.a_last, r.a_max);                               // A = เฉลี่ย 3 เฟส (ค่าล่าสุด) · max = เฟสสูงสุดในนาที
+  // ค่ารายเฟสล่าสุด (แผง 3 เฟสหน้ารายตู้ · ESM ผูกตู้ให้เองจาก topic พี่น้อง ไม่ต้องผูกใหม่)
+  for (const f of ['v1', 'v2', 'v3', 'a1', 'a2', 'a3']) add(f, r[f]);
 }
 if (!readings.length) { node.warn('energy_sec ไม่มีข้อมูลใน 1 นาทีล่าสุด — ไม่ส่ง'); return null; }
 ${hdr}

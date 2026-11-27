@@ -49,3 +49,18 @@ test('สรุปรายเดือน', () => {
   assert.deepEqual(s.map(m => [m.month, m.cases, m.qty, m.openQty, m.returnedQty, m.writtenOffQty]),
     [['2026-11', 3, 85, 55, 30, 0], ['2026-10', 1, 10, 0, 0, 10]]);
 });
+
+/* 🧾 20/11 — เคส line_issue_gap (สโตร์ยืนยันว่าไม่ได้จ่าย) คลังพักติดลบ ⇒ เคลียร์ต้องกลับทิศ */
+test('line_issue_gap: คืน = สโตร์จ่ายจริง (คลังพัก + / STORE −) · ตัดหาย = adjust บวกที่คลังพัก', async () => {
+  const { resolveLedgerRows, outcomeLabel, GAP_SOURCE, SUSPENSE_LOC } = await import('../stockDiscrepancy.js');
+  const d = { source: GAP_SOURCE, line_name: 'Line 61', mat_no: 'M1', short_qty: 50 };
+  const ret = resolveLedgerRows(d, { outcome: 'returned', by: 'a', workDate: '2026-11-20' });
+  assert.deepEqual(ret.map(r => [r.line_name, r.type, r.qty]), [[SUSPENSE_LOC, 'issue', 50], ['STORE', 'consume', 50]]);
+  const wo = resolveLedgerRows(d, { outcome: 'written_off', by: 'a', workDate: '2026-11-20' });
+  assert.deepEqual(wo.map(r => [r.line_name, r.type, r.qty]), [[SUSPENSE_LOC, 'adjust', 50]]);
+  assert.match(outcomeLabel('returned', d), /สโตร์จ่ายจริง/);
+  assert.match(outcomeLabel('returned', { source: 'wip_request' }), /คืน STORE/);
+  // เคสเดิมไม่เปลี่ยน
+  const old = resolveLedgerRows({ ...d, source: 'wip_request' }, { outcome: 'written_off', by: 'a', workDate: '2026-11-20' });
+  assert.deepEqual(old.map(r => [r.line_name, r.type, r.qty]), [[SUSPENSE_LOC, 'adjust', -50]]);
+});

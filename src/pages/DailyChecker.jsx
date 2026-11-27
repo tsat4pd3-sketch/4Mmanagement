@@ -47,7 +47,7 @@ export default function DailyChecker() {
           หน้าลูกครอบด้วย <Hub> {tr('⇒ ไม่วาดชื่อหน้าซ้ำ ·')} <Page> ของหน้าลูกไม่เพิ่มขอบซ้ำ (UI-STANDARD §1) */}
         <PageHeader title="Daily Checker" icon="🗂️"
           sub={tr('ศูนย์รวมระบบตรวจเช็ครายวันของไลน์ผลิต — เลือกแท็บด้านล่าง')}
-          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
+          tabs={available.map(t => ({ key: t.key, label: tr(t.label) }))} tab={active} onTab={setActive} />
 
       {/* เนื้อหาแท็บ (component หน้าเดิม) */}
       {Cur ? (

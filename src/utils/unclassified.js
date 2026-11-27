@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* ═══ 🗑️ "ถังขยะ" ของจอวิเคราะห์ — อื่นๆ / ไม่ระบุ (2026-09-23 · คำสั่ง user) ═══════
 
    ที่มา: *"ไม่ระบุกับอื่นๆ มาอันดับ 1 กับ 2 การวิเคราะห์จะไม่มีประโยชน์เลย"*
@@ -134,7 +135,7 @@ export function splitUnclassified(rows = [], { labelOf = (r) => r?.cat, textOf =
 
 /** ข้อความสรุปสำหรับแสดงบนจอ — คืน null เมื่อไม่มีอะไรต้องเตือน
  *  (กฎความซื่อสัตย์ของจอ: ชี้เป้าไม่ได้เท่าไหร่ ต้องเขียนบนจอ ห้ามเงียบ) */
-export function unclassifiedNote(split, { unit = 'รายการ', warnPct = 20 } = {}) {
+export function unclassifiedNote(split, { unit = tr("รายการ"), warnPct = 20 } = {}) {
   if (!split?.total) return null;
   const n = split.vagueWithText.length + split.blank.length;
   if (!n) return null;

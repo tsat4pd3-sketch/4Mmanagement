@@ -33,7 +33,7 @@ export default function OverflowMenu({ items = [], label = 'เพิ่มเ�
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', ...style }}>
       <button type="button" className="pg-btn pg-btn-icon" aria-haspopup="menu" aria-expanded={open}
-        title={label} aria-label={label} onClick={() => setOpen(o => !o)}
+        title={tr(label)} aria-label={tr(label)} onClick={() => setOpen(o => !o)}
         style={{ width: size, height: size }}>
         <span aria-hidden="true" style={{ display: 'inline-flex', gap: 3 }}>
           <i className="pg-dot" /><i className="pg-dot" /><i className="pg-dot" />

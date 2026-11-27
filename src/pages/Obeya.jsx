@@ -11,6 +11,8 @@ import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
+import TabBody from '../components/TabBody';
+import Skeleton from '../components/Skeleton';
 
 import { tr } from '../utils/i18n';
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
@@ -86,7 +88,8 @@ export default function Obeya() {
   /* UI-STANDARD 2026-09-24: ทุกแท็บอยู่ใน <Page> กรอบเดียวกัน — เดิมแต่ละแท็บมีรากของตัวเอง
      (kpi/sqdcm ชิด sidebar x=0 · todo/table x=24) ⇒ หัวเพจกระโดดตอนสลับแท็บ
      โหมดจอ TV ของบอร์ดเป็น position:fixed เต็มจอ — ไม่ถูกกรอบนี้บีบ */
-  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>{tr('กำลังโหลด...')}</div>;
+  /* 24/11: โครงเทาวิบแทน "กำลังโหลด..." (components/Skeleton) — แท็บ lazy (todo/table) โหลด chunk ครั้งแรก */
+  const loadingNote = <Skeleton cards={6} style={{ padding: '8px 0' }} />;
   let body;
   if (tab === 'sqdcm') body = <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
   else if (tab === 'todo') {
@@ -110,5 +113,6 @@ export default function Obeya() {
       </div>
     );
   } else body = <ObeyaKpiBoard tabs={tabs} tab={tab} onTab={setTab} />;
-  return <Page>{body}</Page>;
+  /* 24/11: สลับแท็บแบบมีจังหวะ (components/TabBody · utils/motion tabSwitch) — ตัวอย่างหน้าแรกตามรีลที่ user ส่ง */
+  return <Page><TabBody tab={tab}>{body}</TabBody></Page>;
 }

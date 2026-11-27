@@ -18,6 +18,7 @@
  */
 import { STAFF_SHOPFLOOR, STAFF_SUPPORT, SUPPORT_VALUES } from './staffKind.js';
 import { sectionValueForSave, orgNodeIdFor, ORG_SRC_MANUAL } from './sectionScope.js';
+import { tr } from './i18n.js';
 
 /** คอลัมน์ที่ "ตัวตนพนักงานใหม่" ครอบคลุม — ด่านเทสอ้างชื่อนี้ ห้ามเปลี่ยนชื่อ export */
 export const EMPLOYEE_IDENTITY_COLUMNS = [
@@ -84,7 +85,7 @@ export function staffKindHint(kind) {
   if (kind && kind !== STAFF_SHOPFLOOR) {
     return 'ช่าง = เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต (ช่างประจำไลน์ตั้งที่ line_technicians)';
   }
-  return 'พนักงานหน้าไลน์ = ถูกนับในเช็คชื่อ/กำลังคน/แผงสกิล';
+  return tr("พนักงานหน้าไลน์ = ถูกนับในเช็คชื่อ/กำลังคน/แผงสกิล");
 }
 
 /* ── 🔁 "รหัสนี้มีอยู่แล้ว" ต้องตอบเป็นคน ไม่ใช่ชื่อ constraint (2026-11-09) ──────────────────────

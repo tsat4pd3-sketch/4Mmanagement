@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /**
  * นำเข้า PFMEA / Process Flow / Control Plan จากไฟล์ Excel ฟอร์ม TSAT
  * ── pure ทั้งไฟล์ ไม่มี dependency กับ react/supabase/xlsx (เทสได้ตรงๆ)
@@ -300,7 +301,7 @@ export function parseCoverSheet(rows = []) {
   for (let r = 9; r < last; r++) {
     const row = rows[r] || [];
     const b = cv(row[1]);
-    if (/^REV/i.test(b) || b.includes('แก้ไข')) break;
+    if (/^REV/i.test(b) || b.includes(tr("แก้ไข"))) break;
     const content = cv(row[dc + 3]);
     if (isDateCell(row[dc])) {
       if (cur) out.push(cur);

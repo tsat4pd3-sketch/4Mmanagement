@@ -8,7 +8,7 @@ async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{n
 let LOOSE=false;
 async function findVisible(label){
   let EX=false; if (label.startsWith('=')){ EX=true; label=label.slice(1); }   // '=' นำหน้า = ชื่อปุ่มตรงตัว (เช่น "เพิ่ม order" ไม่ใช่ "เพิ่ม order ด่วน")
-  for (const loc of [pg.getByRole('button',{name:label,exact:EX}), pg.getByRole('menuitem',{name:label,exact:EX}), pg.getByText(label,{exact:EX})]) {
+  for (const loc of [pg.getByRole('button',{name:label,exact:EX}), pg.getByRole('menuitem',{name:label,exact:EX}), pg.getByText(label,{exact:EX}), pg.getByLabel(label,{exact:EX})]) {   // getByLabel = ช่อง select ที่มี aria-label (เช่น ช่วงย้อนหลัง)
     const n = await loc.count();
     for (let i=0;i<Math.min(n,30);i++){ const bb = await loc.nth(i).boundingBox().catch(()=>null);
       if (!(bb && bb.width>0 && bb.y>=0 && bb.y+bb.height<=1000 && bb.x>=0 && bb.x<1600)) continue;

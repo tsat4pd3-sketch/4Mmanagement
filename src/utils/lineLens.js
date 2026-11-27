@@ -19,6 +19,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { machineKey } from './machineNo.js';
 import { fmtDtElapsed as fmtElapsed } from './downtimeRules.js';
+import { tr } from './i18n.js';
 
 /** หัวข้อของกล่องรายละเอียดไลน์ (key ตรงกับบล็อกใน FactoryMap story modal) */
 export const STORY_SECTIONS = ['summary', 'shifts', 'parts', 'flow', 'dt', 'ng', 'fourm', 'pm', 'mo', 'people', 'energy', 'supply'];
@@ -143,5 +144,5 @@ export function markerFor(lens, { checklists = [], dt = null, statusMeta = {} } 
   if (p.state === 'overdue') return p;
   if (d.state === 'had') return d;
   if (p.state === 'due_soon') return p;
-  return { color: DT_COLOR.none, state: 'ok', sub: p.state === 'no_plan' ? 'ไม่หยุด · ไม่มีแผน PM' : 'ปกติ', alwaysLabel: false, blink: false };
+  return { color: DT_COLOR.none, state: 'ok', sub: p.state === 'no_plan' ? 'ไม่หยุด · ไม่มีแผน PM' : tr("ปกติ"), alwaysLabel: false, blink: false };
 }

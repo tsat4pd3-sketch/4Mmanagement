@@ -49,6 +49,7 @@
  */
 
 import { WORK_DAY_START_HOUR } from './workDate.js';
+import { monthsShort, yearDisplay } from './dateFormat.js';
 
 /* ── 1) สเกล ──────────────────────────────────────────────────────────────────────
    `okDays` = ช่วงกว้าง (จำนวนวัน) ที่สเกลนี้ "อ่านรู้เรื่อง" — ใช้เตือนเท่านั้น ไม่ได้บังคับ
@@ -315,7 +316,6 @@ export function bucketAxis(from, to, scale) {
   return out;
 }
 
-const TH_MON = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 /** ป้ายบนแกน — สั้นพอสำหรับแกน X · ปี พ.ศ. ตามที่ทั้งระบบใช้ */
 export function bucketLabel(key, scale) {
@@ -331,7 +331,7 @@ export function bucketLabel(key, scale) {
       ? `${+key.slice(8, 10)}–${dm(end)}`
       : `${dm(key)}–${dm(end)}`;
   }
-  if (scale === 'month') return `${TH_MON[+key.slice(5, 7) - 1] || ''} ${String(+key.slice(0, 4) + 543).slice(2)}`;
+  if (scale === 'month') return `${monthsShort()[+key.slice(5, 7) - 1] || ''} ${String(yearDisplay(+key.slice(0, 4))).slice(2)}`;
   if (scale === 'year')  return String(+key.slice(0, 4) + 543);
   return String(key);
 }

@@ -25,12 +25,14 @@ export function Hub({ children }) {
 
 const WIDTHS = { wide: '', form: ' page-form', narrow: ' page-narrow', full: ' page-full' };
 
-export default function Page({ width = 'wide', className = '', style, children }) {
+/* `top="flush"` (27/11 · มาตรฐานหน้ากิจกรรม · คำสั่ง user "Header ขยับขึ้นตรงแถวค้นหา Main bar เพื่อเพิ่มพื้นที่")
+   = ลดขอบบนของหน้าให้หัวเพจตรงกับแถวบนสุดของ Main bar (จอคอม · มือถือไม่เปลี่ยน เพราะปุ่ม ☰ ลอยอยู่บนสุด) */
+export default function Page({ width = 'wide', top, className = '', style, children }) {
   /* หน้าที่ตั้ง `gap` ที่ราก (flex column) ⇒ ระยะใต้ PageHeader = marginBottom 12 + gap = ซ้อน 2 ชั้น
      แถบกรองลงมาต่ำกว่าหน้าอื่น 12–15px (stdsweep 24/09) ⇒ ให้ gap เป็นตัวเว้นระยะตัวเดียว */
   const st = style && style.gap != null ? { '--ph-mb': '0px', ...style } : style;
   return (
-    <div className={`page-content${WIDTHS[width] ?? ''}${className ? ` ${className}` : ''}`} style={st}>
+    <div className={`page-content${WIDTHS[width] ?? ''}${top === 'flush' ? ' page-flush-top' : ''}${className ? ` ${className}` : ''}`} style={st}>
       {children}
     </div>
   );

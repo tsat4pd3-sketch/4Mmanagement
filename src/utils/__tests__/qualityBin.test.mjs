@@ -93,17 +93,20 @@ const DEF = (o = {}) => ({
   dr_defect_types: { name_th: 'เจาะรูไม่ครบ' }, ...o,
 });
 
-test('🟡 ของที่ต้องพิจารณา = NG + สงสัย (ซ่อมไม่นับ — ของที่ซ่อมผ่านถังมาแล้ว)', () => {
-  assert.equal(binPiecesOf(DEF()), 5);
+/* 🔧 25/11 (คำสั่ง user) — เดิม "ซ่อมไม่นับ" เพราะคิดว่า `qty_repair` = ซ่อมเสร็จแล้ว
+   แต่หน้างานใช้แปลว่า **ส่งซ่อม/รอซ่อม** ⇒ ของก้อนนั้นไม่เคยเข้าถัง ไม่มีใครตัดสินผลซ่อม
+   ⇒ ผลซ่อมไม่เคยไหลกลับไปแก้ %Q ของกะที่ทำมันออกมา (📄 docs/modules/oee.md §งานซ่อม) */
+test('🟡 ของที่ต้องพิจารณา = NG + สงสัย + ซ่อม (ซ่อม = รอผล ไม่ใช่ซ่อมเสร็จ)', () => {
+  assert.equal(binPiecesOf(DEF()), 12);
   assert.equal(binPiecesOf({ qty_ng: 4 }), 4);
-  assert.equal(binPiecesOf({ qty_repair: 9 }), 0);
+  assert.equal(binPiecesOf({ qty_repair: 9 }), 9);
   assert.equal(binPiecesOf(null), 0);
 });
 
 test('🟡 แปลงบันทึกงานเสีย → แถวถังเหลือง "รอพิจารณา"', () => {
   const y = yellowRowFromDefect(DEF(), SESS, { actorName: 'ผู้ใช้', partNo: 'MB3B-1' });
   assert.equal(y.bin, 'yellow');
-  assert.equal(y.qty, 5);
+  assert.equal(y.qty, 12);   // NG 3 + สงสัย 2 + ซ่อม 7
   assert.equal(y.defect_log_id, 'd1');
   /* 🔴 วันงานของกะ ไม่ใช่วันปฏิทิน — อายุแท็กกับการเทียบ defect_logs พึ่งค่านี้ */
   assert.equal(y.work_date, '2026-11-05');
@@ -111,7 +114,7 @@ test('🟡 แปลงบันทึกงานเสีย → แถวถ�
   assert.equal(y.mat_no, '10101001');
   assert.equal(y.part_no, 'MB3B-1');
   assert.equal(y.found_img, 'a.jpg');
-  assert.equal(y.cause, 'เจาะรูไม่ครบ — รูเยื้อง');
+  assert.equal(y.cause, 'เจาะรูไม่ครบ — รูเยื้อง — ส่งซ่อม 7 ชิ้น — รอผลซ่อม');
   /* 🔴 ห้ามเดาผลให้ — ทั้งหมดของฟีเจอร์นี้คือ "รอคนตัดสิน" */
   assert.equal(y.qa_decision, undefined);
 });
@@ -122,7 +125,7 @@ test('🧪 งานทดลองต้องติดป้ายในสา
 });
 
 test('🔴 ไม่มีของให้พิจารณา (0 ชิ้น) หรือไม่มี id = ไม่ตั้งแท็ก (คืน null)', () => {
-  assert.equal(yellowRowFromDefect(DEF({ qty_ng: 0, qty_suspect: 0 }), SESS, {}), null);
+  assert.equal(yellowRowFromDefect(DEF({ qty_ng: 0, qty_suspect: 0, qty_repair: 0 }), SESS, {}), null);
   assert.equal(yellowRowFromDefect(DEF({ id: null }), SESS, {}), null);
   assert.equal(yellowRowFromDefect(null, SESS, {}), null);
 });

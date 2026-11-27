@@ -30,7 +30,7 @@ export default function PartSelect({ scan,
   const sel = useMemo(() => options.find(o => o.key === partKey(value)) || null, [options, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={options} disabled={disabled}
-      scan={scan === false ? undefined : (scan || 'พาร์ท')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
+      scan={scan === false ? undefined : (scan || tr("พาร์ท"))}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
       emptyText={tr('ไม่พบเลขพาร์ทในทะเบียน (ชุดเอกสาร PE / มาตรฐานตรวจ QA / Product Master)')} loadFail={fail}
       inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style}

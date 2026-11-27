@@ -25,6 +25,7 @@
    ⚠️ ไฟล์นี้ต้อง **pure** (ไม่ import supabase / ไม่อ่าน state) — ผู้เรียกส่ง session มาให้
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 import { shiftFrameOf } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { tr } from './i18n.js';
 
 /** เพดาน "กะหนึ่งยาวที่สุดเท่าไหร่" — กะ 12 ชม. + OT ยาวสุดที่เคยเจอ · เกินนี้ = กรอกผิดแน่ */
 export const MAX_SHIFT_MIN = 16 * 60;
@@ -218,5 +219,5 @@ export function windowLabel(session, nowMs = Date.now()) {
   const win = shiftWindow(session, nowMs);
   if (!win) return null;
   const t = (ms) => { const d = new Date(ms); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
-  return `${t(win.startMs)} → ${win.hardEnd ? t(win.endMs) : 'ตอนนี้'}`;
+  return `${t(win.startMs)} → ${win.hardEnd ? t(win.endMs) : tr("ตอนนี้")}`;
 }

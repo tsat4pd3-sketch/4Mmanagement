@@ -122,10 +122,33 @@ export const isAwaitingPrNo = (pr) => isPrOpen(pr) && !normalizePrNo(pr?.pr_no);
 export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
   const has = new Set((prs || []).filter(p => p && p.status !== 'cancelled' && p.order_id).map(p => p.order_id));
   return (orders || [])
-    .filter(o => o && repairPathMeta(o.repair_path)?.needsPr && isOpen(o) && !has.has(o.id))
+    /* 🔴 26/11 — **ไม่กรอง `isOpen` แล้ว** (เดิม `… && isOpen(o) && …`)
+       เส้นทางบังคับ PR + ไม่มีใบ = อะไหล่ยังไม่ได้ซื้อ **ไม่ว่าใบจะปิดไปแล้วหรือยัง**
+       เดิมพอ ผจก. เซ็นปิด ใบก็หลุดจากลิสต์นี้เงียบๆ ⇒ วัดจริง 25/11 หลุดไป **20 ใบ** (7/9–18/11)
+       `isOpen` ยังรับไว้เพื่อให้จอติดป้าย "ใบปิดแล้ว" ได้ — **ห้ามเอากลับมากรองแถวออก** */
+    .filter(o => o && repairPathMeta(o.repair_path)?.needsPr && !has.has(o.id))
+    .map(o => ({ ...o, _moClosed: !isOpen(o) }))
     .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || '')));
 }
 export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
+
+/**
+ * 🛒 "ใบนี้เส้นทางบังคับเปิด PR แต่ยังไม่มีใบเลย" — ลูปจัดซื้อที่**ยังไม่เคยเริ่ม**
+ *
+ * 26/11 · คำสั่ง user *"แก้ด้วยนะที่กดปิดไปแล้วแต่ PR ยังไม่เปิด ย้อนไห้ด้วย"*
+ * ใช้ 2 ที่: ① ด่านปิดใบ (`moCloseGate`) กันใบใหม่หลุดแบบเดิม
+ *            ② **ปลดล็อกปุ่มเปิด PR ของใบที่ปิดไปแล้ว** ให้ 20 ใบที่หลุดไปก่อนมีด่าน ทำต่อได้
+ * 🔴 **ไม่ไปแก้ใบที่เซ็นปิดแล้ว** — ลายเซ็น ผจก. เป็นบันทึก ห้ามเขียนทับย้อนหลัง
+ *    งานที่ค้างจริงคือ "ซื้ออะไหล่มาเติม" ไม่ใช่ "ปิดใบผิด" ⇒ เปิดทางให้ทำงานที่ค้างต่อ
+ *    (หลักเดียวกับที่แผง PR ให้รับของ/ยกเลิกได้หลังปิดใบ — ด่าน `pr-loop-not-locked-by-mo`)
+ * 🔴 ใบที่ยกเลิกทั้งหมด = คนตัดสินใจแล้วว่าไม่ซื้อ ⇒ `false`
+ * 🔴 อ่าน PR ไม่ได้ (`prs == null`) = **ไม่รู้ ⇒ `false`** (ไม่รู้ ≠ ไม่มี — ห้ามปลดล็อกจากความไม่รู้)
+ */
+export function needsPrNoPr(order, prs) {
+  if (!repairPathMeta(order?.repair_path)?.needsPr) return false;
+  if (prs == null) return false;
+  return !(prs || []).some(p => p && p.status !== 'cancelled');
+}
 
 /** สถานะ "งาน PR" ของใบ MO 1 ใบ — ตัวกรองหน้ารายการ MO (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ")
  *

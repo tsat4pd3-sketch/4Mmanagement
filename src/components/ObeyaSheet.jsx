@@ -11,6 +11,9 @@ import { statusColor } from '../utils/obeyaKpi';
 import { A4, GAP, chooseSheetGrid } from '../utils/sheetGrid';
 import useIsMobile from '../utils/useIsMobile';
 import useTvShell from '../utils/useTvShell';
+import { motion } from 'framer-motion';
+import { stagger, liftHover } from '../utils/motion';
+import useCountUp from '../utils/useCountUp';
 
 import { tr } from '../utils/i18n';
 /* คณิตของผัง (A4 · GAP · ตัวเลือกผัง) ย้ายไป `src/utils/sheetGrid.js` แล้ว (pure + มีเทส)
@@ -87,7 +90,7 @@ export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
   return (
     <button
       type="button" onClick={go || undefined} disabled={!go}
-      title={`${stat.label} — ${stat.why}${go ? ' · กดเพื่อเจาะดู' : ''}`}
+      title={`${stat.label} — ${stat.why}${go ? tr(' · กดเพื่อดูรายละเอียด') : ''}`}
       style={{
         display: 'flex', alignItems: 'center', gap: Math.max(4, Math.round(5 * k)),
         padding: `${Math.max(2, Math.round(2.5 * k))}px ${Math.max(6, Math.round(8 * k))}px`,
@@ -155,18 +158,34 @@ const SheetIconBtn = ({ fs, title, onClick, children, className }) => (
   <button type="button" className={className} onClick={onClick} title={title} aria-label={title} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
     fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 'var(--r-md)', flexShrink: 0, cursor: 'pointer',
-    background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
+    background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)',
   }}>{children}</button>
 );
 
 /* `bigNote` (30/09 · user: "ตัวเลขที่โชว์คืออะไร ไม่มี text บอก") = ป้ายเล็กติดตัวเลขใหญ่ว่าเป็นค่าของอะไร (เช่น "ก.ย." = ค่าเดือนที่เลือก) */
 /* `statZoom` (16/11 · user: ชิปไม่ตามเป้า กดแล้วไปหน้ากรอกเพื่ออะไร ควรเป็นสรุป insight) = กดชิปสถานะแล้วเปิด popup 🔍 ของแผ่นนี้แทน onLink · ใน popup เองชิปไม่มีลิงก์ */
 /* `goals` (16/11 · user: "Target/commitment ไปขึ้นเหมือน note น่าจะไฮไลท์ให้ชัดเหมือนค่า YTD") = แถวเกณฑ์ใต้ตัวเลขใหญ่ · รับ `(k, zoomedCopy) => node` เหมือน foot (คืน null = ไม่วาด) */
+/* 20/11 (user: "แว่นขยายกับป้ายสถานะทำหน้าที่เดียวกัน เอาแว่นขยายออก") — แผ่นที่ใช้ `statZoom` ส่ง `zoom={false}` ด้วย ⇒ มุมขวาบนว่าง popup เปิดจากชิปสถานะอย่างเดียว */
 /* `footAside` (16/11 · user: "insight เยอะจนกราฟหาย") = ท้ายแผ่นของใบใน popup ไปอยู่รางขวา (คนละคอลัมน์กับกราฟ)
    ⇒ ใช้กับแผ่นที่ท้ายแผ่นยาวได้จริง (insight) เท่านั้น · ไม่ส่ง = ชั้นล่างเพดาน 30% เหมือนเดิม */
-export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNote, delta, stat, foot, link, onLink, zoom = true, onClose, statZoom = false, goals = null, footAside = false, children }) {
+/* 📐 มาตรฐาน layout แผ่นในกริด (25/11 · user: "คำอธิบายทำเป็น hover/tooltip · ความสูงกราฟ + ตำแหน่งตัวเลขเน้น ต้องเท่ากันทุกการ์ด")
+   · บรรทัดรอง (`sub`) = **1 บรรทัดเสมอ** ตัดท้าย … · ข้อความเต็มอยู่ใน tooltip (`subFull` ถ้าส่ง ไม่งั้น = sub) · ใน popup 🔍 วาดเต็ม
+   · ท้ายแผ่น = **แถวเดียวความสูงคงที่** (คาดปลายปี 1 บรรทัดซ้าย + ปุ่มลิงก์ขวา) และ **มีเสมอ** แม้ว่าง ⇒ หัว/ท้ายสูงเท่ากันทุกแผ่น → กราฟสูงเท่ากัน · ตัวเลขใหญ่อยู่ตำแหน่งเดียวกัน
+   · ใน popup (`onClose`) ท้ายแผ่นยังเป็นชั้น/รางของ insight เหมือนเดิม */
+/* 🎞 `enter` (25/11 · user: "เปลี่ยนไลน์แล้ว animation ดูพังๆ เด้งไปมา") — fade-up ทีละใบ (`stagger`) เล่นเฉพาะ **ครั้งแรกที่บอร์ดโผล่**
+   แผ่นที่ remount เพราะเปลี่ยนขอบเขต/ปี (คีย์ = def id ของขอบเขตใหม่) ส่ง `enter={false}` ⇒ โผล่ทันทีในกริดที่ cross-fade ทั้งกระดาน
+   ไม่งั้น 9 ใบไหลขึ้นคนละจังหวะ + เลขวิ่ง + แท่งยืด พร้อมกัน = "เด้งไปมา" */
+export function Sheet({ k, cw = 0, span = 1, icon, title, sub, subFull = null, big, unit, bigNote, delta, stat, foot, link, linkTitle = null, onLink, zoom = true, onClose, statZoom = false, goals = null, footAside = false, idx = 0, enter = true, children }) {
   const fs = (n) => Math.max(11, Math.round(n * k));
   const status = stat?.status;
+  /* 🔢 ตัวเลขใหญ่วิ่งขึ้น (24/11 · useCountUp) — `big` มาเป็นสตริงจัดรูปแล้ว ("1,105,886" · "98.4") ⇒ แกะเลข · วิ่ง · จัดรูปกลับทศนิยมเท่าเดิม
+     ไม่ใช่ตัวเลขล้วน ("—" · "12 ชม.") = โชว์ตามเดิม · ใบใน popup (onClose) ไม่วิ่ง — เปิดมาต้องอ่านได้ทันที */
+  const bigStr = big == null ? '' : String(big);
+  const bigNum = !onClose && /^-?[\d,]+(?:\.\d+)?$/.test(bigStr) ? Number(bigStr.replace(/,/g, '')) : null;
+  const bigDec = bigNum != null && bigStr.includes('.') ? bigStr.split('.')[1].length : 0;
+  const bigRun = useCountUp(bigNum);
+  // 🛡️ ชั้นที่ 2 (25/11): hook คืนตัวเลขเสมอเมื่อ bigNum เป็นตัวเลขแล้ว แต่ถ้าไม่ใช่ตัวเลขด้วยเหตุใด = โชว์ `big` ตามเดิม ห้ามล้มทั้งหน้า
+  const bigShown = bigNum == null || typeof bigRun !== 'number' ? big : bigRun.toLocaleString(undefined, { minimumFractionDigits: bigDec, maximumFractionDigits: bigDec });
   /* 📱 มือถือ: กริดเหลือ 1 คอลัมน์ ⇒ แผ่นกว้าง 2 ช่อง (OEE · ACTION BOARD) ต้องเป็น 1 ช่อง
      ไม่งั้นเกิดคอลัมน์แฝงที่ 2 กว้าง ~0 = ที่ว่างประหลาด + แผ่นถัดไปเบียด (15/10) · จอคอมเดิม */
   const isMobile = useIsMobile();
@@ -196,22 +215,29 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
   const footNode = tv && !onClose
     ? (footRaw && footRaw.type === WarnNote && !footRaw.props?.tvHide ? footRaw : null)
     : footRaw;
-  const footInner = (<>
+  const linkBtn = link && (
+    <button className="tv-hide" onClick={onLink} title={linkTitle || undefined} style={{
+      fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', whiteSpace: 'nowrap', flexShrink: 0,
+      background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
+    }}>{link} ↗</button>
+  );
+  const footInner = onClose ? (<>
     {footNode && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{footNode}</div>}
-    {link && (
-      <button className="tv-hide" onClick={onLink} style={{
-        marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
-        background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
-      }}>{link} ↗</button>
-    )}
-  </>);
+    {linkBtn && <div style={{ marginTop: 4 }}>{linkBtn}</div>}
+  </>) : (
+    /* กริด: แถวเดียว — ข้อความซ้าย (1 บรรทัด ตัดท้าย) · ปุ่มขวา · สูงคงที่แม้ว่าง */
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: Math.round(22 * k) }}>
+      <div style={{ flex: 1, minWidth: 0, fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' }}>{footNode}</div>
+      {!tv && linkBtn}
+    </div>
+  );
   return (<>
-    <div style={{
+    <motion.div {...(onClose ? {} : enter ? stagger(Math.min(idx, 9)) : { initial: false })} {...(onClose ? {} : liftHover())} className={onClose ? undefined : 'lift-card'} style={{
       gridColumn: `span ${span}`,
       /* ❌ ไม่มีแถบสีบนหัวแผ่นอีกแล้ว (คำสั่ง user 21/09 "สีสันของเส้นแต่ละ box ไม่เอา")
          สีบนแผ่นเหลือความหมายเดียว = **สถานะ** (ไฟดวงบนหัว + สีแท่งกราฟ) ไม่ใช่ "สีประจำแกน"
          — แถบสีประจำแกนแย่งความสนใจกับไฟสถานะ ทำให้แผ่นที่ปกติกับแผ่นที่มีปัญหาดูเด่นเท่ากัน */
-      background: 'var(--card)', border: '1px solid var(--border)',
+      background: 'var(--card-surf)', border: '1px solid var(--border)',
       borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-sm)',   // แผ่น KPI = การ์ดแบนบนกริด ไม่ได้ลอย
       display: 'flex', flexDirection: 'column', overflow: 'clip', minWidth: 0, minHeight: 0,
     }}>
@@ -227,7 +253,10 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
             ? <SheetIconBtn fs={fs} title={tr('ปิด (Esc)')} onClick={onClose}>✕</SheetIconBtn>
             : (zoom && <SheetIconBtn className="tv-hide" fs={fs} title={tr('ขยายดูใหญ่')} onClick={() => setZoomed(true)}>🔍</SheetIconBtn>)}
         </div>
-        {sub && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{sub}</div>}
+        {onClose
+          ? ((subFull || sub) && <div style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1 }}>{subFull || sub}</div>)
+          : <div title={typeof (subFull || sub) === 'string' ? (subFull || sub) : undefined}
+              style={{ fontSize: fs(10.5), color: 'var(--muted)', marginTop: 1, minHeight: Math.round(fs(10.5) * 1.35), whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis' }}>{sub || ''}</div>}
         {/* 📱 มือถือ: ขึ้นบรรทัดใหม่ได้ — "14.1 พันบาท เดือน มี.ค. (ล่าสุด) ▲ 35.9 ตามเป้า" กว้าง 371px ในแผ่น 346px (mobilesweep 15/10) */}
         <div ref={headRef} style={{
           display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'space-between',
@@ -238,7 +267,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
             <div title={fit >= 3 && bigNote ? bigNote : undefined}
               style={{ display: 'flex', alignItems: 'baseline', gap: 5, flexShrink: 0, ...(isMobile ? { flexWrap: 'wrap', flexShrink: 1, minWidth: 0 } : null) }}>
               <div style={{ fontSize: Math.max(11, Math.round(fs(34) * bigScale)), fontWeight: 900, lineHeight: 1, color: status ? statusColor(status) : 'var(--text)' }}>
-                {big}
+                {bigShown}
               </div>
               {unit && <div style={{ fontSize: fs(13), fontWeight: 700, color: 'var(--muted)' }}>{unit}</div>}
               {bigNote && fit < 3 && <div style={{ fontSize: fs(10.5), fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{bigNote}</div>}
@@ -274,18 +303,18 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
         </div>
       ) : (<>
         <div style={{ flex: 1, minHeight: 0, padding: `${Math.round(4 * k)}px ${Math.round(4 * k)}px 0` }}>{body}</div>
-        {(footNode || (link && !tv)) && (
+        {(!onClose || footNode || (link && !tv)) && (
           <div style={{ padding: `${Math.round(5 * k)}px ${Math.round(9 * k)}px ${Math.round(7 * k)}px`, flexShrink: 0,
             ...(onClose ? { maxHeight: '30%', minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' } : null) }}>
             {footInner}
           </div>
         )}
       </>)}
-    </div>
+    </motion.div>
     {zoomed && (
       <SheetZoom onClose={() => setZoomed(false)}>
-        <Sheet k={zk} cw={1200} icon={icon} title={title} sub={sub} big={big} unit={unit} bigNote={bigNote}
-          delta={delta} stat={stat} foot={foot} link={link} onLink={onLink} zoom={false} statZoom={statZoom} goals={goals}
+        <Sheet k={zk} cw={1200} icon={icon} title={title} sub={sub} subFull={subFull} big={big} unit={unit} bigNote={bigNote}
+          delta={delta} stat={stat} foot={foot} link={link} linkTitle={linkTitle} onLink={onLink} zoom={false} statZoom={statZoom} goals={goals}
           footAside={zAside} onClose={() => setZoomed(false)}>
           {children}
         </Sheet>
@@ -298,14 +327,15 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
 /* 📺 จอประชุม = ชิปบรรทัดเดียว (ตัดท้าย … · ข้อความเต็มอยู่ใน title) — ยังเห็นว่า "มีข้อมูลขาด" แต่ไม่กินที่กราฟ
    `tvHide` = WarnNote ที่เป็นแค่คำอธิบาย (ไม่ใช่ข้อมูลขาด) ⇒ `<Sheet>` ไม่วาดบนจอประชุม */
 /* `tone` = คีย์ good|warn|bad|info|none (04/11: เดิมรับ hex แล้วต่อ alpha — ใช้กับ token ไม่ได้) */
-export function WarnNote({ k, text, tone = 'warn', title }) {
+/* 📐 25/11 (มาตรฐาน layout แผ่น): ในกริดเป็นชิป **1 บรรทัดตัดท้าย …** ทุกจอ (ไม่ใช่แค่ TV) ข้อความเต็มอยู่ใน title · `wrap` = ใน popup/รายละเอียด ให้ขึ้นบรรทัดใหม่ได้ */
+export function WarnNote({ k, text, tone = 'warn', title, wrap = false }) {
   const tv = useTvShell();
   return (
-    <div data-warn="1" title={title || (tv ? String(text) : undefined)} style={{
+    <div data-warn="1" title={title || String(text)} style={{
       fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: toneVar(tone), fontWeight: 600,
       background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(tone)}, ${toneDim(tone)})`,
-      border: `1px solid ${toneLine(tone)}`, borderRadius: 'var(--r-xs)', padding: '3px 6px',
-      ...(tv ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null),
+      border: `1px solid ${toneLine(tone)}`, borderRadius: 'var(--r-xs)', padding: '3px 6px', maxWidth: '100%', boxSizing: 'border-box',
+      ...(tv || !wrap ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'inline-block', verticalAlign: 'middle' } : null),
     }}>⚠️ {text}</div>
   );
 }
@@ -314,11 +344,11 @@ export function WarnNote({ k, text, tone = 'warn', title }) {
    วางในกล่อง position:relative ที่ครอบกราฟ · `fixed` = กราฟที่โฟกัสถาวร (ค่ากระจุกใกล้ 100 เช่น %Q) ไม่มีปุ่มปิด */
 export const FocusAxisNote = ({ k, loText, fixed = false }) => (
   <div title={fixed
-    ? 'กราฟนี้ขยายช่วงค่าถาวรให้เห็นความต่าง (ไม่มีปุ่มปิด) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้'
-    : 'โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)'}
+    ? tr("กราฟนี้ขยายช่วงค่าถาวรให้เห็นความต่าง (ไม่มีปุ่มปิด) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้")
+    : tr("โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)")}
     style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: 'var(--amber)',
-      background: 'var(--card)', border: '1px solid var(--amber)55', borderRadius: 'var(--r-xs)', padding: '0 5px', lineHeight: 1.5 }}>
-    แกนเริ่ม {loText} ไม่ใช่ 0
+      background: 'var(--card-surf)', border: '1px solid var(--amber)55', borderRadius: 'var(--r-xs)', padding: '0 5px', lineHeight: 1.5 }}>
+    {tr("แกนเริ่ม")} {loText} {tr("ไม่ใช่")} 0
   </div>
 );
 

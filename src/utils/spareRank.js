@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // Rank อะไหล่ A/B/C ตาม WI-JIG-010 "การแบ่งหมวดหมู่ตามความสำคัญ Spare part" (Rev.00 · Effective 07/04/2026)
 // ── ตารางที่ 1 (แกนตั้ง = จำนวนการใช้เฉลี่ยต่อเดือน · แกนนอน = Leadtime) ────────────
 //                    │ <15 วัน │ <45 วัน │ >45 วัน
@@ -154,5 +155,5 @@ export function stockState(part = {}) {
   if (qty <= 0) return { key: 'out', label: 'หมด', color: '#ef4444' }
   if (min > 0 && qty <= min) return { key: 'low', label: 'ต่ำกว่าขั้นต่ำ', color: '#f59e0b' }
   if (max > 0 && qty > max) return { key: 'over', label: 'เกินสูงสุด', color: '#38bdf8' }
-  return { key: 'ok', label: 'ปกติ', color: '#22c55e' }
+  return { key: 'ok', label: tr("ปกติ"), color: '#22c55e' }
 }

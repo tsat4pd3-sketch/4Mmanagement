@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* 🕵️ accountActivity.js — "บัญชีนี้มีคนใช้อยู่จริงไหม" กฎเดียวทั้งระบบ (2026-10-29)
  *
  * คำถาม user: "บัญชีของคน คนไหนไม่มีการเข้าใช้เลยบ้าง · admin ดู last login ได้มั้ย
@@ -50,7 +51,7 @@ export function activityOf(lastSignInAt, { now, dormantDays = DORMANT_DAYS } = {
   const days = Math.max(0, Math.floor((nowMs - t) / DAY));
   return days >= dormantDays
     ? { state: ACT_DORMANT, days, text: `ค้าง ${days} วัน` }
-    : { state: ACT_ACTIVE,  days, text: days === 0 ? 'วันนี้' : `${days} วันก่อน` };
+    : { state: ACT_ACTIVE,  days, text: days === 0 ? tr('วันนี้') : `${days} ${tr('วันก่อน')}` };
 }
 
 /** สีของชิป — เทา = ยังไม่รู้ (ห้ามใช้สีเตือนกับสิ่งที่ยังไม่รู้) */
@@ -83,7 +84,7 @@ export function activitySummary(rows, { now, dormantDays = DORMANT_DAYS } = {}) 
  */
 export function activitySummaryText(s) {
   if (!s || !s.total) return null;
-  if (s.unknown === s.total) return 'อ่านประวัติการเข้าใช้ไม่ได้ — ตัวเลขด้านล่างไม่รวมเรื่องนี้';
+  if (s.unknown === s.total) return tr("อ่านประวัติการเข้าใช้ไม่ได้ — ตัวเลขด้านล่างไม่รวมเรื่องนี้");
   const parts = [];
   if (s.never)   parts.push(`ไม่เคยเข้าใช้ ${s.never} ใบ`);
   if (s.dormant) parts.push(`ค้างเกิน ${DORMANT_DAYS} วัน ${s.dormant} ใบ`);

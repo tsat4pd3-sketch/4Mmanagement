@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* ── ป้ายภาษาไทยของ audit_log — ใช้ร่วมทุกจอที่โชว์ประวัติการแก้ข้อมูล (2026-08-19) ──
    audit_log มี **2 ชุด คนละ project** (Main + DR) และครอบ ~74 ตารางรวมกัน
    ป้ายอยู่ที่นี่ที่เดียว — **ห้ามนิยาม label ของตาราง/ฟิลด์ซ้ำในหน้าใดๆ**
@@ -199,5 +200,5 @@ export const rowLabel = (r) => {
   return d.name || d.name_th || d.full_name || d.emp_name || d.prod_no || d.machine_no || d.mat_no || d.characteristic
       || d.label || d.code || d.permission_key || d.cost_center
       || d.ncr_no || d.capa_no || d.claim_no || d.part_no || d.title
-      || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || d.line_name || '(ไม่ระบุชื่อ)';
+      || (d.piece_no != null ? `${tr('ชิ้นที่')} ${d.piece_no}` : null) || d.line_name || tr('(ไม่ระบุชื่อ)');
 };

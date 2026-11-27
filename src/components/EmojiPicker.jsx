@@ -35,9 +35,9 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
       </div>
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 4000, width: 'min(90vw, 316px)', maxHeight: 300, overflowY: 'auto',
-          background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 10 }}>
+          background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 10 }}>
           {EMOJI_GROUPS.map(g => (
-            <div key={g.label} style={{ marginBottom: 6 }}>
+            <div key={tr(g.label)} style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{tr(g.label)}</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
                 {g.items.map(em => {
@@ -46,7 +46,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
                     <button key={em} type="button" onClick={() => { onChange(em); setOpen(false); }}
                       onMouseEnter={e => { if (!on) e.currentTarget.style.background = 'var(--bg3)'; }}
                       onMouseLeave={e => { if (!on) e.currentTarget.style.background = 'transparent'; }}
-                      style={{ ...cell, ...(on ? { background: 'var(--accent-dim)', border: '1px solid var(--accent)' } : {}) }}>{em}</button>
+                      style={{ ...cell, ...(on ? { background: 'var(--accent-dim)', border: '1px solid var(--accent)' } : {}) }}>{tr(em)}</button>
                   );
                 })}
               </div>
@@ -54,7 +54,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
           ))}
           {value && (
             <button type="button" onClick={() => { onChange(''); setOpen(false); }}
-              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('✕ ล้างไอคอน')}</button>
+              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('✕ ล้างไอคอน')}</button>
           )}
         </div>
       )}

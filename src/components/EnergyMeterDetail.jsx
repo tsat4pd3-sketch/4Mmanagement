@@ -4,7 +4,8 @@
    ⚠️ สถานะ/ลิมิต/ยอดของตู้มาจาก buildLiveBoard() ที่หน้าแม่ส่งมา (prop `m`) — ห้ามคิดซ้ำในหน้านี้
    ⚠️ egress: เลือกเฉพาะคอลัมน์ · กราฟโหลด 24 ชม. ครั้งเดียว แล้วรอบต่อไปดึงเฉพาะนาทีที่ใหม่กว่า */
 import { useState, useCallback, useMemo, useRef } from 'react';
-import { ResponsiveContainer, LineChart, BarChart, Line, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, LineChart, BarChart, PieChart, Pie, Cell, Line, Bar, XAxis, YAxis, Tooltip, CartesianGrid, ReferenceLine } from 'recharts';
+import { chartAnim, animClass } from '../utils/motion';
 import { supabaseDR } from '../supabaseClient';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -14,7 +15,7 @@ import { tooltipProps, axisTick, alignedYWidth, fmtAxis, CHART_MARGIN } from '..
 import NoticeBar from './NoticeBar';
 import useIsMobile from '../utils/useIsMobile';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
 const PAGE = 1000;
@@ -24,8 +25,8 @@ const EVENTS_SHOW = 50;
 
 const fmt = (v, d = 1) => (v == null || !Number.isFinite(Number(v)) ? '—'
   : Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
-const hhmm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
-const dayLabel = (ms) => (!Number.isFinite(Number(ms)) ? '—' : new Date(Number(ms)).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }));
+const hhmm = (ms) => new Date(ms).toLocaleTimeString(dateLocale(), { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' });
+const dayLabel = (ms) => (!Number.isFinite(Number(ms)) ? '—' : new Date(Number(ms)).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }));
 
 /** แถวรายนาทีของตู้เดียว ตั้งแต่ from — วนทีละ 1000 แถว · error = throw (ห้ามกลืนเป็นกราฟว่าง) */
 async function fetchMeterReadings(scopeKind, scopeName, from, inclusive) {
@@ -42,7 +43,8 @@ async function fetchMeterReadings(scopeKind, scopeName, from, inclusive) {
   return out;
 }
 
-export default function EnergyMeterDetail({ m, machines, boardMeters, totalTodayKwh, onBack }) {
+export default function EnergyMeterDetail({ m, machines, boardMeters, totalTodayKwh, onBack, onOpenMeter, onHistory }) {
+  const [win, setWin] = useState(60);            // กราฟสด: 60 นาที (แบบ Node-RED) | 1440 = 24 ชม.
   const [rows, setRows] = useState([]);
   const [daily, setDaily] = useState(null);       // null = อ่านไม่ได้
   const [events, setEvents] = useState(null);     // null = อ่านไม่ได้
@@ -102,110 +104,178 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
   const dailyBars = useMemo(() => (daily || []).map(d => ({ day: d.day, kwh: d.kwh == null ? null : Number(d.kwh), peak: d.peak_kw == null ? null : Number(d.peak_kw) })), [daily]);
 
   const st = m.status === 'never' ? { label: 'ยังไม่เคยได้รับค่า', color: IDLE }
-    : m.status === 'offline' ? { label: `ขาดการติดต่อ ${m.ageMin} นาที`, color: WARN }
+    : m.status === 'offline' ? { label: `${tr("ขาดการติดต่อ")} ${m.ageMin} ${tr("นาที")}`, color: WARN }
       : (m.overKw || m.overA) ? { label: 'เกินลิมิต', color: BAD } : { label: 'ออนไลน์', color: GOOD };
-  const kwVals = series.map(p => p.kw).filter(v => v != null);
-  const aVals = series.map(p => p.a).filter(v => v != null);
+  const shown = useMemo(() => {
+    const last = series.length ? series[series.length - 1].t : 0;
+    return series.filter(p => p.t >= last - win * 60000);
+  }, [series, win]);
+  /* วง: ตู้นี้ = สีหลัก · ตู้อื่นไล่เฉดเทา-ฟ้า (พาเลต ≤ 5 สี · UI §6.17) */
+  const donut = useMemo(() => {
+    const pal = [INFO, GOOD, 'var(--blue-line)', IDLE];   // ห้ามสีส้ม (= สีของตู้นี้)
+    return share.rows.filter(r => r.kw != null && r.kw > 0).map((r, i) => ({ ...r, fill: pal[i % pal.length] }));
+  }, [share]);
+  /* แจ้งเตือนที่ยังค้าง = เหตุการณ์ล่าสุดของแต่ละชนิดที่ยังไม่ CLEAR (ตามลำดับเวลาใหม่→เก่า) */
+  const openAlerts = useMemo(() => {
+    const seen = new Set(); const out = [];
+    for (const e of events || []) {
+      const k = e.kind || e.message;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      if (!(e.kind === 'CLEAR' || e.level === 'ok')) out.push(e);
+    }
+    return out.slice(0, 5);
+  }, [events]);
+  const kwVals = shown.map(p => p.kw).filter(v => v != null);
+  const aVals = shown.map(p => p.a).filter(v => v != null);
   const yW = alignedYWidth([...kwVals, ...aVals, m.limitKw, m.limitA].filter(v => v != null).map(v => fmtAxis(Math.ceil(v))));
-  const xDomain = series.length ? [series[0].t, series[series.length - 1].t] : ['auto', 'auto'];
+  const xDomain = shown.length ? [shown[0].t, shown[shown.length - 1].t] : ['auto', 'auto'];
   const todayPct = m.todayKwh != null && totalTodayKwh ? (m.todayKwh / totalTodayKwh) * 100 : null;
   const avgDay = m.monthKwh != null && m.monthDays ? m.monthKwh / m.monthDays : null;
 
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, flexWrap: 'wrap' }}>
         <button type="button" onClick={onBack} className="pg-btn" style={{ whiteSpace: 'nowrap' }}>{tr('← กลับบอร์ดรวม')}</button>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{m.name} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>{tr('· ตู้')} {m.panel}</span></div>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{m.subtitle}</div>
+          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', color: ACC }}>{tr('รายละเอียดตู้')}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)' }}>{m.label}{m.subtitle ? <span style={{ fontWeight: 600 }}> · {m.subtitle}</span> : null}</div>
+          <div style={{ width: 40, height: 3, background: ACC, borderRadius: 2, margin: '4px 0' }} />
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ตู้')} {m.panel}{m.parent ? ` · ${tr('ต่อจาก')} ${m.parent.split('|')[1]}` : ''} · {tr('ค่าสรุปรายนาที')}</div>
         </div>
-        <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: st.color, border: `1px solid ${st.color}`, borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>● {tr(st.label)}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: st.color, border: `1px solid ${st.color}`, borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>● {tr(st.label)}</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>
+            {tr('รับข้อมูลเมื่อ')} {m.receivedAt ? dayLabel(Date.parse(m.receivedAt)) : '—'}
+          </span>
+          {onHistory && <button type="button" className="pg-btn primary" onClick={() => onHistory(m.name)}>📈 {tr('ดูประวัติตู้นี้')}</button>}
+        </div>
       </div>
+      {/* 🔀 สลับตู้ (แทนเมนูซ้ายของ Node-RED) — จุดสี = สถานะ */}
+      {onOpenMeter && boardMeters.length > 1 && (
+        <div role="tablist" aria-label={tr('สลับตู้')} style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {boardMeters.map(x => {
+            const c = x.status === 'never' ? IDLE : x.status === 'offline' ? WARN : (x.overKw || x.overA) ? BAD : GOOD;
+            const on = x.key === m.key;
+            return (
+              <button key={x.key} type="button" role="tab" aria-selected={on} className={`pg-btn${on ? ' primary' : ''}`} onClick={() => !on && onOpenMeter(x.name)}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 999, background: c }} />{x.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {err && <NoticeBar tone="bad">{tr('โหลดข้อมูลตู้ไม่สำเร็จ:')} {err} {tr('— กราฟเป็นของรอบก่อนหน้า')}</NoticeBar>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignContent: 'start' }}>
-        <Kpi color={m.overKw ? BAD : GOOD} label={tr('กำลังไฟ (สูงสุดในนาทีล่าสุด)')} value={fmt(m.kw, 2)} unit="kW"
-          sub={`สูงสุดวันนี้ ${fmt(m.peakKw)} kW · ลิมิต ${m.limitKw ?? '—'} kW`} />
+        <Kpi color={m.overKw ? BAD : GOOD} label={tr('กำลังไฟ (ค่าล่าสุด)')} value={fmt(m.kw, 2)} unit="kW"
+          sub={`${tr("สูงสุดวันนี้")} ${fmt(m.peakKw)} kW · ${tr("ลิมิต")} ${m.limitKw ?? '—'} kW`} />
         <Kpi color={INFO} label={tr('ใช้ไฟวันนี้')} value={fmt(m.todayKwh)} unit="kWh"
-          sub={todayPct != null ? `${fmt(todayPct, 0)}% ของไฟทุกตู้วันนี้` : 'ตั้งแต่ 00:00 น.'} />
+          sub={todayPct != null ? `${fmt(todayPct, 0)}% ${tr("ของไฟทุกตู้วันนี้")}` : tr("ตั้งแต่ 00:00 น.")} />
         <Kpi color={INFO} label={tr('ใช้ไฟเดือนนี้')} value={fmt(m.monthKwh, 0)} unit="kWh"
-          sub={avgDay != null ? `เฉลี่ยวันละ ${fmt(avgDay)} kWh (${m.monthDays} วันที่มีข้อมูล)` : 'ยังไม่มีข้อมูลของเดือนนี้'} />
+          sub={avgDay != null ? `${tr("เฉลี่ยวันละ")} ${fmt(avgDay)} kWh (${m.monthDays} ${tr("วันที่มีข้อมูล")})` : tr("ยังไม่มีข้อมูลของเดือนนี้")} />
         <Kpi color={INFO} label={tr('เลขมิเตอร์สะสม')} value={fmt(m.kwhTotal, 0)} unit="kWh" sub={tr('อ่านตรงจากมิเตอร์ (Active Energy)')} />
         <Kpi color={m.overA ? BAD : ACC} label={tr('แรงดัน · กระแส')} value={<><span style={{ color: INFO }}>{fmt(m.v, 0)}</span><small style={{ fontSize: 13, color: 'var(--muted)' }}> V </small><span style={{ color: m.overA ? BAD : ACC }}>{fmt(m.a)}</span></>} unit="A"
-          sub={`V เฉลี่ย 3 เฟส · A เฟสที่สูงสุด · ลิมิต ${m.limitA ?? '—'} A`} />
+          sub={`V ${tr("เฉลี่ย 3 เฟส · ลิมิต")} ${m.limitA ?? '—'} A`} />
         <Kpi color={st.color} label={tr('สถานะมิเตอร์')} value={st.label} unit=""
-          sub={m.ageMin == null ? 'ยังไม่เคยได้รับข้อมูล' : m.ageMin < 1 ? 'ข้อมูลล่าสุดเมื่อสักครู่' : `ข้อมูลล่าสุด ${m.ageMin} นาทีที่แล้ว`} />
+          sub={m.ageMin == null ? tr("ยังไม่เคยได้รับข้อมูล") : m.ageMin < 1 ? tr("ข้อมูลล่าสุดเมื่อสักครู่") : `${tr("ข้อมูลล่าสุด")} ${m.ageMin} ${tr("นาทีที่แล้ว")}`} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(260px, 1fr)', gap: 12, alignContent: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 1.6fr) minmax(280px, 1fr) minmax(280px, 1fr)', gap: 12, alignContent: 'start' }}>
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('กราฟ 24 ชม. ล่าสุด ·')} {m.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('กราฟสด ·')} {m.label}</div>
+            <div role="radiogroup" aria-label={tr('ช่วงกราฟ')} style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+              {[[60, '60 นาที'], [1440, '24 ชม.']].map(([v, l]) => (
+                <button key={v} type="button" role="radio" aria-checked={win === v} className={`pg-btn${win === v ? ' primary' : ''}`} onClick={() => setWin(v)}>{tr(l)}</button>
+              ))}
+            </div>
+          </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-            1 จุด = 1 นาที (kW = สูงสุดของนาที · A = เฟสที่สูงสุด) · เส้นประแดง = ลิมิต · ช่วงที่มิเตอร์หลุดเกิน 5 นาทีเส้นขาด
+            1 {tr("จุด = 1 นาที (ค่าที่มิเตอร์ส่งมาในนาทีนั้น) · เส้นประแดง = ลิมิต · มิเตอร์หลุดเกิน 5 นาทีเส้นขาด")}
           </div>
           {!loaded ? <div style={{ color: 'var(--muted)', padding: 20 }}>{tr('กำลังโหลด…')}</div>
-            : series.length < 2 ? <div style={{ color: 'var(--muted)', padding: 20, fontSize: 12.5 }}>{tr('ยังไม่มีค่ารายนาทีใน 24 ชม. ล่าสุด')}</div>
+            : shown.length < 2 ? <div style={{ color: 'var(--muted)', padding: 20, fontSize: 12.5 }}>{tr('ยังไม่มีค่ารายนาทีในช่วงนี้')}</div>
               : (<>
                 <div style={{ fontSize: 12, fontWeight: 700, color: GOOD, marginTop: 8 }}>{tr('กำลังไฟ (kW)')}</div>
-                <ResponsiveContainer width="100%" height={170}>
-                  <LineChart data={series} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={shown} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="t" type="number" domain={xDomain} scale="time" tick={false} height={4} />
                     <YAxis width={yW} tick={axisTick()} tickFormatter={fmtAxis} domain={[0, (max) => Math.max(max, m.limitKw || 0) * 1.05]} />
                     <Tooltip {...tooltipProps()} labelFormatter={dayLabel} formatter={(v) => [`${fmt(v, 2)} kW`, 'กำลังไฟ']} />
                     {m.limitKw != null && <ReferenceLine y={m.limitKw} stroke={BAD} strokeDasharray="6 4" />}
-                    <Line type="linear" dataKey="kw" stroke={GOOD} dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={false} />
+                    <Line type="monotone" dataKey="kw" stroke={GOOD} dot={false} strokeWidth={1.8} {...chartAnim()} connectNulls={false} />
                   </LineChart>
                 </ResponsiveContainer>
-                <div style={{ fontSize: 12, fontWeight: 700, color: ACC, marginTop: 6 }}>{tr('กระแส เฟสที่สูงสุด (A)')}</div>
-                <ResponsiveContainer width="100%" height={170}>
-                  <LineChart data={series} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: ACC, marginTop: 6 }}>{tr('กระแส (A)')}</div>
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={shown} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="t" type="number" domain={xDomain} scale="time" tickFormatter={hhmm} tick={axisTick()} minTickGap={40} />
                     <YAxis width={yW} tick={axisTick()} tickFormatter={fmtAxis} domain={[0, (max) => Math.max(max, m.limitA || 0) * 1.05]} />
                     <Tooltip {...tooltipProps()} labelFormatter={dayLabel} formatter={(v) => [`${fmt(v, 1)} A`, 'กระแส']} />
                     {m.limitA != null && <ReferenceLine y={m.limitA} stroke={BAD} strokeDasharray="6 4" />}
-                    <Line type="linear" dataKey="a" stroke={ACC} dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={false} />
+                    <Line type="monotone" dataKey="a" stroke={ACC} dot={false} strokeWidth={1.8} {...chartAnim()} connectNulls={false} />
                   </LineChart>
                 </ResponsiveContainer>
               </>)}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
-            ℹ️ ESM เก็บค่าสรุปรายนาที (ย้อนหลัง 7 วัน) — ค่าแยก 3 เฟส (L1/L2/L3) และกราฟรายวินาที ยังดูได้ที่ Node-RED
+            ℹ️ ESM {tr("เก็บค่าสรุปรายนาที (ย้อนหลัง 7 วัน) — กราฟรายวินาทียังดูได้ที่")} Node-RED
           </div>
         </div>
 
+        <PhasePanel m={m} />
+
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('สัดส่วนโหลดตอนนี้')}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
-            kW ของตู้ ÷ รวมทุกตู้ที่ออนไลน์ ({fmt(share.total)} kW)
-          </div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {share.rows.map(r => (
-              <div key={r.key}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, fontWeight: r.key === m.key ? 800 : 500, color: r.key === m.key ? 'var(--text)' : 'var(--text2)' }}>
-                  <span>{r.name}</span><span>{r.pct == null ? 'ไม่ออนไลน์' : `${fmt(r.pct, 0)}% · ${fmt(r.kw)} kW`}</span>
-                </div>
-                <div style={{ height: 8, background: 'var(--bg2)', borderRadius: 4, overflow: 'hidden' }}>
-                  {r.pct != null && <div style={{ width: `${r.pct}%`, height: '100%', background: r.key === m.key ? ACC : IDLE }} />}
-                </div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('สัดส่วนโหลดแต่ละตู้')}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('kW ของตู้ ÷ รวมทุกตู้ชั้นบนสุดที่ออนไลน์')}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
+            <div style={{ position: 'relative', width: 130, height: 130, flex: 'none' }}>
+              {share.total != null && donut.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={donut} dataKey="kw" nameKey="name" innerRadius={44} outerRadius={60} startAngle={90} endAngle={-270} stroke="none" {...chartAnim()}>
+                      {donut.map(d => <Cell key={d.key} fill={d.key === m.key ? ACC : d.fill} />)}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : <div style={{ width: 130, height: 130, borderRadius: 999, border: '10px solid var(--border)' }} />}
+              <div style={{ position: 'absolute', inset: 0, display: 'grid', placeContent: 'center', textAlign: 'center' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{fmt(share.total)}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('kW รวม')}</div>
               </div>
-            ))}
+            </div>
+            <div style={{ display: 'grid', gap: 6, minWidth: 0, flex: 1 }}>
+              {share.rows.map(r => (
+                <div key={r.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12.5, fontWeight: r.key === m.key ? 800 : 500, color: r.key === m.key ? 'var(--text)' : 'var(--text2)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, flex: 'none', background: r.key === m.key ? ACC : (donut.find(d => d.key === r.key)?.fill || IDLE) }} />
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</span>
+                  </span>
+                  <span style={{ whiteSpace: 'nowrap' }}>{r.pct == null ? tr('ไม่ออนไลน์') : `${fmt(r.pct, 0)}%`}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginTop: 16 }}>{tr('เครื่องที่ตู้นี้จ่ายไฟ')}</div>
-          {!byLine.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่ได้ผูกเครื่องกับตู้นี้')}</div>
-            : byLine.map(([line, nos]) => (
-              <div key={line} style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 6 }}>
-                <b style={{ color: 'var(--text)' }}>{line}</b> ({nos.length}) — {nos.join(', ')}
-              </div>
-            ))}
-          {byLine.length > 1 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>{tr('ตู้จ่ายหลายไลน์ — ค่าไฟเป็นยอดรวมทั้งตู้ ไม่ได้แบ่งรายไลน์')}</div>}
+          {m.parent && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>{tr('ตู้นี้เป็นมิเตอร์ลูก — อยู่ในยอดของตู้แม่ ไม่ได้นับแยกในวงนี้')}</div>}
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginTop: 14 }}>{tr('แจ้งเตือนของ')} {m.label}</div>
+          {events == null ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{loaded ? tr('อ่านเหตุการณ์ไม่ได้') : tr('กำลังโหลด…')}</div>
+            : !openAlerts.length ? <div style={{ fontSize: 12.5, color: GOOD, border: `1px solid ${GOOD}`, borderRadius: 6, padding: '6px 10px', marginTop: 6 }}>✓ {tr('ไม่มีการแจ้งเตือน')}</div>
+              : openAlerts.map(e => (
+                <div key={e.source_id} style={{ fontSize: 12.5, color: 'var(--text2)', borderLeft: `3px solid ${WARN}`, paddingLeft: 8, marginTop: 6 }}>
+                  <span style={{ color: 'var(--muted)' }}>{dayLabel(Date.parse(e.ev_time))}</span> · {e.message}
+                </div>
+              ))}
         </div>
       </div>
 
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(260px, 1fr)', gap: 12, alignContent: 'start' }}>
       <div style={{ ...card, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('ใช้ไฟรายวัน')} {DAYS} {tr('วันล่าสุด (kWh)')}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>จากเลขมิเตอร์ต้น-ท้ายวัน · วันที่ไม่มีแท่ง = ไม่มีข้อมูล (ไม่ใช่ 0)</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr("จากเลขมิเตอร์ต้น-ท้ายวัน · วันที่ไม่มีแท่ง = ไม่มีข้อมูล (ไม่ใช่")} 0)</div>
         {daily == null ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>{loaded ? tr('อ่านยอดรายวันไม่ได้') : tr('กำลังโหลด…')}</div>
           : !dailyBars.length ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>{tr('ยังไม่มียอดรายวัน')}</div>
             : (
@@ -214,16 +284,27 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
                   <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="day" tick={axisTick()} tickFormatter={(d) => `${Number(d.slice(8))}/${Number(d.slice(5, 7))}`} minTickGap={8} />
                   <YAxis width="auto" tick={axisTick()} tickFormatter={fmtAxis} />
-                  <Tooltip {...tooltipProps()} labelFormatter={(d) => new Date(`${d}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' })}
-                    formatter={(v, k, p) => [`${fmt(v)} kWh${p?.payload?.peak != null ? ` · สูงสุด ${fmt(p.payload.peak)} kW` : ''}`, 'ใช้ไฟ']} />
-                  <Bar dataKey="kwh" fill={INFO} isAnimationActive={false} />
+                  <Tooltip {...tooltipProps()} labelFormatter={(d) => new Date(`${d}T00:00:00+07:00`).toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' })}
+                    formatter={(v, k, p) => [`${fmt(v)} kWh${p?.payload?.peak != null ? ` · ${tr("สูงสุด")} ${fmt(p.payload.peak)} kW` : ''}`, 'ใช้ไฟ']} />
+                  <Bar dataKey="kwh" fill={INFO} {...chartAnim()} />
                 </BarChart>
               </ResponsiveContainer>
             )}
       </div>
+      <div style={{ ...card, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เครื่องที่ตู้นี้จ่ายไฟ')}</div>
+        {!byLine.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่ได้ผูกเครื่องกับตู้นี้')}</div>
+          : byLine.map(([line, nos]) => (
+            <div key={line} style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 6 }}>
+              <b style={{ color: 'var(--text)' }}>{line}</b> ({nos.length}) — {nos.join(', ')}
+            </div>
+          ))}
+        {byLine.length > 1 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>{tr('ตู้จ่ายหลายไลน์ — ค่าไฟเป็นยอดรวมทั้งตู้ ไม่ได้แบ่งรายไลน์')}</div>}
+      </div>
+      </div>
 
       <div style={{ ...card }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เหตุการณ์ของ')} {m.name}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เหตุการณ์ของ')} {m.label}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>{tr('จาก Node-RED (เกณฑ์ตั้งที่ Node-RED) ·')} {EVENTS_SHOW} {tr('รายการล่าสุด · ใหม่อยู่บน')}</div>
         {events == null ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{loaded ? tr('อ่านเหตุการณ์ไม่ได้') : tr('กำลังโหลด…')}</div>
           : !events.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่มีเหตุการณ์ของตู้นี้')}</div>
@@ -241,6 +322,59 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
                 })}
               </div>
             )}
+      </div>
+    </div>
+  );
+}
+
+/** 🔌 แผง 3 เฟส (แบบ Node-RED) — ค่าล่าสุดจาก m.phase (buildLiveBoard → phaseInfo) · ไม่มีข้อมูล = เขียนบอก ห้ามโชว์ 0 */
+function PhasePanel({ m }) {
+  const p = m.phase;
+  const bar = (v, max, color) => (
+    <div style={{ height: 10, background: 'var(--bg2)', borderRadius: 5, overflow: 'hidden' }}>
+      {v != null && max > 0 && <div className={animClass('grow')} style={{ width: `${Math.min(100, (v / max) * 100)}%`, height: '100%', background: color, borderRadius: 5 }} />}
+    </div>
+  );
+  const row = (label, v, unit, max, color) => (
+    <div key={label} style={{ display: 'grid', gridTemplateColumns: '48px 1fr 70px', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
+      <span style={{ color: 'var(--text2)', fontWeight: 700 }}>{label}</span>
+      {bar(v, max, color)}
+      <span style={{ textAlign: 'right', color, fontWeight: 800 }}>{fmt(v, 1)} <small style={{ color: 'var(--muted)', fontWeight: 500 }}>{unit}</small></span>
+    </div>
+  );
+  const vMax = p ? Math.max(...p.v.filter(x => x != null), 1) * 1.15 : 1;
+  const aMax = p ? Math.max(...p.a.filter(x => x != null), m.limitA || 0, 1) : 1;
+  const imbBad = p?.imbalancePct != null && p.imbalancePct > 20;
+  return (
+    <div style={{ ...card, minWidth: 0 }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('ไฟฟ้าแยก 3 เฟส')}</div>
+      <div style={{ fontSize: 11.5, color: imbBad ? BAD : 'var(--muted)' }}>
+        {p?.imbalancePct != null ? `${tr('กระแสไม่สมดุล')} ${fmt(p.imbalancePct, 1)}%` : tr('ค่าล่าสุดจากมิเตอร์')}
+      </div>
+      {!p ? (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 10 }}>
+          {tr('ยังไม่มีค่ารายเฟสจากตู้นี้ — ต้องใช้ flow ค่าไฟชุดใหม่จากศูนย์เชื่อมต่อ (ส่ง V/A รายเฟส)')}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: INFO }}>{tr('แรงดันระหว่างสาย (V)')}</div>
+          {row('L1-L2', p.v[0], 'V', vMax, INFO)}{row('L2-L3', p.v[1], 'V', vMax, INFO)}{row('L3-L1', p.v[2], 'V', vMax, INFO)}
+          <div style={{ fontSize: 12, fontWeight: 700, color: ACC, marginTop: 4 }}>{tr('กระแสแต่ละเฟส (A)')}</div>
+          {row('L1', p.a[0], 'A', aMax, ACC)}{row('L2', p.a[1], 'A', aMax, ACC)}{row('L3', p.a[2], 'A', aMax, ACC)}
+          <div style={{ fontSize: 12, fontWeight: 700, color: GOOD, marginTop: 4 }}>{tr('กำลังไฟแต่ละเฟส (kW)')} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('ประมาณจากสัดส่วนกระแส')}</span></div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 6 }}>
+            {[['L1', p.kwEst[0]], ['L2', p.kwEst[1]], ['L3', p.kwEst[2]], ['รวม', m.kw]].map(([l, v], i) => (
+              <div key={l} style={{ border: `1px solid ${i === 3 ? GOOD : 'var(--border)'}`, borderRadius: 6, padding: '6px 4px', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(l)}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: GOOD }}>{fmt(v, 2)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* ⚡ PF (25/11 คำสั่ง user) — แสดงค่าอย่างเดียว ไม่ตัดสินดี/เสีย (เกณฑ์ค่าปรับยังไม่มีในทะเบียน ห้ามเดา) */}
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text2)', marginTop: 10 }}>
+        Power Factor (PF): <span style={{ fontWeight: 800, color: m.pf == null ? 'var(--muted)' : 'var(--text)' }}>{m.pf == null ? tr('ยังไม่มีค่า') : fmt(m.pf, 2)}</span>
       </div>
     </div>
   );

@@ -21,8 +21,8 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
       {on && (
         <>
           {options.length < 2 ? (
-            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 6 }}>
-              ต้องมีจุดวัดเป็นตัวเลขอย่างน้อย 2 จุดก่อน (จุดคำนวณอ้างจุดคำนวณด้วยกันไม่ได้)
+            <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 6 }}>
+              {tr("ต้องมีจุดวัดเป็นตัวเลขอย่างน้อย 2 จุดก่อน (จุดคำนวณอ้างจุดคำนวณด้วยกันไม่ได้")})
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
@@ -42,10 +42,10 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
           )}
           {c?.a && c?.b && (
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5 }}>
-              ค่า = <b style={{ color: 'var(--text)' }}>{calcFormula(c, labelOf)}</b> · ตัดสินด้วย LSL/USL ของจุดนี้
+              {tr("ค่า")} = <b style={{ color: 'var(--text)' }}>{calcFormula(c, labelOf)}</b> · {tr("ตัดสินด้วย LSL/USL ของจุดนี้")}
             </div>
           )}
-          {problems.map((m, i) => <div key={i} style={{ fontSize: 11.5, color: '#ef4444', marginTop: 4 }}>⚠️ {m}</div>)}
+          {problems.map((m, i) => <div key={i} style={{ fontSize: 11.5, color: 'var(--red)', marginTop: 4 }}>⚠️ {m}</div>)}
         </>
       )}
     </div>

@@ -32,7 +32,7 @@
 > |---|---|---|
 > | ของกลาง | `effectiveSections()` (`utils/sectionScope.js`) | **`utils/writeScope.js`** · ฝั่งช่าง = **`canWriteTeam()`** (`utils/mtnTeams.js`) |
 > | อ่านจาก | `profiles.sections` — **ว่าง = เห็นทั้งโรงงาน** | **`profiles.section` (บ้านจริง)** — ว่างทั้งคู่ = บล็อก + บอกทางแก้ |
-> | ใบผ่านข้ามหน่วย | — | คีย์ **`scope:all_units`** (ปรับที่ `/permissions` · ส่งเข้าจอผ่าน `UserContext.allUnits`) |
+> | ใบผ่านข้ามหน่วย | — | **รายคน `profiles.all_units`** (ติ๊กที่ `/add-user` ช่อง 🌐 · ส่งเข้าจอผ่าน `UserContext.allUnits`) — 13/11 เลิกคีย์ `scope:all_units` ราย role แล้ว (📄 `docs/ROLE-SCOPE-AUDIT-2026-11-13.md`) |
 >
 > 🔴 **ห้ามเอา `sections` มาตัดสินการ "แก้"** — 31/122 บัญชีว่างโดยตั้งใจ (ช่างต้องเห็นทุกไลน์)
 >    ⇒ ใช้ตัดสินการแก้ = เปิดทั้งโรงงาน · มีด่าน build `write-scope-layer`

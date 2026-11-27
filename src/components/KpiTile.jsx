@@ -49,8 +49,10 @@ export default function KpiTile({ label, value, unit, note, tone, onClick, title
         {unit && !empty && <small>{unit}</small>}
       </div>
       {!empty && <Spark data={spark} color={hero ? 'var(--accent)' : 'var(--muted)'} />}
+      {/* 📐 25/11 (user: "คำอธิบายทำเป็น hover · ตำแหน่งตัวเลขเน้นเท่ากันทุกการ์ด"): บรรทัดบริบท 1 บรรทัดตัดท้าย … ข้อความเต็มอยู่ใน title ของบรรทัด */}
       {note != null && note !== '' && (
-        <div className="kpi-tile-d" style={{ color: tone && TONE[tone] ? TONE[tone] : 'var(--muted)' }}>{note}</div>
+        <div className="kpi-tile-d" title={typeof note === 'string' ? note : undefined}
+          style={{ color: tone && TONE[tone] ? TONE[tone] : 'var(--muted)', whiteSpace: 'nowrap', overflow: 'clip', textOverflow: 'ellipsis', maxWidth: '100%' }}>{note}</div>
       )}
     </Tag>
   );

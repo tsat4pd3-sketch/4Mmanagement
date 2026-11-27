@@ -1,3 +1,4 @@
+import { ImportButton } from '../components/ImportKit';   // 📥 ปุ่มนำเข้ามาตรฐาน (UI §6.44)
 import { useState, useEffect, useContext, useMemo, useCallback, useRef } from 'react';
 import { MoreMark } from '../components/InfoMore';
 import { useObjectUrl } from '../utils/useObjectUrl';
@@ -217,7 +218,7 @@ export default function PEDocs() {
       const { filename, notes, sheets } = await downloadPeWorkbook(tab, {
         set: curSet, processes: procs, items: tab === 'fmea' ? fmea : cp, revisions: revs,
       });
-      toast.success(`ดาวน์โหลดแล้ว · ${filename} (${sheets} ชีท)`);
+      toast.success(`${tr("ดาวน์โหลดแล้ว")} · ${filename} (${sheets} ${tr("ชีท")})`);
       if (notes?.length) setExportNotes(notes);
     } catch (e) {
       toast.error(e?.message || 'สร้างไฟล์ไม่สำเร็จ');
@@ -240,7 +241,7 @@ export default function PEDocs() {
       });
       if (!r.ok && r.reason === 'popup') { toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้แล้วลองใหม่'); return; }
       /* ลงหน้าเดียวเสมอ แต่ถ้าต้องย่อจนตัวหนังสือเล็กเกินอ่าน ต้องบอก ห้ามปล่อยให้ไปเจอเองตอนพิมพ์ออกมา */
-      if (r.tooSmall) setExportNotes([`ผังลงได้ 1 หน้าตามที่ตั้งไว้ แต่ต้องย่อจนตัวหนังสือเหลือ ~${r.fontMm.toFixed(1)} มม. (เล็กกว่า 1.6 มม. = อ่านด้วยตาเปล่าลำบาก) — ขั้นงาน ${procs.length} OP เยอะเกินกว่ากระดาษ ${r.paper} ${r.landscape ? 'แนวนอน' : 'แนวตั้ง'} จะรับไหว · เปลี่ยนขนาดกระดาษได้ที่ /doc-forms (doc_key: pe_pfc) หรือพิมพ์จากไฟล์ PFC ต้นฉบับแทน`]);
+      if (r.tooSmall) setExportNotes([`${tr("ผังลงได้ 1 หน้าตามที่ตั้งไว้ แต่ต้องย่อจนตัวหนังสือเหลือ")} ~${r.fontMm.toFixed(1)} ${tr("มม. (เล็กกว่า 1.6 มม. = อ่านด้วยตาเปล่าลำบาก) — ขั้นงาน")} ${procs.length} OP ${tr("เยอะเกินกว่ากระดาษ")} ${r.paper} ${r.landscape ? tr('แนวนอน') : tr('แนวตั้ง')} ${tr("จะรับไหว · เปลี่ยนขนาดกระดาษได้ที่ /doc-forms (doc_key: pe_pfc) หรือพิมพ์จากไฟล์ PFC ต้นฉบับแทน")}`]);
     } catch (e) {
       toast.error(e?.message || 'เปิดหน้าพิมพ์ไม่สำเร็จ');
     }
@@ -265,11 +266,11 @@ export default function PEDocs() {
   };
   const deleteRow = async (table, id, label, after, imgUrl) => {
     if (!setWrite.ok) { toast.info(writeBlockText(setWrite, { what: 'เอกสาร PE ของชุดนี้' })); return; }
-    if (!await askConfirm(`ลบ${label}?`)) return;
+    if (!await askConfirm(`${tr("ลบ")}${label}?`)) return;
     /* 🔴 RLS ปฏิเสธ DELETE = "0 แถว ไม่มี error" ⇒ เช็คแค่ error แล้วลบไฟล์ = แถวยังอยู่ แต่รูปหายถาวร
        (กฎเหล็ก DB ข้อ 2) ⇒ ต้อง `.select()` นับแถวให้ได้ > 0 ก่อนแตะ storage */
     const res = await supabase.from(table).delete().eq('id', id).select('id');
-    if (!checkWriteRows(res, `ลบ${label}`)) return;
+    if (!checkWriteRows(res, `${tr("ลบ")}${label}`)) return;
     if (imgUrl) removePeImage(imgUrl);   // ลบไฟล์หลังยืนยันว่าแถวหายจริงแล้วเท่านั้น (best-effort)
     toast.success('ลบแล้ว');
     after?.();
@@ -288,7 +289,7 @@ export default function PEDocs() {
     const ext = gif ? 'gif' : 'jpg';
     const full = `${path}-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from('pe-images').upload(full, blob, uploadOpts({ upsert: true, contentType: gif ? 'image/gif' : 'image/jpeg' }));
-    if (error) { toast.error(`อัปโหลดรูปไม่สำเร็จ: ${error.message}`); return null; }
+    if (error) { toast.error(`${tr("อัปโหลดรูปไม่สำเร็จ")}: ${error.message}`); return null; }
     return supabase.storage.from('pe-images').getPublicUrl(full).data.publicUrl;
   };
   // แนบรูปให้ row หลัง save: อัปโหลด → update image_url → ลบไฟล์เก่า (หลัง DB สำเร็จเท่านั้น)
@@ -325,7 +326,7 @@ export default function PEDocs() {
   const insertProposals = async (rows, label) => {
     if (!rows.length) return 0;
     const { error } = await supabase.from('pe_master_proposals').insert(rows);
-    if (error) { toast.error(`${label}ไม่สำเร็จ: ${error.message}`); return 0; }
+    if (error) { toast.error(`${label}${tr("ไม่สำเร็จ")}: ${error.message}`); return 0; }
     loadMasters();
     return rows.length;
   };
@@ -340,7 +341,7 @@ export default function PEDocs() {
     const opts = { setId, revisionId, by: fullName || null, pendingSourceIds: pendingSrc };
     const rows = [...improvementProposals(fmea, masterById, opts), ...newItemProposals(fmea, procs, masterItems, opts)];
     const n = await insertProposals(rows, 'เสนออัพเดท master อัตโนมัติ');
-    if (n) toast.info(`ระบบเสนออัพเดทคลัง PFMEA ${n} รายการจาก revision นี้ — PE ตัดสินที่แท็บ 📚`);
+    if (n) toast.info(`${tr("ระบบเสนออัพเดทคลัง")} PFMEA ${n} ${tr("รายการจาก revision นี้ — PE ตัดสินที่แท็บ")} 📚`);
   };
 
   if (loading) return <Page><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{tr('กำลังโหลด...')}</div></Page>;
@@ -361,11 +362,11 @@ export default function PEDocs() {
             { key: 'cp',   label: `✅ Control Plan (${cp.length})` },
             { key: 'rev',  label: `🕘 Revisions (${revs.length})` },
           ] : []),
-          { key: 'master', label: `📚 คลัง PFMEA (${masters.length})${pendingCount ? ` · 📬${pendingCount}` : ''}` },
+          { key: 'master', label: `📚 ${tr("คลัง")} PFMEA (${masters.length})${pendingCount ? ` · 📬${pendingCount}` : ''}` },
         ]}
         tab={tab} onTab={setTab} />
 
-      <ReadOnlyNote show={!canEdit} role={role} what="แก้เอกสาร PE"
+      <ReadOnlyNote show={!canEdit} role={role} what={tr("แก้เอกสาร PE")}
         permKey="pe:edit"
         hint={tr('ดูเอกสาร/นำเข้า/ส่งออกได้ตามปกติ — ที่ปิดคือการเพิ่ม/แก้/ลบแถวในเอกสาร')} />
 
@@ -395,11 +396,12 @@ export default function PEDocs() {
         <span className="spacer" />
         {curSet && (tab === 'fmea' || tab === 'cp') && (
           <button style={btnSm} onClick={doExport} disabled={exporting}
-            title={`สร้างไฟล์ .xlsx ตามฟอร์ม ${tab === 'fmea' ? 'FM-PE1-018 (PFMEA)' : 'FM-PE1-019 (Control Plan)'} — 1 ชีทต่อ OP พร้อมตั้งค่าพิมพ์ A4 แนวนอน`}>
-            {exporting ? 'กำลังสร้างไฟล์...' : `ดาวน์โหลด Excel (${tab === 'fmea' ? 'PFMEA' : 'Control Plan'})`}
+            title={`${tr("สร้างไฟล์ .xlsx ตามฟอร์ม")} ${tab === 'fmea' ? 'FM-PE1-018 (PFMEA)' : 'FM-PE1-019 (Control Plan)'} — 1 ${tr("ชีทต่อ OP พร้อมตั้งค่าพิมพ์ A4 แนวนอน")}`}>
+            {exporting ? tr("กำลังสร้างไฟล์...") : `${tr("ดาวน์โหลด")} Excel (${tab === 'fmea' ? 'PFMEA' : 'Control Plan'})`}
           </button>
         )}
-        {canEdit && <button style={btnSm} onClick={() => setImportOpen(true)} title={tr('อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่')}>{tr('นำเข้า Excel')}</button>}
+        {canEdit && <ImportButton k="pe_form" tone="quiet" onClick={() => setImportOpen(true)} title={tr('อัพโหลดไฟล์ Excel ฟอร์ม TSAT ที่มีอยู่แล้ว ไม่ต้องพิมพ์ใหม่')}
+          style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11 }} />}
         {canEdit && curSet && <button style={btnSm} onClick={() => { setSetImgFile(null); setSetModal({ ...curSet }); }}>{tr('แก้ข้อมูลชุด')}</button>}
         {canEdit && <button style={btnSm} onClick={() => setFromMasterOpen(true)} title={tr('เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที')}>{tr('ชุดใหม่จาก master')}</button>}
         {canEdit && <button style={btnPrim} onClick={() => { setSetImgFile(null); setSetModal({ part_no: '', part_name: '', mat_no: '', model: '', customer: '', line_name: '', doc_no_pfc: '', doc_no_fmea: '', doc_no_cp: '', status: 'active', remark: '' }); }}>{tr('ชุดเอกสารใหม่')}</button>}
@@ -424,7 +426,7 @@ export default function PEDocs() {
       ) : !curSet ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
           {/* จอว่าง — สิ่งที่ต้องลงมืออยู่บนจอ · นิยาม "1 ชุด" พับได้ · 19/11 */}
-          เลือกพาร์ทด้านบน{canEdit ? ' หรือกด "➕ ชุดเอกสารใหม่" เพื่อเริ่มพาร์ทแรก' : ''}{' '}
+          {tr("เลือกพาร์ทด้านบน")}{canEdit ? tr(" หรือกด \"➕ ชุดเอกสารใหม่\" เพื่อเริ่มพาร์ทแรก") : ''}{' '}
           <MoreMark text={tr('1 ชุด = PFC + PFMEA + Control Plan ของพาร์ทนั้น')} />
         </div>
       ) : detailLoading ? (
@@ -442,7 +444,7 @@ export default function PEDocs() {
                 background: crCount ? 'var(--amber-dim)' : 'var(--bg2)',
                 color: 'var(--text)', fontSize: 12.5, fontWeight: 700,
               }}>
-              {showCr ? '▼' : '▶'} คำขอแก้เอกสารจากหน้างาน
+              {showCr ? '▼' : '▶'} {tr("คำขอแก้เอกสารจากหน้างาน")}
               {crCount > 0
                 ? <span style={{ color: 'var(--amber)' }}> {tr('· ค้าง')} {crCount} {tr('รายการ')}</span>
                 : <span style={{ color: 'var(--muted)', fontWeight: 500 }}> {tr('· ไม่มีค้าง')}</span>}
@@ -456,7 +458,7 @@ export default function PEDocs() {
           {/* ── ตัวกรอง OP (ใช้ร่วมแท็บ FMEA/CP) ── */}
           {(tab === 'fmea' || tab === 'cp') && (
             <FilterBar>
-              <SearchSelect value={String(procFilter || '')} placeholder={`${allOf('OP')} — พิมพ์ค้นหา`} style={{ minWidth: 220 }}
+              <SearchSelect value={String(procFilter || '')} placeholder={`${allOf('OP')} — ${tr("พิมพ์ค้นหา")}`} style={{ minWidth: 220 }}
                 inputStyle={{ paddingRight: 30 }}
                 options={procs.map(p => ({ id: String(p.id), label: `OP ${p.op_no} · ${p.name}`, keywords: String(p.op_no) }))}
                 onChange={({ id }) => setProcFilter(id)} />
@@ -492,9 +494,8 @@ export default function PEDocs() {
                     <div style={{ padding: 12 }}>
                       {/* ⚠️ ต้องบอกเสมอว่านี่ไม่ใช่ไฟล์ PFC ตัวจริง — ห้ามถอดข้อความนี้ */}
                       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
-                        ผังนี้ระบบวาดจาก<b>{tr('รายการขั้นงานในตารางด้านล่าง')}</b> — แก้ OP แล้วผังเปลี่ยนตามทันที ·
-                        <b style={{ color: 'var(--text2)' }}> {tr('ไม่ใช่ไฟล์ PFC ต้นฉบับของ PE')}</b> (ไฟล์นั้นเป็นรูปทรง Excel ~560 ชิ้นวางมือข้าม 5 หน้า
-                        ระบบสร้างให้เหมือนเป๊ะไม่ได้ และดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — แก้ผังตัวจริงต้องแก้ใน Excel แล้วอัพเข้ามาใหม่)
+                        {tr("ผังนี้ระบบวาดจาก")}<b>{tr('รายการขั้นงานในตารางด้านล่าง')}</b> — {tr("แก้ OP แล้วผังเปลี่ยนตามทันที")} ·
+                        <b style={{ color: 'var(--text2)' }}> {tr('ไม่ใช่ไฟล์ PFC ต้นฉบับของ PE')}</b> ({tr("ไฟล์นั้นเป็นรูปทรง Excel ~560 ชิ้นวางมือข้าม 5 หน้า ระบบสร้างให้เหมือนเป๊ะไม่ได้ และดาวน์โหลดเป็น Excel ฟอร์มเดิมไม่ได้ — แก้ผังตัวจริงต้องแก้ใน Excel แล้วอัพเข้ามาใหม่")})
                       </div>
                       <div style={{ overflowX: 'auto' }}>
                         <div style={{ minWidth: 720 }}>
@@ -529,7 +530,7 @@ export default function PEDocs() {
               <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
-                    <tr>{['OP', 'ชนิด', 'ชื่อกระบวนการ', 'รูป', 'เครื่อง', 'ไลน์/พื้นที่', 'Child part / Nut', 'CC/SC', 'เชื่อม', 'FMEA', 'CP', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
+                    <tr>{['OP', tr("ชนิด"), tr("ชื่อกระบวนการ"), tr("รูป"), tr("เครื่อง"), tr("ไลน์/พื้นที่"), 'Child part / Nut', 'CC/SC', tr("เชื่อม"), 'FMEA', 'CP', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
                     {procs.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มี process — เริ่มจากเพิ่ม OP ตามผัง flow (10, 20, ... หรือ 100.1)')}</td></tr>}
@@ -555,7 +556,7 @@ export default function PEDocs() {
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             {canEdit && <>
                               <button style={btnSm} onClick={() => { setProcImgFile(null); setProcModal({ ...p }); }}>✏️</button>{' '}
-                              <DeleteButton onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ของ OP นี้จะถูกลบด้วย)`, () => loadDetail(setId), p.image_url)} title={tr('ลบ')} />
+                              <DeleteButton onClick={() => deleteRow('pe_processes', p.id, ` OP ${p.op_no} (FMEA/CP ${tr("ของ OP นี้จะถูกลบด้วย")})`, () => loadDetail(setId), p.image_url)} title={tr('ลบ')} />
                             </>}
                           </td>
                         </tr>
@@ -577,11 +578,11 @@ export default function PEDocs() {
                 </button>
               )}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {fmeaView.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีแถว FMEA')}{rpnOnly ? ' ที่ RPN ≥ 100' : ''}</div>}
+                {fmeaView.length === 0 && <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีแถว FMEA')}{rpnOnly ? tr(" ที่ RPN ≥ 100") : ''}</div>}
                 {fmeaView.map(it => {
                   const p = procById[it.process_id];
                   return (
-                    <div key={it.id} style={{ background: 'var(--card)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 12 }}>
+                    <div key={it.id} style={{ background: 'var(--card-surf)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 11, fontWeight: 800, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>OP {p?.op_no} {p?.name}</span>
                         {it.item_function && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{it.item_function}</span>}
@@ -599,7 +600,7 @@ export default function PEDocs() {
                           const meta = CMP_META[c.state];
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
-                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {tr(meta.label)}{extra}</span>
+                            <span title={`${tr(meta.label)}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {tr(meta.label)}{extra}</span>
                             {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>{tr('เสนอแล้ว')}</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? tr('เสนอเข้า master') : tr('เสนอเป็นรายการใหม่')}</button>}
                           </>;
@@ -618,7 +619,7 @@ export default function PEDocs() {
                         {(it.recommended_action || it.action_taken) && (
                           <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: 8 }}>
                             <b style={lbl}>Action</b>{multiline(it.recommended_action)}
-                            {it.responsibility && <div style={{ color: 'var(--muted)' }}>{it.responsibility}{it.target_date ? ` · เป้า ${fmtDate(it.target_date)}` : ''}</div>}
+                            {it.responsibility && <div style={{ color: 'var(--muted)' }}>{it.responsibility}{it.target_date ? ` · ${tr("เป้า")} ${fmtDate(it.target_date)}` : ''}</div>}
                             {it.action_taken && <div style={{ marginTop: 4, color: 'var(--green)' }}>✔ {it.action_taken}</div>}
                           </div>
                         )}
@@ -642,7 +643,7 @@ export default function PEDocs() {
               <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
-                    <tr>{['OP', 'No.', 'Characteristics (Product / Process)', 'CC/SC', 'ผู้คุม', 'Spec/Tolerance', 'วิธีวัด', 'Sample', 'ความถี่', 'Control method', 'Reaction plan', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
+                    <tr>{['OP', 'No.', 'Characteristics (Product / Process)', 'CC/SC', tr("ผู้คุม"), 'Spec/Tolerance', tr("วิธีวัด"), 'Sample', tr("ความถี่"), 'Control method', 'Reaction plan', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
                     {cpView.length === 0 && <tr><td colSpan={12} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีจุดควบคุม')}</td></tr>}
@@ -694,7 +695,7 @@ export default function PEDocs() {
               <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
-                    <tr>{['เอกสาร', 'Rev', 'วันที่', 'Suffix (Part no.)', 'ECN', 'เนื้อหาการแก้ไข', 'ต้นเหตุ', 'ออก/ตรวจ/รับรอง', ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
+                    <tr>{[tr("เอกสาร"), 'Rev', tr("วันที่"), 'Suffix (Part no.)', 'ECN', tr("เนื้อหาการแก้ไข"), tr("ต้นเหตุ"), tr("ออก/ตรวจ/รับรอง"), ''].map((h, i) => <th key={i} style={thSt}>{tr(h)}</th>)}</tr>
                   </thead>
                   <tbody>
                     {revs.length === 0 && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่มีประวัติ revision')}</td></tr>}
@@ -781,7 +782,7 @@ export default function PEDocs() {
               // 2026-09-07 เปลี่ยนจากบล็อกแข็งเป็น confirm (คำสั่ง user: ทะเบียนไม่มี → ยังใช้ค่าที่เคยบันทึก/พาร์ทที่ยังไม่ขึ้น master ได้ ห้ามบล็อกเงียบ)
               const matIn = setModal.mat_no?.trim().toUpperCase();
               if (matIn && prodMaster.length && !prodMaster.some(p => String(p.mat_no || '').trim().toUpperCase() === matIn)) {
-                if (!await askConfirm(`MAT SAP ${matIn} ไม่มีใน Product Master — ข้อมูลผลิต/VSM/สอบกลับจะยังโยงไม่ได้จนกว่าจะเพิ่มสินค้าที่ /products\nใช้ค่านี้ต่อหรือไม่?`)) return;
+                if (!await askConfirm(`MAT SAP ${matIn} ${tr("ไม่มีใน Product Master — ข้อมูลผลิต/VSM/สอบกลับจะยังโยงไม่ได้จนกว่าจะเพิ่มสินค้าที่ /products\\nใช้ค่านี้ต่อหรือไม่")}?`)) return;
               }
               const patch = {
                 part_no: setModal.part_no.trim(), mat_no: setModal.mat_no?.trim() || null,
@@ -820,21 +821,21 @@ export default function PEDocs() {
       {procModal && (
         <div className="overlay"><div className="modal" style={{ width: 'min(640px, 95vw)', maxHeight: '90vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{procModal.id ? `✏️ แก้ OP ${procModal.op_no}` : '➕ เพิ่ม Process (OP)'}</h3>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{procModal.id ? `✏️ ${tr("แก้")} OP ${procModal.op_no}` : tr("➕ เพิ่ม Process (OP)")}</h3>
             <button onClick={() => setProcModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <label style={lbl}>{tr('เลข OP *')}<input value={procModal.op_no} onChange={e => setProcModal({ ...procModal, op_no: e.target.value })} placeholder={tr('130 หรือ 100.8')} style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={lbl}>{tr('ลำดับ (เรียงผัง)')}<input type="number" step="any" value={procModal.seq} onChange={e => setProcModal({ ...procModal, seq: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>{tr('ชื่อกระบวนการ *')}<input value={procModal.name} onChange={e => setProcModal({ ...procModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" style={{ marginTop: 4 }} /></label>
-            <div style={{ ...lbl, gridColumn: '1 / -1' }}>กระบวนการมาตรฐาน (คลัง PFMEA)
+            <div style={{ ...lbl, gridColumn: '1 / -1' }}>{tr("กระบวนการมาตรฐาน (คลัง")} PFMEA)
               <select value={procModal.master_process_id || ''} onChange={e => setProcModal({ ...procModal, master_process_id: e.target.value })} style={{ marginTop: 4 }}>
                 <option value="">{tr('— ไม่ผูก —')}</option>
-                {masters.filter(m => m.is_active !== false).map(m => <option key={m.id} value={m.id}>{m.name}{m.confirmed_at ? '' : ' (รอยืนยัน)'}</option>)}
+                {masters.filter(m => m.is_active !== false).map(m => <option key={m.id} value={m.id}>{m.name}{m.confirmed_at ? '' : tr(" (รอยืนยัน)")}</option>)}
               </select>
               {!procModal.master_process_id && (() => {
                 const sg = suggestMaster(procModal.name, procModal.kind, masters);
-                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>{tr('ชื่อ')}{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
+                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>{tr('ชื่อ')}{sg.exact ? tr("ตรงกับ") : tr("คล้าย")} "{sg.master.name}" — {tr("คลิกเพื่อผูก")}</div> : null;
               })()}
               {procModal.master_process_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('ผูกแล้วดึง failure mode มาตรฐานได้ที่แท็บ PFMEA → 📚 เติมจาก master')}</div>}
             </div>
@@ -844,8 +845,8 @@ export default function PEDocs() {
               </select>
             </label>
             {/* machine_no ไหลต่อไป part_routings (PeRoutingSuggest) → กล่อง VSM — เลือกจากทะเบียน machines (DR) แทน datalist (2026-09-07) */}
-            <div style={lbl}>เครื่องจักร (M/C No.)
-              <MachineSelect value={procModal.machine_no || ''} lines={procFam} allowFree history={mcHist} freeHint="เครื่องที่ยังไม่ลงทะเบียน /machines"
+            <div style={lbl}>{tr("เครื่องจักร")} (M/C No.)
+              <MachineSelect value={procModal.machine_no || ''} lines={procFam} allowFree history={mcHist} freeHint={tr("เครื่องที่ยังไม่ลงทะเบียน /machines")}
                 placeholder="SP-82" style={{ marginTop: 4 }} onChange={r => setProcModal({ ...procModal, machine_no: r.machine_no })} />
             </div>
             <label style={lbl}>{tr('ไลน์/พื้นที่')}
@@ -936,7 +937,7 @@ export default function PEDocs() {
               <label key={k} style={lbl}>{t}<input type="number" min="1" max="10" value={fmeaModal[k] ?? ''} onChange={e => setFmeaModal({ ...fmeaModal, [k]: e.target.value })} style={{ marginTop: 4, width: 110, display: 'block' }} /></label>
             ))}
             <div style={{ alignSelf: 'end', fontSize: 13, fontWeight: 800, color: rpnColor((Number(fmeaModal.new_severity) || 0) * (Number(fmeaModal.new_occurrence) || 0) * (Number(fmeaModal.new_detection) || 0) || null) }}>
-              RPN ใหม่ = {(Number(fmeaModal.new_severity) || 0) * (Number(fmeaModal.new_occurrence) || 0) * (Number(fmeaModal.new_detection) || 0) || '—'}
+              RPN {tr("ใหม่")} = {(Number(fmeaModal.new_severity) || 0) * (Number(fmeaModal.new_occurrence) || 0) * (Number(fmeaModal.new_detection) || 0) || '—'}
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
@@ -978,7 +979,7 @@ export default function PEDocs() {
                 onChange={({ id }) => setCpModal({ ...cpModal, process_id: id })} />
             </label>
             <label style={lbl}>Char No.<input type="number" value={cpModal.char_no ?? ''} onChange={e => setCpModal({ ...cpModal, char_no: e.target.value })} style={{ marginTop: 4, width: 110, display: 'block' }} /></label>
-            <label style={{ ...lbl, gridColumn: '1 / -1' }}>Sub-op (กลุ่มในใบ CP เช่น "130.3 · PROGRESSIVE")<input value={cpModal.sub_op || ''} onChange={e => setCpModal({ ...cpModal, sub_op: e.target.value })} style={{ marginTop: 4 }} /></label>
+            <label style={{ ...lbl, gridColumn: '1 / -1' }}>Sub-op ({tr("กลุ่มในใบ CP เช่น")} "130.3 · PROGRESSIVE")<input value={cpModal.sub_op || ''} onChange={e => setCpModal({ ...cpModal, sub_op: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Product Characteristic<input value={cpModal.product_char || ''} onChange={e => setCpModal({ ...cpModal, product_char: e.target.value })} placeholder="QUANTITY OF NUT" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Process Characteristic<input value={cpModal.process_char || ''} onChange={e => setCpModal({ ...cpModal, process_char: e.target.value })} placeholder="WELDING PARAMETER" style={{ marginTop: 4 }} /></label>
             <label style={lbl}>Special Char.

@@ -1,3 +1,4 @@
+import { dateLocale } from './i18n.js';
 /* 📦 เบิก-ส่งพาร์ท "เต็มกล่องเท่านั้น" + ทดเศษไปรอบถัดไป (2026-11-04 · คำสั่ง user)
    user: *"เปิด order ผลิต เบิก 120 แต่ packing std. 100 … จะส่งให้ครบ 120 ก็ไม่ได้ ส่งเกินเป็น 200 ก็ไม่ได้
           ควรจะหักส่งมาเบิก 100 และ 20 ทดไว้รอให้ครบในครั้งถัดไป"*
@@ -53,7 +54,7 @@ export function packWithCarry(carryIn, newDemand, pkgRaw) {
 }
 
 /** ป้ายบนจอ — ที่เดียว ห้ามแต่งเองในหน้า */
-export function packSplitText(r, fmt = (x) => Number(x).toLocaleString('th-TH')) {
+export function packSplitText(r, fmt = (x) => Number(x).toLocaleString(dateLocale())) {
   if (!r) return '';
   switch (r.state) {
     case 'send': return `ส่ง ${fmt(r.send)} (${r.packs} กล่อง × ${fmt(r.pkg)})${r.carry > 0 ? ` · ทด ${fmt(r.carry)} ไปรอบหน้า` : ''}`;

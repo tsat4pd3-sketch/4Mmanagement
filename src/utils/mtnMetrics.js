@@ -42,6 +42,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import { policyBreakForShift, breakIntervalsIn, overlapMinutesWith, shiftStartDate } from './oee.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 import { lineFamilyKey, scopeKeyByFamily } from './machineNo.js';
+import { tr } from './i18n.js';
 
 const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
 
@@ -356,7 +357,7 @@ export function machineReliability({
 
     const mins = dtMinutes(d);
     const minsOp = dtOpMinutes(d);                  // ตัดนาทีที่ทับพักออก — ใช้กับ upMin เท่านั้น
-    const cause = d?.dr_downtime_types?.name_th || d?.dt_name || 'ไม่ระบุประเภท';
+    const cause = d?.dr_downtime_types?.name_th || d?.dt_name || tr("ไม่ระบุประเภท");
     if (isPlannedDt(d)) {
       r.plannedStops++; r.plannedMin += mins; r.plannedMinOp += minsOp;
       continue;                                     // หยุดตามแผนไม่ใช่ "เครื่องเสีย"

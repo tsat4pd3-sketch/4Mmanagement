@@ -21,6 +21,17 @@ export const UNIT_KINDS = Object.freeze(['section', 'department', 'line', 'team'
 /** ชั้นที่เป็น "หน่วยบนสุด" ของโรงงาน — ส่วนงาน และแผนกที่ขึ้นตรง */
 export const UNIT_ROOT_KINDS = Object.freeze(['section', 'department']);
 
+/** 🏷️ ป้าย + "เลเวล" ของชั้นบน (20/11 · user เคาะ Group=0 SPG=1 Company=2 Plant=3)
+ *  ต่อจากเลเวลชั้นหน่วย 4/5/6 (ส่วนงาน/แผนก/กลุ่ม) ⇒ อ่านเป็นบันไดเดียว 0→6
+ *  🔴 ป้ายอ่านอย่างเดียว — ลำดับชั้นจริงมาจาก `parent_id` · ห้ามตัดสินอะไรจากเลขเลเวล
+ *  ⚠️ เลข 3 ชนกับ `ORG_LEVELS[3]` ('ฝ่าย / ผู้บริหาร' · หลักที่ 5 ของรหัส CC ใน utils/roleMeta.js) — ยังไม่ได้ยุบ รอ user เคาะ */
+export const UPPER_META = Object.freeze({
+  company_group: { th: 'กลุ่มบริษัท', icon: '🌐', level: 0 },
+  spg:           { th: 'กลุ่มธุรกิจ (SPG)', icon: '🧭', level: 1 },
+  company:       { th: 'บริษัท', icon: '🏛️', level: 2 },
+  plant:         { th: 'โรงงาน (Plant)', icon: '🏗️', level: 3 },
+});
+
 export const isUpperKind = (kind) => UPPER_KINDS.includes(String(kind || ''));
 export const isUnitKind = (kind) => UNIT_KINDS.includes(String(kind || ''));
 

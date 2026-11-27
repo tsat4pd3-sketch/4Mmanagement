@@ -1,3 +1,4 @@
+import { tr, unitDays } from './i18n.js';
 /* ═══ 📥 คิวรับเข้าคลังจากการปิดใบผลิต — กฎกลาง (2026-10-02 · คำสั่ง user)
 
    user: *"ระบบรับอัตโนมัติถ้าปิด คนรับจะต้องคอนเฟิมใช่มั้ย เช็คหน้างานจริงก่อนถ้าตรงค่อยกดรับ"*
@@ -100,11 +101,11 @@ export function isStaleReceipt(r, staleMin = DEFAULT_STALE_MIN, now = Date.now()
 /** "2 ชม. 15 น." — อายุใบสำหรับวางบนการ์ด */
 export function ageText(min) {
   if (min == null) return '—';
-  if (min < 60) return `${min} น.`;
+  if (min < 60) return `${min} ${tr('น.')}`;
   const h = Math.floor(min / 60), m = min % 60;
-  if (h < 24) return m ? `${h} ชม. ${m} น.` : `${h} ชม.`;
+  if (h < 24) return m ? `${h} ${tr('ชม.')} ${m} ${tr('น.')}` : `${h} ${tr('ชม.')}`;
   const d = Math.floor(h / 24), hh = h % 24;
-  return hh ? `${d} วัน ${hh} ชม.` : `${d} วัน`;
+  return hh ? `${d} ${unitDays(d)} ${hh} ${tr('ชม.')}` : `${d} ${unitDays(d)}`;
 }
 
 /**

@@ -1,7 +1,9 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
 import { motion } from 'framer-motion';
-import { railPill } from './utils/motion';   // 18/11: pill เมนู "ไหล" ไปตำแหน่งใหม่ (นิ่งเองบน TV / reduced-motion)
+import TabBody from './components/TabBody';   // 24/11: เปลี่ยนหน้าแบบมีจังหวะ (รีล CRM V10)
+import Skeleton from './components/Skeleton';
+import { railPill, markView } from './utils/motion';   // 18/11: pill เมนู "ไหล" ไปตำแหน่งใหม่ (นิ่งเองบน TV / reduced-motion)
 import tsLogo from './assets/TS logo transparent.png';   // splash: พื้นโปร่งใส (06/11)
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
@@ -17,9 +19,11 @@ import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
 const NotifyPrefsModal = lazy(() => import('./components/NotifyPrefsModal'));  // 🔕 ตั้งค่าแจ้งเตือนของฉัน
-import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can, canSeeded } from './utils/permissions';
+import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can, canSeeded, hasPermission } from './utils/permissions';
+import { NAV_SUB_TABS } from './utils/navSubTabs';
+import { useNavTabsLive, clearNavTabsLive } from './utils/navTabsLive';   // 🗂️ 27/11 แท็บสดของทุกหน้า (PageHeader ประกาศ) → ข้อย่อยในแผงเมนู            // 🗂️ 24/11 แท็บของหน้า = ข้อย่อยในแผงเมนู
 /* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
-import { EDITION_LABEL, EDITION_HOME } from './appEdition';
+import { EDITION, EDITION_LABEL, EDITION_HOME } from './appEdition';
 import { LOGISTIC_GROUPS } from './utils/logisticSide';
 import { trackVisit, topPaths } from './utils/navRecent';
 import { effectiveSections } from './utils/sectionScope';
@@ -98,10 +102,12 @@ const GroupOverview = lazy(() => import('./pages/GroupOverview'));
 const AnnouncementMockup = lazy(() => import('./pages/AnnouncementMockup'));
 const OverseasTravelMockup = lazy(() => import('./pages/OverseasTravelMockup'));
 const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
+const LiveBenefits = lazy(() => import('./pages/LiveBenefits'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
 import NotFound from './pages/NotFound';
-import Icon from './components/Icon';   // ✒️ emoji ในทะเบียนเมนู → ไอคอนเส้นที่จุดวาด (UI §6.36)
+import Icon, { stripIcon } from './components/Icon';   // ✒️ emoji ในทะเบียนเมนู → ไอคอนเส้นที่จุดวาด (UI §6.36)
+import { ACTIVITIES } from './utils/activityPages';   // 🎯 หมวดกิจกรรม (25/11) — route 9 หน้า
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -135,6 +141,7 @@ const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const Rfq = lazy(() => import('./pages/Rfq'));
+const Activity = lazy(() => import('./pages/Activity'));   // 🎯 หมวดกิจกรรม 9 หน้า (25/11)
 const Workflows = lazy(() => import('./pages/Workflows'));             // 🧩 e-Workflow ใบงานที่ user สร้างเอง (13/11)
 const WorkflowDesigner = lazy(() => import('./pages/WorkflowDesigner')); // 🧩 ออกแบบใบงาน (Key User → admin เผยแพร่)
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
@@ -204,7 +211,8 @@ export const NAV_ITEMS = [
   // วางแผนการผลิต ใช้ 2 ฝ่าย: ผลิตตัดสินเปิดกะ/OT · planner เอายอดลูกค้ามาเทียบกำลังผลิต
   // ⇒ **บ้านจริง = ฝ่ายผลิต** (ย้ายไป Logistic = หัวหน้าไลน์หาไม่เจอ) · `alsoIn` = โผล่เป็น
   //    *ทางลัด* ในหมวด Logistic ด้วย (หน้าตาต่างชัด — ดู `isNavGuest`) · สิทธิ์ชุดเดียวเหมือนเดิม
-  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต', alsoIn: LOGISTIC_GROUPS.inbound },
+  //    `alsoInSub` = หัวข้อย่อยของแถวทางลัดในหมวด `alsoIn` (`sub` ใช้กับหมวดบ้านเท่านั้น · ดู `navSubOf`)
+  { to: '/production-plan', icon: '🗓️', label: 'วางแผนการผลิต',      group: 'ฝ่ายผลิต', alsoIn: LOGISTIC_GROUPS.inbound, alsoInSub: 'Planning' },
   { to: '/oee-analytics',  icon: '📈', label: 'OEE',                group: 'วิเคราะห์ & รายงาน' },
   { to: '/product-history', icon: '📜', label: 'ประวัติผลิต (by Product)', group: 'วิเคราะห์ & รายงาน' },
   { to: '/vsm',            icon: '🗺️', label: 'VSM สายธารคุณค่า',   group: 'วิเคราะห์ & รายงาน' },
@@ -217,14 +225,15 @@ export const NAV_ITEMS = [
      ⚠️ Warehouse (เก็บ FG 1xx → ขาออก) ≠ Store (คุม 2xx/3xx/5xx → ขาเข้า) — ห้ามสลับ
      นิยามฝั่ง + การจัดฝั่งจากเลข MAT อยู่ที่ src/utils/logisticSide.js จุดเดียว */
   /* 📦 16/11 (คำสั่ง user) รวม "สต๊อกในไลน์" + "Monitoring แผน-สต๊อก" เป็นหน้าเดียว — /monitoring พาไปแท็บ ?tab=monitoring */
-  { to: '/line-stock',      icon: '📦', label: 'Stock Management',         group: LOGISTIC_GROUPS.inbound },
-  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: LOGISTIC_GROUPS.inbound },
-  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: LOGISTIC_GROUPS.inbound },
+  /* 🗂️ 24/11 (คำสั่ง user): Sub Bar หมวดนี้แบ่ง 3 หัวข้อ Sale & Marketing → Planning → Store (ลำดับ = `NAV_SUB_ORDER`) */
+  { to: '/line-stock',      icon: '📦', label: 'Stock Management',         group: LOGISTIC_GROUPS.inbound, sub: 'Store' },
+  { to: '/heijunka',       icon: '🎴', label: 'บอร์ดคัมบัง (ทุกสโตร์)',   group: LOGISTIC_GROUPS.inbound, sub: 'Store' },
+  { to: '/transport',       icon: '🚚', label: 'มอบหมายขนส่ง (Transport)',   group: LOGISTIC_GROUPS.inbound, sub: 'Store' },
   // เฝ้าระวังสต๊อกจับทั้ง 2 ฝั่ง (A/B เทียบ min-max ของทุกเลข · E ใบสั่งซื้อค้าง) → โผล่ทั้งสองหมวด
   // `alsoIn` = โชว์ซ้ำเฉพาะใน sidebar/หน้า Home · ที่อื่น (สิทธิ์/ค้นหา/breadcrumb/ตัวนับ) นับครั้งเดียว
-  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: LOGISTIC_GROUPS.inbound, alsoIn: LOGISTIC_GROUPS.outbound },
+  { to: '/store-monitor',   icon: '🚨', label: 'เฝ้าระวังสต๊อก (Abnormal)',  group: LOGISTIC_GROUPS.inbound, alsoIn: LOGISTIC_GROUPS.outbound, sub: 'Store' },
   // 🔴 หมวดแผนงานยุบเข้ามาที่นี่ (30/09 · คำสั่ง user — planner + store = หน่วยเดียว ดู logisticSide.js)
-  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
+  { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound, sub: 'Sale & Marketing' },
 
   /* 📉 บอร์ด Monitoring (01/10) = แท็บ `?tab=monitoring` ของ Stock Management แล้ว (16/11 · คำสั่ง user)
      🔴 ถอด `alsoIn: 'ฝ่ายผลิต'` ไปแล้ว 11/11 · **อย่าเอาเมนูแยกหรือทางลัดกลับโดยไม่ถาม user** */
@@ -259,6 +268,17 @@ export const NAV_ITEMS = [
   { to: '/npi',            icon: '🚀', label: 'พาร์ทใหม่ APQP / PPAP',       group: 'คุณภาพ & วิศวกรรม' },
   { to: '/nm-board',       icon: '🧭', label: 'บอร์ด New Model (IEC)',      group: 'คุณภาพ & วิศวกรรม' },
   { to: '/rfq',            icon: '💼', label: 'RFQ / เสนอราคา (Marketing)', group: 'คุณภาพ & วิศวกรรม' },
+  /* 🎯 หมวดกิจกรรม (25/11 · คำสั่ง user) — 9 หน้าโครงเดียวกัน วาดด้วย pages/Activity.jsx · ทะเบียน `utils/activityPages.js`
+     (path ต้องตรงกัน — ด่าน activityPages.test.mjs) · ยังไม่มีฐานข้อมูล · สิทธิ์ยังไม่ seed = admin เห็นก่อน */
+  { to: '/activity-100p',   icon: '🏅', label: '100P',          group: 'กิจกรรม' },
+  { to: '/activity-5s',     icon: '♻️', label: '5S',            group: 'กิจกรรม' },
+  { to: '/activity-smart',  icon: '🏭', label: 'Smart Factory', group: 'กิจกรรม' },
+  { to: '/activity-kyt',    icon: '🛡️', label: 'KYT',           group: 'กิจกรรม' },
+  { to: '/activity-kaizen', icon: '💡', label: 'Kaizen',        group: 'กิจกรรม' },
+  { to: '/activity-qcc',    icon: '👥', label: 'QCC',           group: 'กิจกรรม' },
+  { to: '/activity-lean',   icon: '📉', label: 'Lean',          group: 'กิจกรรม' },
+  { to: '/activity-cfo',    icon: '💼', label: 'CFO',           group: 'กิจกรรม' },
+  { to: '/activity-cfp',    icon: '📈', label: 'CFP',           group: 'กิจกรรม' },
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
@@ -279,6 +299,8 @@ export const NAV_ITEMS = [
   { to: '/group-overview', icon: '🏢', label: 'ภาพรวมกลุ่มโรงงาน (Mockup)', group: 'ผู้บริหาร & เดโม' },
   // "ข้อมูลเชื่อมกันทั้งองค์กรแล้วตอบคำถามอะไรได้" — สอบกลับ/คุมคุณภาพ/predictive/prescriptive
   // ฝั่งวันนี้นับสดจากฐานจริง ฝั่งอนาคตติดป้ายคาดการณ์ (seed: admin/manager)
+  // 📈 ประโยชน์ที่ได้แล้ว นับสด — กระดาษที่ทดแทน (จากทะเบียน /doc-forms) + เวลาที่ลด (seed: admin/manager · 26/11)
+  { to: '/live-benefits', icon: '📈', label: 'ประโยชน์จาก ESM (Live)', group: 'ผู้บริหาร & เดโม' },
   { to: '/adoption-outlook', icon: '🔮', label: 'ภาพเมื่อข้อมูลเชื่อมกัน', group: 'ผู้บริหาร & เดโม' },
   // 🧪 mockup workflow ประกาศบริษัท Issue → EVP Approve → Publish ตามวันมีผล (ไม่เขียน DB · seed: admin/manager)
   { to: '/announcements', icon: '📢', label: 'ประกาศบริษัท (Mockup)', group: 'ผู้บริหาร & เดโม' },
@@ -317,7 +339,7 @@ export const NAV_ITEMS = [
   { to: '/storage-maintenance', icon: '🗜️', label: 'ดูแลพื้นที่จัดเก็บ / ค่าเน็ต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
 ];
 
-export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
+export const NAV_GROUP_ORDER = ['ภาพรวม', 'จอแสดงผล', 'ฝ่ายผลิต', 'วิเคราะห์ & รายงาน', 'พนักงาน & ทักษะ', LOGISTIC_GROUPS.inbound, LOGISTIC_GROUPS.outbound, 'การตรวจสอบและซ่อมบำรุง', 'คุณภาพ & วิศวกรรม', 'กิจกรรม', 'ตั้งค่าโปรแกรม,ฐานข้อมูล', 'ผู้บริหาร & เดโม'];
 
 // ไอคอน + ชื่อย่อของหมวด — ใช้บนแถบไอคอน (rail) ของ sidebar แบบใหม่ (2026-08-18 · คำสั่ง user "เอา D เลย")
 // ชื่อย่อ ≤ ~9 ตัวอักษรให้พอดีความกว้าง rail 64px ที่ฟอนต์ 11px (กฎฟอนต์ขั้นต่ำ UI-CONVENTIONS)
@@ -331,6 +353,7 @@ export const NAV_GROUP_META = {
   [LOGISTIC_GROUPS.outbound]:  { icon: '🚚', short: 'จัดส่ง' },
   'การตรวจสอบและซ่อมบำรุง':    { icon: '🛠️', short: 'ซ่อมบำรุง' },
   'คุณภาพ & วิศวกรรม':         { icon: '✅', short: 'คุณภาพ' },
+  'กิจกรรม':                   { icon: '🎯', short: 'กิจกรรม' },   // 25/11 คำสั่ง user — ต่อจากคุณภาพ
   'ตั้งค่าโปรแกรม,ฐานข้อมูล':  { icon: '⚙️', short: 'ตั้งค่า' },
   'ผู้บริหาร & เดโม':          { icon: '🔮', short: 'ผู้บริหาร' },
 };
@@ -361,6 +384,34 @@ export const inNavGroup = (item, groups) =>
        บอกแค่ "ตัวอักษร accent" ไม่ใส่พื้น/แถบซ้าย — ไม่งั้นมันจะดูเป็นบ้านที่สอง */
 export const isNavGuest = (item, group) =>
   !!item.alsoIn && item.alsoIn === group && item.group !== group;
+
+/* 🗂️ หัวข้อย่อยของแถวเมนูในหมวดที่กำลังวาด — บ้านจริงใช้ `sub` · แถวทางลัด (`alsoIn`) ใช้ `alsoInSub`
+   (ไม่งั้นหัวข้อของหมวดหนึ่งไปโผล่ในอีกหมวด) · ไม่มี = ไม่คั่นหัวข้อ (พฤติกรรมเดิม) */
+export const navSubOf = (item, group) => (isNavGuest(item, group) ? item.alsoInSub : item.sub) || null;
+
+/* ลำดับหัวข้อย่อยต่อหมวด — หมวดที่ไม่อยู่ในนี้ = ลำดับตาม NAV_ITEMS เดิมเป๊ะ
+   แถวที่ไม่มีหัวข้อในหมวดที่มีลำดับ = ไปท้ายสุด (ไม่หาย) · 24/11 คำสั่ง user */
+export const NAV_SUB_ORDER = {
+  [LOGISTIC_GROUPS.inbound]: ['Sale & Marketing', 'Planning', 'Store'],
+};
+export function orderNavItems(items, group) {
+  const order = NAV_SUB_ORDER[group];
+  if (!order) return items;
+  const rank = (i) => { const k = order.indexOf(navSubOf(i, group)); return k < 0 ? order.length : k; };
+  return items.map((it, idx) => ({ it, idx })).sort((a, b) => rank(a.it) - rank(b.it) || a.idx - b.idx).map(x => x.it);
+}
+
+/* 📌 หมวดที่ "แถบแท็บหัวเพจ" (Detail bar) ตรึงติดบนตอนเลื่อนจอ — PageHeader อ่านจากที่นี่ (24/11 คำสั่ง user · จอคอมเท่านั้น) */
+/* 26/11: เลิกใช้เป็นเงื่อนไข — หัวเพจกะทัดรัด/แถบแท็บตรึงบน = ทุกหน้าเดี่ยวบนจอคอม (PageHeader ตัดสินเอง · คำสั่ง user "ให้เหมือนกันทุกหน้า")
+   คงไว้ให้ FULL_STICKY_GROUPS อ้างได้ · ห้ามเอากลับมาเป็นเงื่อนไขรายหมวด */
+export const STICKY_TAB_GROUPS = [LOGISTIC_GROUPS.inbound, 'กิจกรรม'];
+/* 📌 หมวดที่หัวเพจ "ค้างทั้งก้อน" (Header + Detail Bar + Tool Bar) ตอนเลื่อน Card Dashboard (25/11 · คำสั่ง user หมวดกิจกรรม)
+   ต่างจาก STICKY_TAB_GROUPS ที่ค้างเฉพาะแถบ (ชื่อหน้าเลื่อนหาย) · ต้องอยู่ใน STICKY_TAB_GROUPS ด้วย (โหมดกะทัดรัด) */
+export const FULL_STICKY_GROUPS = ['กิจกรรม'];
+/* 📐 หมวดที่ใช้หัวเพจมาตรฐาน `std` (27/11 · คำสั่ง user "แผน สโตร์ และ กิจกรรม" — กวาดทีละหมวด)
+   Detail Bar แถวเดียว ◀ ▶ มีเสมอ + Tool Bar 7 ปุ่มขวา (ไม่ใช้ = จาง) · แท็บเดิมของหน้า = Detail Bar (ยังอยู่ในหน้า)
+   · PageHeader ตัดสินเอง · หมวดถัดไปเพิ่มที่นี่หลัง user เคาะรูป (UI §0.1) */
+export const STD_LAYOUT_GROUPS = [LOGISTIC_GROUPS.inbound, 'กิจกรรม'];
 
 // สรุปสิทธิ์เข้าหน้าของ role จากตารางสิทธิ์จริง (role_permissions) — ใช้โชว์ในหน้า จัดการผู้ใช้งาน
 // เพื่อไม่ต้อง hardcode รายชื่อโมดูลต่อ role (เคย hardcode แล้ว drift ตามโมดูลที่เพิ่มไม่ทัน)
@@ -471,11 +522,40 @@ function SplashScreen({ onDone }) {
 
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
+/* 👤 ยังไม่มีรูปโปรไฟล์ = เงาคนครึ่งตัว (20/11 · คำสั่ง user "เงาคนดีกว่าตัวย่อชื่อ") — จอคอมเท่านั้น (มือถือคงตัวย่อ · ตกลง 20/11)
+   วาดเต็มวงกลม (ไหล่ตกขอบล่าง) · สี = currentColor ของกล่องแม่ · กล่องแม่ต้องเป็นวงกลม overflow:hidden */
+function AvatarSilhouette() {
+  return (
+    <svg viewBox="0 0 24 24" width="100%" height="100%" aria-hidden="true" focusable="false" style={{ display: 'block' }}>
+      <circle cx="12" cy="9.6" r="4.6" fill="currentColor" />
+      <path d="M2.6 25c0-5.6 4.2-9.6 9.4-9.6s9.4 4 9.4 9.6z" fill="currentColor" />
+    </svg>
+  );
+}
+
+/* 🏷️ ชื่อระบบบนหัวแผงเมนู — ตาม edition (20/11 · กันเว็บ New Model ขึ้น "ESM") · ESM เต็ม = ESM / Shopfloor Management */
+const BRAND = EDITION === 'full'
+  ? { title: 'ESM', sub: 'Shopfloor Management' }
+  : { title: String(EDITION_LABEL).split(' · ')[0], sub: String(EDITION_LABEL).split(' · ')[1] || '' };
+/** หัวแผงเมนู: โลโก้ + ชื่อระบบ (ใช้ทั้งแผง desktop และ drawer มือถือ — หน้าตาเดียวกัน) */
+function SidebarBrand({ onGo }) {
+  return (<>
+    <Link to={EDITION_HOME} title="หน้าหลัก (เลือกโมดูล)" style={{ lineHeight: 0, flexShrink: 0 }} onClick={onGo}>
+      <img src={tsLogo} alt="Thai Summit Group" width={30} height={30} style={{ borderRadius: 6 }} />
+    </Link>
+    <div style={{ flex: 1, minWidth: 0, lineHeight: 1.15 }}>
+      <div style={{ fontSize: 15, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{BRAND.title}</div>
+      {BRAND.sub && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{BRAND.sub}</div>}
+    </div>
+  </>);
+}
+
 export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
   const { lang, toggleLang, tr } = useLang();   // 🌐 ป้ายเมนู/หมวดแปลที่จุดวาด — ข้อมูล NAV_ITEMS ยังเป็นไทย (คีย์)
   // 🔄 ผลการทับขอบเขตด้วย org_assignments — มาจาก UserContext (ProtectedLayout) ไม่เพิ่ม prop
   const { assignOverlay } = useContext(UserContext);
   const location = useLocation();
+  const navTabsLive = useNavTabsLive();   // 🗂️ 27/11
   const isMobile = useIsMobile();
   const [sigModalOpen,  setSigModalOpen]  = useState(false);
   const [fbOpen, setFbOpen] = useState(false);   // 💬 กล่องรับ feedback หน้างาน
@@ -503,6 +583,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   // panel = ชื่อหมวด | '__star' (ใช้บ่อย) | '__me' (โปรไฟล์) | null = ปิด
   // ปกติแผง "ลอยทับ" เนื้อหา (เนื้อหาไม่ถูกบีบ — คำสั่ง user) · ปักหมุด 📌 = ค้างไว้และดันเนื้อหา
   const [panel, setPanel] = useState(null);
+  /* 🗂️ ข้อย่อยในแผง (24/11 · คำสั่ง user): กาง/ซ่อนรายเมนู · ไม่เคยกด = กางเฉพาะเมนู/แท็บของหน้าที่เปิดอยู่ */
+  const [subOpen, setSubOpen] = useState({});
   /* คิวงานของฉัน — โหลดที่นี่เพราะ **badge ต้องมีเลขแม้แผงปิดอยู่** (กฎอยู่ MyQueuePanel.jsx) */
   const myQueue = useMyQueue(panel === '__me');
   const pinnedRef = useRef(pinned);
@@ -533,12 +615,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     ? visibleItems.filter(i => (i.label + ' ' + i.group + ' ' + i.to).toLowerCase().includes(q))
     : null;
   const groupedItems = NAV_GROUP_ORDER
-    .map(g => ({ group: g, items: visibleItems.filter(i => inNavGroup(i, [g])) }))
+    .map(g => ({ group: g, items: orderNavItems(visibleItems.filter(i => inNavGroup(i, [g])), g) }))
     .filter(g => g.items.length > 0);
   const displayName = userFullName || userEmail || '';
-  const initials = displayName
-    ? displayName.split(/[\s@]/)[0].slice(0, 2).toUpperCase()
-    : '?';
 
   /* `isHomeHere` = "หน้าที่เปิดอยู่ **มีบ้านจริง** อยู่หมวดนี้ไหม" — ตัวตัดสินไฮไลต์ "อยู่ตรงนี้"
      ทุกชั้น (ราง · แผงลอย · accordion มือถือ) · หน้าที่มาเป็น *ทางลัด* (`alsoIn`) ไม่นับ
@@ -568,15 +647,15 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       {userAvatarUrl ? (
         <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover', border: '1.5px solid var(--accent)' }} />
       ) : (
-        /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **พื้นเรียบ ห้ามไล่เฉด** (23/09)
+        /* 🚦 อักษรย่อแทนรูปโปรไฟล์ — **ห้ามไล่ข้ามสีสถานะ** (23/09) · ไล่เฉดในสีเดียวได้ (20/11 user: "ไล่สีไม่ได้แปลว่าหลายสี")
            เดิมเป็น `linear-gradient(135deg, var(--accent), #ff6b6b)` = เอาสี Andon เขียว→แดง
            มาทำของตกแต่ง ทั้งที่ 2 สีนี้ถูกจองไว้แปลว่า "ปกติ/มีปัญหา" ทั้งระบบ (utils/statusTone.js) */
         <div style={{
           width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-          background: 'var(--bg2)', border: '1px solid var(--border2)',
+          /* 20/11: ไล่เฉดเขียวสีเดียว + เงาคน ทั้งจอคอมและมือถือ (ชุดเดียวกับการ์ดท้ายแผง · token --avatar-*) */
+          background: 'linear-gradient(135deg, var(--avatar-from) 0%, var(--avatar-to) 100%)', color: 'var(--accent-ink)', overflow: 'hidden',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 12, fontWeight: 800, color: 'var(--text2)',
-        }}>{initials}</div>
+        }}><AvatarSilhouette /></div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -759,9 +838,12 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         onClick={onClick}
       >
         {cur && !guest && (
-          <motion.span layoutId="nav-active" transition={railPill()} aria-hidden="true" style={{
-            position: 'absolute', inset: 0, borderRadius: 'inherit', background: 'var(--accent-dim)', borderLeft: '2px solid var(--accent)', pointerEvents: 'none',
-          }} />
+          <motion.span layoutId="nav-active" transition={railPill()} aria-hidden="true" className="neon-row" style={{
+            /* 24/11 ทดลอง (รีล Sidebar v2): พื้นไล่จาก accent-dim → โปร่ง + แท่งซ้าย 3px เรืองแสง (.neon-bar · index.css) */
+            position: 'absolute', inset: 0, borderRadius: 'inherit', background: 'var(--accent-dim)', pointerEvents: 'none',
+          }}>
+            <span className="neon-bar" style={{ position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />
+          </motion.span>
         )}
         <Icon glyph={item.icon} size={17} style={{ opacity: guest ? 0.7 : 1, position: 'relative', zIndex: 1 }} />
         <span style={{ position: 'relative', zIndex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(item.label)}</span>
@@ -773,6 +855,66 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           </span>
         )}
       </Link>
+    );
+  };
+
+  /* ══ 🗂️ แถวเมนู + ข้อย่อย (แท็บของหน้า) — 24/11 คำสั่ง user "ย้าย Detail bar ไป Sub bar เป็นข้อย่อย"
+     · 26/11 (คำสั่ง user "แท็บอยู่ในหน้า · เมนูเป็นทางเข้า"): ข้อย่อยเป็น **ทางลัด** เข้าแท็บ — แถบแท็บยังวาดในหน้าเสมอ (PageHeader · ด่าน `tabs-stay-in-page`)
+     · ข้อย่อย = ทะเบียน `NAV_SUB_TABS` (utils/navSubTabs.js) — เห็นทุกเมนูตลอดแม้ยังไม่เปิดหน้านั้น · กรองสิทธิ์รายแท็บด้วย `perm`
+     · รายการชั้นถัดไป (พื้นที่ SAP ฯลฯ) **ไม่อยู่ในแผงนี้** — อยู่ "Detail Bar" ใต้ breadcrumb ในหน้า (PageHeader · 24/11 รอบ 4)
+     · "อยู่ตรงนี้" หน้าตาเดียวกับทุกชั้น (พื้น accent-dim + แถบซ้าย + aria-current) · ชื่อยาวตัด … + `title` ชื่อเต็ม
+     · กดข้อย่อย = ปิดแผงเหมือนเมนูอื่น (ปักหมุด = ค้าง) — user เลือก 24/11 ══ */
+  const subTabsOf = (item) => {
+    const reg = NAV_SUB_TABS[item.to];
+    if (reg) {
+      const tabs = reg.tabs.filter(t => !t.perm || hasPermission(t.perm, userRole));
+      return tabs.length ? { ...reg, tabs } : null;
+    }
+    /* 27/11: หน้าที่ไม่อยู่ในทะเบียนตายตัว = ใช้แท็บที่ PageHeader ประกาศตอนเปิดหน้า (จำใน localStorage · กรองสิทธิ์โดยหน้าแล้ว) */
+    const live = navTabsLive[item.to];
+    return live && live.tabs.length ? { param: live.param, tabs: live.tabs.map(t => ({ ...t, label: stripIcon(t.label) })) } : null;
+  };
+  const subLinkStyle = (on) => ({
+    display: 'block', position: 'relative', textDecoration: 'none', borderRadius: 'var(--radius)',
+    padding: '5px 8px 5px 10px', fontSize: 12.5,
+    fontWeight: on ? 700 : 500, color: on ? 'var(--accent)' : 'var(--text2)',
+    background: on ? 'var(--accent-dim)' : 'transparent', borderLeft: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
+    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+  });
+  const chevron = (open, onToggle, label) => (
+    <button type="button" onClick={onToggle} aria-expanded={open} aria-label={label} title={label} style={{
+      width: 24, height: 24, flexShrink: 0, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer',
+      color: 'var(--muted)', fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    }}>{open ? '▾' : '▸'}</button>
+  );
+  const subNav = (item, group, onPick) => {
+    const reg = subTabsOf(item);
+    if (!reg) return navRow(item, group, onPick);
+    const onPage = location.pathname === item.to;
+    const sp = new URLSearchParams(location.search);
+    const curTab = onPage ? (sp.get(reg.param) || String(reg.tabs[0].key)) : null;
+    const k2 = item.to;
+    const open2 = subOpen[k2] ?? onPage;
+    const toggle = (k, cur) => setSubOpen(o => ({ ...o, [k]: !cur }));
+    return (
+      <>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>{navRow(item, group, onPick)}</div>
+          {chevron(open2, () => toggle(k2, open2), open2 ? tr('ซ่อนข้อย่อย') : tr('แสดงข้อย่อย'))}
+        </div>
+        {open2 && (
+          <div role="group" aria-label={tr(item.label)} style={{ margin: '1px 0 4px 20px', paddingLeft: 6, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {reg.tabs.map(t => {
+              const on = curTab === String(t.key);
+              const label = tr(t.label);
+              return (
+                <Link key={t.key} to={`${item.to}?${reg.param}=${encodeURIComponent(t.key)}`} onClick={onPick} title={label}
+                  aria-current={on ? 'page' : undefined} style={subLinkStyle(on)}>{label}</Link>
+              );
+            })}
+          </div>
+        )}
+      </>
     );
   };
 
@@ -820,9 +962,10 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             · นิ่งเมื่อ reduced-motion / จอ TV (`railPill()` คืน duration 0) · ตัวตรวจ "คุณอยู่ตรงนี้" ดู aria-current ไม่ใช่สี */}
         {isCurrent && (
           <motion.span layoutId="rail-active" transition={railPill()} aria-hidden="true" style={{
-            position: 'absolute', inset: 0, borderRadius: 10, background: 'var(--accent-dim)', pointerEvents: 'none',
+            /* 24/11: pill สีเดียวกับแผ่นเนื้อหา (.app-sheet) และยื่นขวาจนชนแผ่น ⇒ "แท็บที่ติดกับหน้า" (รีล CRM V10) · แถบ accent ซ้าย + ตัวอักษร accent คงเดิม (UI-STANDARD §4.5) */
+            position: 'absolute', top: 0, bottom: 0, left: 0, right: -4, borderRadius: '10px 0 0 10px', background: 'var(--bg)', pointerEvents: 'none',
           }}>
-            <span style={{ position: 'absolute', left: 0, top: 6, bottom: 6, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />
+            <span className="neon-bar" style={{ position: 'absolute', left: 0, top: 6, bottom: 6, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />
           </motion.span>
         )}
         <Icon glyph={icon} size={19} style={{ position: 'relative', zIndex: 1 }} />
@@ -836,13 +979,17 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         <nav style={{
           position: 'fixed', top: 0, left: 0, height: '100vh',
           width: isOpen ? 'var(--rail-w)' : '0px',
-          background: 'var(--bg2)', borderRight: isOpen ? '1px solid var(--border)' : 'none',
+          background: 'linear-gradient(180deg, var(--rail-top) 0%, var(--rail-bot) 100%)',   // 🪪 20/11 ไล่เฉดสีเดียว (token)
+          borderRight: 'none',   // 24/11: ไม่มีเส้นคั่นราง-แผ่น (pill ของหมวดที่เปิดอยู่ต้องไหลเข้าแผ่นได้)
           display: 'flex', flexDirection: 'column', alignItems: 'center',
           padding: isOpen ? '10px 0 8px' : '10px 0',
           gap: 4, zIndex: 1000, overflow: 'hidden',
           transition: 'width 0.25s cubic-bezier(0.4,0,0.2,1)',
         }}>
-            <Link to="/" title="หน้าหลัก (เลือกโมดูล)" style={{ flexShrink: 0, lineHeight: 0, marginBottom: 2 }}>
+            {/* 🪪 20/11 (คำสั่ง user · sidebar ทาง ข): แผงเปิด = โลโก้ย้ายไปหัวแผง ⇒ ซ่อนบนรางแต่ "คงที่ว่าง" (visibility)
+                ไม่งั้นไอคอนทั้งรางกระโดดขึ้นทุกครั้งที่เปิด/ปิดแผง · แผงหุบ = กลับมาเหมือนเดิม */}
+            <Link to="/" title="หน้าหลัก (เลือกโมดูล)" aria-hidden={panelOpen ? 'true' : undefined} tabIndex={panelOpen ? -1 : undefined}
+              style={{ flexShrink: 0, lineHeight: 0, marginBottom: 2, visibility: panelOpen ? 'hidden' : 'visible' }}>
               <img src={tsLogo} alt="Thai Summit Group" width={30} height={30} style={{ borderRadius: 4 }} />
             </Link>
             {railBtn({
@@ -879,7 +1026,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <button
               onClick={() => setPanel(p => (p === '__me' && !pinned) ? null : '__me')}
               title={`${displayName} · โปรไฟล์/ลายเซ็น/ธีม/ออกจากระบบ`}
+              aria-hidden={panelOpen ? 'true' : undefined} tabIndex={panelOpen ? -1 : undefined}
               style={{
+                visibility: panelOpen ? 'hidden' : 'visible',   // 🪪 20/11: แผงเปิด = การ์ดผู้ใช้อยู่ท้ายแผงแทน (คงที่ว่างกันรางกระโดด)
                 width: 44, height: 44, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', outline: 'none',
                 border: `2px solid ${panel === '__me' ? 'var(--accent)' : 'var(--border2)'}`,
                 background: 'var(--bg3)', padding: 0, position: 'relative',
@@ -888,7 +1037,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {userAvatarUrl ? (
                 <img src={userAvatarUrl} alt="" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
               ) : (
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{initials}</span>
+                /* 👤 20/11: ยังไม่มีรูป = เงาคน (ราง = จอคอมเสมอ) · กล่องในแยก overflow:hidden — badge ข้างนอกยังล้นขอบได้ */
+                <span style={{ width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden', color: 'var(--text2)', display: 'block' }}><AvatarSilhouette /></span>
               )}
               {remoteCode && (
                 <span title={`รับรีโมทอยู่ · ${remoteCode}`} style={{ position: 'absolute', right: -3, top: -3, fontSize: 12 }}>📺</span>
@@ -919,43 +1069,53 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           )}
           <div style={{
             position: 'fixed', top: 0, bottom: 0, left: 'var(--rail-w)', width: 'var(--sidebar-w)',
-            background: 'var(--bg2)', borderRight: '1px solid var(--border)',
-            display: 'flex', flexDirection: 'column', padding: '0 10px 14px',
+            /* 🎨 20/11 (sidebar ทาง ข): พื้นไล่เข้มลงล่าง + เงา — ไล่จาก token ล้วน ⇒ ธีมสว่างก็ไล่ขาว→เทาอ่อนเอง
+               ปักหมุดเดิมไม่มีเงาเลย ⇒ ใช้ --shadow-float (ของที่ลอย · UI §6.20) ให้แยกจากเนื้อหา */
+            background: 'linear-gradient(180deg, var(--panel-top) 0%, var(--panel-bot) 100%)', borderRight: '1px solid var(--border)',
+            display: 'flex', flexDirection: 'column', padding: '0 10px 12px',
             zIndex: 998,
-            boxShadow: pinned ? 'none' : '18px 0 40px rgba(0,0,0,0.45)',
+            boxShadow: pinned ? 'var(--shadow-float)' : '18px 0 40px rgba(0,0,0,0.45)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
-              <Icon glyph={panelMeta.icon} size={17} />
-              <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
-              {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
-                width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
+            {/* 🪪 20/11 (คำสั่ง user · sidebar ทาง ข + หัวแผงโลโก้): หัวแผง = โลโก้ + ชื่อระบบ · ปุ่มเดิม 📌/✕ คงไว้
+                (ไม่เพิ่มปุ่มหุบแผงชุดที่ 2 — ◀ ท้ายราง = ซ่อนเมนูทั้งหมด · ✕ = ปิดแผง · user ทักเรื่องซ้ำ 20/11)
+                ชื่อหมวดลงไปเป็นป้ายเล็กใต้หัว */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 0 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+              <SidebarBrand onGo={() => { if (!pinned) setPanel(null); }} />
+              {/* 20/11: ไอคอนเส้นชุดเดียวกับเมนู แทน emoji 📌/✕ (emoji สีแดงชนพาเลต · UI §6.36) — หน้าที่ปุ่มเดิมทุกอย่าง */}
+              {onTogglePin && <button onClick={onTogglePin} aria-pressed={pinned} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
+                width: 28, height: 28, borderRadius: 8, flexShrink: 0, cursor: 'pointer', outline: 'none',
                 border: `1px solid ${pinned ? 'var(--accent)' : 'var(--border2)'}`,
                 background: pinned ? 'var(--accent-dim)' : 'transparent',
                 color: pinned ? 'var(--accent)' : 'var(--muted)', fontSize: 12,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>📌</button>}
+              }}><Icon name="Pin" size={15} /></button>}
               {!pinned && (
-                <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" style={{
-                  width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
+                <button onClick={() => setPanel(null)} title="ปิดแผง (Esc)" aria-label="ปิดแผง" style={{
+                  width: 28, height: 28, borderRadius: 8, flexShrink: 0, cursor: 'pointer', outline: 'none',
                   border: '1px solid var(--border2)', background: 'transparent',
                   color: 'var(--muted)', fontSize: 12,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>✕</button>
+                }}><Icon name="PanelLeftClose" size={15} /></button>
               )}
+            </div>
+            {/* ชื่อหมวดของแผงที่เปิด (ย้ายจากหัวแผง · 20/11) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 8px 6px', fontSize: 12, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.02em', flexShrink: 0, minWidth: 0 }}>
+              {/* 24/11: ชื่อหมวดยาวถูกตัด … ⇒ ชี้เมาส์ดูชื่อเต็ม (คำสั่ง user) */}
+              <span title={panelMeta.title} style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
             </div>
 
             <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
               {panelItems && panelItems.map((item, i) => (
                 <div key={item.to}>
                   {/* หัวข้อย่อยในหมวด (`sub`) — คั่นเฉพาะตอนเปลี่ยนกลุ่ม ไม่เพิ่มหมวดบนแถบไอคอน */}
-                  {item.sub && item.sub !== panelItems[i - 1]?.sub && (
+                  {navSubOf(item, panel) && navSubOf(item, panel) !== (i ? navSubOf(panelItems[i - 1], panel) : null) && (
                     <div style={{
                       fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                       padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                       borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                    }}>{tr(item.sub)}</div>
+                    }}>{tr(navSubOf(item, panel))}</div>
                   )}
-                  {navRow(item, panel, () => { if (!pinned) setPanel(null); })}
+                  {subNav(item, panel, () => { if (!pinned) setPanel(null); })}
                 </div>
               ))}
 
@@ -988,6 +1148,38 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                 {profileActions(() => { if (!pinned) setPanel(null); })}
               </>)}
             </div>
+            {/* 🪪 การ์ดผู้ใช้ท้ายแผง (20/11 · sidebar ทาง ข) — แทนวงกลมบนรางตอนแผงเปิด · กด = แผงโปรไฟล์ (ที่เดิม)
+                แผงโปรไฟล์มีการ์ดของมันเองอยู่แล้ว ⇒ ไม่วาดซ้ำ · อักษรย่อไล่เฉดเขียวสีเดียว (20/11 user) — ห้ามไล่ข้ามสีสถานะ (กฎ 23/09) */}
+            {panel !== '__me' && (
+              <button onClick={() => setPanel('__me')} title={`${displayName} · โปรไฟล์/ลายเซ็น/ธีม/ออกจากระบบ`} style={{
+                marginTop: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                padding: '9px 10px', borderRadius: 10, cursor: 'pointer', outline: 'none',
+                background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)',
+              }}>
+                <span style={{ position: 'relative', flexShrink: 0, lineHeight: 0 }}>
+                  {userAvatarUrl ? (
+                    <img loading="lazy" src={userAvatarUrl} alt="" style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover', border: '1.5px solid var(--border2)' }} />
+                  ) : (
+                    <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--avatar-from) 0%, var(--avatar-to) 100%)',
+                      display: 'block', overflow: 'hidden', color: 'var(--accent-ink)' }}><AvatarSilhouette /></span>
+                  )}
+                  {myQueue.badge > 0 && (
+                    <span title={`มีงานรอคุณโดยตรง ${myQueue.badge} รายการ`} style={{
+                      position: 'absolute', right: -5, top: -4, minWidth: 17, height: 17, padding: '0 4px',
+                      borderRadius: 999, background: 'var(--red)', color: '#fff',
+                      fontSize: 11, fontWeight: 800, lineHeight: '13px', textAlign: 'center', border: '2px solid var(--bg3)',
+                    }}>{myQueue.badge > 99 ? '99+' : myQueue.badge}</span>
+                  )}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, lineHeight: 1.25 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName || 'Unknown'}</span>
+                  <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {positionLabel(userPosition) || tr('โปรไฟล์ & อุปกรณ์')}{remoteCode ? ' · 📺' : ''}
+                  </span>
+                </span>
+                <span aria-hidden="true" style={{ color: 'var(--muted)', fontSize: 15, flexShrink: 0 }}>⋯</span>
+              </button>
+            )}
           </div>
         </>)}
         {modals}
@@ -1004,7 +1196,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       <nav style={{
         position: 'fixed', top: 0, left: 0, height: '100vh',
         width: isOpen ? 'var(--sidebar-w)' : '0px',
-        background: 'var(--bg2)',
+        background: 'linear-gradient(180deg, var(--panel-top) 0%, var(--panel-bot) 100%)',   // 🪪 20/11 ชุดเดียวกับแผง desktop
         borderRight: isOpen ? '1px solid var(--border)' : 'none',
         display: 'flex', flexDirection: 'column',
         padding: isOpen ? '0 10px 20px' : '0',
@@ -1013,26 +1205,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         zIndex: 1000,
         boxShadow: isOpen ? '4px 0 30px rgba(0,0,0,0.3)' : 'none',
       }}>
-        {/* Logo + ปุ่มพับ sidebar (อยู่ในหัวแถบ ไม่ลอยทับเนื้อหา) */}
-        <div style={{ padding: '18px 6px 16px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            <img src={tsLogo} alt="Thai Summit Group" width={28} height={28} style={{ borderRadius: 3, flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: 11, letterSpacing: '2px', color: 'var(--accent)', textTransform: 'uppercase', fontWeight: 700, fontFamily: 'var(--font-display)' }}>Thai Summit</div>
-              <div style={{ fontSize: 11, letterSpacing: '1.5px', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: 'var(--font-display)' }}>{EDITION_LABEL}</div>
-            </div>
-          </div>
+        {/* หัวแถบ = โลโก้ + ชื่อระบบ (หน้าตาเดียวกับแผง desktop · 20/11) + ปุ่มพับ (ไอคอนเส้น) */}
+        <div style={{ padding: '14px 4px 12px', borderBottom: '1px solid var(--border)', marginBottom: 10, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 9 }}>
+          <SidebarBrand onGo={onClose} />
           <button
             onClick={onClose}
-            title="พับเมนู"
+            title="พับเมนู" aria-label="พับเมนู"
             style={{
-              // สัญลักษณ์ show/hide เหมือนกันทั้งระบบ: 32×32 radius8 bg3 border2 · ◀ = พับ
               width: 32, height: 32, borderRadius: 8, flexShrink: 0,
               background: 'var(--bg3)', border: '1px solid var(--border2)',
-              color: 'var(--text2)', fontSize: 14, cursor: 'pointer', outline: 'none',
+              color: 'var(--text2)', cursor: 'pointer', outline: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
-          >◀</button>
+          ><Icon name="PanelLeftClose" size={16} /></button>
         </div>
 
         {/* ค้นหาเมนู — 51 รายการ 8 หมวด ถ้าไม่มีช่องค้นต้องจำว่าอยู่หมวดไหน (NAVIGATION-REVIEW §2.5) */}
@@ -1126,14 +1311,14 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   {open && items.map((item, i) => (
                     <div key={item.to}>
                       {/* หัวข้อย่อย (`sub`) — เหมือนแผงบน desktop ให้ 2 โหมดเห็นโครงเดียวกัน */}
-                      {item.sub && item.sub !== items[i - 1]?.sub && (
+                      {navSubOf(item, group) && navSubOf(item, group) !== (i ? navSubOf(items[i - 1], group) : null) && (
                         <div style={{
                           fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                           padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                        }}>{tr(item.sub)}</div>
+                        }}>{tr(navSubOf(item, group))}</div>
                       )}
-                      {navRow(item, group, onClose)}
+                      {subNav(item, group, onClose) /* 25/11 มือถือ: ข้อย่อย (แท็บของหน้า) เหมือนแผงจอคอม */}
                     </div>
                   ))}
                 </div>
@@ -1827,7 +2012,7 @@ function AutoLogoutWarning({ secsLeft, onStay, onLogout }) {
 /* ─── Protected Layout ─────────────────────────────────────────────── */
 // permsVersion — ทำให้ layout re-render เมื่อสิทธิ์เปลี่ยน · และเป็น dep ของ `allUnits` ใน userCtx
 // (RoleRoute/Sidebar อ่าน permission cache แบบ sync ผ่าน canAccessPage ระหว่าง render)
-function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
+function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, viewAs, onApplyViewAs, userLineId, userTeam, userSection, userSections, userRespCcs, userAllUnits, userWriteUnits, userScopeIdx, userAssignOverlay, userMtnTeams, userIsDeptAdmin, userAccountKind, userPosition, userEmail, userFullName, userNotifyEmail, userSignatureUrl, userAvatarUrl, onAvatarSaved, onSignatureSaved, permsVersion }) {
   const isMobile = useIsMobile();
   const isTV     = !useIsMobile(1919);   // จอ ≥1920 (TV) — reactive แทน innerWidth ครั้งเดียว
   useEffect(() => { purgeOldDrafts(); }, []);   // 📝 ร่างฟอร์มหมดอายุ (utils/formDraft.js)
@@ -1838,6 +2023,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   const navigate = useNavigate();
   const location = useLocation();
   useEffect(() => { setTvNavOpen(false); }, [location.pathname]);
+  /* 📈 อนิเมชันกราฟเล่นครั้งเดียวต่อ "สิ่งที่ดู" (utils/motion.js chartAnim) — URL เปลี่ยน = เปิดหน้าต่างใหม่ · รีเฟรชข้อมูล = ไม่เล่นซ้ำ
+     ทำระหว่าง render (ไม่ใช่ useEffect) เพื่อให้กราฟที่วาดในรอบเดียวกันเห็นหน้าต่างใหม่ทันที · idempotent ต่อ URL */
+  const viewKeyRef = useRef(null);
+  const viewKey = `${location.pathname}?${location.search}`;
+  if (viewKeyRef.current !== viewKey) { viewKeyRef.current = viewKey; markView(); }
   /* 📺 กรอบจอ TV ชุดเดียวทุกหน้า (16/10) — ตัดสินที่ isTvShell() (utils/displayRotation.js) ที่เดียว
      ⇒ ไม่มี sidebar/rail/กระดิ่ง/ปุ่มเมนู · แถบบนวาดโดย DisplayRotator · หัวเพจทุกหน้าซ่อนด้วย body.esm-tv-shell .ph-chrome */
   const tvShell = isTvShell(userRole, location.search);
@@ -1871,6 +2061,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
        ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
     setMasterAuthUser(null);   // 🔐 ปิดประตูก่อนล้าง — หน้าที่ re-render ระหว่างนี้ห้ามจดลิสต์ว่างลง cache (masterCache.js)
     clearAllMasterCache();
+    clearNavTabsLive();   // 27/11 แท็บสดเป็นของบัญชีนี้ (กรองสิทธิ์แล้ว) — สลับคนต้องเริ่มใหม่
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
   };
@@ -1961,7 +2152,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     /* 🔐 ชั้นที่ 3 ของสิทธิ์ — "แก้ข้ามหน่วยงานได้ไหม" (15/10 · คำสั่ง user)
        🔴 คนละแกนกับ `sections` (= ขอบเขตที่ **เห็น**) — ตัวตัดสินอยู่ที่ `utils/writeScope.js`
        ⚠️ ต้องมี `permsVersion` ใน deps ไม่งั้นแก้สิทธิ์ที่ /permissions แล้วค่านี้ค้างทั้ง session */
-    allUnits: can('scope', 'all_units', userRole),
+    allUnits: userRole === 'admin' || userAllUnits === true,
+    /* หน่วยที่แก้ได้ (บ้าน ∪ มอบหมาย) — `writeScope.writeUnitsOf()` อ่านช่องนี้ · ว่าง = ถอยไป `section` */
+    writeUnits: userWriteUnits || EMPTY_ARR,
     /* 💰 แกน Cost Center ของชั้นที่ 3 (16/10 · คำสั่ง user "response กับ cost center ไหน ตามลำดับชั้น")
        ตัวตัดสิน = `canWriteScope()` (`utils/ccScope.js`) · ตั้งค่าที่ /add-user ช่อง ④
        🔴 ว่าง = ถอยไปใช้ `section` เหมือนเดิม **ไม่ใช่** "แก้อะไรไม่ได้" */
@@ -1971,7 +2164,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
     /* 🔄 ผลการทับด้วยมอบหมาย (`org_assignments`) — จอที่โชว์ "ขอบเขตของฉัน" ต้องเขียนบอกว่ามาจากรักษาการ
        และถ้า `failed` ต้องเขียนว่าอ่านทะเบียน/ผังไม่ได้ (ขอบเขตที่เห็นอยู่ = จาก profiles ล้วน) */
     assignOverlay: userAssignOverlay,
-  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userScopeIdx, userAssignOverlay, userMtnTeams, userPosition,
+  }), [userRole, userLineId, userTeam, userSection, userSections, userRespCcs, userAllUnits, userWriteUnits, userScopeIdx, userAssignOverlay, userMtnTeams, userPosition,
        userNotifyEmail, userSignatureUrl, userAvatarUrl, userFullName, userIsDeptAdmin, realRole,
        userAccountKind, permsVersion]);
   /* layout ปกติต้องรู้ว่า sidebar เปิดอยู่ไหมด้วย — แยก memo เพื่อไม่ให้ `isOpen` ไปสั่น context ของจอ /tv */
@@ -2088,7 +2281,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         <AutoLogoutWarning secsLeft={warnSecsLeft} onStay={dismissWarning} onLogout={handleLogout} />
       )}
       {isMobile && <ShiftEndBanner minLeft={shiftLeftMin} />}
-      <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
+      <div className="app-frame" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
         {/* มือถือ: ☰ ย้ายไปแถบล่าง (นิ้วโป้งถึง · ไม่ลอยทับเนื้อหา) — จอคอมเหมือนเดิม (docs/MOBILE-UX-STANDARD.md §3) */}
         {!isMobile && !tvShell && <ToggleBtn isOpen={isOpen} onClick={() => setIsOpen(true)} />}
         {!tvShell && <NotificationBell userId={userId} role={role} />}
@@ -2137,7 +2330,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
         {viewAsBanner}
         {viewAsModal}
 
-        <main style={{
+        <main className="app-sheet" style={{   /* 24/11: แผ่นเนื้อหาต่อกับราง (index.css .app-sheet) */
           flex: 1,
           marginLeft,
           minHeight: 'calc(100vh - var(--tvbar-h, 0px))',   // กรอบจอ TV: แถบบนกินที่ไปแล้ว (body padding-top)
@@ -2162,7 +2355,8 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
           {/* 🏭 ทะเบียนไลน์โหลดไม่สำเร็จ = dropdown ไลน์ว่างทั้งแอป — ต้องบอก ห้ามปล่อยให้เดาเอง
               (82 จาก 89 จุดที่เรียก loadLinesRes() ทิ้ง error ทิ้ง ⇒ ตาข่ายต้องอยู่ที่เดียวตรงนี้) */}
           <LineRegistryAlert />
-          <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลด...</div>}>
+          <Suspense fallback={<Skeleton cards={6} style={{ padding: '24px 24px 0' }} />}>   {/* 24/11: โครงเทาวิบแทน "กำลังโหลด..." */}
+          <TabBody tab={location.pathname}>   {/* 24/11: เปลี่ยนหน้า = เก่าจาง ใหม่ขึ้น (utils/motion tabSwitch · นิ่งบน TV) */}
             {/* 🔁 key จากจอวนหน้า — หน้าเดิมที่เปลี่ยนแค่ ?query (เช่น ผังโรงงาน metric=oee → metric=ng) ต้อง remount
                 ไม่งั้นค่าตั้งต้นจากลิงก์ (utils/urlInit) ไม่ถูกอ่านใหม่ · ค่าว่าง = นำทางปกติ ไม่ remount */}
             <Routes key={location.state?.[ROT_NAV_STATE] || 'r'}>
@@ -2183,6 +2377,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/dept-dashboard" element={<LegacyTabRedirect to="/obeya" tab="todo" />} />
               <Route path="/flow-tower" element={
                 <RoleRoute path="/flow-tower" userRole={role}><FlowTower /></RoleRoute>
+              } />
+              <Route path="/live-benefits" element={
+                <RoleRoute path="/live-benefits" userRole={role}><LiveBenefits /></RoleRoute>
               } />
               <Route path="/adoption-outlook" element={
                 <RoleRoute path="/adoption-outlook" userRole={role}><AdoptionOutlook /></RoleRoute>
@@ -2343,6 +2540,11 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/nm-board" element={
                 <RoleRoute path="/nm-board" userRole={role}><NewModelBoard /></RoleRoute>
               } />
+              {/* 🎯 หมวดกิจกรรม — 9 path วาดหน้าเดียว (key = path ให้ state ไม่ข้ามกิจกรรม) */}
+              {ACTIVITIES.map(a => (
+                <Route key={a.path} path={a.path} element={
+                  <RoleRoute path={a.path} userRole={role}><Activity key={a.path} /></RoleRoute>} />
+              ))}
               <Route path="/rfq" element={
                 <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>
               } />
@@ -2418,6 +2620,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
                   **ห้ามย้ายขึ้นก่อน route อื่น** (จะกินทุกที่อยู่) */}
               <Route path="*" element={<NotFound />} />
             </Routes>
+          </TabBody>
           </Suspense>
         </main>
       </div>
@@ -2439,6 +2642,11 @@ export default function App() {
      🔴 ต้องเป็น array ตัวเดิมตราบใดที่ค่าไม่เปลี่ยน — ไม่งั้น UserContext เป็นตัวใหม่ทุก render
         แล้วทุกหน้าที่มี effect ผูกกับ context ยิง DB ซ้ำ (กฎเหล็กการเขียน DB ข้อ 9) */
   const [userRespCcs, setUserRespCcs] = useState(EMPTY_ARR);
+  /* 🌐 ใบผ่านข้ามหน่วย **รายคน** (`profiles.all_units` ∪ มอบหมาย scope_depth='all' · 13/11 คำสั่ง user)
+     — เดิมอ่านจากคีย์ `scope:all_units` ของ role ⇒ "manager = แก้ได้ทั้งโรงงาน" ซึ่งขัดกฎ role ≠ ขอบเขต
+     🔴 `writeUnits` = หน่วยที่ **แก้ได้** (บ้าน ∪ ส่วนงานที่ได้รับมอบ) คนละแกนกับ `sections` (เห็น) · array ตัวเดิมถ้าค่าไม่เปลี่ยน (กฎข้อ 9) */
+  const [userAllUnits, setUserAllUnits] = useState(false);
+  const [userWriteUnits, setUserWriteUnits] = useState(EMPTY_ARR);
   /* 💰 ดัชนีผังของแกน CC — `null` = ไม่ได้ใช้แกนนี้ · `{ failed:true }` = ตั้ง CC ไว้แต่อ่านผังไม่ได้
      🔴 `failed` ต้องแยกจาก `null` ให้ได้ — "อ่านไม่ได้" ต้อง fail-closed ไม่ใช่ถอยไปใช้ส่วนงาน
         (ถอย = คนที่ขอบเขต `sections` เคยกว้างกว่า CC จะได้สิทธิ์คืนมาเงียบๆ) */
@@ -2522,7 +2730,7 @@ export default function App() {
 
   const fetchProfile = async (user) => {
     setUserEmail(user.email ?? null);
-    const COLS = 'role, line_id, full_name, team, section, sections, resp_cost_centers, position, notify_email, signature_url, is_dept_admin, scope_depth';
+    const COLS = 'role, line_id, full_name, team, section, sections, resp_cost_centers, all_units, position, notify_email, signature_url, is_dept_admin, scope_depth';
     // ⚠️ egress: **คิวรีเดียวต่อการโหลดโปรไฟล์** — เดิมยิง 3 ครั้งไปที่แถวเดียวกัน (ชุดหลัก +
     //    mtn_teams + avatar_url แยกกันคนละ round trip) วัดจาก log จริง 11 ก.ย. 2026 = 6,760 req/วัน
     //    บนตาราง profiles ทั้งที่เป็นข้อมูลของ user คนเดียว ~188 ครั้ง/วัน/คน (ทุกครั้งที่เปิด/รีเฟรชแอป)
@@ -2646,14 +2854,22 @@ export default function App() {
     }
 
     /* ทับขอบเขต — pure · ผังอ่านไม่ได้ = คืนค่าเดิม + failed (ไม่เดา) */
+    const baseAll = data?.all_units === true;
     const overlay = liveAssign.length
-      ? applyAssignments({ sections: baseSections, respCostCenters: baseCcs }, liveAssign,
+      ? applyAssignments({ section: ident.section, sections: baseSections, respCostCenters: baseCcs, allUnits: baseAll }, liveAssign,
           { nodes: nodes || [], ccIdx: nodes ? buildCcIndex(nodes) : null, today })
       : null;
     setUserAssignOverlay(assignErr ? { failed: true, reason: 'registry_unreadable', applied: [] }
       : (overlay && overlay.reason !== 'none' ? { failed: overlay.failed, reason: overlay.reason, applied: overlay.applied } : null));
     const finalSections = overlay ? overlay.sections : baseSections;
     const ccList = overlay ? overlay.respCostCenters : baseCcs;
+    const homeUnit = String(ident.section ?? '').trim();
+    const writeList = overlay ? overlay.writeUnits : (homeUnit ? [homeUnit] : []);
+    setUserAllUnits(overlay ? overlay.allUnits : baseAll);
+    setUserWriteUnits(prev => {
+      if (!writeList.length) return EMPTY_ARR;
+      return prev.length === writeList.length && prev.every((v, i) => v === writeList[i]) ? prev : writeList;
+    });
 
     setUserSections(finalSections);
     setUserRespCcs(prev => {
@@ -2711,7 +2927,7 @@ export default function App() {
         loadPermissions().then(() => setPermsLoaded(true));
       } else {
         try { localStorage.removeItem(SESSION_START_KEY); } catch { /* private mode */ }
-        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserScopeIdx(null); setUserAssignOverlay(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
+        setUserRole(null); setUserLineId(null); setUserTeam(null); setUserSection(null); setUserSections([]); setUserRespCcs(EMPTY_ARR); setUserAllUnits(false); setUserWriteUnits(EMPTY_ARR); setUserScopeIdx(null); setUserAssignOverlay(null); setUserPosition(null); setUserEmail(null); setUserFullName(null); setUserNotifyEmail(null); setUserSignatureUrl(null); setUserAvatarUrl(null);
         setProfileLoaded(false); setPermsLoaded(false);
       }
     });
@@ -2793,6 +3009,8 @@ export default function App() {
                 userSection={effSection}
                 userSections={effSections}
                 userRespCcs={userRespCcs}
+                userAllUnits={impersonating ? false : userAllUnits}
+                userWriteUnits={impersonating ? EMPTY_ARR : userWriteUnits}
                 userScopeIdx={userScopeIdx}
                 userAssignOverlay={impersonating ? null : userAssignOverlay}
                 userMtnTeams={effMtnTeams}

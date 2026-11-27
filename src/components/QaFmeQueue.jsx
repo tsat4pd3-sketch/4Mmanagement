@@ -28,12 +28,12 @@ import { assessFmeReadiness } from '../utils/qaFmeReadiness';
 import QaFmeBoard from './QaFmeBoard';
 import QaFmePartRules from './QaFmePartRules';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { getWorkDate, getCurrentShift } from '../utils/workDate';
 const STAGE_META = {
-  first:  { label: 'ชิ้นแรก',      icon: '1️⃣', color: '#f59e0b' },
-  middle: { label: 'ระหว่างผลิต',  icon: '2️⃣', color: '#4d9fff' },
-  end:    { label: 'ชิ้นสุดท้าย',  icon: '3️⃣', color: '#22c55e' },
+  first:  { label: 'ชิ้นแรก',      icon: '1️⃣', color: 'var(--amber)' },
+  middle: { label: 'ระหว่างผลิต',  icon: '2️⃣', color: 'var(--blue)' },
+  end:    { label: 'ชิ้นสุดท้าย',  icon: '3️⃣', color: 'var(--green)' },
 };
 const REASON_LABEL = {
   shift_start: 'เริ่มกะ', model_change: 'เปลี่ยนรุ่น', mid_run: 'ผลิตต่อเนื่องนาน',
@@ -44,7 +44,7 @@ const REASON_LABEL = {
 
 const fmtTime = (iso) => {
   if (!iso) return '-';
-  try { return new Date(iso).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
+  try { return new Date(iso).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
 };
 
 const FME_QUEUE_LIMIT = 300;   // ถึงเพดาน = เขียนบนจอว่าอาจไม่ครบ (ไม่ตัดเงียบ)
@@ -137,31 +137,31 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
       if (!r) { toast.error('ยังตรวจความพร้อมไม่เสร็จ — รอสักครู่แล้วลองใหม่'); return; }
       if (!r.canEnable) {
         const bad = r.checks.filter(c => c.hard && c.ok !== true).map(c => c.label);
-        toast.error(`เปิดไม่ได้ — ยังไม่พร้อม: ${bad.join(' · ')}`);
+        toast.error(`${tr("เปิดไม่ได้ — ยังไม่พร้อม")}: ${bad.join(' · ')}`);
         return;
       }
     }
     setBusy(true);
     const { error } = await supabase.from('qa_fme_config').update(patch).eq('id', 1);
     setBusy(false);
-    if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
+    if (error) { toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${error.message}`); return; }
     setCfg(c => ({ ...c, ...patch }));
     toast.success('บันทึกแล้ว');
   };
 
   const skip = async (ob) => {
-    const reason = window.prompt(`ยกเลิกงานตรวจนี้ (${ob.line_name} · ${ob.mat_no})\nเหตุผล:`);
+    const reason = window.prompt(`${tr("ยกเลิกงานตรวจนี้")} (${ob.line_name} · ${ob.mat_no})\n${tr("เหตุผล")}:`);
     if (reason == null) return;
     if (!reason.trim()) { toast.error('ต้องระบุเหตุผล — งานตรวจที่หายไปโดยไม่มีเหตุผล ตรวจสอบย้อนหลังไม่ได้'); return; }
     const { error } = await supabase.from('qa_fme_obligations')
       .update({ status: 'cancelled', cancel_reason: reason.trim(), done_at: new Date().toISOString() }).eq('id', ob.id);
-    if (error) { toast.error(`ยกเลิกไม่สำเร็จ: ${error.message}`); return; }
+    if (error) { toast.error(`${tr("ยกเลิกไม่สำเร็จ")}: ${error.message}`); return; }
     load();
   };
 
   if (missing) return (
     <Box tone="warn">
-      ⚠️ ระบบเรียกตรวจ FME ยังไม่พร้อมใช้ — ยังไม่ได้ apply migration <code>20260819_qa_fme_call.sql</code> (แจ้ง admin)
+      ⚠️ {tr("ระบบเรียกตรวจ FME ยังไม่พร้อมใช้ — ยังไม่ได้")} apply migration <code>20260819_qa_fme_call.sql</code> ({tr("แจ้ง")} admin)
     </Box>
   );
 
@@ -176,23 +176,23 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
   return (
     <div style={{
-      background: 'var(--card)', border: `1px solid ${late.length ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
+      background: 'var(--card-surf)', border: `1px solid ${late.length ? 'rgba(239,68,68,0.5)' : 'var(--border)'}`,
       borderRadius: 'var(--radius-lg)', padding: 12, marginBottom: 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: rows.length || disabled ? 9 : 0 }}>
         <b style={{ fontSize: 14 }}>{tr('ฝ่ายผลิตเรียกตรวจ (FME)')}</b>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          เรียกอัตโนมัติเมื่อ <b>{tr('เปลี่ยนกะ')}</b> / <b>{tr('เปลี่ยนรุ่น')}</b> — นับเป็นรุ่น ไม่ใช่ต่อออเดอร์
+          {tr("เรียกอัตโนมัติเมื่อ")} <b>{tr('เปลี่ยนกะ')}</b> / <b>{tr('เปลี่ยนรุ่น')}</b> — {tr("นับเป็นรุ่น ไม่ใช่ต่อออเดอร์")}
         </span>
         {late.length > 0 && (
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.12)',
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--red)', background: 'rgba(239,68,68,0.12)',
             border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: '2px 8px' }}>
-            เกินเวลา {late.length} รายการ
+            {tr("เกินเวลา")} {late.length} {tr("รายการ")}
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: 2 }}>
-          {[{ k: 'list', t: 'รายการ' }, { k: 'board', t: 'ไทม์ไลน์' }].map(v => (
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: 2 }}>
+          {[{ k: 'list', t: tr("รายการ") }, { k: 'board', t: 'ไทม์ไลน์' }].map(v => (
             <button key={v.k} onClick={() => setViewSaved(v.k)}
               title={v.k === 'board' ? tr('เห็นทั้งวันว่าต้องไปตรวจไลน์ไหน กี่โมง') : tr('คิวที่ต้องทำตอนนี้')}
               style={{ padding: '3px 11px', borderRadius: 18, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: 'none',
@@ -207,24 +207,24 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
 
       {disabled && (
         <Box tone="warn">
-          ระบบเรียกตรวจ <b>{tr('ปิดอยู่')}</b> — ยังไม่มีการแจ้งเข้าห้อง Telegram และไม่มีการสร้างคิว
-          {canManage ? ' · กด ⚙️ ตั้งค่าการเรียกตรวจ เพื่อเปิด' : ' · ให้หัวหน้า QA เปิดที่ ⚙️ ตั้งค่าการเรียกตรวจ'}
+          {tr("ระบบเรียกตรวจ")} <b>{tr('ปิดอยู่')}</b> — {tr("ยังไม่มีการแจ้งเข้าห้อง Telegram และไม่มีการสร้างคิว")}
+          {canManage ? tr(" · กด ⚙️ ตั้งค่าการเรียกตรวจ เพื่อเปิด") : tr(" · ให้หัวหน้า QA เปิดที่ ⚙️ ตั้งค่าการเรียกตรวจ")}
           {readiness && !readiness.canEnable && (
-            <span style={{ color: '#ef4444' }}>
-              {' '}· <b>{tr('ยังเปิดไม่ได้')}</b> {tr('— ติด')} {readiness.checks.filter(c => c.hard && c.ok !== true).length} ข้อ (ดูรายการในแผง ⚙️)
+            <span style={{ color: 'var(--red)' }}>
+              {' '}· <b>{tr('ยังเปิดไม่ได้')}</b> {tr('— ติด')} {readiness.checks.filter(c => c.hard && c.ok !== true).length} {tr("ข้อ (ดูรายการในแผง")} ⚙️)
             </span>
           )}
         </Box>
       )}
 
       {showCfg && cfg && canManage && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, margin: '9px 0' }}>
+        <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, margin: '9px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, marginBottom: 9,
             opacity: !cfg.is_enabled && readiness && !readiness.canEnable ? 0.6 : 1 }}>
             <input type="checkbox" checked={!!cfg.is_enabled}
               disabled={busy || (!cfg.is_enabled && (!readiness || !readiness.canEnable))}
-              title={cfg.is_enabled ? 'ปิดระบบเรียกตรวจ' : !readiness ? 'กำลังตรวจความพร้อม…'
-                : readiness.canEnable ? 'พร้อมเปิด' : 'ยังเปิดไม่ได้ — แก้รายการ ❌ ด้านล่างก่อน'}
+              title={cfg.is_enabled ? tr("ปิดระบบเรียกตรวจ") : !readiness ? tr("กำลังตรวจความพร้อม…")
+                : readiness.canEnable ? tr("พร้อมเปิด") : tr("ยังเปิดไม่ได้ — แก้รายการ ❌ ด้านล่างก่อน")}
               onChange={e => saveCfg({ is_enabled: e.target.checked })} style={{ width: 'auto' }} />
             {tr('เปิดระบบเรียก QA ตรวจอัตโนมัติ (แจ้งเข้าห้อง Telegram)')}
           </label>
@@ -281,20 +281,16 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
             )}
             {String(cfg.mid_mode ?? 'lot') === 'lot' && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 7, lineHeight: 1.7 }}>
-                คาบตรวจคิดจาก <b>{tr('lot size ของพาร์ทเอง')}</b> (ตั้งที่ Product Master → 🎴 Kanban Std) ×
-                ตัวคูณข้างบน — ลอทใหญ่ผลิตทั้งวันจะถูกเรียกหลายครั้ง · ลอทสั้นที่ผลิตไม่ถึง 1 ล็อตจะไม่ถูกเรียกเลย
-                <br /><b style={{ color: '#f59e0b' }}>{tr('พาร์ทที่ยังไม่ตั้ง lot size จะไม่มีการตรวจ Middle')}</b> (ระบบไม่เดาให้)
-                — First / End ยังทำงานตามปกติ
-                <br />{tr('พาร์ทที่ตั้ง lot size ไว้')} <b>เล็กกว่า "คาบต่ำสุดที่ยอมรับ"</b> (เช่น ตั้งไว้ 1 ชิ้น)
-                ถือว่ายังตั้งไม่ถูก — ระบบจะไม่ตั้ง Middle ให้ แล้วรายงานไว้ให้ไปแก้ที่ Kanban Std
+                {tr("คาบตรวจคิดจาก")} <b>{tr('lot size ของพาร์ทเอง')}</b> ({tr("ตั้งที่ Product Master → 🎴 Kanban Std) × ตัวคูณข้างบน — ลอทใหญ่ผลิตทั้งวันจะถูกเรียกหลายครั้ง · ลอทสั้นที่ผลิตไม่ถึง 1 ล็อตจะไม่ถูกเรียกเลย")}
+                <br /><b style={{ color: 'var(--amber)' }}>{tr('พาร์ทที่ยังไม่ตั้ง lot size จะไม่มีการตรวจ Middle')}</b> ({tr("ระบบไม่เดาให้) — First / End ยังทำงานตามปกติ")}
+                <br />{tr('พาร์ทที่ตั้ง lot size ไว้')} <b>{tr("เล็กกว่า \"คาบต่ำสุดที่ยอมรับ")}"</b> ({tr("เช่น ตั้งไว้ 1 ชิ้น) ถือว่ายังตั้งไม่ถูก — ระบบจะไม่ตั้ง Middle ให้ แล้วรายงานไว้ให้ไปแก้ที่")} Kanban Std
               </div>
             )}
           </div>
           <QaFmePartRules canEdit={canManage} fullName={fullName} centralMode={String(cfg.mid_mode ?? 'lot')} />
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
-            ห้อง Telegram ที่รับแจ้ง ตั้งที่ <b>/notification-config</b> → หมวดคุณภาพ
-            (<code>qa_fme_call</code> = เรียกตรวจ · <code>qa_fme_overdue</code> = เกินเวลา) ·
-            เปิดใบตรวจของรุ่นนั้น = หยุดเตือนทันที · ปิดใบ = จบงาน
+            {tr("ห้อง Telegram ที่รับแจ้ง ตั้งที่")} <b>/notification-config</b> → {tr("หมวดคุณภาพ")}
+            (<code>qa_fme_call</code> = {tr("เรียกตรวจ")} · <code>qa_fme_overdue</code> = {tr("เกินเวลา) · เปิดใบตรวจของรุ่นนั้น = หยุดเตือนทันที · ปิดใบ = จบงาน")}
           </div>
         </div>
       )}
@@ -302,13 +298,13 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
       {view === 'board' ? (
         <QaFmeBoard scopedLineNames={scopedLineNames} onOpen={onOpen} />
       ) : loadErr ? (
-        <div style={{ fontSize: 13, color: '#ef4444' }}>{tr('⚠️ โหลดคิวเรียกตรวจไม่สำเร็จ —')} {loadErr} {tr('(ห้ามถือว่าไม่มีคิว)')}</div>
+        <div style={{ fontSize: 13, color: 'var(--red)' }}>{tr('⚠️ โหลดคิวเรียกตรวจไม่สำเร็จ —')} {loadErr} {tr('(ห้ามถือว่าไม่มีคิว)')}</div>
       ) : !rows.length ? (
-        <div style={{ fontSize: 13, color: '#22c55e' }}>{tr('✅ ไม่มีคิวรอตรวจ')}</div>
+        <div style={{ fontSize: 13, color: 'var(--green)' }}>{tr('✅ ไม่มีคิวรอตรวจ')}</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           {rows.length >= FME_QUEUE_LIMIT && (
-            <div style={{ fontSize: 12, color: '#f59e0b' }}>{tr('⚠️ คิวค้างถึงเพดาน')} {FME_QUEUE_LIMIT} {tr('รายการ — อาจแสดงไม่ครบ เคลียร์งานเก่าก่อน')}</div>
+            <div style={{ fontSize: 12, color: 'var(--amber)' }}>{tr('⚠️ คิวค้างถึงเพดาน')} {FME_QUEUE_LIMIT} {tr('รายการ — อาจแสดงไม่ครบ เคลียร์งานเก่าก่อน')}</div>
           )}
           {/* 🗂️ ใบที่ QA เปิดไว้แล้วจากกะก่อน (acked ค้าง) พับไว้ท้ายคิว — 18/11 user: คิวเต็มไปด้วย "กำลังตรวจ" ของเมื่อวาน
               จนงานที่เกินเวลาจริงของกะนี้ถูกดันลงล่าง · ไม่ซ่อนเงียบ: บอกจำนวน + กดกางได้ */}
@@ -326,23 +322,23 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {tr(sm.label)}</span>
                 {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
                 <span className="fme-txt" style={{ fontSize: 13, minWidth: 0, flex: '1 1 220px' }}>
-                  <b>{o.line_name}</b> · {o.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ·{' '}
+                  <b>{o.line_name}</b> · {o.shift === 'night' ? tr("กะดึก") : tr("กะเช้า")} ·{' '}
                   <b>{o.mat_no}</b>{o.product_name ? <span style={{ color: 'var(--muted)' }}> {o.product_name}</span> : null}
                   <span style={{ color: 'var(--muted)' }}> · {REASON_LABEL[o.trigger_reason] || o.trigger_reason}</span>
                   {(o.stage === 'middle' || o.trigger_reason === 'lot_end') && (o.seq > 1 || o.at_qty) && (
                     <span style={{ color: 'var(--muted)' }}>
-                      {' '}{tr('· ครั้งที่')} {o.seq || 1}{o.at_qty ? ` (ผลิตครบ ${Number(o.at_qty).toLocaleString()} ชิ้น)` : ''}
+                      {' '}{tr('· ครั้งที่')} {o.seq || 1}{o.at_qty ? ` (${tr("ผลิตครบ")} ${Number(o.at_qty).toLocaleString()} ${tr("ชิ้น")})` : ''}
                     </span>
                   )}
                   {!o.part_id && (
-                    <span style={{ color: '#f59e0b' }}> {tr('· ⚠️ ยังไม่ผูกกับพาร์ทในระบบตรวจ (ตั้งที่ /qa-setup)')}</span>
+                    <span style={{ color: 'var(--amber)' }}> {tr('· ⚠️ ยังไม่ผูกกับพาร์ทในระบบตรวจ (ตั้งที่ /qa-setup)')}</span>
                   )}
                 </span>
                 {o.status === 'acked' && (
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#4d9fff', whiteSpace: 'nowrap' }}>{tr('กำลังตรวจ')}</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)', whiteSpace: 'nowrap' }}>{tr('กำลังตรวจ')}</span>
                 )}
                 <span style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: isLate ? '#ef4444' : 'var(--muted)', fontWeight: isLate ? 700 : 400 }}>
-                  {isLate ? `เกิน ${lateMin} นาที` : `ภายใน ${fmtTime(o.due_at)}`}
+                  {isLate ? `${tr("เกิน")} ${lateMin} ${tr("นาที")}` : `${tr("ภายใน")} ${fmtTime(o.due_at)}`}
                 </span>
                 <button disabled={!o.part_id} onClick={() => onOpen?.(o)}
                   title={o.part_id ? tr('เปิดใบตรวจของรุ่นนี้') : tr('ผูกพาร์ทกับเลข MAT ที่ /qa-setup ก่อนถึงจะเปิดใบให้อัตโนมัติได้')}
@@ -372,13 +368,13 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
   const [busy, setBusy] = useState(false);
   const recheck = async () => { setBusy(true); try { await onRecheck(); } finally { setBusy(false); } };
   return (
-    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 9 }}>
+    <div style={{ background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 9 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>
-          ความพร้อมก่อนเปิด{readiness ? (readiness.canEnable ? ' — พร้อม' : ' — ยังไม่พร้อม') : ' — กำลังตรวจ…'}
+          {tr("ความพร้อมก่อนเปิด")}{readiness ? (readiness.canEnable ? tr(" — พร้อม") : tr(" — ยังไม่พร้อม")) : tr(" — กำลังตรวจ…")}
         </span>
         {enabled && readiness && !readiness.canEnable && (
-          <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>{tr('ระบบเปิดอยู่ทั้งที่ยังไม่พร้อม — QA อาจได้คิวที่เปิดใบไม่ได้')}</span>
+          <span style={{ fontSize: 11.5, color: 'var(--red)', fontWeight: 700 }}>{tr('ระบบเปิดอยู่ทั้งที่ยังไม่พร้อม — QA อาจได้คิวที่เปิดใบไม่ได้')}</span>
         )}
         <span style={{ flex: 1 }} />
         <button onClick={recheck} disabled={busy} style={btn('var(--bg3)', 'var(--text2)')}>{busy ? '…' : tr('🔄 ตรวจใหม่')}</button>
@@ -395,8 +391,7 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
         );
       }) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังอ่านพาร์ท QA · ทะเบียนสินค้า · ห้อง Telegram…')}</div>}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 5 }}>
-        ลำดับที่ต้องทำ: <b>/qa-setup</b> {tr('ผูกพาร์ท →')} <b>/notification-config</b> เลือกห้อง → ค่อยเปิดสวิตช์นี้
-        (สลับลำดับ = ข้อความชุดแรกไปผิดห้อง)
+        {tr("ลำดับที่ต้องทำ")}: <b>/qa-setup</b> {tr('ผูกพาร์ท →')} <b>/notification-config</b> {tr("เลือกห้อง → ค่อยเปิดสวิตช์นี้ (สลับลำดับ = ข้อความชุดแรกไปผิดห้อง")})
       </div>
     </div>
   );

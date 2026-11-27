@@ -168,7 +168,7 @@ export default function LineSelect({
       {grouped.groups.map(g => {
         const items = g.options.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>);
         // หัวกลุ่ม = ส่วนงาน · มีกลุ่มพิเศษ (คลัง ฯลฯ) แต่ส่วนงานเดียว ⇒ ยังต้องมีหัว "ไลน์ผลิต" กั้นจากกลุ่มพิเศษ
-        const label = g.label ? `📁 ${g.label}` : (hasExtra ? '🏭 ไลน์ผลิต' : null);   // 📁 = ไอคอนส่วนงานชุดเดียวกับผังองค์กร (SCOPE_KIND_META)
+        const label = g.label ? `📁 ${g.label}` : (hasExtra ? tr("🏭 ไลน์ผลิต") : null);   // 📁 = ไอคอนส่วนงานชุดเดียวกับผังองค์กร (SCOPE_KIND_META)
         return label ? <optgroup key={label} label={label}>{items}</optgroup> : items;
       })}
       {extraAt === 'end' && extraEls}
@@ -180,14 +180,14 @@ export default function LineSelect({
     <div style={{ display: 'flex', gap: 6, alignItems: 'stretch', width: style?.width || '100%' }}>
       {selectEl}
       <button type="button" onClick={() => setScanOpen(true)} aria-label={tr('สแกนป้ายไลน์')} title={tr('สแกนป้ายไลน์')}
-        style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
+        style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
       {scanOpen && (
         <ScanModal title={tr('สแกนป้ายไลน์')} hint={tr('ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์')}
           onClose={() => setScanOpen(false)}
           onScan={(parsed) => {
             const r = resolveLine(parsed, pickable);
             if (r.error) return r.error.startsWith('ไม่พบไลน์ของป้าย') || r.error.startsWith('ไม่พบไลน์ "')
-              ? `${r.error} — หรือไลน์นี้อยู่นอกขอบเขตที่เลือกได้ในช่องนี้` : r.error;
+              ? `${r.error} — ${tr("หรือไลน์นี้อยู่นอกขอบเขตที่เลือกได้ในช่องนี้")}` : r.error;
             onChange?.(String(r.line[valueKey]));
           }} />
       )}

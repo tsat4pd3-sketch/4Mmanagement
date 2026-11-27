@@ -64,12 +64,12 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     let res;
     if (m.id) res = await supabase.from('npi_tooling_plans').update(row).eq('id', m.id).select().single();
     else res = await supabase.from('npi_tooling_plans').insert(row).select().single();
-    if (res.error) { setSaving(false); return toast.error(`บันทึกไม่สำเร็จ: ${res.error.message}`); }
+    if (res.error) { setSaving(false); return toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${res.error.message}`); }
     if (!m.id && m._seedSteps) {
       const st = proposeSteps(stepTemplates, m.tool_kind, m.plan_start || null).map(s => ({ ...s, tooling_id: res.data.id }));
       if (st.length) {
         const { error } = await supabase.from('npi_tooling_steps').insert(st);
-        if (error) toast.error(`สร้างแผนแล้ว แต่เพิ่มขั้นงานจากแม่แบบไม่สำเร็จ: ${error.message}`);
+        if (error) toast.error(`${tr("สร้างแผนแล้ว แต่เพิ่มขั้นงานจากแม่แบบไม่สำเร็จ")}: ${error.message}`);
         /* เพิ่มขั้นงานสำเร็จ → เติม "วันจบแผน" จากขั้นสุดท้าย ถ้ายังไม่ได้กรอก
            🔴 ต้องอ่าน error (QC audit 06/10) — เดิมทิ้งผล `await` ⇒ ล้มแล้วเงียบ =
            แผน tooling ไม่มีวันจบ ⇒ ไฟสี/สรุป NPI คำนวณจากข้อมูลไม่ครบ ทั้งที่จอบอก "บันทึกแผนแล้ว"
@@ -77,9 +77,9 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         else if (!m.plan_end && st[st.length - 1].plan_end) {
           const r = await supabase.from('npi_tooling_plans')
             .update({ plan_end: st[st.length - 1].plan_end }).eq('id', res.data.id);
-          if (r.error) toast.error(`บันทึกแผนแล้ว แต่ตั้งวันจบแผนไม่สำเร็จ: ${r.error.message}`);
+          if (r.error) toast.error(`${tr("บันทึกแผนแล้ว แต่ตั้งวันจบแผนไม่สำเร็จ")}: ${r.error.message}`);
         }
-      } else toast.info(`ไม่มีแม่แบบขั้นงานของชนิด "${TOOL_KIND[m.tool_kind]?.label}" — เพิ่มขั้นเองได้`);
+      } else toast.info(`${tr("ไม่มีแม่แบบขั้นงานของชนิด")} "${TOOL_KIND[m.tool_kind]?.label}" — ${tr("เพิ่มขั้นเองได้")}`);
     }
     setSaving(false);
     toast.success('บันทึกแผนแล้ว'); setPlanModal(null);
@@ -88,7 +88,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
   };
   const delPlan = async (t) => {
     if (rowBlocked(t)) return;
-    if (!await askConfirm(`ลบแผน "${t.tool_name}" พร้อมขั้นงานทั้งหมด?`)) return;
+    if (!await askConfirm(`${tr("ลบแผน")} "${t.tool_name}" ${tr("พร้อมขั้นงานทั้งหมด")}?`)) return;
     const { error } = await supabase.from('npi_tooling_plans').delete().eq('id', t.id);
     if (error) return toast.error(error.message);
     onChanged();
@@ -112,7 +112,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
   };
   const delStep = async (s) => {
     if (rowBlocked(planOf(s?.tooling_id), 'ขั้นงานของแผนนี้')) return;
-    if (!await askConfirm(`ลบขั้น "${s.name}"?`)) return;
+    if (!await askConfirm(`${tr("ลบขั้น")} "${s.name}"?`)) return;
     const { error } = await supabase.from('npi_tooling_steps').delete().eq('id', s.id);
     if (error) return toast.error(error.message);
     onChanged();
@@ -136,8 +136,8 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
       {range && rows.length > 0 && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-          <span>{tr('ช่วงแสดง')} {fmtDate(range.start)} → {fmtDate(range.end)} ({range.days} วัน)</span>
-          <span>▮ แผน · ▮ จริง · เส้นแดง = วันนี้</span>
+          <span>{tr('ช่วงแสดง')} {fmtDate(range.start)} → {fmtDate(range.end)} ({range.days} {tr("วัน")})</span>
+          <span>▮ {tr("แผน · ▮ จริง · เส้นแดง = วันนี้")}</span>
         </div>
       )}
 
@@ -193,7 +193,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
       })}
 
       {planModal && (
-        <Modal title={planModal.id ? `แก้ไขแผน ${planModal.tool_name}` : 'เพิ่มแผน tooling'} onClose={() => setPlanModal(null)} width={680}
+        <Modal title={planModal.id ? `${tr("แก้ไขแผน")} ${planModal.tool_name}` : tr("เพิ่มแผน tooling")} onClose={() => setPlanModal(null)} width={680}
           footer={<><button style={ghost} onClick={() => setPlanModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={savePlan}>{saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label={tr('พาร์ท *')}><select style={inp} value={planModal.part_id} onChange={e => setPlanModal({ ...planModal, part_id: e.target.value })}><option value="">—</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}</select></Field>
@@ -221,14 +221,14 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
           {!planModal.id && (
             <label style={{ fontSize: 12.5, display: 'flex', gap: 6, alignItems: 'center', marginTop: 10 }}>
               <input type="checkbox" checked={!!planModal._seedSteps} onChange={e => setPlanModal({ ...planModal, _seedSteps: e.target.checked })} />
-              สร้างขั้นงานจากแม่แบบชนิด "{TOOL_KIND[planModal.tool_kind]?.label}" ({stepTemplates.filter(s => s.tool_kind === planModal.tool_kind).length} {tr('ขั้น · วันแผนต่อเนื่องจากวันเริ่ม — แก้ทีหลังได้)')}
+              {tr("สร้างขั้นงานจากแม่แบบชนิด")} "{tr(TOOL_KIND[planModal.tool_kind]?.label)}" ({stepTemplates.filter(s => s.tool_kind === planModal.tool_kind).length} {tr('ขั้น · วันแผนต่อเนื่องจากวันเริ่ม — แก้ทีหลังได้)')}
             </label>
           )}
         </Modal>
       )}
 
       {stepModal && (
-        <Modal title={stepModal.id ? `ขั้น ${stepModal.name}` : 'เพิ่มขั้นงาน'} onClose={() => setStepModal(null)} width={600}
+        <Modal title={stepModal.id ? `${tr("ขั้น")} ${stepModal.name}` : tr("เพิ่มขั้นงาน")} onClose={() => setStepModal(null)} width={600}
           footer={<><button style={ghost} onClick={() => setStepModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveStep}>{tr('บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label={tr('ชื่อขั้นงาน *')} span={2}><input style={inp} value={stepModal.name} onChange={e => setStepModal({ ...stepModal, name: e.target.value })} /></Field>
@@ -257,10 +257,10 @@ function GanttRow({ plan, actual, range, todayPos, pct, light, thin }) {
   const h = thin ? 10 : 16;
   return (
     <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>
-      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 'var(--r-xs)' }}>
+      {pb && <div title={`${tr("แผน")} ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 'var(--r-xs)' }}>
         {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 'var(--r-xs)', opacity: 0.9 }} />}
       </div>}
-      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 'var(--r-xs)' }} />}
+      {ab && <div title={`${tr("จริง")} ${actual[0] || ''} → ${actual[1] || tr('กำลังทำ')}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 'var(--r-xs)' }} />}
       {todayPos && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPos.left}%`, width: 2, background: '#ef4444' }} />}
     </div>
   );

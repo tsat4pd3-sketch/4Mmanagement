@@ -56,7 +56,7 @@ export default function MobilePushPrompt({ userId }) {
   return (
     <div style={{
       margin: '0 12px 10px', padding: '8px 10px', borderRadius: 'var(--r-md)',
-      border: `1px solid ${accent}`, background: 'var(--bg2)',
+      border: `1px solid ${accent}`, background: 'var(--bg2-surf)',
       fontSize: 11.5, lineHeight: 1.55, color: 'var(--text)',
       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
     }}>

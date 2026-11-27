@@ -108,13 +108,13 @@ export default function RemoteReceiver({ code, onStop }) {
       <div style={{
         position: 'fixed', left: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9999,
         display: 'flex', alignItems: 'center', gap: 10,
-        background: 'var(--bg2)', border: `1px solid ${connected ? 'var(--accent)' : 'var(--border2)'}`,
+        background: 'var(--bg2-surf)', border: `1px solid ${connected ? 'var(--accent)' : 'var(--border2)'}`,
         borderRadius: 'var(--r-lg)', padding: '8px 14px', boxShadow: 'var(--shadow-float)',
       }}>
         <span style={{ fontSize: 13 }}>📺</span>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
-            รับรีโมทอยู่ {connected ? '· 🟢 เชื่อมต่อแล้ว' : '· รอมือถือใส่รหัส'}
+            {tr("รับรีโมทอยู่")} {connected ? tr("· 🟢 เชื่อมต่อแล้ว") : tr("· รอมือถือใส่รหัส")}
           </div>
           <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 4, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{code}</div>
         </div>

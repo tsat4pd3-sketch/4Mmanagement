@@ -61,7 +61,7 @@ import { DeleteButton } from './IconButton';
 import QualityBinDetailModal from './QualityBinDetailModal';
 import { PointThumb } from './inspect/PointZoom';
 
-import { tr as trI18n } from '../utils/i18n';
+import { tr as trI18n, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 const BINS = [
   { key: 'yellow', label: '🟡 ถังเหลือง — ชิ้นงานต้องสงสัย', short: 'ถังเหลือง', color: '#f5b942' },
@@ -282,7 +282,7 @@ export default function QualityBins({ mode = 'full' }) {
       /* ใบที่ย้ายลงถังแดงไปแล้วต้องหายจากคิว ⇒ เช็คลูกจาก id ของคิวเอง (ไม่มีชุดแถวในช่วงให้ยืม) */
       const { kids, err } = await redKidsOf(pendIds);
       if (stale()) return;
-      if (err) setPendErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${err}`);
+      if (err) setPendErr(e => e || `${trI18n("เช็คใบที่ย้ายลงถังแดงไม่ได้")}: ${err}`);
       setRedChildOf(kids);
       setLoading(false);
       return;
@@ -310,7 +310,7 @@ export default function QualityBins({ mode = 'full' }) {
         .select('id').eq('status', SCRAP_DRAFT).limit(200);
       if (stale()) return;
       const dIds = dErr ? [] : (drafts || []).map(d => d.id);
-      if (dErr) draftErr = `อ่านใบรายงานของเสียที่ยังเป็นร่างไม่ได้: ${dErr.message} — ของที่ผูกใบร่างอาจไม่ขึ้นเป็นของค้าง`;
+      if (dErr) draftErr = `${trI18n("อ่านใบรายงานของเสียที่ยังเป็นร่างไม่ได้")}: ${dErr.message} — ${trI18n("ของที่ผูกใบร่างอาจไม่ขึ้นเป็นของค้าง")}`;
       else if ((drafts || []).length >= 200) draftErr = 'ใบรายงานของเสียที่ยังเป็นร่างเกิน 200 ใบ — ของที่ผูกใบร่างบางรายการอาจไม่ขึ้นเป็นของค้าง';
       oq = dIds.length ? oq.or(`scrap_report_id.is.null,scrap_report_id.in.(${dIds.join(',')})`) : oq.is('scrap_report_id', null);
     } else oq = oq.is('return_date', null);
@@ -346,7 +346,7 @@ export default function QualityBins({ mode = 'full' }) {
         (part) => supabaseDR.from('scrap_reports').select('id, doc_no, status').in('id', part));
       if (stale()) return;
       /* อ่านไม่ได้ = ไม่รู้ว่าออกใบแล้วหรือยัง — เขียนบนจอ ห้ามปล่อยให้อ่านเป็น "ยังไม่ออกใบ" */
-      setOverdueErr(e => e || (repErr ? `อ่านเลขที่ใบรายงานของเสียไม่ได้: ${repErr}` : ''));
+      setOverdueErr(e => e || (repErr ? `${trI18n("อ่านเลขที่ใบรายงานของเสียไม่ได้")}: ${repErr}` : ''));
       setScrapDocs(Object.fromEntries((reps || []).map(r => [r.id, r])));
     } else setScrapDocs({});
 
@@ -361,7 +361,7 @@ export default function QualityBins({ mode = 'full' }) {
       const { kids, err: kidsErr } = await redKidsOf(yIds);
       if (stale()) return;
       /* ไม่รู้ว่าใบไหนย้ายลงแดงแล้ว = ป้ายค้างอาจเกินจริง → เขียนบนจอ ห้ามเงียบ */
-      if (kidsErr) setOverdueErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${kidsErr}`);
+      if (kidsErr) setOverdueErr(e => e || `${trI18n("เช็คใบที่ย้ายลงถังแดงไม่ได้")}: ${kidsErr}`);
       setRedChildOf(kids);
     } else setRedChildOf(new Set());
   }, [bin, from, to, scopeNames, queueOnly]);
@@ -451,7 +451,7 @@ export default function QualityBins({ mode = 'full' }) {
     /* ทาง "ขอใช้" ต้องมีใบ FM-QA-042 อนุมัติ (WI §5.4) — ไม่มีเลขใบ = ยังปิดสายงานไม่ได้
        ⚠️ เตือน ไม่บล็อก: เลขใบอาจยังไม่ออกตอนที่ QA ตัดสิน (กติกาเดียวกับ checkStdSelection) */
     if (isY && form.qa_decision === 'use_as_is' && !form.special_use_doc_no.trim()) {
-      toast.info(`บันทึกได้ แต่ยังไม่มีเลขใบ ${SPECIAL_USE_FORM} — รายการนี้จะยังนับเป็นของค้างในถังจนกว่าจะกรอกเลขใบ`);
+      toast.info(`${trI18n("บันทึกได้ แต่ยังไม่มีเลขใบ")} ${SPECIAL_USE_FORM} — ${trI18n("รายการนี้จะยังนับเป็นของค้างในถังจนกว่าจะกรอกเลขใบ")}`);
     }
     setSaving(true);
     /* 📷 อัปโหลดรูป **ก่อน** เขียนแถว — อัปล้มแล้วเขียนแถวต่อ = ใบบอกว่ามีรูปแต่เปิดไม่ขึ้น
@@ -465,7 +465,7 @@ export default function QualityBins({ mode = 'full' }) {
       if (isY && repairFile) repairUrl = await uploadQualityPhoto(repairFile, 'bin', key);
     } catch (e) {
       setSaving(false);
-      toast.error(`อัปโหลดรูปไม่สำเร็จ: ${e.message} — ยังไม่ได้บันทึกรายการ ลองกดบันทึกอีกครั้ง`);
+      toast.error(`${trI18n("อัปโหลดรูปไม่สำเร็จ")}: ${e.message} — ${trI18n("ยังไม่ได้บันทึกรายการ ลองกดบันทึกอีกครั้ง")}`);
       return;
     }
     const payload = {
@@ -545,9 +545,9 @@ export default function QualityBins({ mode = 'full' }) {
       event: 'quality_bin_added', type: bin === 'red' ? 'error' : 'info',
       ref_table: 'quality_bin_records', line_name: payload.line_name || null, actor: fullName,
       lines: [
-        `${bin === 'red' ? '🔴 ถังแดง (ของเสียยืนยันแล้ว)' : '🟡 ถังเหลือง (ต้องสงสัย)'}`,
-        `🏭 ไลน์: ${payload.line_name || '—'} · ${payload.part_name || payload.mat_no || '—'}`,
-        `🔢 ${payload.qty} ชิ้น`,
+        `${bin === 'red' ? trI18n('🔴 ถังแดง (ของเสียยืนยันแล้ว)') : trI18n('🟡 ถังเหลือง (ต้องสงสัย)')}`,
+        `🏭 ${trI18n("ไลน์")}: ${payload.line_name || '—'} · ${payload.part_name || payload.mat_no || '—'}`,
+        `🔢 ${payload.qty} ${trI18n("ชิ้น")}`,
         payload.cause ? `📝 ${payload.cause}` : '',
       ],
     });
@@ -573,17 +573,17 @@ export default function QualityBins({ mode = 'full' }) {
   const checkReturnReceipt = async (binId) => {
     const { data, error } = await supabaseDR.from('stock_receipts').select('id, dest_line_name')
       .eq('quality_bin_id', binId).in('status', ['pending', 'received']).limit(1);
-    if (error) { toast.error(`เช็คใบรอรับเข้าคลังไม่ได้ (${error.message}) — ดูคิว "รอรับเข้า" ที่สต็อกในไลน์`); return; }
+    if (error) { toast.error(`${trI18n("เช็คใบรอรับเข้าคลังไม่ได้")} (${error.message}) — ${trI18n("ดูคิว \"รอรับเข้า\" ที่สต็อกในไลน์")}`); return; }
     if (!data?.length) toast.error('⚠ ไม่ได้ออกใบรอรับเข้าคลัง — พาร์ทนี้ยังไม่มีกฎรับเข้า (ตั้งที่ สต็อกในไลน์ › กฎรับเข้า) · ของที่คืนยังไม่เข้าสต็อก');
-    else toast.info(`📥 ออกใบรอรับเข้า ${data[0].dest_line_name} แล้ว — ไลน์ส่งของเข้าคลัง ให้คลังนับรับ`);
+    else toast.info(`📥 ${trI18n("ออกใบรอรับเข้า")} ${data[0].dest_line_name} ${trI18n("แล้ว — ไลน์ส่งของเข้าคลัง ให้คลังนับรับ")}`);
   };
 
   /* 🔁 ผลพิจารณาเปลี่ยน ⇒ %Q ของกะที่ปิดไปแล้วต้องคิดใหม่ (oee.js §7.1/§7.2 · ค่าที่ stamp ตอนปิดกะเป็นค่าชั่วคราว)
      ล้ม = บอกบนจอ ห้ามเงียบ (ผลพิจารณาบันทึกไปแล้ว แต่รายงานยังเป็นเลขเก่า) */
   const restampQ = async (defectIds) => {
     const res = await restampSessionQByDefects(defectIds);
-    if (!res.ok) toast.error(`บันทึกผลแล้ว แต่คิด %Q ของกะใหม่ไม่สำเร็จ: ${res.reason} — รายงาน %Q ของกะนั้นยังเป็นเลขเดิม แจ้ง admin`);
-    else if (res.changed) toast.info(`อัปเดต %Q ของกะที่ปิดแล้ว ${res.changed} กะ ตามผลพิจารณา`);
+    if (!res.ok) toast.error(`${trI18n("บันทึกผลแล้ว แต่คิด %Q ของกะใหม่ไม่สำเร็จ")}: ${res.reason} — ${trI18n("รายงาน %Q ของกะนั้นยังเป็นเลขเดิม แจ้ง")} admin`);
+    else if (res.changed) toast.info(`${trI18n("อัปเดต %Q ของกะที่ปิดแล้ว")} ${res.changed} ${trI18n("กะ ตามผลพิจารณา")}`);
   };
 
   /* 🔔 ของลงถังแดง = หัวหน้าแผนกต้องรู้ เพื่อทวงหัวหน้าไลน์ออกใบรายงานของเสีย (คำสั่ง user 10/11)
@@ -592,8 +592,8 @@ export default function QualityBins({ mode = 'full' }) {
     event: 'qbin_red_needs_scrap', type: 'error', ref_table: 'quality_bin_records',
     line_name: row.line_name || null, actor: fullName,
     lines: [
-      `🏭 ไลน์: ${row.line_name || '—'} · ${row.part_no || row.part_name || row.mat_no || '—'}`,
-      `🔢 ${qty} ชิ้น · แท็กแดงอายุ ${TAG_MAX_DAYS.red} วัน`,
+      `🏭 ${trI18n("ไลน์")}: ${row.line_name || '—'} · ${row.part_no || row.part_name || row.mat_no || '—'}`,
+      `🔢 ${qty} ${trI18n("ชิ้น · แท็กแดงอายุ")} ${TAG_MAX_DAYS.red} ${trI18n("วัน")}`,
       '📄 ต้องออกใบรายงานของเสีย (FM-PD2-002) เพื่อขออนุมัติทำลาย',
     ],
   });
@@ -601,7 +601,7 @@ export default function QualityBins({ mode = 'full' }) {
   const remove = async (r) => {
     if (!canManage) { toast.error('ลบรายการของเสียต้องมีสิทธิ์ scrap:manage'); return; }
     if (!guardLines(r.line_name, 'การลบรายการในถัง')) return;
-    if (!await askConfirm(`ลบรายการ ${r.part_name || r.mat_no} (${r.qty} ชิ้น) ?`)) return;
+    if (!await askConfirm(`${trI18n("ลบรายการ")} ${r.part_name || r.mat_no} (${r.qty} ${trI18n("ชิ้น")}) ?`)) return;
     // soft delete — ใบเก่าต้องยังสืบย้อนได้ (บันทึกคุณภาพ ห้ามลบทิ้งจริง)
     // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วขึ้น "ลบแล้ว" = จอโกหก แถวยังอยู่
     if (!checkWriteRows(await supabaseDR.from('quality_bin_records').update({ is_active: false }).eq('id', r.id).select('id'), 'ลบรายการ')) return;
@@ -618,7 +618,7 @@ export default function QualityBins({ mode = 'full' }) {
     if (!guardLines(r.line_name, 'การย้ายของลงถังแดง')) return;
     const qty = (Number(r.qty_ng) || 0) || (r.qa_decision === 'scrap' ? (Number(r.qty) || 0) : 0);
     if (!qty) { toast.error('ยังไม่ได้กรอกจำนวน NG หลังซ่อม (หรือให้ QA ชี้ผลเป็น 🔴 ทำลาย)'); return; }
-    if (!skipConfirm && !await askConfirm(`ย้าย ${qty} ชิ้นลงถังแดง?\n\n${r.part_name || r.mat_no}\nระบบจะสร้างรายการถังแดงที่ผูกกับใบนี้ให้`)) return;
+    if (!skipConfirm && !await askConfirm(`${trI18n("ย้าย")} ${qty} ${trI18n("ชิ้นลงถังแดง")}?\n\n${r.part_name || r.mat_no}\n${trI18n("ระบบจะสร้างรายการถังแดงที่ผูกกับใบนี้ให้")}`)) return;
     const { error } = await supabaseDR.from('quality_bin_records').insert({
       bin: 'red', work_date: today(), line_name: r.line_name,
       mat_no: r.mat_no, part_name: r.part_name, part_no: r.part_no,
@@ -658,11 +658,11 @@ export default function QualityBins({ mode = 'full' }) {
       : { qa_decision: 'repair', qa_decision_at: new Date().toISOString(), qa_by: fullName || null };
     const label = kind === 'good' ? 'ตรวจแล้วใช้ได้' : 'ส่งซ่อม';
     if (!await confirmSign({
-      what: `ผลพิจารณา "${label}" — ${qty.toLocaleString()} ชิ้น`,
+      what: `${trI18n("ผลพิจารณา")} "${label}" — ${qty.toLocaleString()} ${trI18n("ชิ้น")}`,
       docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
       actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'ผู้พิจารณา (ช่อง QA บนใบ)',
       effect: kind === 'good'
-        ? `ปิดออกจากถังเหลือง · บันทึกว่ากลับเข้ากระบวนการวันที่ ${when}`
+        ? `${trI18n("ปิดออกจากถังเหลือง · บันทึกว่ากลับเข้ากระบวนการวันที่")} ${when}`
         : 'ส่งให้ฝ่ายผลิตซ่อม (ขั้น 3) → ซ่อมเสร็จแล้ว QA ตรวจรับ (ขั้น 4)',
       warn: BIN_SIGN_WARN,
     })) return;
@@ -670,17 +670,17 @@ export default function QualityBins({ mode = 'full' }) {
     /* รับผลใส่ตัวแปรก่อนแล้วค่อยส่งให้ `checkWriteRows` — เขียน `await supabase…` ลอยเป็น statement
        จะถูกด่าน `write-result-discarded` จับ (และของจริงคือล้มแล้วเงียบ) */
     const res = await supabaseDR.from('quality_bin_records').update(patch).eq('id', r.id).select('id');
-    const ok = checkWriteRows(res, `บันทึกผลพิจารณา "${label}"`,
+    const ok = checkWriteRows(res, `${trI18n("บันทึกผลพิจารณา")} "${label}"`,
       { zeroMsg: 'บันทึกผลไม่สำเร็จ (0 แถว — อาจมีคนแก้ไปก่อน) · รีเฟรชแล้วลองใหม่' });
     setDeciding('');
     if (!ok) return;
     if (kind === 'good') {
-      toast.success(`✅ ${label} ${qty} ชิ้น — ปิดออกจากถังเหลืองแล้ว`);
+      toast.success(`✅ ${label} ${qty} ${trI18n("ชิ้น — ปิดออกจากถังเหลืองแล้ว")}`);
       restampQ([r.defect_log_id]);
       checkReturnReceipt(r.id);
     } else {
-      toast.success(`🔧 ส่งซ่อม ${qty} ชิ้น — รอฝ่ายผลิตลงผลซ่อม แล้ว QA ตรวจรับ`);
-      notifyStep('qbin_repair_needed', r, [`🔧 QA ให้ซ่อม ${qty} ชิ้น — ลงผลซ่อมที่ถังเหลือง (ขั้น 3)`]);
+      toast.success(`🔧 ${trI18n("ส่งซ่อม")} ${qty} ${trI18n("ชิ้น — รอฝ่ายผลิตลงผลซ่อม แล้ว QA ตรวจรับ")}`);
+      notifyStep('qbin_repair_needed', r, [`🔧 QA ${trI18n("ให้ซ่อม")} ${qty} ${trI18n("ชิ้น — ลงผลซ่อมที่ถังเหลือง (ขั้น")} 3)`]);
     }
     load();
   };
@@ -689,7 +689,7 @@ export default function QualityBins({ mode = 'full' }) {
   const notifyStep = (event, r, extra = []) => notifyEvent({
     event, type: 'info', ref_table: 'quality_bin_records', ref_id: r.id,
     line_name: r.line_name || null, actor: fullName,
-    lines: [`🏭 ไลน์: ${r.line_name || '—'} · ${r.part_no || r.part_name || r.mat_no || '—'}`, ...extra],
+    lines: [`🏭 ${trI18n("ไลน์")}: ${r.line_name || '—'} · ${r.part_no || r.part_name || r.mat_no || '—'}`, ...extra],
   });
 
   /* ═══ ขั้น 3 — ฝ่ายผลิตลงผลซ่อม ═══ */
@@ -701,7 +701,7 @@ export default function QualityBins({ mode = 'full' }) {
     const okQ = numOrNull(f.ok) ?? 0; const ngQ = numOrNull(f.ng) ?? 0;
     const qty = Number(r.qty) || 0;
     if (okQ < 0 || ngQ < 0) { toast.error('จำนวนติดลบไม่ได้'); return; }
-    if (okQ + ngQ !== qty) { toast.error(`ซ่อมดี + ซ่อมไม่ได้ ต้องรวมเท่ากับจำนวนในใบ (${qty} ชิ้น) — ตอนนี้รวม ${okQ + ngQ}`); return; }
+    if (okQ + ngQ !== qty) { toast.error(`${trI18n("ซ่อมดี + ซ่อมไม่ได้ ต้องรวมเท่ากับจำนวนในใบ")} (${qty} ${trI18n("ชิ้น) — ตอนนี้รวม")} ${okQ + ngQ}`); return; }
     if (!String(f.detail || '').trim()) { toast.error('กรอกรายละเอียดการซ่อม (ทำอะไร ตาม WI ไหน)'); return; }
     setDeciding(r.id);
     const res = await supabaseDR.from('quality_bin_records').update({
@@ -712,8 +712,8 @@ export default function QualityBins({ mode = 'full' }) {
     setDeciding('');
     if (!ok) return;
     setRepairing(null);
-    toast.success(`🔧 ลงผลซ่อมแล้ว (ดี ${okQ} · ไม่ได้ ${ngQ}) — รอ QA ตรวจรับ`);
-    notifyStep('qbin_repair_done', r, [`🔎 ซ่อมเสร็จ ดี ${okQ} · ไม่ได้ ${ngQ} ชิ้น — รอ QA ตรวจรับ (ขั้น 4)`, `📝 ${f.detail.trim()}`]);
+    toast.success(`🔧 ${trI18n("ลงผลซ่อมแล้ว (ดี")} ${okQ} · ${trI18n("ไม่ได้")} ${ngQ}) — ${trI18n("รอ QA ตรวจรับ")}`);
+    notifyStep('qbin_repair_done', r, [`🔎 ${trI18n("ซ่อมเสร็จ ดี")} ${okQ} · ${trI18n("ไม่ได้")} ${ngQ} ${trI18n("ชิ้น — รอ QA ตรวจรับ (ขั้น")} 4)`, `📝 ${f.detail.trim()}`]);
     load();
   };
 
@@ -725,10 +725,10 @@ export default function QualityBins({ mode = 'full' }) {
     const okQ = Number(r.qty_ok) || 0; const ngQ = Number(r.qty_ng) || 0;
     const when = today();
     if (!await confirmSign({
-      what: `ตรวจรับงานซ่อม — ดี ${okQ.toLocaleString()} ชิ้น${ngQ ? ` · ซ่อมไม่ได้ ${ngQ.toLocaleString()} ชิ้น` : ''}`,
+      what: `${trI18n("ตรวจรับงานซ่อม — ดี")} ${okQ.toLocaleString()} ${trI18n("ชิ้น")}${ngQ ? ` · ${trI18n("ซ่อมไม่ได้")} ${ngQ.toLocaleString()} ${trI18n("ชิ้น")}` : ''}`,
       docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
       actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'QA ผู้ตรวจรับ (ติดแท็กเขียว)',
-      effect: `ของดีกลับเข้ากระบวนการวันที่ ${when}${ngQ ? ` · ${ngQ} ชิ้นที่ซ่อมไม่ได้ย้ายลงถังแดง` : ''}`,
+      effect: `${trI18n("ของดีกลับเข้ากระบวนการวันที่")} ${when}${ngQ ? ` · ${ngQ} ${trI18n("ชิ้นที่ซ่อมไม่ได้ย้ายลงถังแดง")}` : ''}`,
       warn: BIN_SIGN_WARN,
     })) return;
     setDeciding(r.id);
@@ -738,7 +738,7 @@ export default function QualityBins({ mode = 'full' }) {
     const ok = checkWriteRows(res, 'ตรวจรับงานซ่อม', { zeroMsg: 'ตรวจรับไม่สำเร็จ (0 แถว — ผลซ่อมอาจถูกตีกลับ/แก้ไปแล้ว) · รีเฟรชแล้วลองใหม่' });
     setDeciding('');
     if (!ok) return;
-    toast.success(`✅ ตรวจรับแล้ว — ดี ${okQ} ชิ้นกลับเข้ากระบวนการ`);
+    toast.success(`✅ ${trI18n("ตรวจรับแล้ว — ดี")} ${okQ} ${trI18n("ชิ้นกลับเข้ากระบวนการ")}`);
     if (okQ > 0) checkReturnReceipt(r.id);
     if (ngQ > 0 && !redChildOf.has(r.id)) await toRed({ ...r, return_date: when }, { skipConfirm: true });
     else restampQ([r.defect_log_id]);
@@ -767,7 +767,7 @@ export default function QualityBins({ mode = 'full' }) {
     if (!ok) return;
     setRejecting(null);
     toast.success('↩️ ตีกลับให้ฝ่ายผลิตซ่อมใหม่แล้ว');
-    notifyStep('qbin_repair_rejected', r, [`↩️ QA ตีกลับงานซ่อม: ${reason.trim()}`]);
+    notifyStep('qbin_repair_rejected', r, [`↩️ QA ${trI18n("ตีกลับงานซ่อม")}: ${reason.trim()}`]);
     load();
   };
 
@@ -778,7 +778,7 @@ export default function QualityBins({ mode = 'full' }) {
     if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     /* 🔴 "เสียแน่" = ตัดของทิ้งจริง + เปิดสายขออนุมัติทำลาย ⇒ ต้องถามยืนยันเหมือนกัน (เดิมไม่ถามเลย) */
     if (!await confirmSign({
-      what: `ผลพิจารณา "เสียแน่ — ซ่อมไม่ได้" ${(Number(r.qty) || 0).toLocaleString()} ชิ้น`,
+      what: `${trI18n("ผลพิจารณา \"เสียแน่ — ซ่อมไม่ได้")}" ${(Number(r.qty) || 0).toLocaleString()} ${trI18n("ชิ้น")}`,
       docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
       actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'ผู้พิจารณา (ช่อง QA บนใบ)',
       effect: 'ติดแท็กแดง → ย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลายตาม DOA',
@@ -831,7 +831,7 @@ export default function QualityBins({ mode = 'full' }) {
       Btn('red', '🔴 เสียแน่ → ถังแดง', () => decideScrap(r), 'ซ่อมไม่ได้/ไม่คุ้ม — ติดแท็กแดงแล้วย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลาย'),
     ];
     if (st.key === 'use_as_is_doc' && canDecide) return [
-      Btn('blue', `✏️ กรอกเลขใบ ${SPECIAL_USE_FORM}`, () => { setDetail(null); openEdit(r); }, 'ขอใช้ต้องมีเลขใบ FM-QA-042'),
+      Btn('blue', `✏️ ${trI18n("กรอกเลขใบ")} ${SPECIAL_USE_FORM}`, () => { setDetail(null); openEdit(r); }, 'ขอใช้ต้องมีเลขใบ FM-QA-042'),
     ];
     if (st.key === 'repair' && canRecord) return [
       Btn('blue', '🔧 ลงผลซ่อม', () => setRepairing({ row: r, ok: String(r.qty ?? ''), ng: '0', detail: '' }), 'ซ่อมเสร็จแล้ว — ลงจำนวนดี/ไม่ได้ ส่งให้ QA ตรวจรับ'),
@@ -850,9 +850,9 @@ export default function QualityBins({ mode = 'full' }) {
   const stepLine = (r) => {
     const st = ncStep(r, { hasRedChild: redChildOf.has(r.id) });
     if (!st.step) return st.label;
-    const who = st.owner === 'qa' ? 'QA' : st.owner === 'prod' ? 'ฝ่ายผลิต' : '';
-    const sayWho = who && !st.label.replace(/\s/g, '').includes(`รอ${who}`.replace(/\s/g, ''));
-    return `ขั้น ${st.step}/5 · ${st.label}${sayWho ? ` · รอ${who}` : ''}`;
+    const who = st.owner === 'qa' ? 'QA' : st.owner === 'prod' ? trI18n("ฝ่ายผลิต") : '';
+    const sayWho = who && !st.label.replace(/\s/g, '').includes(`${trI18n("รอ")}${who}`.replace(/\s/g, ''));
+    return `${trI18n("ขั้น")} ${st.step}/5 · ${st.label}${sayWho ? ` · ${trI18n("รอ")}${who}` : ''}`;
   };
   const openDetail = (r) => setDetail({ id: r.id, snap: r });
 
@@ -867,17 +867,17 @@ export default function QualityBins({ mode = 'full' }) {
         const over = pend.filter(r => binTagAge(r, todayWd)?.over).length;
         const show = pendAll ? pend : pend.slice(0, 8);
         return (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)',
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)',
             padding: '12px 14px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: pend.length ? 10 : 0 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)' }}>
-                🟡 ค้างในสายถังเหลือง {pend.length} {trI18n('รายการ ·')} {pcs.toLocaleString()} ชิ้น
+                🟡 {trI18n("ค้างในสายถังเหลือง")} {pend.length} {trI18n('รายการ ·')} {pcs.toLocaleString()} {trI18n("ชิ้น")}
               </span>
               {over > 0 && (
-                <span title={`เลยอายุแท็กเหลือง ${TAG_MAX_DAYS.yellow} วันตาม WI-PD3-087 §5.6`}
+                <span title={`${trI18n("เลยอายุแท็กเหลือง")} ${TAG_MAX_DAYS.yellow} ${trI18n("วันตาม")} WI-PD3-087 §5.6`}
                   style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--red-dim)',
                     border: '1px solid var(--red-line)', borderRadius: 'var(--r-pill)', padding: '2px 9px' }}>
-                  ⏱ เกินอายุแท็ก {over}
+                  ⏱ {trI18n("เกินอายุแท็ก")} {over}
                 </span>
               )}
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -922,7 +922,7 @@ export default function QualityBins({ mode = 'full' }) {
                       </div>
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                         <span style={{ color: age?.over ? 'var(--red)' : 'var(--muted)', fontWeight: age?.over ? 800 : 400 }}>
-                          {r.work_date}{age ? ` · ค้าง ${age.days} วัน` : ''}
+                          {r.work_date}{age ? ` · ${trI18n("ค้าง")} ${age.days} ${trI18n("วัน")}` : ''}
                         </span>
                         {r.line_name ? ` · ${r.line_name}` : ''}{r.reported_by ? ` · ${trI18n('ผู้แจ้ง')} ${r.reported_by}` : ''}
                       </div>
@@ -944,9 +944,9 @@ export default function QualityBins({ mode = 'full' }) {
             </div>
             {pend.length > 8 && (
               <button onClick={() => setPendAll(v => !v)}
-                style={{ marginTop: 8, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)',
+                style={{ marginTop: 8, background: 'var(--bg3-surf)', border: '1px solid var(--border2)', color: 'var(--text2)',
                   borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                {pendAll ? 'ย่อกลับ' : `แสดงอีก ${pend.length - 8} (ทั้งหมด ${pend.length})`}
+                {pendAll ? trI18n("ย่อกลับ") : `${trI18n("แสดงอีก")} ${pend.length - 8} (${trI18n("ทั้งหมด")} ${pend.length})`}
               </button>
             )}
             {pend.length > 0 && permNote()}
@@ -957,8 +957,8 @@ export default function QualityBins({ mode = 'full' }) {
   /** ใครกดขั้นไหนได้ — ใต้คิว/ตาราง (บัญชีนี้มีสิทธิ์ไหม) */
   const permNote = () => (
     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-      ขั้น 2 ตัดสิน · ขั้น 4 ตรวจรับ = <b>QA</b> {trI18n('(สิทธิ์ qa:bin_decide')}{canDecide ? ' ✓' : ' — บัญชีนี้ไม่มี'}) ·
-      ขั้น 3 ลงผลซ่อม · ย้ายลงถังแดง = <b>{trI18n('ฝ่ายผลิต')}</b> {trI18n('(สิทธิ์ scrap:record')}{canRecord ? ' ✓' : ' — บัญชีนี้ไม่มี'})
+      {trI18n("ขั้น 2 ตัดสิน · ขั้น 4 ตรวจรับ")} = <b>QA</b> {trI18n('(สิทธิ์ qa:bin_decide')}{canDecide ? ' ✓' : trI18n(" — บัญชีนี้ไม่มี")}) ·
+      {trI18n("ขั้น 3 ลงผลซ่อม · ย้ายลงถังแดง")} = <b>{trI18n('ฝ่ายผลิต')}</b> {trI18n('(สิทธิ์ scrap:record')}{canRecord ? ' ✓' : trI18n(" — บัญชีนี้ไม่มี")})
     </div>
   );
 
@@ -969,7 +969,7 @@ export default function QualityBins({ mode = 'full' }) {
     const btns = stepButtons(r);
     const st = ncStep(r, { hasRedChild: redChildOf.has(r.id) });
     const note = btns.length ? '' : (st.step
-      ? `${stepLine(r)} — ${st.owner === 'qa' ? (canDecide ? '' : 'บัญชีนี้ไม่มีสิทธิ์ qa:bin_decide') : (canRecord ? '' : 'บัญชีนี้ไม่มีสิทธิ์ scrap:record')}`
+      ? `${stepLine(r)} — ${st.owner === 'qa' ? (canDecide ? '' : trI18n('บัญชีนี้ไม่มีสิทธิ์ qa:bin_decide')) : (canRecord ? '' : trI18n('บัญชีนี้ไม่มีสิทธิ์ scrap:record'))}`
       : '');
     return (
       <QualityBinDetailModal row={r} todayWd={todayWd}
@@ -984,7 +984,7 @@ export default function QualityBins({ mode = 'full' }) {
   const renderRejectModal = () => rejecting && (
     <div className="overlay" /* ไม่ปิดจาก backdrop — มีช่องกรอก (UI-CONVENTIONS §5) */
       style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{trI18n('↩️ ตีกลับงานซ่อม (ขั้น 4)')}</h3>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
           {binDocLabel(rejecting.row)} · {trI18n('ซ่อมดี')} {rejecting.row.qty_ok ?? 0} · {trI18n('ไม่ได้')} {rejecting.row.qty_ng ?? 0}
@@ -1014,10 +1014,10 @@ export default function QualityBins({ mode = 'full' }) {
     /* ห้ามปิดด้วยคลิกพื้นหลัง — มีช่องกรอก (ด่าน backdrop-close-form-modal) */
     <div className="overlay"
       style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{trI18n('🔧 ลงผลซ่อม (ขั้น 3)')}</h3>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-          {binDocLabel(repairing.row)} · {Number(repairing.row.qty) || 0} ชิ้น — บันทึกแล้วส่งให้ QA ตรวจรับ (ขั้น 4)
+          {binDocLabel(repairing.row)} · {Number(repairing.row.qty) || 0} {trI18n("ชิ้น — บันทึกแล้วส่งให้ QA ตรวจรับ (ขั้น")} 4)
         </div>
         {repairing.row.repair_reject_note && (
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 10 }}>{trI18n('↩️ QA ตีกลับรอบก่อน:')} {repairing.row.repair_reject_note}</div>
@@ -1044,9 +1044,9 @@ export default function QualityBins({ mode = 'full' }) {
   const renderEditModal = () => editing && (
         <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
           style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 720px)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 720px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
-              {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {trI18n(B.short)}
+              {editing === 'new' ? trI18n("บันทึกรายการ") : trI18n("แก้ไขรายการ")} — {trI18n(B.short)}
             </h3>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
               <div><label style={lbl}>{trI18n('วันที่ลงถัง *')}</label>
@@ -1059,7 +1059,7 @@ export default function QualityBins({ mode = 'full' }) {
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)')}</label>
                 {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
-                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
+                <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint={trI18n("ชิ้นงานที่ยังไม่อยู่ใน Product Master")} history={binMatHist}
                   placeholder={trI18n('MAT / รหัสชิ้นงาน')} inputStyle={inp}
                   onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
                     const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
@@ -1095,7 +1095,7 @@ export default function QualityBins({ mode = 'full' }) {
                     ยังไม่เลือก = "รอ QA พิจารณา" ซึ่งเป็นสถานะจริง ห้ามบังคับเลือก
                     เลือกแล้วกดซ้ำ = ยกเลิกการตัดสิน (QA เปลี่ยนใจได้ก่อนของออกจากถัง) */}
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>
-                  ผลการพิจารณาของ QA <span style={{ fontWeight: 400 }}>(WI-PD3-069 §5.4)</span>
+                  {trI18n("ผลการพิจารณาของ")} QA <span style={{ fontWeight: 400 }}>(WI-PD3-069 §5.4)</span>
                 </div>
                 <div style={{ gridColumn: '1 / -1', display: 'flex', flexWrap: 'wrap', gap: 7 }}>
                   {QA_DECISIONS.map(d => {
@@ -1127,8 +1127,7 @@ export default function QualityBins({ mode = 'full' }) {
                 )}
                 {form.qa_decision === 'scrap' && (
                   <div style={{ gridColumn: '1 / -1', fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.5 }}>
-                    ⚠ บันทึกแล้วระบบจะถามยืนยันจำนวนเพื่อย้ายลงถังแดงให้ทันที — กดยกเลิก = ใบยังค้างในคิวรอพิจารณา
-                    (“เอาของลงถังแดง” เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน)
+                    ⚠ {trI18n("บันทึกแล้วระบบจะถามยืนยันจำนวนเพื่อย้ายลงถังแดงให้ทันที — กดยกเลิก = ใบยังค้างในคิวรอพิจารณา (“เอาของลงถังแดง” เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน")})
                   </div>
                 )}
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ผลการซ่อม')}</div>
@@ -1183,23 +1182,23 @@ export default function QualityBins({ mode = 'full' }) {
       {renderRejectModal()}
       {renderDetailModal()}
       {renderEditModal()}
-      <ReadOnlyNote show={!canDecide} role={role} what="ตัดสินผลของในถังเหลือง (เฉพาะ QA)" permKey="qa:bin_decide" />
+      <ReadOnlyNote show={!canDecide} role={role} what={trI18n("ตัดสินผลของในถังเหลือง (เฉพาะ QA)")} permKey="qa:bin_decide" />
       {renderPendQueue()}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
-        📄 เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่<b>{trI18n('ฝ่ายผลิต')}</b>
+        📄 {trI18n("เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่")}<b>{trI18n('ฝ่ายผลิต')}</b>
         {canAccessPage('/scrap-report', role)
           ? <> → <Link to="/scrap-report?tab=bins" style={{ color: 'var(--accent)', fontWeight: 700 }}>{trI18n('ของเสีย: ใบรายงาน · ถังเหลือง/แดง ↗')}</Link></>
           : <> {trI18n('— หน้า')} <b>{trI18n('ของเสีย: ใบรายงาน · ถังเหลือง/แดง')}</b> {trI18n('(บัญชีนี้ยังไม่มีสิทธิ์เข้าหน้านั้น)')}</>}
         <br />
         {scopeRes.unsure
           ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
-              ⚠️ ยังตัดขอบเขตไม่ชัด ({scopeRes.reason === 'registry_unloaded'
-                ? `โหลดทะเบียนไลน์ไม่สำเร็จ${linesErr ? `: ${linesErr}` : ''}`
-                : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
-                  : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) — ตัวเลขข้างบนอาจไม่ใช่ขอบเขตจริงของคุณ
+              ⚠️ {trI18n("ยังตัดขอบเขตไม่ชัด")} ({scopeRes.reason === 'registry_unloaded'
+                ? `${trI18n("โหลดทะเบียนไลน์ไม่สำเร็จ")}${linesErr ? `: ${linesErr}` : ''}`
+                : scopeRes.reason === 'own_line_unknown' ? trI18n("ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน")
+                  : trI18n("ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน")}) — {trI18n("ตัวเลขข้างบนอาจไม่ใช่ขอบเขตจริงของคุณ")}
             </span>
           : scopeNames
-            ? <>{trI18n('🏷️ คิวนี้เฉพาะส่วนงานของคุณ (')}{scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
+            ? <>{trI18n('🏷️ คิวนี้เฉพาะส่วนงานของคุณ (')}{scopeNames.length} {trI18n("ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน")}</>
             : <>{trI18n('🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)')}</>}
       </div>
     </div>
@@ -1210,7 +1209,7 @@ export default function QualityBins({ mode = 'full' }) {
       {renderRepairModal()}
       {renderRejectModal()}
       {renderDetailModal()}
-      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
+      <ReadOnlyNote show={!canRecord} role={role} what={trI18n("บันทึกถังเหลือง/ถังแดง")}
         permKey="scrap:record" />
       {/* ── แถบควบคุม ── */}
       {/* UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar = แถบเดียว (เดิมแยก 2 ชั้น) */}
@@ -1223,12 +1222,12 @@ export default function QualityBins({ mode = 'full' }) {
         <Segmented label={trI18n('ถัง')} value={bin} onChange={setBin}
           options={BINS.map(b => ({ value: b.key, label: `${b.key === 'yellow' ? '🟡' : '🔴'} ${trI18n(b.short)}`, title: trI18n(b.label), color: b.color }))} />
         <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
-        <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
+        <SearchInput value={search} onChange={setSearch} fields={trI18n("ชิ้นงาน / สาเหตุ / ผู้แจ้ง")} />
         {/* ⏱️ ของค้างเกินอายุแท็ก — ปุ่มโผล่เฉพาะเมื่อมีของค้างจริง (ปุ่มที่กดแล้วว่างเปล่าเสมอ = คนเลิกกด)
             ไม่กระพริบ: เป็นงานค้าง ไม่ใช่ alarm (Andon convention) */}
         {overdueCount > 0 && (
           <button onClick={() => setOverdueOnly(v => !v)}
-            title={`ของในถังที่เลยอายุแท็กตาม WI-PD3-087 §5.6 (🟡 ${TAG_MAX_DAYS.yellow} วัน · 🔴 ${TAG_MAX_DAYS.red} วัน) และยังไม่ถูกจัดการ`}
+            title={`${trI18n("ของในถังที่เลยอายุแท็กตาม")} WI-PD3-087 §5.6 (🟡 ${TAG_MAX_DAYS.yellow} ${trI18n("วัน")} · 🔴 ${TAG_MAX_DAYS.red} ${trI18n("วัน) และยังไม่ถูกจัดการ")}`}
             style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
               /* B5 (16/11): "เกินอายุแท็ก" สีเดียวทั้งหน้า = token แดง (เดิมปุ่มส้ม #f97316 แต่ป้ายในคิวแดง) */
               border: '1px solid var(--red-line)', whiteSpace: 'nowrap',
@@ -1248,11 +1247,11 @@ export default function QualityBins({ mode = 'full' }) {
           (อยู่ในแถบกรองแล้วดันแถบเป็น 2 บรรทัด) */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', flex: '1 1 420px', minWidth: 0 }}>
-        {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
+        {loading ? trI18n("กำลังโหลด…") : `${filtered.length} ${trI18n("รายการ · รวม")} ${totalQty.toLocaleString(dateLocale())} ${trI18n("ชิ้น")}`}
         {!loading && isY && !overdueOnly && (
           <span> · <b style={{ color: 'var(--amber)' }}>{trI18n('ค้างในสาย')} {pendOpen.length}</b> {trI18n('(ทุกวันที่ ไม่ขึ้นกับช่วง) · ที่ปิดแล้วแสดงตามช่วงที่เลือก')}</span>
         )}
-        {scopeNames && <span> {trI18n('· เฉพาะส่วนงานของคุณ (')}{scopeNames.length} ไลน์)</span>}
+        {scopeNames && <span> {trI18n('· เฉพาะส่วนงานของคุณ (')}{scopeNames.length} {trI18n("ไลน์")})</span>}
         {!loading && overdueCount > 0 && (
           <span style={{ color: 'var(--red)', fontWeight: 700 }}> {trI18n('· ⏱ เกินอายุแท็ก')} {overdueCount} {trI18n('รายการ')}</span>
         )}
@@ -1266,7 +1265,7 @@ export default function QualityBins({ mode = 'full' }) {
         {overdueOnly && <span> {trI18n('· แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก)')} <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>{trI18n('แสดงทั้งหมด')}</button></span>}
         <span> · {trI18n('แตะแถวเพื่อดูรูป · ที่มา · ประวัติ')}</span>
       </div>
-        <button onClick={doPrint} className="tbtn" style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>🖨 {trI18n('พิมพ์ใบ')} {trI18n(B.short)}</button>
+        <button onClick={doPrint} className="tbtn" style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>🖨 {trI18n('พิมพ์ใบ')} {trI18n(B.short)}</button>
         <button onClick={() => setShowWiReg(v => !v)} className="tbtn"
           title={trI18n('ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน')}
           style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
@@ -1291,30 +1290,30 @@ export default function QualityBins({ mode = 'full' }) {
             title={trI18n('ทะเบียน QRs ↔ WI การซ่อม')}
             help={trI18n('จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report')}
             emptyText={trI18n('ยังไม่มีรายการ — เพิ่มจากตัว WI-PD3-069 §6')}
-            offNote="รายการนี้จะไม่ถูกแนะนำในโมดัลลงวิธีแก้ไขอีก (บันทึกเก่าที่อ้าง WI นี้ไว้แล้วไม่กระทบ)"
+            offNote={trI18n("รายการนี้จะไม่ถูกแนะนำในโมดัลลงวิธีแก้ไขอีก (บันทึกเก่าที่อ้าง WI นี้ไว้แล้วไม่กระทบ)")}
             fields={[
-              { key: 'symptom',   label: 'อาการ', required: true, placeholder: 'Missing nut' },
-              { key: 'wi_no',     label: 'WI ซ่อม', required: true, mono: true, placeholder: 'WI-PD3-018 (หลายเล่มคั่นด้วย , )' },
-              { key: 'part_name', label: 'ชื่อชิ้นงาน' },
-              { key: 'note',      label: 'หมายเหตุ' },
+              { key: 'symptom',   label: trI18n("อาการ"), required: true, placeholder: 'Missing nut' },
+              { key: 'wi_no',     label: trI18n("WI ซ่อม"), required: true, mono: true, placeholder: 'WI-PD3-018 (หลายเล่มคั่นด้วย , )' },
+              { key: 'part_name', label: trI18n("ชื่อชิ้นงาน") },
+              { key: 'note',      label: trI18n("หมายเหตุ") },
             ]}
           />
         </div>
       )}
 
       {/* ── ตาราง ── B2/B4 (16/11): 2 ถังมีคอลัมน์ไลน์เหมือนกัน · รายละเอียดการซ่อม/QA/DOA ย้ายเข้าโมดัล (แตะแถว) */}
-      <div style={{ overflowX: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+      <div style={{ overflowX: 'auto', background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1000 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {(isY
-              ? ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', 'ไลน์', 'จำนวน', 'สาเหตุ', 'ผู้แจ้ง', 'ขั้น / ผล QA', 'ดำเนินการ']
-              : ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', 'ไลน์', 'จำนวนเสีย', 'สาเหตุ', 'ผู้แจ้ง', 'ผู้กำจัดทำลาย', 'ใบรายงานของเสีย', 'ดำเนินการ']
+              ? ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', trI18n("ไลน์"), 'จำนวน', 'สาเหตุ', 'ผู้แจ้ง', 'ขั้น / ผล QA', 'ดำเนินการ']
+              : ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', trI18n("ไลน์"), 'จำนวนเสีย', 'สาเหตุ', 'ผู้แจ้ง', 'ผู้กำจัดทำลาย', 'ใบรายงานของเสีย', 'ดำเนินการ']
             ).map((h, i) => <th key={i} style={th}>{trI18n(h)}</th>)}
           </tr></thead>
           <tbody>
             {!loading && !filtered.length && (
               <tr><td colSpan={10} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 28 }}>
-                {overdueOnly ? (overdueErr ? 'โหลดรายการค้างไม่สำเร็จ — ดูข้อความเตือนด้านบน' : 'ไม่มีของค้างเกินอายุแท็ก 👍') : 'ไม่มีรายการในช่วงที่เลือก'}
+                {overdueOnly ? (overdueErr ? trI18n("โหลดรายการค้างไม่สำเร็จ — ดูข้อความเตือนด้านบน") : trI18n("ไม่มีของค้างเกินอายุแท็ก 👍")) : trI18n("ไม่มีรายการในช่วงที่เลือก")}
               </td></tr>
             )}
             {filtered.map(r => {
@@ -1332,8 +1331,8 @@ export default function QualityBins({ mode = 'full' }) {
                   if (closed) return <span style={{ fontSize: 11.5, color: 'var(--muted)' }} title={trI18n('ออกจากถังแล้ว — หยุดนับอายุแท็ก')}>{trI18n('✓ จบแล้ว')}</span>;
                   return (
                     <span style={{ fontSize: 11.5, fontWeight: age.over ? 800 : 600, color: age.over ? 'var(--red)' : 'var(--text2)' }}
-                      title={`ลงถัง ${r.work_date} · อายุแท็กสูงสุด ${age.limit} วันตาม WI-PD3-087 §5.6`}>
-                      {age.over ? '⏱ ' : ''}{age.days} / {age.limit} วัน
+                      title={`${trI18n("ลงถัง")} ${r.work_date} · ${trI18n("อายุแท็กสูงสุด")} ${age.limit} ${trI18n("วันตาม")} WI-PD3-087 §5.6`}>
+                      {age.over ? '⏱ ' : ''}{age.days} / {age.limit} {trI18n("วัน")}
                       {age.over && <span style={{ display: 'block', fontSize: 11, fontWeight: 700 }}>{trI18n('เกิน')} {age.overBy} {trI18n('วัน')}</span>}
                     </span>
                   );
@@ -1362,7 +1361,7 @@ export default function QualityBins({ mode = 'full' }) {
                   </div>
                 </td>
                 <td style={td}>{r.line_name || '—'}</td>
-                <td style={{ ...td, fontWeight: 700 }}>{Number(r.qty || 0).toLocaleString('th-TH')}</td>
+                <td style={{ ...td, fontWeight: 700 }}>{Number(r.qty || 0).toLocaleString(dateLocale())}</td>
                 <td style={td}>{(isY ? r.cause : causeView(r)) || '—'}</td>
                 <td style={td}>{r.reported_by || '—'}</td>
                 {/* §5.4 ขั้น + ผลพิจารณา QA — null = "รอ QA พิจารณา" ห้ามเดาผลให้ · ขั้นตัดสินที่ ncStep()/ncFlow() */}
@@ -1394,15 +1393,15 @@ export default function QualityBins({ mode = 'full' }) {
                     /* 🔴 ใบร่าง ≠ ขออนุมัติแล้ว — ยังเป็นงานค้าง (บั๊ก B 10/11) */
                     ? <span title={trI18n('ผูกใบแล้วแต่ใบยังเป็นร่าง — ยังไม่ได้ส่งขออนุมัติทำลาย')}
                         style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--amber)' }}>
-                        📝 {scrapDocs[r.scrap_report_id]?.doc_no || ''} ร่าง · ยังไม่ส่งอนุมัติ
+                        📝 {scrapDocs[r.scrap_report_id]?.doc_no || ''} {trI18n("ร่าง · ยังไม่ส่งอนุมัติ")}
                       </span>
                     : r.scrap_report_id
                     ? <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--green)' }}>
-                        {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
+                        {scrapDocs[r.scrap_report_id]?.doc_no || trI18n("ออกใบแล้ว")}
                       </span>
                     : <span title={trI18n('ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง')}
                         style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--amber)' }}>
-                        ⏳ ยังไม่ออกใบ
+                        ⏳ {trI18n("ยังไม่ออกใบ")}
                       </span>}
                 </td>}
                 <td style={{ ...td, whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>

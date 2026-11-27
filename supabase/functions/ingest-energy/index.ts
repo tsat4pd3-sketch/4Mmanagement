@@ -7,6 +7,14 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v11 (2026-11-27 · คำสั่ง user "ทำทุกข้อ"): แรงดันรายเฟส v1-v3 เข้าประวัติรายนาทีด้วย (energy_readings.v1-v3 · กราฟแยก 3 เฟส)
+     · กระแสรายเฟส a1-a3 ยังเก็บแค่ค่าล่าสุด (ยังไม่มีจอใช้ — ห้ามเก็บเผื่อ)
+   v10 (2026-11-23 · คำสั่ง user "ล่าสุด + เก็บค่าสูงสุดแยก"): kW/A ที่โชว์ = **ค่าล่าสุด** (`last` · ตรงจอ Node-RED)
+     · `max` ของรอบ (โหลดกระชาก) → energy_readings.kw_max / a_max (peak รายวันใช้ coalesce(kw_max, kw) — trigger)
+     · ไม่ส่ง `last` มา = ใช้ `max` แทนเหมือนเดิม · ไม่ส่ง `max` = kw_max ว่าง = พฤติกรรมเดิม
+   v9 (2026-11-20): + ค่ารายเฟส v1-v3 / a1-a3 (แผง 3 เฟสหน้ารายตู้) — **ไม่ต้องผูก topic ใหม่**: topic `<src>/<ตู้>/v1`
+     ที่ยังไม่ได้ผูก แต่ "พี่น้อง" `<src>/<ตู้>/*` ผูกแล้ว ⇒ ใช้ตู้เดียวกันอัตโนมัติ · เก็บค่าล่าสุดใน energy_live เท่านั้น
+     (ไม่เข้า energy_readings = ตารางไม่โต) · ไม่มีพี่น้องผูก = ยังเข้า energy_topic_unmapped เหมือนเดิม
    v8 (2026-11-13): + body.live (สถานะสดต่อเครื่อง → machine_live_state) · STATE_MAP + UNPLANNED
    v6 (2026-11-11): + body.states (ช่วงหยุดของเครื่อง → machine_state_events) + body.pieces (ชิ้นต่อนาที → machine_counters)
      ข้อมูลจากเครื่อง "เฟสเดินคู่" — ยังไม่เข้าสูตร OEE · ต้องระบุต้นทางได้ (source id) ไม่งั้นข้าม · เก็บ 90 วัน
@@ -27,7 +35,9 @@ import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const UNIT: Record<string, string> = { kw: 'kW', kwh_total: 'kWh', v: 'V', a: 'A' };
 /** ค่าที่เก็บเป็นประวัติรายนาที (energy_readings) — ต้องตรงกับคอลัมน์ของตาราง */
-const HIST_FIELDS = ['kw', 'kwh_total', 'v', 'a'];
+const HIST_FIELDS = ['kw', 'kwh_total', 'v', 'a', 'v1', 'v2', 'v3'];   // v11: + แรงดันรายเฟส (กราฟ 3 เฟสหน้าประวัติ)
+/** ค่ารายเฟส (ค่าล่าสุดอย่างเดียว ไม่เก็บประวัติ) — ตู้ตามพี่น้องที่ผูก topic แล้ว */
+const PHASE_FIELDS = ['v1', 'v2', 'v3', 'a1', 'a2', 'a3'];
 /** เก็บประวัติรายนาทีไว้กี่วัน (ยอดระยะยาวอยู่ energy_daily ที่ trigger สรุปไว้แล้ว) */
 const READINGS_KEEP_DAYS = 7;
 /** เก็บเหตุการณ์ไว้กี่วัน (ต้นทางเกิดหลายพันแถว/วัน) */
@@ -190,11 +200,28 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
   const now = new Date().toISOString();
   const live: any[] = [];
   const unknown: any[] = [];
+  /** v10: ค่าสูงสุดของรอบ ต่อ ตู้×ค่า (kw/a) → energy_readings.kw_max / a_max */
+  const maxOf = new Map<string, number>();
+  // 🔌 ตู้ของ prefix `<src>/<ตู้>` จาก topic ที่ผูกแล้ว (ใช้กับค่ารายเฟส v9)
+  const prefixScope = new Map<string, { scope_kind: string; scope_name: string }>();
+  for (const c of cfg || []) {
+    const i = String(c.topic || '').lastIndexOf('/');
+    if (i > 0) prefixScope.set(c.topic.slice(0, i), { scope_kind: c.scope_kind, scope_name: c.scope_name });
+  }
 
   for (const r of readings) {
     const specs = byTopic.get(r?.topic);
     // ⚠️ topic ที่ยังไม่มีใครผูก **ห้ามทิ้งเงียบ** — เก็บไว้ให้โผล่ในหน้าจอเพื่อกดผูก
     if (!specs?.length) {
+      const tp = String(r?.topic || '');
+      const i = tp.lastIndexOf('/');
+      const f = i > 0 ? tp.slice(i + 1) : '';
+      const sib = PHASE_FIELDS.includes(f) ? prefixScope.get(tp.slice(0, i)) : null;
+      const pv = Number(r?.last);
+      if (sib && r?.last != null && Number.isFinite(pv)) {
+        live.push({ ...sib, field: f, value: pv, unit: f[0] === 'v' ? 'V' : 'A', read_at: r.at || body.bucket_at || now, received_at: now, topic: tp });
+        continue;
+      }
       if (r?.topic) unknown.push({ topic: r.topic, sample: String(r.sample ?? '').slice(0, 200), last_seen: now });
       continue;
     }
@@ -204,9 +231,12 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
       if (s.json_path && r.json) {
         try { v = pick(JSON.parse(r.json), s.json_path); } catch { v = null; }
       } else {
-        // kW เอา "ค่าสูงสุดในรอบ" (peak คือตัวที่ทำให้โดน demand charge — ค่าเฉลี่ยกลบมันหมด)
-        // ค่าอื่นเอาค่าล่าสุด (kwh_total เป็นเลขสะสม ค่าล่าสุดคือของจริง)
-        v = s.field === 'kw' ? (r.max ?? r.last) : r.last;
+        // v10: ทุกค่าเอา "ค่าล่าสุด" (ตรงจอ Node-RED) · ค่าสูงสุดของรอบเก็บแยก (MAX_OF ข้างล่าง → kw_max/a_max)
+        v = r.last ?? (s.field === 'kw' || s.field === 'a' ? r.max : null);
+        const mx = Number(r.max);
+        if ((s.field === 'kw' || s.field === 'a') && r.max != null && Number.isFinite(mx)) {
+          maxOf.set(`${s.scope_kind}|${s.scope_name}|${s.field}`, mx * Number(s.scale ?? 1));
+        }
       }
       const num = Number(v);
       if (!Number.isFinite(num)) continue;      // แกะไม่ได้ = ข้าม ไม่เขียนค่ามั่ว
@@ -237,6 +267,10 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
     const k = `${l.scope_kind}|${l.scope_name}|${bucket}`;
     if (!hist.has(k)) hist.set(k, { scope_kind: l.scope_kind, scope_name: l.scope_name, bucket_at: bucket, received_at: now });
     hist.get(k)[l.field] = l.value;
+    if (l.field === 'kw' || l.field === 'a') {
+      const mx = maxOf.get(`${l.scope_kind}|${l.scope_name}|${l.field}`);
+      if (mx != null) hist.get(k)[`${l.field}_max`] = mx;
+    }
   }
   let histSaved = 0;
   if (hist.size) {

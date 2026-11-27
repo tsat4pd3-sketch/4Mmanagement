@@ -1,3 +1,5 @@
+import { weekdaysMin } from './dateFormat.js';
+import { tr } from './i18n.js';
 /* ═══ 🗓️ หัวคอลัมน์ช่วงเวลา — ตัวเดียวทุกตารางมอนิเตอร์ (2026-10-08 · คำสั่ง user)
 
    user: *"รูปแบบหัวตาราง รูปแบบการ visualize เอาให้มันเป็นไปในทางเดียวกัน การกรอง การแสดงวันเริ่ม
@@ -10,7 +12,6 @@
    🔴 วันที่เป็นสตริง 'YYYY-MM-DD' — แกะด้วย UTC ล้วน ไม่พึ่ง timezone เครื่อง · `today` ต้องมาจาก `getWorkDate()`
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-const WD = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const DAY_MS = 86400000;
 const ms = (d) => Date.parse(`${String(d).slice(0, 10)}T00:00:00Z`);
 
@@ -28,14 +29,14 @@ export function isTodayPeriod(date, today, kind = 'day') {
  * @param {{ kind?:'day'|'week'|'date', today:string, seed?:boolean, seedLabel?:string, seedBot?:string }} o
  * @returns {{ top:string, bot:string, isToday:boolean, weekend:boolean }}
  */
-export function periodHead(date, { kind = 'day', today, seed = false, seedLabel = 'ยกมา', seedBot } = {}) {
+export function periodHead(date, { kind = 'day', today, seed = false, seedLabel = tr("ยกมา"), seedBot } = {}) {
   const t = new Date(ms(date));
   const ok = Number.isFinite(t.getTime());
   const isToday = !seed && isTodayPeriod(date, today, kind);
   const sameYear = ok && String(today || '').slice(0, 4) === String(t.getUTCFullYear());
   const dm = ok ? `${t.getUTCDate()}/${t.getUTCMonth() + 1}${sameYear ? '' : `/${String(t.getUTCFullYear()).slice(2)}`}` : '–';
   const weekend = ok && kind !== 'week' && (t.getUTCDay() === 0 || t.getUTCDay() === 6);
-  const top = seed ? seedLabel : isToday ? '📍 วันนี้' : kind === 'week' ? 'สัปดาห์' : (ok ? WD[t.getUTCDay()] : '');
+  const top = seed ? seedLabel : isToday ? tr("📍 วันนี้") : kind === 'week' ? 'สัปดาห์' : (ok ? weekdaysMin()[t.getUTCDay()] : '');
   return { top, bot: seed && seedBot ? seedBot : dm, isToday, weekend };
 }
 

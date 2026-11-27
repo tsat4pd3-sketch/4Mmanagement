@@ -58,6 +58,53 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'jig-images-via-dept',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    re: /from\(\s*['"`]jig_images['"`]\s*\)/g,
+    why: '🖼️ 26/11 "ข้อมูล PM ของ JIG MTN โดนไลน์ผลิตแก้ทับเละ" — รูปเครื่องเคยใช้ชุดเดียวกันทุกแผนก ⇒ AM (ผลิต) เปลี่ยนรูปที่ PM Setup '
+       + 'แล้วกดบันทึก = ลบรูปของ JIG MTN 140 รูป · FK ON DELETE SET NULL ล้างจุดตรวจ JIG MTN 1,567 จุดให้ไปวางบนรูป AM',
+    fix: 'อ่านเฟรมผ่าน `loadDeptFrames(jigIds, department)` · แก้/ลบได้เฉพาะ `ownsFrame(row, department)` (src/utils/jigFrames.js) · insert ต้องใส่ department',
+    allow: {
+      'src/utils/jigFrames.js': 'เจ้าของกฎ',
+      'src/pages/PMSetup.jsx': 'ตัวบันทึก — ใส่ department ตอน insert + แก้/ลบผ่าน ownsFrame เท่านั้น',
+      'src/pages/FixtureRegistry.jsx': 'ทะเบียนจุดชิม: แค่รู้ว่าเครื่องไหนมีรูป + วาดหมุดชิมบนทุกเฟรมของเครื่อง (อ่านอย่างเดียว · ไม่ผูกแผนก)',
+      'src/utils/jigImageRefs.js': 'นับผู้อ้าง path ก่อนลบไฟล์ — ต้องนับทุกแผนก',
+      'src/utils/recompressLayouts.js': 'ย้ายไฟล์รูปทั้ง bucket — ระดับ path ไม่ใช่ระดับแผนก',
+    },
+  },
+  {
+    id: 'manpower-layout-stations-via-family',
+    scan: ['src/pages/ManpowerBoard.jsx'], ext: ['.jsx'],
+    /* จับการกรองไลน์ฝั่ง DB ทุกแบบในไฟล์นี้: `line_id.eq.` ใน .or() · .eq/.in('line_name'|'line_id')
+       (ไฟล์นี้ไม่มีคิวรีตารางอื่นที่กรองไลน์ · คิวรีมักแตกบรรทัด `const q = …; q.or(…)` ⇒ ห้ามผูกกับ from('workstations')) */
+    re: /line_(id|name)\.eq\.|\.(eq|in)\(\s*['"`]line_(name|id)['"`]/g,
+    why: '🗺️ user 24/11 "จุดงานก็ไม่ขึ้น" — ผัง LINE APRON ASSY ขึ้นแค่ Supervisor 1 จุด เพราะคิวรีกรอง line_id/line_name ของไลน์แม่ '
+       + 'แต่จุดของไลน์ลูก (Line 60/61/SUB APRON 18 จุด) วางบนผังแม่และผูกด้วย line_name ของลูก (line_id = null) · '
+       + '⚠️ harness mock ไม่กรอง query ⇒ รูป audit ขึ้นครบ จับไม่ได้',
+    fix: 'โหลดจุดงานทั้งหมดแล้วกรองด้วย `stationsOfLineFamily(lines, ชื่อไลน์, rows)` (src/utils/manpowerBoard.js — ไลน์นั้น + ลูกทั้งหมด · จับ id ก่อน ถอยไปชื่อ)',
+    allow: {},
+  },
+  {
+    id: 'manpower-layout-no-auto-lline',
+    scan: ['src/pages/ManpowerBoard.jsx'], ext: ['.jsx'],
+    /* จับการเขียน ?lline= ให้เองใน effect (ตั้งผังแรกอัตโนมัติ) */
+    re: /merge\(\s*\{\s*lline\s*:\s*firstLayout/g,
+    why: '🎛️ user 25/11 "ช่องเด้งข้ามไปไลน์ลูก ตอนเลือกไลน์แม่" — ตัวตั้งผังแรกอัตโนมัติเขียน ?lline= ทุกครั้งที่ว่าง '
+       + '⇒ เลือกแผนก GOR (ล้าง lline) แล้วช่องเด้งไป Laser GOR ทันที',
+    fix: 'ยังไม่ระบุไลน์ = แสดงผังแรก + เขียนบอกบนจอ (autoLayout) · ห้ามเขียน URL แทนคน',
+    allow: {},
+  },
+  {
+    id: 'manpower-layout-single-line-picker',
+    scan: ['src/pages/ManpowerBoard.jsx'], ext: ['.jsx'],
+    /* จับช่อง <select> ที่ตั้ง ?lline= เอง (ช่องเลือกผังซ้อน) */
+    re: /<select\b[^\n]*merge\(\s*\{\s*lline\s*:/g,
+    why: '🎛️ user 24/11 "dropdown กับ select ทับซ้อนกันรึป่าว" — เคยมีช่องเลือกผังข้างปุ่ม "ผังรายไลน์" ซ้อนกับช่อง ส่วนงาน/ไลน์ บนหัวเพจ '
+       + 'แล้ว 2 ช่องไม่ตามกัน (บน = PD3 · ล่าง = LINE APRON ASSY) · user เลือก "เหลือช่องบนช่องเดียว"',
+    fix: 'เลือกไลน์/ผังผ่าน `SectionScopeSelect pickLine` บนหัวเพจเท่านั้น (ตั้ง ?lline=) — 📄 docs/modules/manpower-board.md §24/11',
+    allow: {},
+  },
+  {
     id: 'wf-tables-write-via-rpc',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับการเขียนตาราง e-Workflow ตรงจาก client: from('wf_…').insert/update/upsert/delete */
@@ -500,6 +547,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'chart-anim-shared',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ตั้งอนิเมชันกราฟเองในหน้า — ต้องผ่าน chartAnim() ของกลางเท่านั้น */
+    re: /isAnimationActive\s*=/g,
+    why: '20/11 (user: "อนิเมชั่นกราฟสวยๆ … ต้องมีมาตรฐานและใช้เหมือนกันทั้งหมด"): เดิมบางหน้าปิด บางหน้าปล่อยค่าเริ่มต้นของ Recharts '
+       + 'ซึ่งเล่นซ้ำทุกครั้งที่ข้อมูลรีเฟรช = จอกระตุกทุกนาที · มาตรฐาน = เล่นครั้งเดียวต่อสิ่งที่ดู + นิ่งบนจอ TV',
+    fix: "<Bar {...chartAnim()} …> · import { chartAnim } from '<path>/utils/motion' (UI-CONVENTIONS §6.34c)",
+    allow: {},
+  },
+  {
     id: 'no-native-confirm',
     scan: ['src/pages', 'src/components', 'src/lib', 'src/utils', 'src/App.jsx'], ext: ['.jsx', '.js'],
     /* window.confirm / confirm( ตรงๆ — หน้าตาเบราว์เซอร์ ไม่ตามธีม ไม่หรี่ฉากหลัง ไม่แปล · บน iPhone ตัดข้อความยาว · บล็อก thread */
@@ -537,6 +594,25 @@ const RULES = [
        + 'จะแปลครั้งเดียวแล้วค้าง — จอโชว์ภาษาเก่าทั้งที่สลับแล้ว',
     fix: "เก็บไทยไว้ที่ map · แปลที่จุดวาด {tr(meta.label)} (📄 docs/modules/i18n.md §รอบ 3c)",
     allow: {},
+  },
+  {
+    id: 'date-locale-no-th-TH',
+    scan: ['src/pages', 'src/components', 'src/utils'], ext: ['.jsx', '.js'],
+    /* วันที่/เวลาที่โชว์บนจอต้องตามภาษา — ไทย = th-TH (พ.ศ.) · อังกฤษ = en-GB (ค.ศ.) ⇒ ใช้ dateLocale() จาก utils/i18n
+       (คำสั่ง user 24/11 "โหมด en เป็น ค.ศ. โหมดไทยเป็น พ.ศ.") · src/lib (ใบพิมพ์/Excel) ยังไทยเสมอ ไม่เข้าด่าน */
+    re: /toLocale(?:Date|Time)?String\(\s*'th-TH'/g,
+    why: 'สลับเป็น EN แล้ววันที่ยังเป็น "4 ส.ค. 69" (วัดจาก harness 24/11: 94 ชุด) — hardcode locale = ไม่ตามภาษา',
+    fix: "toLocale*String(dateLocale(), …) · import { dateLocale } from utils/i18n (📄 docs/modules/date-time-rules.md §ภาษา)",
+    allow: { 'src/utils/i18n.js': 'เจ้าของกฎ' },
+  },
+  {
+    id: 'date-no-hand-month-array',
+    scan: ['src/pages', 'src/components', 'src/utils'], ext: ['.jsx', '.js'],
+    /* อาร์เรย์ตัวย่อเดือนไทยที่ประกาศเองในหน้า = ไม่ตามภาษา + ปีไม่ตรงกฎ ⇒ ใช้ monthsShort()/yearDisplay() จาก utils/dateFormat */
+    re: /\[\s*'ม\.ค\.'\s*,\s*'ก\.พ\.'/g,
+    why: 'เจอ 12 ไฟล์ประกาศ [\'ม.ค.\',…] ซ้ำ (24/11) — บางตัว +543 บางตัว ค.ศ. · โหมด EN ยังไทย',
+    fix: "monthsShort()[i] + yearDisplay(y) จาก utils/dateFormat (ใบพิมพ์ไทยเสมอใช้ MONTHS_SHORT_TH)",
+    allow: { 'src/utils/dateFormat.js': 'เจ้าของกฎ', 'src/utils/kpiBaseImport.js': 'ตัวแกะหัวคอลัมน์ไฟล์ Excel (parser ไม่ใช่การแสดงผล)', 'src/utils/askBot.js': 'ตัวแกะข้อความถาม (parser)' },
   },
   {
     id: 'i18n-import-path-depth',
@@ -1095,6 +1171,28 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'i18n-entity-fragment',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    // จับ HTML entity ที่ถูกตัดครึ่งเพราะ codemod วัด offset จาก node.value (decode entity แล้ว) แต่เขียนทับ raw — เช่น `&q{tr("…")}` / `")}uot;`
+    re: /&[a-z]{1,5}\{(?:tr|trI18n)\(|["']\)\}[a-z]{1,5};/g,
+    why: 'i18n รอบ 4 (20/11): JSXText ที่มี `&quot;`/`&gt;` — babel ให้ `node.value` แบบ decode แล้ว แต่ `node.start` ชี้ raw '
+       + '⇒ ตำแหน่งที่ครอบ tr() เพี้ยนเท่าความยาว entity · เจอจริง 5 จุด (MoTvBoard `mo=&q{tr(` · MachineDatabase `")}&quot; ที่`) '
+       + 'ซึ่งวาดออกจอเป็นตัวอักษรขยะ',
+    fix: 'ครอบ tr() ให้ขอบอยู่นอก entity: `mo=&quot;{group}&quot; {tr("ไม่รู้จัก…")}` · codemod ต้องใช้ node.extra.raw ไม่ใช่ node.value',
+    allow: {},
+  },
+  {
+    id: 'surf-gradient-token-only',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx', '.js'],
+    // จับการหยิบ token ปลายทางของไล่เฉดพื้น (--card-top/--bg3-bot …) มาประกอบ gradient เองในหน้า
+    re: /var\(--(?:card|bg2|bg3|modal|accent|hero)-(?:top|bot)\)/g,
+    why: 'ไล่เฉดพื้นทั้งระบบต้องออกจาก token `--card-surf` / `--bg2-surf` / `--bg3-surf` ใน index.css ที่เดียว (20/11 · คำสั่ง user '
+       + '"แทบเหมือนสีไม่ต่างกัน แต่ดูผ่านๆ รู้สึกมีมิติ · ทำทุกหน้าให้เป็นมาตรฐาน") — ประกอบเองในหน้าเมื่อไหร่ มุม/ทิศ/ความแรงจะต่างกัน '
+       + 'ทีละหน้า และหลุดด่าน gradientDeltaCap (ด่านนั้นตรวจแค่คู่ token ใน index.css)',
+    fix: "background: 'var(--card-surf)' (แผงพื้น --card) · 'var(--bg2-surf)' · 'var(--bg3-surf)' — อยากได้ผิวชนิดใหม่ = เพิ่มคู่ --x-top/-bot ใน index.css",
+    allow: {},
+  },
+  {
     id: 'status-color-gradient-mix',
     scan: ['src', 'audit'], ext: ['.jsx', '.js', '.css'],
     /* จับไล่เฉดที่ผสม "สีสถานะ" มากกว่า 1 เฉด — ตัด `repeating-linear-gradient` ออกด้วย lookbehind
@@ -1204,6 +1302,17 @@ const RULES = [
     re: /['"`>\s]\uFE0F/g,
     why: 'emoji ถูกลบเหลือแต่ U+FE0F (มองไม่เห็น) — ไอคอนหายเงียบ ปุ่มไอคอนล้วนกลายเป็นกล่องเปล่า (09/11 · e839b388)',
     fix: 'ใส่ไอคอนกลับเป็น <Icon glyph="…" /> (ปุ่มมีป้าย · UI §6.35 ข้อ 5) หรือ emoji เต็มตัว (ปุ่มไอคอนล้วน) · ไม่ต้องการไอคอน = ลบ FE0F ทิ้ง',
+    allow: {},
+  },
+  {
+    id: 'tabs-stay-in-page',
+    scan: ['src/components'], ext: ['.jsx'],
+    /* 26/11 (คำสั่ง user "แท็บอยู่ในหน้า · เมนูเป็นทางเข้า"): รอบ 24/11 เคยให้ PageHeader ซ่อนแถบแท็บของหน้าที่อยู่ใน NAV_SUB_TABS
+       (ย้ายไปเป็นข้อย่อยในแผงเมนู) ⇒ สลับแท็บต้องเปิดแผง 2–3 คลิก · คนไม่เห็นว่าหน้ามีแท็บอะไร · แต่ละโมดูลหน้าตาต่างกัน
+       ข้อย่อยในแผงเมนู = ทางลัดเข้าแท็บเท่านั้น · แถบแท็บวาดในหน้าเสมอ */
+    re: /(tabsInNav|NAV_SUB_TABS\[[^\]]+\])\s*&&\s*renderTabs|!\s*(tabsInNav|NAV_SUB_TABS\[[^\]]+\])\s*&&\s*renderTabs|renderTabs\(\)\s*:\s*null/g,
+    why: 'แถบแท็บเป็นของหน้า ห้ามให้ทะเบียนเมนูเป็นคนตัดสินว่าจะวาดหรือไม่ — ข้อย่อยในแผงเมนูเป็นทางลัด ไม่ใช่ตัวสลับแท็บ (UI §6.8.1)',
+    fix: "วาด renderTabs() เสมอเมื่อมีแท็บ · อยากให้กดจากเมนูตกถึงแท็บ ใช้ NAV_SUB_TABS เป็นทางลัด (ลิงก์ ?tab=) ไม่ต้องซ่อนแถบ",
     allow: {},
   },
   {
@@ -1696,6 +1805,9 @@ const RULES = [
        + '· ค่าที่ไม่ได้ขึ้นหัว **ห้ามตัดทิ้ง** ให้ตกไปเป็นบรรทัดรอง (clamp + title)',
     allow: {
       'src/utils/matLabel.js': 'เจ้าของกฎ — เป็นที่คำนวณ pNoIsCode/lead เอง',
+      // 20/11: §OEE รายพาร์ท **พก** p_no ไปเป็นข้อมูลของกลุ่ม (ใช้จับกลุ่ม/ส่งต่อให้จอ)
+      //        ไม่ได้ตัดสินว่าใครขึ้นหัว — จอยังวาดผ่าน <MatLabel> ตัวเดิม
+      'src/utils/oee.js': 'พก p_no เป็นข้อมูลของกลุ่มพาร์ท ไม่ได้ตัดสินการแสดงผล (จอใช้ <MatLabel>)',
     },
   },
   {
@@ -2188,6 +2300,63 @@ test('🛡️ oee-live-needs-ngforp — ทุกจุดที่เรีย�
     + '            คิวรี defect_logs ต้อง embed `prod_orders(mat_no)` (หรือ select prod_order_id + ใบมี id)\n'
     + '            ไม่งั้นชี้ CT ของ NG ไม่ได้ → ตกไปอยู่ noMat (ไม่เข้า %P แต่รายงานออกจอ)\n\n'
     + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
+
+/* 🛡️ q-ratio-single-entry (2026-11-25 · คำสั่ง user "ยอดผลิต = งานดี + งานต้องสงสัย")
+   สูตร %Q เคยมี **3 สำเนา** เขียนมือ: `computeLiveOee` · `computeSessionOee` · `restampQPatch`
+   ⇒ ตอน QA ตัดสินของสงสัย/ผลซ่อม จอสดกับกะที่ปิดแล้วตอบคนละเลขจากข้อมูลชุดเดียวกัน
+   ตอนนี้ยุบเหลือ `qRatio()` ตัวเดียว (oee.js §7.2.2) + ฐานจาก `qTotalCount()`
+   🔴 กฎนี้จับ "ตัวหารที่เขียนมือ" ไม่ใช่แค่ชื่อฟังก์ชัน — แพตเทิร์น `x / (x + ng)` คือสิ่งที่
+      คนเขียนใหม่โดยไม่รู้ว่ามีของกลางอยู่แล้ว (เป็นสูตรที่ "ดูถูก" จนไม่มีใครสงสัย) */
+test('🛡️ q-ratio-single-entry — ห้ามเขียนตัวหาร %Q เองนอก oee.js', () => {
+  /* ยกเว้นรายไฟล์ — ต้องเขียนเหตุผลทุกตัว */
+  const ALLOW = {
+    /* เทสเหล่านี้ "ตรึงค่าของสูตรเดิม" ไว้เทียบ — ตัวเลขดิบในเทสไม่ใช่โค้ดที่รันบนจอ */
+    'src/utils/__tests__/producedTotalCount.test.mjs': 'เทียบค่าสูตรเดิม/ใหม่ให้เห็นส่วนต่าง',
+    'src/utils/__tests__/qualityZeroOutput.test.mjs': 'เรียก qRatio ของจริง + สแกนซอร์ส',
+    /* %VA ของ VSM = เวลาที่เพิ่มค่า ÷ (VA + NVA) — คนละ KPI คนละหน่วย (วินาที) ไม่ใช่ %Q */
+    'src/lib/vsmModel.js': '%VA (vaSec/(vaSec+nvaSec)) — สัดส่วนเวลา ไม่ใช่สัดส่วนชิ้น',
+  };
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js', '.mjs'])) {
+    const rel = relative(ROOT, file);
+    if (rel === 'src/utils/oee.js' || ALLOW[rel]) continue;
+    const code = stripComments(readFileSync(file, 'utf8'));
+    /* `<ตัวแปร> / (<ตัวแปรเดิม> + <อะไรก็ได้>)` = สูตร %Q/สัดส่วนที่เขียนมือ */
+    const re = /([A-Za-z_$][\w$.]*)\s*\/\s*\(\s*\1\s*\+/g;
+    let m;
+    while ((m = re.exec(code))) {
+      const line = code.slice(0, m.index).split('\n').length;
+      bad.push(`${rel}:${line}  (${m[0].trim()}…)`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    '\n\n❌ เขียนตัวหารแบบ `x / (x + y)` เอง — ถ้านี่คือ %Q ให้ใช้ของกลาง\n'
+    + '   ทำไมห้าม: ตัวหารของ %Q คือ **ยอดผลิต** (ทุกชิ้นที่เครื่องทำออกมา) ไม่ใช่ "ยอดสแกน + ของเสีย"\n'
+    + '            ⇒ ชิ้นที่ซ่อมเสร็จ/ของสงสัยที่ QA เคลียร์ จะไม่มีทางกลับมาเป็นของดีของกะต้นทาง\n'
+    + '            และสำเนาที่ 2 ของสูตรจะไม่ขยับตาม = จอเดียวกันตอบ 2 ค่า (เคยเกิดจริง 3 สำเนา)\n'
+    + '   แก้ยังไง: import { qRatio, qTotalCount } from "../utils/oee"\n'
+    + '            const Q = qRatio(qTotalCount(<ยอดสแกน>, <แถว defect_logs>), <ของเสียที่ตัดสินแล้ว>)\n'
+    + '            ถ้าไม่ใช่ %Q (เป็นสัดส่วนอื่นจริงๆ) ให้เติม ALLOW ในเทสนี้พร้อมเหตุผล\n\n'
+    + bad.map(f => '   • ' + f).join('\n') + '\n');
+});
+
+/* 🛡️ produced-total-count-not-qty-ok (2026-11-25 · คำสั่ง user)
+   user: *"ยอดผลิตไม่ใช่ `qty_ok` นะ ยอดผลิต = งานดี + งานต้องสงสัย"*
+   จอที่เขียนป้าย "ยอดผลิต/ผลิตได้" แล้วโชว์ยอดสแกนเฉยๆ = ต่ำกว่าความจริง (วัดจริง Line 61
+   กะเช้า 11/11: โชว์ 445 ทั้งที่เครื่องทำออกมา 475) ⇒ บังคับให้ DailyReport เดินผ่านของกลาง */
+test('🛡️ produced-total-count-not-qty-ok — การ์ด/แผงสรุปของ DailyReport ต้องใช้ producedTotalCount', () => {
+  const code = readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8');
+  assert.ok(/producedTotalCount\(/.test(code),
+    '\n\n❌ DailyReport ไม่เรียก producedTotalCount() แล้ว\n'
+    + '   ทำไมต้องมี: ป้าย "ยอดผลิต" ต้องหมายถึงทุกชิ้นที่เครื่องทำออกมา ไม่ใช่ยอดสแกน\n'
+    + '   แก้ยังไง: import { producedTotalCount } from "../utils/oee" แล้วใช้กับทุกช่องที่เขียนว่ายอดผลิต\n');
+  /* การ์ดภาพรวมอยู่หน่วย "คู่/shot" ⇒ ต้องยุบของเสียด้วยกติกาเดียวกันก่อน ห้ามบวกชิ้นดิบเข้าไป */
+  assert.ok(/pairAwareOpTotal\([^)]*produced:\s*r\.pcs/s.test(code.replace(/\n/g, ' ')),
+    '\n\n❌ ยอดผลิตบนการ์ดภาพรวมไม่ได้ยุบคู่ RH/LH ด้วยรางเดียวกับยอดดี\n'
+    + '   ทำไมห้าม: การ์ดนี้อยู่หน่วย "คู่/shot" (pairAwareOpTotal) · ของเสียเป็น "ชิ้น"\n'
+    + '            บวกตรงๆ = ผสมหน่วย ไลน์งานคู่จะเกินจริงเท่าตัว\n'
+    + '   แก้ยังไง: ใส่ `pcs` ลงแถวราย MAT แล้วส่งผ่าน pairAwareOpTotal ชุดที่ 2 (produced: r.pcs)\n');
 });
 
 test('🛡️ ทุกกฎต้องมี why + fix เขียนกำกับ (ข้อความนี้คือสิ่งที่คนเห็นตอน build ล่ม)', () => {
@@ -3596,7 +3765,7 @@ test('🛡️ /register: ช่องกลุ่มต้องเก็บ "�
     + '   ทำไมห้าม: org_nodes(kind=line).code บางตัวคนละสตริงกับชื่อ (ของจริง 06/10:\n'
     + '              ASSEMBLY 1 → code \'Assembly Line D1\') ⇒ คนลงทะเบียนใหม่แยกออกจาก\n'
     + '              เพื่อนร่วมกลุ่ม 35 คนในทุกตัวกรอง และ /operator โชว์ว่า "(นอกผัง)"\n');
-  assert.ok(/ref_line_id\s*\?\s*''\s*:\s*'\s*⚠ ยังไม่ผูกไลน์'/.test(code) && /จะไม่ขึ้นในหน้าเช็คชื่อ/.test(code),
+  assert.ok(/ref_line_id\s*\?\s*''\s*:\s*(?:tr\()?["']\s*⚠ ยังไม่ผูกไลน์["']/.test(code) && /จะไม่ขึ้นในหน้าเช็คชื่อ/.test(code),
     '\n\n❌ Register.jsx ไม่เตือนตอนเลือกกลุ่มที่ยังไม่ผูกไลน์ผลิต\n'
     + '   ทำไมห้าม: ref_line_id ว่าง ⇒ line_id = null ⇒ พนักงานใหม่ไม่ขึ้นหน้าเช็คชื่อ เงียบสนิท\n'
     + '              (เคสจริง 05/10 PD2 35 คน — /operator เตือนแล้ว หน้าลงทะเบียนต้องเตือนด้วย)\n');
@@ -4771,7 +4940,7 @@ test('🛡️ approve-needs-confirm-4m — ปุ่มอนุมัติ 4M 
   assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
     '\n\n❌ `handleApprove` (อนุมัติ 4M) เขียน DB โดยไม่ถามยืนยันก่อน\n'
     + '   ทำไมห้าม: ชื่อคนกดไปอยู่บนใบ · compare-and-swap = กดคืนเองไม่ได้ ต้องให้คนตีกลับ\n'
-    + '   แก้ยังไง: `if (!confirmSign({ what, docLabel, orderNo, actor, as, effect })) return;`\n'
+    + '   แก้ยังไง: `if (!await confirmSign({ what, docLabel, orderNo, actor, as, effect })) return;`\n'
     + '   ⚠️ ขั้น QA ไม่ต้องถามซ้ำ (มี modal แนบรูป) · ตีกลับไม่ต้อง (ต้องพิมพ์เหตุผล)\n');
 
   /* ของกลางต้องเป็นตัวเดียวกับที่ใบ MO ใช้ — ห้ามเขียนข้อความยืนยันเองในหน้า */
@@ -4791,7 +4960,7 @@ test('🛡️ mtn-approve-needs-confirm — ปุ่มเซ็น/อนุ�
   assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
     '\n\n❌ `signApproval` เขียน DB โดยไม่ถามยืนยันก่อน (หรือถามหลังเขียนไปแล้ว)\n'
     + '   ทำไมห้าม: ลายเซ็นผู้จัดการเป็น one-way — เซ็นพลาดแล้วเจ้าตัวปลดเองไม่ได้\n'
-    + '   แก้ยังไง: `if (!confirmSign({ what, orderNo, actor, as })) return;` ก่อน `.update(`\n');
+    + '   แก้ยังไง: `if (!await confirmSign({ what, orderNo, actor, as })) return;` ก่อน `.update(`\n');
 
   /* ② ขั้นที่เป็นการเซ็น/อนุมัติใน StepModal — ต้องถามผ่านทะเบียน stage ไม่ใช่ไล่เช็คเลขขั้นเอง */
   assert.ok(/needsSignConfirm\s*\(/.test(src) && /confirmSign\s*\(/.test(src),
@@ -5818,8 +5987,13 @@ test('🛡️ write-scope-layer — ด่าน "แก้ข้ามหน่
 
   /* ชั้น context — ถ้า `allUnits` หลุดจาก UserContext ทุกจอจะเห็นเป็น undefined = บล็อกหมด/เปิดหมดแล้วแต่จุด */
   const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
-  if (!/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
-    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits)");
+  /* 13/11: ใบผ่านข้ามหน่วยเป็น **รายคน** (profiles.all_units ∪ มอบหมาย scope_depth='all') — ห้ามกลับไปอ่านจากคีย์ของ role */
+  if (!/allUnits:\s*userRole === 'admin' \|\| userAllUnits === true/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง allUnits จาก profiles.all_units)");
+  if (/allUnits:\s*can\('scope',\s*'all_units'/.test(app))
+    bad.push("src/App.jsx (allUnits กลับไปอ่านจากคีย์ role scope:all_units — ขัดกฎ role ≠ ขอบเขต 13/11)");
+  if (!/writeUnits:\s*userWriteUnits/.test(app))
+    bad.push("src/App.jsx (UserContext ไม่ได้ส่ง writeUnits — writeUnitsOf จะเหลือแค่บ้าน มอบหมายไม่ขยายการแก้)");
 
   /* 💰 19/10 — สลับ 20 จอมาใช้แกน Cost Center: สลับที่ `writeScope.js` ที่เดียว
      ⇒ จอที่เรียกด่านต้อง **ส่ง `respCostCenters` + `scopeIdx` มาใน ctx** ไม่งั้นจอนั้นค้างอยู่
@@ -5880,7 +6054,8 @@ test('🛡️ lpa-stale-draft-guard — ใบตรวจ/แผน LPA ต้�
 
   const lpa = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
   // ชั้น ① — ทิ้งคำตอบที่มาช้า (loadMonth · loadQuarter 2 จุด · ใบร่าง)
-  const drops = (lpa.match(/(?:monthKeyRef|draftKeyRef)\.current !== key/g) || []).length;
+  // 23/11: แผนไตรมาสผูกคีย์ "ไตรมาส" (quarterKeyRef) แทนเดือน — เลือกเดือนในไตรมาสเดิมต้องไม่โหลดทับ (P1)
+  const drops = (lpa.match(/(?:monthKeyRef|draftKeyRef|quarterKeyRef)\.current !== key/g) || []).length;
   if (drops < 4) bad.push(`LayerProcessAudit.jsx (ด่านทิ้งคำตอบที่มาช้าเหลือ ${drops} จุด — ต้องมีทุก loader ที่ setState หลัง await)`);
   if (!/setDraft\(\{ key, id: existing\.id/.test(lpa) || !/setDraft\(\{ key, id: null/.test(lpa))
     bad.push('LayerProcessAudit.jsx (ใบร่างไม่ได้พก key ของตัวเอง ⇒ ด่านชั้น 2 เช็คไม่ได้)');
@@ -5891,7 +6066,7 @@ test('🛡️ lpa-stale-draft-guard — ใบตรวจ/แผน LPA ต้�
     ['saveAudit', /const saveAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
     ['deleteAudit', /const deleteAudit = async \(\) => \{[\s\S]{0,200}?draftMismatch\(\)/],
     ['savePlan', /const savePlan = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
-    ['saveQuarter', /const saveQuarter = async \(\) => \{[\s\S]{0,200}?monthMismatch\(/],
+    ['saveQuarter', /const saveQuarter = async \(\) => \{[\s\S]{0,200}?isStale\(qLoadedKey, quarterKey\)/],
   ]) {
     if (!re.test(lpa)) bad.push(`LayerProcessAudit.jsx (${fn} ไม่ได้เช็คว่าของบนจอเป็นของที่เลือกอยู่ก่อนเขียน)`);
   }
@@ -6209,7 +6384,7 @@ test('🗑️ ทะเบียนข้อความ (SimpleMasterPanel) ต
   /* ทะเบียนที่ปลายทางเก็บเป็น "ข้อความ" ไม่ผูก FK ⇒ ลบแล้วไม่มีใครเตือน — ต้องมีด่านทุกตัว
      (cost_centers ใช้ util เฉพาะของตัวเอง `costCenterRefs.js` ตั้งแต่ 06/10) */
   const MUST_GUARD = ['customers', 'suppliers', 'die_press_lines', 'die_op_types',
-                      'die_set_kinds', 'repair_wi_registry', 'cost_centers'];
+                      'die_set_kinds', 'repair_wi_registry', 'cost_centers', 'companies'];
 
   for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
     const src = stripComments(readFileSync(f, 'utf8'));
@@ -8169,7 +8344,7 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     if (!/binErr[\s\S]{0,200}toast\.error/.test(body))
       bad.push(`${DR} handleAddDefectLog: ตั้งแท็กเหลืองล้มเหลวต้องขึ้น toast บอกทางแก้ ห้ามล้มเหลวเงียบ`);
   }
-  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(dr))
+  if (!/ยังไม่ลงถัง(?:"\)\})? \{pend\.length\}/.test(dr))
     bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย`);
 
   const Q = 'src/components/QualityBins.jsx';
@@ -8489,8 +8664,8 @@ test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องข
     if (!/,\s*true/.test(m[1]))
       bad.push(`${DR}: toggleLiveCollapse('mat_breakdown') ต้องส่ง true ด้วย — ไม่งั้นคลิกแรกไม่มีอะไรเกิดขึ้น`);
   }
-  /* 🔴 ยุบแล้วต้องยังบอกจำนวน (ห้ามซ่อนเงียบ) */
-  if (!/แยกตามชิ้นงาน \{productRows\.length\} MAT\.NO/.test(code))
+  /* 🔴 ยุบแล้วต้องยังบอกจำนวน (ห้ามซ่อนเงียบ) · (20/11 i18n รอบ 4: ข้อความไทยอยู่ใน {tr("…")} ได้) */
+  if (!/แยกตามชิ้นงาน(?:"\)\})? \{productRows\.length\} MAT\.NO/.test(code))
     bad.push(`${DR}: หัวข้อที่ยุบต้องเขียนจำนวน MAT.NO เสมอ (กฎความซื่อสัตย์ของจอ)`);
   /* ภาพรวมต้องมาก่อนรายละเอียด — เทียบตำแหน่งในไฟล์ */
   const iOverview = code.indexOf('ภาพรวมทั้งกะ');   // 05/11: หัวข้อไม่มี emoji แล้ว (UI §6.36)
@@ -8547,7 +8722,7 @@ test('🚨 andon-bar-mobile — แถบ Andon ลอยต้องอ่า�
     /* โชว์ทีละใบบนมือถือ + ต้องเขียนว่าเหลืออีกกี่ใบ (ห้ามตัดทิ้งเงียบ) */
     if (!/useIsMobile/.test(code))
       bad.push(`${f}: ต้องจำกัดจำนวนแถบบนมือถือด้วย useIsMobile() — ซ้อนกันหลายใบ = ปุ่มรับทราบตกนอกจอ`);
-    if (!/\+ อีก /.test(src))
+    if (!/\+ (?:\{tr\("อีก"\)\}|อีก) /.test(src))
       bad.push(`${f}: ตัดแถบที่เกินแล้วต้องเขียนบนจอว่า "+ อีก N …" ห้ามหายเงียบ`);
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
@@ -9088,7 +9263,8 @@ test('🔄 assignment-overlay-widen-only — รักษาการทับ�
   const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
   assert.match(app, /from\('org_assignments'\)[\s\S]{0,200}\.eq\('profile_id',\s*user\.id\)/,
     '🔴 fetchProfile ต้องอ่าน org_assignments ของบัญชีนี้ (กรอง profile_id)');
-  assert.match(app, /applyAssignments\(\{\s*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /applyAssignments\(\{[^)]*sections:\s*baseSections/, 'ผล effectiveSections ต้องผ่าน applyAssignments ก่อน setUserSections');
+  assert.match(app, /applyAssignments\(\{\s*section:\s*ident\.section/, '13/11: overlay ต้องได้บ้านจริงไปประกอบ writeUnits (บ้าน ∪ มอบหมาย)');
   assert.match(app, /setUserSections\(finalSections\)/, 'setUserSections ต้องใช้ค่าหลังทับ');
   assert.doesNotMatch(app, /starts_on\s*<=|ends_on\s*>=/, '🔴 ห้ามเขียนกฎวันที่ของมอบหมายเองใน App.jsx — ใช้ isGranting()');
 
@@ -9268,6 +9444,9 @@ test('🏢 org-upper-layers-ready — รากของชั้นหน่ว
     ['src/components/OrgTreeView.jsx', /unitParentId\(n, byId\) == null/, 'หน่วยลอย = ไม่มีแม่เป็นหน่วย'],
     ['src/pages/ManpowerBoard.jsx', /isOrphanDept\(n, nodes\)/, 'บอร์ดของแผนกขึ้นตรง'],
     ['src/pages/OrgSetup.jsx', /isOrphanDept\(n, nodes\)/, 'ตะกร้า "ขึ้นตรง" ใน /org-setup'],
+    /* 20/11 — มีแถวชั้นบนจริงแล้ว (migration 20261120_org_nodes_upper_layer_rows_main.sql) */
+    ['src/components/OrgTreeView.jsx', /nodes\.filter\(n => n\.kind === 'team'\)\.length/, 'นับทีมด้วย kind — ห้ามใช้ nodes.length - orgNodes.length (นับชั้นบนเป็นทีม)'],
+    ['src/components/QaInspectorScopes.jsx', /isUpperKind\(p\.kind\)\) break/, 'ป้ายสายหน่วยต้องหยุดที่ชั้นบน'],
   ]) {
     const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
     assert.match(s, pat, `🔴 ${f}: ${why}`);
@@ -9596,7 +9775,7 @@ test('🧾 pr-group-shows-stragglers — ใบ PR ที่มีหลาย�
   assert.match(c, /g\.warns\.map/,
     '\n\n❌ การ์ดกลุ่ม PR ไม่ได้วาดคำเตือนรายการที่ตกหล่น (g.warns) — ใบจะดูเรียบร้อยทั้งที่มีแถวค้าง\n');
   /* รับของทั้งใบ = วน RPC ทีละแถว ⇒ ล้มบางแถวต้องรายงานตามจริง */
-  assert.match(c, /รับของสำเร็จ \$\{ok\} จาก/,
+  assert.match(c, /รับของสำเร็จ(?:"\)\})? \$\{ok\} (?:\$\{tr\("จาก"\)\}|จาก)/,
     '\n\n❌ ปุ่ม "รับของทั้งใบ" ต้องรายงานว่าสำเร็จกี่รายการเมื่อมีแถวล้ม (ห้ามบอกว่าสำเร็จทั้งใบ)\n');
 });
 test('🧾 pr-receive-needs-invoice — กดรับของต้องกรอกเลข Invoice ก่อน', () => {
@@ -9632,8 +9811,9 @@ test('🛒 pr-queue-needs-po-col — คิวรีลิสต์ MO ต้อ
     '\n\n❌ คิวรีลิสต์ใบขอซื้อไม่ได้ใช้ PR_QUEUE_COLS แล้ว (พิมพ์ชื่อคอลัมน์เอง)\n'
     + '   ผล: ลืม po_no เมื่อไหร่ ถัง "🚚 สั่งแล้ว (มี PO) · รอของเข้า" ว่างตลอดโดยไม่มีใครรู้\n');
   /* ตัวนับต้องมีคีย์ครบทุกค่าที่สูตรคืนได้ — ขาดคีย์ = c[st]++ บน undefined = NaN เงียบๆ */
-  assert.match(page, /const c = \{ need: 0, no_no: 0, open: 0, unknown_po: 0 \}/,
-    '\n\n❌ ตัวนับถัง PR ขาดคีย์ unknown_po — c[st]++ บน undefined = NaN แล้วเลขในวงเล็บเพี้ยนทั้งแถบ\n');
+  assert.match(page, /const c = \{ need: 0, no_no: 0, open: 0, unknown_po: 0, none: 0 \}/,
+    '\n\n❌ ตัวนับถัง PR ขาดคีย์ — c[st]++ บน undefined = NaN แล้วเลขในวงเล็บเพี้ยนทั้งแถบ\n'
+    + '   ต้องครบทุกค่าที่ prQueueStateOf() คืนได้ **รวม `none`** (26/11 · ถัง "ไม่มีงาน PR")\n');
 });
 test('🔧 mo-export-shows-solution — ไฟล์ Excel ของ MO ต้องมี "วิธีการแก้ไข" + สาเหตุ', () => {
   /* why (18/11 · หน้างานแจ้ง): *"ใน Excel ที่ Export ไม่มีวิธีการแก้ไขครับผม
@@ -9935,7 +10115,7 @@ test('🛡️ row-fold-must-report-hidden — ตัวพับแถวขอ�
   const src = readFileSync(join(ROOT, 'src/components/RowFold.jsx'), 'utf8');
   /* 🔑 ต้องเจอใน **template literal ที่วาดออกจอ** — เทียบแค่คำว่า "ซ่อนอยู่" ลอยๆ
      คอมเมนต์หัวไฟล์ตอบให้เองได้ (ด่านผ่านทั้งที่ปุ่มเลิกบอกจำนวนแล้ว) */
-  assert.ok(/`[^`]*ซ่อนอยู่ \$\{hidden\}[^`]*`/.test(src),
+  assert.ok(/`[^`]*ซ่อนอยู่(?:"\)\})? \$\{hidden\}[^`]*`/.test(src),
     '\n\n❌ `RowFold` เลิกเขียนว่าซ่อนอยู่กี่แถวบนปุ่ม\n'
     + '   ⇒ ตัดแถวออกจากจอแล้วเงียบ = จอโกหก (กฎ "กรองแถวออกแล้วต้องเขียนว่าซ่อนกี่รายการ")\n');
   assert.ok(/hidden\s*=\s*Math\.max\(0,\s*list\.length\s*-\s*max\)/.test(src),
@@ -10151,8 +10331,9 @@ test('🛡️ pm-notify-via-single-source — แจ้งเตือนผล�
   const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
   assert.ok(/ownersCapped/.test(page),
     '\n\n❌ หน้าจอไม่ได้เตือนเมื่อรายชื่อช่างถูกตัด (จอต้องไม่โกหกว่าส่งครบ)\n');
-  assert.ok(/event:\s*'pm_inspection_ng'/.test(page),
-    '\n\n❌ ไม่ได้ส่ง event key — edge จะตอบ 400 แล้วแจ้งเตือนหายทั้งใบ\n');
+  assert.ok(/'pm_inspection_ng'/.test(page) && /event:\s*'am_inspection_ng'/.test(page),
+    '\n\n❌ ไม่ได้ส่ง event key — edge จะตอบ 400 แล้วแจ้งเตือนหายทั้งใบ\n'
+    + '   (25/11: ใบ AM = am_inspection_ng · ใบ PM ช่าง = pm_inspection_ng — ทั้ง 2 คีย์ต้องมีแถวใน notification_rules)\n');
 });
 
 test('🔊 siren-call-mtn-needs-team — ไซเรน "เรียกช่าง" ต้องรู้ขอบเขตทีมของจอเสมอ', () => {
@@ -10563,9 +10744,26 @@ test('🚦 mo-close-gated-by-pr-loop — ปิดใบ MO ต้องถา�
   assert.ok(/moCloseGate\(/.test(page),
     '\n\n❌ หน้า MO ไม่เรียก moCloseGate() แล้ว — ปิดใบได้ทั้งที่ใบขอซื้อยังค้าง\n');
   /* ① + ② ด่านตอนกดบันทึกต้องถามฐานสด ไม่ใช่อ่าน prop ที่ติดมากับ order */
-  assert.ok(/moCloseGate\(_stage,\s*await fetchOpenPrs\(\)\)/.test(page),
+  assert.ok(/moCloseGate\(_stage,\s*await fetchOpenPrs\(\)/.test(page),
     '\n\n❌ ด่านตอนกดเซ็นไม่ได้โหลดใบขอซื้อสดๆ\n'
     + '   ⇒ ตัดสินด้วยค่าค้างในหน้า = บล็อกผิด (ของมาถึงแล้ว) หรือปล่อยผิด (เพิ่ง PR ใบใหม่)\n');
+  /* 🛒 26/11 — ด่าน "เส้นทางบังคับ PR แต่ไม่มีใบเลย" อ่าน `repair_path` ของใบ
+     **ไม่ส่งอาร์กิวเมนต์ที่ 3 = ด่านนั้นเงียบสนิท** (undefined = ไม่รู้เส้นทาง ⇒ ไม่บล็อก) */
+  const calls = [];
+  for (let i = page.indexOf('moCloseGate('); i >= 0; i = page.indexOf('moCloseGate(', i + 1)) {
+    const open = page.indexOf('(', i);
+    let d = 0, j = open;
+    for (; j < page.length; j++) {                      // นับวงเล็บให้ครบ — `[^;]*?` หยุดที่ `)` ตัวแรก
+      if (page[j] === '(') d++;
+      else if (page[j] === ')' && --d === 0) break;
+    }
+    calls.push(page.slice(i, j + 1));
+  }
+  for (const c2 of calls) {
+    assert.ok(/repair_path/.test(c2),
+      `\n\n❌ เรียก moCloseGate() โดยไม่ส่ง repair_path:\n   ${c2}\n`
+      + '   ⇒ ใบที่ "ต้องเปิด PR แต่ไม่มีใบเลย" จะปิดผ่านฉลุยเหมือนเดิม (หลุดมาแล้ว 20 ใบ)\n');
+  }
   assert.ok(!/moCloseGate\([^)]*_prs/.test(page) && !/openPrRows\(o\._prs/.test(page),
     '\n\n❌ ด่านกลับไปอ่าน `order._prs` อีกแล้ว — StepModal ไม่เคยได้รับฟิลด์นี้ (ว่างเสมอ = ด่านตาย)\n');
   /* ห้ามหน้าเขียนเกณฑ์ "ลูป PR จบ" ชุดที่ 2 (= drift)
@@ -11397,7 +11595,11 @@ test('🔍 dt-closed-at-shift-end — ใบที่ปิดตรงเวล
   /* ① ด่านรายใบต้องเป็น confirm ไม่ใช่ toast.error + return */
   assert.match(dr, /checkDtClosedAtShiftEnd\(/,
     '\n\n❌ หน้ารายงานผลิตไม่เรียก checkDtClosedAtShiftEnd() แล้ว — ใบที่ปิดตรงเลิกกะไม่ถูกถาม\n');
-  assert.match(dr, /dtEndChk && !(?:window\.confirm|await askConfirm)\(/,   // 18/11: กล่องในแอป askConfirm แทน window.confirm
+  /* 18/11: กล่องในแอป askConfirm แทน window.confirm
+     20/11: รวมกับอีก 2 กฎเป็นก้อนเดียว `dtWarns` — ผลลัพธ์ต้องยังเป็น "เตือนแล้วไปต่อได้" เหมือนเดิม */
+  assert.match(dr, /\[dtEndChk, [^\]]*\]\.filter\(Boolean\)/,
+    '\n\n❌ dtEndChk หลุดจากก้อนคำเตือน — ใบปิดตรงเลิกกะจะไม่ถูกถามอีก\n');
+  assert.match(dr, /dtWarns\.length && !(?:window\.confirm|await askConfirm)\(/,
     '\n\n❌ ด่านใบปิดตรงเลิกกะต้องเป็นกล่องยืนยัน (askConfirm — เตือนแล้วไปต่อได้)\n'
     + '   ใช้ toast.error + return = บล็อกการบันทึก ซึ่ง user สั่งว่าห้าม\n');
   assert.match(dr, /dtClosedAtShiftEnd:/,
@@ -11459,6 +11661,58 @@ test('🚫 no-fg-line-request — ทุกจุดที่ออกใบเ�
   assert.deepEqual(offenders, [],
     '\n\n❌ ไฟล์นี้ออกใบเบิกเข้าไลน์โดยไม่กันเลข FG 1xx:\n   ' + offenders.join('\n   ')
     + '\n   ใช้ `isFgMat(mat)` + ข้อความ `FG_NO_LINE_REQUEST` จาก src/utils/storeOps.js ก่อน insert\n');
+});
+
+test('🔒 dt-add-needs-canscan — ปุ่ม "+ บันทึก Downtime" และฟังก์ชันบันทึกต้องผ่าน canScan (daily_report:record)', () => {
+  /* 18/11 user ลอง "จำลอง role" (ViewAs) แล้วกดลง Downtime ได้ — เดิมปุ่มแก้/ปิดรายการเช็ค `canScan` แต่ปุ่ม**เพิ่ม**ไม่เช็ค
+     และฟังก์ชันบันทึกก็ไม่เช็ค · ฝั่ง DR เป็น anon (ไม่มี RLS คอยกัน) ⇒ role ดูอย่างเดียวลง DT ลงฐานจริงได้
+     กฎ: "ปุ่ม/ช่องเลือก = ตัวกรอง ไม่ใช่ด่าน" ⇒ ต้องมีด่านในฟังก์ชันที่เขียน DB ด้วย ไม่ใช่แค่ซ่อนปุ่ม */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(dr, /\{dtOpen && canScan && \(\s*<button onClick=\{\(\) => \{ setShowDT\(true\)/,
+    '\n\n❌ ปุ่ม "+ บันทึก Downtime" ไม่ได้อยู่หลัง `canScan` — role ดูอย่างเดียว/โหมดจำลอง role เห็นปุ่มลง DT\n');
+  assert.match(dr, /if \(!canScan\) \{ toast\.error\('บัญชีนี้ไม่มีสิทธิ์บันทึก Downtime[^']*'\); return; \}\s*setSavingDT\(true\);/,
+    '\n\n❌ ฟังก์ชันบันทึก Downtime ไม่มีด่าน `canScan` ก่อน `setSavingDT(true)` — ซ่อนปุ่มอย่างเดียวไม่พอ (DR anon ไม่มี RLS)\n');
+});
+
+/* ═══ 🔐 role-not-scope — "role ≠ ขอบเขต" (2026-11-13 · audit docs/ROLE-SCOPE-AUDIT-2026-11-13.md · คำสั่ง user) ═══
+   "manager ไม่ได้แปลว่าแก้ข้ามแผนกได้" — ความกว้างของการแก้มาจากขอบเขตรายคนเท่านั้น (บ้าน · CC · มอบหมาย · ใบผ่าน
+   profiles.all_units) · ห้ามมาจากชื่อ role หรือชื่อคีย์ · เคสจริง: scope:all_units แจก 8 role = 37 บัญชีแก้ได้ทั้งโรงงาน ·
+   role==='manager' เป็นทางลัดข้ามทีมใน 4 ไฟล์ · employees:edit_all_sections ให้ ~70 บัญชีแก้พนักงานทุกแผนก */
+test('🔐 role-not-scope — ตัวตัดสินขอบเขตห้ามอ่านชื่อ role · ใบผ่านข้ามหน่วยเป็นรายคน · คีย์ชื่อฝังขอบเขตห้ามกลับมา', () => {
+  const bad = [];
+  const rd = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  // ตัวตัดสินขอบเขต/เจ้าของแถว — ห้ามมี role === 'manager' (admin เป็นตาข่ายกันตายตัวเดียวที่อนุญาต)
+  for (const f of ['src/utils/writeScope.js', 'src/utils/ccScope.js', 'src/utils/mtnTeams.js', 'src/utils/mtnTeamOwn.js',
+                   'src/utils/displayRotation.js', 'src/components/TaxonomyManagerModal.jsx']) {
+    if (/role\s*===?\s*'manager'/.test(rd(f))) bad.push(`${f}: มี role === 'manager' ในตัวตัดสินขอบเขต`);
+  }
+  if (/isBoss\s*=\s*role === 'admin' \|\| role === 'manager'/.test(rd('src/pages/MtnRepair.jsx'))) bad.push('MtnRepair.jsx: isBoss ยังผูกกับ role manager');
+  if (/if \(role === 'manager'\) return true/.test(rd('src/pages/Report.jsx'))) bad.push('Report.jsx: อนุมัติ 4M ยังมีทางลัด manager');
+  if (!/canWriteLine\(wCtx, log\.line_name, lines, \{ unknownTarget: 'block' \}\)/.test(rd('src/pages/Report.jsx'))) bad.push('Report.jsx: อนุมัติ 4M ขั้น SV ต้องผ่าน canWriteLine');
+  // ใบผ่านข้ามหน่วย = รายคน — ห้ามมีใครอ่านจากคีย์ role อีก
+  for (const f of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    if (/__tests__/.test(f)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    const rel = f.replace(ROOT, '').replace(/^\/+/, '');
+    if (/can\('scope',\s*'all_units'/.test(src)) bad.push(`${rel}: อ่าน scope:all_units จาก role (ต้องใช้ UserContext.allUnits / profiles.all_units)`);
+    if (/edit_all_sections/.test(src)) bad.push(`${rel}: คีย์ employees:edit_all_sections ถูกถอดแล้ว 13/11`);
+  }
+  // ตัวกลางต้องมีช่อง writeUnits (บ้าน ∪ มอบหมาย) และ overlay ต้องคืน allUnits/writeUnits
+  if (!/writeUnits/.test(rd('src/utils/writeScope.js'))) bad.push('writeScope.js: writeUnitsOf ไม่อ่าน writeUnits');
+  if (/Array\.isArray\(sections\)/.test(rd('src/utils/writeScope.js'))) bad.push('writeScope.js: writeUnitsOf กลับไปอ่าน sections (ที่เห็น) — ขัดกฎ 13/11');
+  const ov = rd('src/utils/assignmentOverlay.js');
+  if (!/writeUnits,\s*\n?\s*allUnits,/.test(ov) && !/writeUnits/.test(ov)) bad.push('assignmentOverlay.js: ไม่คืน writeUnits');
+  if (!/allUnits = true/.test(ov)) bad.push('assignmentOverlay.js: มอบหมาย scope_depth=all ต้องให้ allUnits');
+  // DB: migration ต้องมีแหล่งเดียวฝั่ง SQL
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261113_role_scope_p1_main.sql'), 'utf8');
+  for (const fn of ['app_all_units', 'app_write_units', 'app_cc_covers', 'app_can_write_unit', 'app_can_write_line']) {
+    if (!mig.includes(`function public.${fn}(`)) bad.push(`migration 20261113_role_scope_p1: ไม่มี ${fn}()`);
+  }
+  if (!/drop policy if exists "Allow authenticated full access four_m"/.test(mig)) bad.push('migration: ยังไม่ปิด policy four_m_logs เปิดโล่ง');
+  // จอวนหน้า: ใบผ่าน + หน่วยที่แก้ได้ (ไม่ใช่ที่เห็น)
+  if (!/canManageDisplay\(managerUnits, targetSections, \{ allUnits = false \} = \{\}\)/.test(rd('src/utils/displayRotation.js'))) bad.push('displayRotation.js: canManageDisplay ไม่รับ allUnits');
+  if (!/writeUnits: mySections/.test(rd('src/pages/DisplayRotation.jsx'))) bad.push('DisplayRotation.jsx: ยังใช้ sections (ที่เห็น) ตัดสินการตั้งจอ');
+  assert.deepEqual(bad, [], '\n' + bad.join('\n'));
 });
 
 /* ═══ 🗑️ "อื่นๆ" ต้องใส่เหตุผลจริง — ห้ามพิมพ์ "อื่นๆ" ลงช่องพิมพ์ (2026-11-16 · คำสั่ง user) ══
@@ -11625,10 +11879,33 @@ test('🙋 owner-cancel-never-deletes — เส้นทาง "เจ้าข
   assert.ok(/canCancelOwnMo\(/.test(src),
     '\n\n❌ MtnRepair.jsx ไม่ได้ถาม `canCancelOwnMo()` แล้ว — เกณฑ์ "ใครเป็นเจ้าของใบ" ต้องอยู่ที่'
     + ' mtnStepPerm.js ห้ามเทียบชื่อผู้แจ้งเองในหน้า\n');
-  assert.ok(/ownCancel\s*&&\s*!canRemoveAsBoss\s*\)\s*\?\s*MO_REMOVE_CANCEL/.test(src),
-    '\n\n❌ เส้นทางเจ้าของใบไม่ได้ถูกบีบเป็น MO_REMOVE_CANCEL อีกแล้ว'
-    + '\n   ใบที่ยังไม่มีเลข MO โหมดปกติคือ "ลบ" ⇒ ผู้แจ้งจะลบใบหายได้'
+  /* 23/11 — เปิดให้ **หัวหน้าของฝ่ายที่แจ้ง** ยกเลิกแทนลูกน้องได้ด้วย (คำสั่ง user)
+     ⇒ เส้นทาง "นุ่ม" มี 2 ทางแล้ว แต่กติกาเดิมห้ามเปลี่ยน: ทั้งคู่ต้องถูกบีบเป็นยกเลิก ห้ามลบ */
+  assert.ok(/const softCancel = \(ownCancel \|\| bossCancel\) && !canRemoveAsBoss;/.test(src),
+    '\n\n❌ ไม่พบ softCancel = (ownCancel || bossCancel) && !canRemoveAsBoss'
+    + '\n   เส้นทาง "ยกเลิกแบบไม่ใช่แอดมิน" ต้องรวมอยู่ตัวแปรเดียว ไม่งั้นแตกเป็น 2 กฎแล้วหลุดทางใดทางหนึ่ง\n');
+  assert.ok(/removeMode = softCancel \? MO_REMOVE_CANCEL/.test(src),
+    '\n\n❌ เส้นทางยกเลิกแบบไม่ใช่แอดมิน ไม่ได้ถูกบีบเป็น MO_REMOVE_CANCEL อีกแล้ว'
+    + '\n   ใบที่ยังไม่มีเลข MO โหมดปกติคือ "ลบ" ⇒ ผู้แจ้ง/หัวหน้าจะลบใบหายได้'
     + '\n   (11/11 เคยหายไป 4 ใบด้วยคลาสนี้ — Reed ชำรุด Line 61 ค้าง 50 วันโดยไม่มีใครรู้)\n');
+  /* 🔴 หัวหน้าต้องถูกตรวจ 3 ชั้น (ฝั่ง · ขอบเขต · ตำแหน่ง) ที่ utils ห้ามเทียบเองในหน้า */
+  assert.ok(/canCancelReportedMo\(o, \{[\s\S]{0,200}?actorSide, posRank, inReporterScope/.test(src),
+    '\n\n❌ canCancelReportedMo() ต้องได้รับ actorSide/posRank/inReporterScope ครบ'
+    + '\n   ขาดตัวใดตัวหนึ่ง = หัวหน้าหน่วยอื่นยกเลิกใบข้ามหน่วยได้\n');
+  const u = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8');
+  const fn = u.match(/export function canCancelReportedMo[\s\S]*?\n\}/);
+  assert.ok(fn, '\n\n❌ หา canCancelReportedMo() ใน mtnStepPerm.js ไม่เจอ\n');
+  assert.ok(/OWNER_CANCEL_STATUSES\.includes/.test(fn[0]),
+    '\n\n❌ หัวหน้าต้องยกเลิกได้เฉพาะสถานะเดียวกับเจ้าของใบ (ยังไม่มีช่างรับงาน)\n');
+  for (const [re, why] of [
+    [/actorSide !== 'reporter' && actorSide !== 'both'/, 'ฝั่งผู้แจ้ง — ไม่รู้ฝั่ง = ไม่ให้'],
+    [/inReporterScope !== true/, 'ขอบเขตใบ — ไม่รู้ขอบเขต = ไม่ให้'],
+    [/posRank == null \|\| posRank < HANDOVER_MIN_RANK/, 'ตำแหน่ง — ไม่รู้ตำแหน่ง = ไม่ให้'],
+  ]) {
+    assert.ok(re.test(fn[0]),
+      `\n\n❌ canCancelReportedMo ขาดด่าน: ${why}`
+      + '\n   การยกเลิกใบของคนอื่น = fail-closed เสมอ (ต่างจากด่านเซ็นที่ "ไม่รู้ = ไม่บล็อก")\n');
+  }
 });
 
 /* ── 🧭 ตัวกรอง "ไลน์" ห้ามซ่อนคนที่ไม่ได้สังกัดไลน์ (regression จริง 13/11 → แจ้ง 16/11) ────
@@ -11975,13 +12252,29 @@ test('☼☾ shift-glyph-no-emoji — ลิสต์กะใช้ <ShiftGlyph
   const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))
   assert.match(src, /<ShiftGlyph shift=/,
     '\n\n❌ ลิสต์กะไม่ได้ใช้ <ShiftGlyph> — หน้างานแยกกะกลางวัน/กลางคืนไม่ออก (แจ้ง 17/11)\n')
-  /* ขอบเขตของกฎ = **แถวในลิสต์กะ** (ตัวแปรแถวชื่อ `s`) ที่หน้างานต้องไล่สายตาเร็ว
-     ประโยคที่พูดถึง "กะที่เลือกอยู่" (`selSession`) ไม่เข้าข่าย — อีโมจิในประโยคไม่ได้ทำให้ลิสต์รก */
-  const SUN_MOON = /s\.shift === '(?:day|night)' \? '[^']*(?:\u2600|\uD83C\uDF1E|\uD83C\uDF19|\uD83C\uDF12)/g
-  const emoji = (src.match(SUN_MOON) || [])
+  /* 🔴 25/11 (คำสั่ง user "ยังมี emoji สีสันซ่อนอยู่") — ขอบเขตเดิมคือ **แถวในลิสต์กะ** เท่านั้น
+     ⇒ ☀️/🌙 ที่ประโยค "กะที่เลือกอยู่" (หัวการ์ด LIVE · หัวโมดัลปิดกะ) รอดมาตลอดและ user เห็น
+     ⇒ ขยายเป็น **ทั้งไฟล์** · ข้อความที่ส่งออกนอกจอ (Telegram) ไม่เข้าข่าย — ที่นั่นใช้อีโมจิได้ */
+  const SUN_MOON = /(?:\u2600\uFE0F?|\uD83C\uDF1E|\uD83C\uDF19|\uD83C\uDF12)/g
+  const uiLines = src.split('\n').filter(l => !/notify|telegram|sendMessage/i.test(l))
+  const emoji = (uiLines.join('\n').match(SUN_MOON) || [])
   assert.deepEqual(emoji, [],
-    '\n\n❌ แถวในลิสต์กะกลับไปใช้อีโมจิพระอาทิตย์/พระจันทร์แล้ว:\n   '
-    + emoji.join(' · ') + '\n   ⇒ ใช้ <ShiftGlyph shift={s.shift} size={12} /> แทน (UI-CONVENTIONS §6.41)\n')
+    '\n\n❌ DailyReport กลับไปใช้อีโมจิพระอาทิตย์/พระจันทร์แล้ว (' + emoji.length + ' จุด)'
+    + '\n   ⇒ ใช้ <ShiftGlyph shift={…} size={12} /> + ข้อความ "กะเช้า/กะดึก" แทน (UI-CONVENTIONS §6.41)\n')
+
+  /* 🔴 อีโมจิประดับที่หน้างานเห็นแล้วทักว่า "ดูไม่เป็นโปรแกรม" (25/11) — ห้ามกลับมาอีก
+     ⏰ ไม่อยู่ในลิสต์ "สัญลักษณ์สถานะ" ที่อนุญาต (§6.36 ข้อ 4 · ที่อนุญาตคือ ⏳ ⏱) */
+  /* `[ch, คำอธิบาย, เป็นคำนำหน้าเท่านั้น?]` — ตัวที่ติด `prefixOnly` ยังใช้เป็น **ไอคอนเดี่ยว**
+     ในทะเบียนได้ (`icon: '📦'` → `<Icon glyph>` วาดเป็นเส้น) ห้ามเฉพาะตอนนำหน้าข้อความ */
+  const BANNED = [
+    ['\u23F0', 'นาฬิกาปลุก (ใช้สีของชิปบอกความเร่งด่วนพอแล้ว · ที่อนุญาตคือ ⏳ ⏱)', false],
+    ['\uD83D\uDCE6', 'กล่องพัสดุนำหน้าข้อความ (หัวข้อ Prod Orders · toast แจ้งสโตร์)', true],
+  ]
+  const bad = BANNED.filter(([ch, , prefixOnly]) => src.includes(prefixOnly ? ch + ' ' : ch))
+    .map(([ch, why]) => `${ch} = ${why}`)
+  assert.deepEqual(bad, [],
+    '\n\n❌ DailyReport มีอีโมจิประดับที่ถอดออกไปแล้ว:\n   ' + bad.join('\n   ')
+    + '\n   ⇒ หัวข้อ/ชิป/ข้อความห้ามมีอีโมจิประดับนำหน้า (UI-CONVENTIONS §6.36 ข้อ 4)\n')
   assert.ok((src.match(/<ShiftGlyph shift=/g) || []).length >= 2,
     '\n\n❌ ลิสต์กะมี 2 ที่ (แถบซ้าย + กะค้าง) ต้องใช้ <ShiftGlyph> ทั้งคู่ ไม่งั้น 2 จอหน้าตาไม่ตรงกัน\n')
 })
@@ -12195,7 +12488,19 @@ test('🚩 ng-needs-reason — ติ๊ก NG ในใบตรวจ AM/PM �
     const iSav = body.indexOf('setSaving(true)');
     if (iChk < 0) bad.push(`${P} handleSave: ต้องเช็คผ่าน ngReasonCheck() ก่อนเขียน DB (ซ่อนปุ่มไม่ใช่ด่าน)`);
     else if (iSav >= 0 && iChk > iSav) bad.push(`${P} handleSave: ngReasonCheck() ต้องมาก่อน setSaving(true) — เช็คหลังเริ่มเขียนไม่ได้กันอะไร`);
-    if (!/action_text/.test(body)) bad.push(`${P} handleSave: ต้องเขียนเหตุผลลง action_text (ช่องนี้มีอยู่แล้ว ห้ามเก็บแต่ในจอ)`);
+    /* 23/11: แถวผลตรวจย้ายไปของกลาง `buildResultRows()` (ใบเดี่ยว + ใบสถานี AM ใช้ตัวเดียวกัน)
+       ⇒ handleSave ต้องเขียน action_text เอง **หรือ** เรียก buildResultRows ที่เขียน action_text */
+    const brr = p.match(/function\s+buildResultRows\s*\([\s\S]*?\n\}\n/);
+    const viaShared = /buildResultRows\(/.test(body) && brr && /action_text/.test(brr[0]);
+    if (!/action_text/.test(body) && !viaShared) bad.push(`${P} handleSave: ต้องเขียนเหตุผลลง action_text (ช่องนี้มีอยู่แล้ว ห้ามเก็บแต่ในจอ)`);
+    /* 🧩 ใบสถานี AM (23/11) ต้องผ่านด่านเดียวกัน: ngReasonCheck ก่อน setSaving + แถวผ่าน buildResultRows */
+    const st = p.match(/function\s+AmStationSheet\s*\([\s\S]*?\n\}\n/);
+    if (st) {
+      const sb = st[0];
+      const sChk = sb.indexOf('ngReasonCheck('), sSav = sb.indexOf('setSaving(true)');
+      if (sChk < 0 || (sSav >= 0 && sChk > sSav)) bad.push(`${P} AmStationSheet: ต้องเช็ค ngReasonCheck() ก่อน setSaving(true)`);
+      if (!/buildResultRows\(/.test(sb)) bad.push(`${P} AmStationSheet: แถวผลตรวจต้องผ่าน buildResultRows() (ห้ามเขียนชุดที่ 2)`);
+    }
     /* 🔴 เรียกแล้วต้อง "หยุดบันทึก" จริง — `if (false)` / เก็บผลทิ้ง = ด่านหลอก */
     if (iChk >= 0 && !/ngReasonCheck\([\s\S]{0,400}?!\w*\.?ok[\s\S]{0,400}?return/.test(body))
       bad.push(`${P} handleSave: ผลจาก ngReasonCheck() ต้องนำไป return ออกจากการบันทึก (เรียกแล้วทิ้ง = ไม่มีด่าน)`);
@@ -12282,7 +12587,698 @@ test('🛡️ ตัด-จ่ายสต็อกต้องหักเต�
   if (!/inflowDestOf\(sap, inflowRules\)/.test(cd) || !/negQty/.test(cd)) bad.push('CustomerDemand.jsx — ส่งเกินยอดในระบบแล้วไม่หักส่วนที่ขาด');
   const mig = readFileSync(join(ROOT, 'supabase/migrations/20261119c_stock_full_deduct_qa_return_dr.sql'), 'utf8');
   if (!/fn_qbin_return_receipt/.test(mig) || !/ตัดเกิน/.test(mig)) bad.push('migration 20261119c ถูกแก้/หาย');
+  const mig2 = readFileSync(join(ROOT, 'supabase/migrations/20261120_lot_raw_single_owner_dr.sql'), 'utf8');
+  if (!/fn_raw_lot_owned\(NEW\.mat_no, b\.mat_no\)/.test(mig2) || !/fn_child_short/.test(mig2))
+    bad.push('migration 20261120 — ปิดใบผลิตต้องข้ามคู่ที่ล็อตตัดแล้ว แต่ยังส่งยอดขาดให้ fn_child_short (ห้ามตัดวัตถุดิบล็อตซ้ำ)');
   assert.deepEqual(bad, [], `\n\n❌ ตัด-จ่ายสต็อกกลับไป "ตัดเท่าที่มี":\n   ${bad.join('\n   ')}\n`
     + '   กฎ (user 19/11): ยอดในระบบไม่พอ = หักเต็ม ติดลบ แล้วพอเติม/รับเข้า ยอดหักล้างเอง · ต้องเขียนบนจอว่าติดลบ\n'
     + '   📄 docs/modules/store-board-workflow.md §ตัดเต็ม ยอมติดลบ\n');
+});
+
+test('🔔 mo-from-downtime-must-alarm — ใบ MO ที่เกิดจาก Downtime ต้องแจ้งทีมปลายทางตอนรายละเอียดครบ', () => {
+  /* 20/11 (หน้างาน MTN แจ้ง): *"ตอนส่ง Downtime ข้ามแผนกมา มันไม่มี alarm แจ้งครับ มันมาแต่ MO …
+     ช่างซ่อมอีกเครื่องเสร็จแต่มอนิเตอร์อยู่ ไม่รู้ว่ามี MO ส่งต่อจาก Downtime"*
+     ── วัดจริง 20/11 (DR · 14 วัน) ──────────────────────────────────────────────
+     ① กด "เรียกช่าง" → trigger `trg_dt_call_mtn_opens_mo` เปิดใบให้ในฐาน (plpgsql ยิง http ไม่ได้)
+        แล้วคนมาเติมรายละเอียดทีหลังผ่าน `MoReportFromDowntime` → เส้นทาง `fillOrderId`
+        ซึ่ง **`return` ก่อนถึง `notifyMtn()`** ⇒ ไม่มีจังหวะไหนบอกช่างว่ามีใบใหม่
+     ② **12 ใบ ทีมปลายทาง ≠ ทีมที่ถูกเรียก** (production→jig 5 · production→maintenance 5 ·
+        jig→production 1 · maintenance→production 1) ⇒ `downtime_call_mtn` วิ่งไปทีมเดิม
+        ทีมที่ได้ใบจริง **ไม่เคยได้ alarm เลยสักครั้ง**
+     🔴 ใบจาก Downtime 167 ใบ/7 วัน (129 เติมครบแล้ว) — ไม่ใช่เคสหายาก */
+  const bad = [];
+  const P = 'src/pages/MtnRepair.jsx';
+  const src = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  /* เส้นทางเติมรายละเอียดใบที่ฐานเปิดไว้ — ตัดเอาเฉพาะบล็อกนั้น */
+  const i = src.indexOf('if (fillOrderId) {');   // บล็อกตอน "บันทึก" เท่านั้น (ชื่อ prop โผล่ก่อนหน้าหลายที่)
+  const blk = i < 0 ? '' : src.slice(i, i + 3000);
+  if (!blk) bad.push(`${P}: หาเส้นทางบันทึกแบบเติมรายละเอียด (if (fillOrderId)) ไม่เจอ — เปลี่ยนแล้วต้องแก้ด่านนี้`);
+  else {
+    if (!/notifyMtn\(\s*fresh\s*,\s*'mtn_reported'\s*\)/.test(blk))
+      bad.push(`${P}: เติมรายละเอียดครบแล้วต้องยิง notifyMtn(fresh, 'mtn_reported') — ไม่ยิง = ใบโผล่ในลิสต์เงียบๆ`);
+    /* 🔴 payload ต้องเป็นแถว**หลังเติม** — ทีมปลายทางอาจไม่ใช่ทีมที่ถูกเรียกตอนกด "เรียกช่าง" */
+    if (!/\.eq\('id', fillOrderId\)\.select\('\*'\)/.test(blk))
+      bad.push(`${P}: update ต้อง .select('*') เอาแถวจริงกลับมา — ส่ง payload เก่า = แจ้งผิดทีม (เคส 12 ใบ/14 วัน)`);
+    /* 🔴 ยังเติมไม่ครบ ห้ามยิง — ช่างเปิดมาเจอใบเปล่า */
+    if (!/if \(done && fresh\)/.test(blk))
+      bad.push(`${P}: ต้องยิงเฉพาะตอน done (รายละเอียดครบ) — ยิงตอนยังไม่ครบ = ช่างเปิดมาเจอใบเปล่า`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดผิดกฎ "ใบจาก Downtime ต้องมี alarm"\n   ${bad.join('\n   ')}\n`);
+});
+
+/* ═══ 📅 pm-monthly-signoff — 2026-11-20 · ใบ PM ③④ รายเดือน (คำสั่ง user 19/11) ═════════════════
+   📄 docs/modules/pm-hub-check-setup.md §รอบ 2 · ห้ามกลับไปตัดสินผู้เซ็นจากตำแหน่ง/role · ห้ามประกอบ kind/scope_key เอง */
+test('📅 pm-monthly-signoff — ผู้เซ็นมาจากผังองค์กร · ③ บล็อกจนผ่าน ② · คิดด่านใหม่ตอนกด', () => {
+  const bad = [];
+  const ui = stripComments(readFileSync(join(ROOT, 'src/components/PmMonthlyReport.jsx'), 'utf8'));
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/pmMonthlySignoff.js'), 'utf8'));
+  const u = stripComments(readFileSync(join(ROOT, 'src/utils/pmMonthly.js'), 'utf8'));
+  if (!/coversNode\(/.test(ui)) bad.push('PmMonthlyReport ไม่ตัดสินผู้เซ็นด้วย coversNode (มอบหมายในผัง)');
+  const ds = ui.slice(ui.indexOf('const doSign'), ui.indexOf('const doSign') + 900);
+  if (!/verdictFor\(teamKey, step, section\)/.test(ds)) bad.push('doSign ไม่คิดด่านใหม่ตอนกด');
+  if (!/isStale\(/.test(ds)) bad.push('doSign ไม่มีด่าน stale (ข้อมูลคนละเดือน)');
+  if (!/confirmSign\(/.test(ds)) bad.push('doSign ไม่ถามยืนยันผ่าน confirmSign');
+  if (!/step === 3 && !teamMonthReady\(team\)/.test(u)) bad.push('pmMonthlySignVerdict ไม่บล็อก ③ จนผ่าน ② ครบ');
+  if (/positionRank|position_rank/.test(u)) bad.push('pmMonthly.js กลับไปใช้ระดับตำแหน่งตัดสินผู้เซ็น (user 19/11: ใช้ผังองค์กร)');
+  if (!/kind: KIND_OF_STEP\[step\], scope_key: scopeKeyOf\(/.test(lib)) bad.push('pmMonthlySignoff ประกอบ kind/scope_key เอง (ต้องผ่าน KIND_OF_STEP/scopeKeyOf)');
+  if (/\.delete\(\)/.test(lib)) bad.push('pmMonthlySignoff ลบลายเซ็น — ต้องเพิกถอนเท่านั้น');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ── คิวไลน์ใช้ของแต่สโตร์ยังไม่ลงจ่าย (2026-11-20 · คำสั่ง user) ──
+   ยืนยันหลายรายการต้องเป็น RPC ก้อนเดียว (ห้ามวนยิงจากจอ) · เคส line_issue_gap คลังพักติดลบ ป้ายต้องผ่าน outcomeLabel */
+test('🛡️ คิวไลน์ใช้ของแต่สโตร์ยังไม่ลงจ่าย — RPC ก้อนเดียว + ป้ายเคลียร์ตามชนิดเคส', () => {
+  const bad = [];
+  const q = stripComments(readFileSync(join(ROOT, 'src/components/LineIssueGapQueue.jsx'), 'utf8'));
+  if (!/rpc\('line_issue_gap_confirm_many'/.test(q)) bad.push('LineIssueGapQueue — ยืนยันทั้งหมดไม่ได้ใช้ line_issue_gap_confirm_many');
+  if (/for\s*\([^)]*of\s+shown[\s\S]{0,200}rpc\('line_issue_gap_confirm'/.test(q)) bad.push('LineIssueGapQueue — วนยิง RPC ทีละรายการจากจอ');
+  const r = stripComments(readFileSync(join(ROOT, 'src/components/StockDiscrepancyReport.jsx'), 'utf8'));
+  if (/OUTCOME_LABEL\[/.test(r)) bad.push('StockDiscrepancyReport — ใช้ OUTCOME_LABEL ตรงๆ (เคส line_issue_gap ความหมายกลับทิศ · ใช้ outcomeLabel)');
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.join('\n   ')}\n   📄 docs/modules/store-board-workflow.md §คิวไลน์ใช้ของแล้ว แต่สโตร์ยังไม่ลงจ่าย\n`);
+});
+
+test('🔴 restamp-parallel-lines-guard — สคริปต์ restamp ต้องกันไลน์เครื่องขนานทั้ง 2 ชั้น', () => {
+  /* อุบัติเหตุ 20/11: `PARALLEL_LINES` ตกหล่น LASER-345/LASER-789 (parallel_stations = 3)
+     ⇒ สคริปต์หัก DT รายเครื่องเต็มจำนวน (ไม่มี laneWeightFn) ⇒ เขียน %A ต่ำผิด 12 กะ (-33 จุด)
+     🔴 ลิสต์ที่ copy มาจากทะเบียนจะเก่าเงียบๆ เสมอ ⇒ ต้องมีด่านที่จับจาก "ข้อมูล" ด้วย:
+        DT รวม > shift_min = เป็นไปไม่ได้บนไลน์เครื่องเดียว ⇒ ข้าม ห้ามเดา */
+  const sc = stripComments(readFileSync(join(ROOT, 'scripts/restamp-dt-rule.mjs'), 'utf8'));
+  for (const ln of ['LASER-345', 'LASER-789', 'SUB APRON']) {
+    assert.ok(sc.includes(`'${ln}'`),
+      `\n\n❌ ${ln} หายจาก PARALLEL_LINES — ไลน์นี้ลง DT รายเครื่อง สคริปต์จะเขียน %A ต่ำผิด\n`
+      + '   คิวรีรีเฟรชลิสต์: select name from production_lines where parallel_stations > 1;\n');
+  }
+  assert.match(sc, /dtSum > Number\(s\.shift_min\)/,
+    '\n\n❌ ด่าน "DT รวม > เวลากะ = ข้าม" หายไป — ไลน์เครื่องขนานที่หลุดลิสต์จะถูกเขียนทับเงียบๆ\n');
+  assert.match(sc, /stat\.skipDtOverShift\+\+/,
+    '\n\n❌ ด่าน DT-เกินเวลากะ ไม่ได้นับสถิติ — รันแล้วไม่รู้ว่าข้ามไปกี่กะ\n');
+});
+
+test('🔴 dt-entry-sanity-warns — ช่องลง downtime ต้องเตือน 3 กรณีที่ทำให้ %A โกหก', async () => {
+  /* คำสั่ง user 20/11 (เลือก "ทาง ค"): ไม่แก้สูตร %A แต่ดักตอนกรอก
+     3 กรณีที่ไล่เจอจริงจาก 7 กะที่คิด %A ไม่ได้:
+       ① ใบปิดตรงเวลาเลิกกะ (ของเดิม 13/11)        — LINE A 06/11 Set up 345 น. ชนเลิกกะ
+       ② ยาวเกินเพดานของประเภทมาก (ใหม่)           — เปลี่ยนตะกร้า เพดาน 10 → ลง 70
+       ③ ตกนอกช่วงที่มีใบผลิตเปิด (ใหม่)            — BENDING EXPORT DT 250 น. ก่อนเปิดใบผลิต
+     🔴 เตือน ไม่บล็อก · ถามครั้งเดียวรวมทุกข้อ · ไม่รู้ = เงียบ (ห้ามเดา) */
+  const m = await import('../shiftDataSanity.js');
+  for (const fn of ['checkDtOverCap', 'checkDtOutsideOrders', 'checkDtClosedAtShiftEnd']) {
+    assert.equal(typeof m[fn], 'function', `\n\n❌ ${fn}() หายจาก shiftDataSanity — กฎเตือนหน้างานหายไป\n`);
+  }
+  /* 🔴 ไม่รู้ = เงียบ */
+  assert.equal(m.checkDtOverCap({ durationMin: 300, capMin: null }), null,
+    '\n\n❌ ไม่รู้เพดานแล้วยังเตือน — ประเภทที่ตั้งใจไม่มีเพดานมีจริง (เช่น "ไม่มีแผนผลิต")\n');
+  assert.equal(m.checkDtOutsideOrders({ startedMs: 1, endedMs: 2, orderWindows: [] }), null,
+    '\n\n❌ ไม่มีหน้าต่างใบผลิตแล้วยังเตือน — ต้นกะยังไม่มีใบปิดเป็นเรื่องปกติ\n');
+  /* 🔴 เกินเกณฑ์ = ต้องเตือน และต้องบอก "ผลที่ตามมา" ไม่ใช่แค่ว่าผิด */
+  const cap = m.checkDtOverCap({ durationMin: 70, capMin: 10, typeName: 'เปลี่ยนตะกร้าใส่งาน' });
+  assert.ok(cap && cap.overMin === 60 && /%A/.test(cap.text),
+    '\n\n❌ เตือนเกินเพดานแล้วไม่บอกว่ากระทบ %A — คนหน้างานแก้ไม่ถูก\n');
+  const H = 3600000;
+  const out = m.checkDtOutsideOrders({ startedMs: 0, endedMs: 4 * H, orderWindows: [[5 * H, 9 * H]] });
+  assert.ok(out && out.outsideMin === 240 && /%A/.test(out.text),
+    '\n\n❌ เตือน DT นอกช่วงใบผลิตไม่ถูกต้อง — นี่คือต้นเหตุที่ %A กลายเป็น 0\n');
+
+  /* 🔴 หน้าต้องเรียกจริง และถามครั้งเดียวรวมกัน */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(page, /checkDtOverCap\(\{/, '\n\n❌ จอลง downtime ไม่ได้เรียก checkDtOverCap\n');
+  assert.match(page, /checkDtOutsideOrders\(\{/, '\n\n❌ จอลง downtime ไม่ได้เรียก checkDtOutsideOrders\n');
+  assert.match(page, /const dtWarns = \[dtEndChk, dtCapChk, dtOutChk\]\.filter\(Boolean\)/,
+    '\n\n❌ ไม่ได้รวมคำเตือนเป็นก้อนเดียว — ถามทีละข้อ = ถามพร่ำเพรื่อ คนจะกดผ่านโดยไม่อ่าน\n');
+  assert.ok(!/planned_cap_min \* 3|durMin > 3 \*/.test(page),
+    '\n\n❌ มีเกณฑ์ตัวเลขเขียนในหน้า — เกณฑ์ต้องอยู่ shiftDataSanity.js ที่เดียว\n');
+});
+
+test('✍️ ack-queue-single-rule — ป้าย "รอคุณเซ็นรับทราบ" กับลิสต์ที่ป้ายพาไป ต้องใช้กฎเดียวกัน', () => {
+  /* 23/11 (หน้างานแจ้ง): *"แจ้งเตือนที่ 2 ที่บอกมีรอ 1 ใบ ทำไมไม่ตรง กดเข้ามาเจอ 4 ใบ
+     และเป็นใบถูกตีกลับรอยกเลิก"*
+     ต้นเหตุ: ป้ายนับด้วยกฎ 5 ข้อ (ฟอร์ม MTN · ยังไม่เซ็น · ไม่ใช่ใบที่ลายเซ็นบล็อกงาน ·
+     อยู่ในขอบเขตเรา · `canSignMtnApproval('dept')` ผ่าน) แต่ตัวกรอง `?ack=pending` ในหน้า MO
+     เขียนเองแค่ `isMtnFormOrder(o) && !o.dept_manager_at` = 2 ข้อแรก
+     ⇒ ลิสต์ลากใบของหน่วยอื่น/ใบที่เราเซ็นไม่ได้/ใบตีกลับเข้ามาด้วย
+     🔴 **ป้ายที่บอกจำนวน กับลิสต์ที่ป้ายนั้นพาไป ต้องนับด้วยกฎชิ้นเดียวกันเสมอ**
+        เลขไม่ตรงครั้งเดียว คนเลิกเชื่อป้ายทั้งแผง */
+  const bad = [];
+  const Q = 'src/utils/myQueue.js';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/export function ackWaitsOnMe/.test(q))
+    bad.push(`${Q}: ต้องมี ackWaitsOnMe() — กฎ "ใบนี้รอเราเซ็นรับทราบไหม" มีที่เดียว`);
+  if (!/if \(ackWaitsOnMe\(o, me\)\)/.test(q))
+    bad.push(`${Q}: ตัวนับป้ายต้องเรียก ackWaitsOnMe() ไม่ใช่เขียนเงื่อนไขซ้ำ`);
+
+  const P = 'src/pages/MtnRepair.jsx';
+  const p = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  /* ตัวกรอง ?ack=pending ต้องเรียกกฎกลาง ห้ามเทียบ dept_manager_at เองในบล็อกตัวกรอง */
+  const f = p.match(/\{ key: 'ack',[\s\S]{0,300}?\},/);
+  if (!f) bad.push(`${P}: หาตัวกรอง ?ack=pending ไม่เจอ — เปลี่ยนแล้วต้องแก้ด่านนี้`);
+  else {
+    if (!/ackWaitsOnMe\(/.test(f[0]))
+      bad.push(`${P}: ตัวกรอง ?ack=pending ต้องใช้ ackWaitsOnMe() — เขียนเงื่อนไขเอง = เลขไม่ตรงกับป้าย`);
+    if (/dept_manager_at/.test(f[0]))
+      bad.push(`${P}: ตัวกรอง ?ack=pending ยังเทียบ dept_manager_at เอง — กฎต้องอยู่ myQueue.js ที่เดียว`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดผิดกฎ "ป้ายกับลิสต์ต้องกฎเดียวกัน"\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🧮 mo-list-cols-cover-queue-rules — คอลัมน์ที่กฎคิวใช้ ต้องอยู่ใน MO_LIST_COLS', () => {
+  /* 23/11 (หน้างานแจ้ง): *"ที่รอ 1 ใบ กดเข้าไปก็ไม่เจออะไร"*
+     ต้นเหตุ: หน้า MO ไม่ได้ select `dept_section` ⇒ `scopeStateOf()` (ที่ `ackWaitsOnMe` ใช้)
+     อ่านได้ `undefined` ⇒ คืน 'unknown' ทุกแถว ⇒ ตัวกรอง `?ack=pending` ขึ้น 0 รายการ
+     ทั้งที่ป้ายในคิว (ซึ่ง select ชุดเต็ม) นับได้
+     🔴 **คลาสเดิมของโปรเจค** — คอลัมน์ที่ไม่ได้ select = undefined เงียบๆ (กฎเขียน DB ข้อ 12)
+        อันตรายเป็นพิเศษเมื่อเอา "กฎกลาง" ไปใช้กับแถวที่ select มาไม่ครบ:
+        กฎไม่ได้พัง แต่มันตัดสินจากข้อมูลที่ไม่มี แล้วจอว่างเงียบ */
+  const bad = [];
+  const P = 'src/pages/MtnRepair.jsx';
+  const src = readFileSync(join(ROOT, P), 'utf8');
+  const m = src.match(/const MO_LIST_COLS = \[([\s\S]*?)\]/);
+  assert.ok(m, `\n\n❌ หา MO_LIST_COLS ใน ${P} ไม่เจอ\n`);
+  const cols = [...m[1].matchAll(/'([a-z_0-9]+)'/g)].map(x => x[1]);
+  /* คอลัมน์ที่กฎกลางอ่าน — เพิ่มกฎที่อ่านคอลัมน์ใหม่ ต้องมาเติมที่นี่ด้วย */
+  for (const [c, why] of [
+    ['dept_section', 'scopeStateOf() — ใช้ตัดสิน "ใบนี้ของหน่วยเราไหม" ใน ackWaitsOnMe + ตัวกรองขอบเขต'],
+    ['dept_manager_at', 'ackWaitsOnMe — เซ็นรับทราบไปแล้วหรือยัง'],
+    ['purpose', 'isApprovalBlocked() — งานปรับปรุง/สร้างต้องอนุมัติก่อน'],
+    ['status', 'isMoOpen / moWaitMeta'],
+    ['current_step', 'moWaitMeta — ใบรอขั้นไหน'],
+  ]) {
+    if (!cols.includes(c)) bad.push(`${P}: MO_LIST_COLS ขาด '${c}' — ${why}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} คอลัมน์ที่กฎใช้แต่ไม่ได้ดึงมา (จอจะเงียบ ไม่ใช่ error)\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🚩 fail-needs-reason-all-checks — ทุกใบตรวจ: ตอบ "ไม่ผ่าน/N" ต้องมีเหตุผล · กฎตัวเดียวกัน', () => {
+  /* 23/11 (คำสั่ง user ขยายจาก 19/11 "ทุกระบบการตรวจเครื่องจักรทั้ง am/pm … เลือก NG ต้องใส่เหตุผล")
+     ③ ใบตรวจ AM/PM (`PMCheckData`) ลงไปแล้ว 19/11 — ด่าน `ng-needs-reason`
+     ② Poka-Yoke: ปุ่ม "ไม่ผ่าน" **กดครั้งเดียวเขียนฐานทันที** (upsert) ⇒ กดพลาด = บันทึกไปแล้ว
+        ⇒ ต้องเปิดช่องเหตุผลก่อน กดยืนยันถึงเขียน
+     ① LPA: ตอบ `N` แล้วไม่มีคำอธิบาย = ใบเอาไปใช้เป็นหลักฐานต่อไม่ได้
+     🔴 ทั้ง 3 จอใช้ `ngReasonCheck()` ตัวเดียวกัน — ห้ามเขียนเกณฑ์ "เหตุผลพอไหม" ชุดที่ 2 */
+  const bad = [];
+  for (const [f, needles] of [
+    ['src/pages/PokaYokeCheck.jsx', [
+      [/import \{ ngReasonCheck \}/, 'ต้องใช้กฎกลาง ngReasonCheck()'],
+      [/ngReasonCheck\(\{ attr: willResult === 'fail' \? 'ng' : 'ok'/, 'ด่านตอนเขียนจริงใน saveCheck (ไม่ใช่แค่ซ่อนปุ่ม)'],
+      [/onClick=\{\(\) => askFail\(d\)\}/, 'ปุ่ม "ไม่ผ่าน" ต้องเปิดช่องเหตุผล ไม่ใช่เขียนฐานทันที'],
+    ]],
+    ['src/pages/LayerProcessAudit.jsx', [
+      [/import \{ ngReasonCheck \}/, 'ต้องใช้กฎกลาง ngReasonCheck()'],
+      [/attr: draft\.answers\[q\.id\]\?\.answer === 'N' \? 'ng' : 'ok'/, 'ตอบ N ต้องมีเหตุผลตอนกดบันทึก'],
+    ]],
+    ['src/pages/PMCheckData.jsx', [
+      [/ngReasonCheck\(\{ attr: r\.attr/, 'ใบตรวจ AM/PM (ของเดิม 19/11)'],
+    ]],
+  ]) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const [re, why] of needles) if (!re.test(src)) bad.push(`${f}: ${why}`);
+  }
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดที่ใบตรวจไม่บังคับเหตุผล (หรือเขียนเกณฑ์เอง)\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🛡️ am-approve-confirm-cas — อนุมัติ/ตีกลับใบตรวจ AM/PM: ถามยืนยัน · CAS pending · ใบพิมพ์ไม่เอาคนตีกลับเป็นผู้อนุมัติ', () => {
+  /* 23/11 (คำสั่ง user — ไล่ Daily Checker ข้อ A1/A2/A3)
+     A2 ปุ่ม "อนุมัติ" เขียน DB ทันทีไม่ถาม (ผิดกฎ signConfirm §4M)
+     A3 update `.eq('id')` อย่างเดียว ⇒ คนที่เปิดจอค้างกดอนุมัติทับใบที่อีกคนเพิ่งตีกลับ (reject_reason หายเงียบ)
+     A1 ตีกลับเขียน `approved_by` = คนตีกลับ ⇒ ใบพิมพ์ใบที่ถูกตีกลับมีลายเซ็นช่อง APPROVED */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  const bad = [];
+  const body = (name) => { const i = src.indexOf(`const ${name} = async`); return i > 0 ? src.slice(i, i + 2500) : ''; };
+  const ap = body('handleApprove'), rj = body('handleReject');
+  if (!ap || !rj) bad.push('หา handleApprove/handleReject ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้');
+  const cAt = ap.indexOf('await confirmSign('), uAt = ap.indexOf('.update(');
+  if (!(cAt > 0 && uAt > 0 && cAt < uAt)) bad.push('handleApprove: ต้อง `if (!await confirmSign({...})) return` ก่อน .update( (ลืม await = Promise truthy = ไม่กันอะไรเลย)');
+  for (const [n, b] of [['handleApprove', ap], ['handleReject', rj]])
+    if (!/\.update\([\s\S]{0,400}?\.eq\('approval_status', 'pending'\)/.test(b)) bad.push(`${n}: update ต้องมี .eq('approval_status', 'pending') (compare-and-swap)`);
+  if (!/const approver = \(insp\.approval_status === 'approved' && insp\.approved_by\)/.test(src))
+    bad.push("buildExportArgs: ช่องผู้อนุมัติต้องเช็ค approval_status === 'approved' (approved_by ของใบตีกลับ = คนตีกลับ)");
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุด\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🛡️ lpa-quarter-plan-no-silent-loss — แผน LPA ไตรมาส: แก้ค้างห้ามหายเงียบ · อ่านแผนไม่ได้ห้ามบันทึก', () => {
+  /* 23/11 (คำสั่ง user — ข้อ P1/P2)
+     P1 เปลี่ยนเดือน/ไลน์/กะ ⇒ loadQuarter() ทับ qData ที่แก้ค้างโดยไม่เตือน · พิมพ์ได้ทั้งที่ใบไม่ตรงจอ
+     P2 อ่าน lpa_plans ไม่ได้ แต่ยังกดบันทึก ⇒ upsert ชื่อผู้ตรวจ null + ลบ lpa_plan_days เดิม */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/LayerProcessAudit.jsx'), 'utf8'));
+  const bad = [];
+  for (const [re, why] of [
+    [/onChange=\{changeLine\}/, 'ช่องไลน์ต้องผ่าน changeLine (ถามก่อนทิ้งแผนที่แก้ค้าง)'],
+    [/onChange=\{changeShift\}/, 'ช่องกะต้องผ่าน changeShift'],
+    [/changeMonth\(e\.target\.value\)/, 'ช่องเดือนต้องผ่าน changeMonth'],
+    [/changeMonth\(shiftMonth\(qMonths\[0\], -3\)\)/, 'ปุ่มไตรมาสก่อนต้องผ่าน changeMonth'],
+    [/changeMonth\(shiftMonth\(qMonths\[0\], 3\)\)/, 'ปุ่มไตรมาสถัดไปต้องผ่าน changeMonth'],
+    [/\}, \[quarterKey, tab\]\)/, 'effect โหลดแผนไตรมาสต้องผูกกับ quarterKey ไม่ใช่ selMonth (เลือกเดือนในไตรมาสเดิมห้ามโหลดทับ)'],
+    [/const saveQuarter = async[\s\S]{0,900}?if \(qPlanErr\)[^\n]*return;/, 'saveQuarter ต้องหยุดเมื่ออ่านแผนเดิมไม่สำเร็จ (fail-closed)'],
+    [/const printPlan = async \(\) => \{\s*if \(qDirtyRef\.current\)/, 'printPlan ต้องหยุดเมื่อยังมีแผนแก้ค้าง (ใบพิมพ์อ่านจาก DB)'],
+  ]) if (!re.test(src)) bad.push(why);
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุด\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🔎 min-alert-elsewhere-single-entry — "ของขยับจริงที่ไหน" ต้องตัดสินใน replenish.js ที่เดียว', () => {
+  /* 🔴 18/11 วัดจริง: 41 คู่ที่ตั้ง min → **35 คู่ของจริงถูกกินที่อื่น** ไม่ใช่ไลน์ในทะเบียน
+       (STORE 28 · ไลน์ประกอบอื่น 7) เพราะโซ่จริงคือ
+       ไลน์ปั๊ม ──issue──▶ STORE ──ใบขอเติม──▶ ไลน์ประกอบ ──คอนเฟิร์ม FG──▶ consume
+       ทะเบียนตั้ง min ไว้ที่ไลน์ปั๊ม ⇒ บัญชีที่นั่นนิ่งถาวร ⇒ จอขึ้น "ตอบไม่ได้" 35 แถวตลอดกาล
+     ⇒ กฎ: เทียบ "ไลน์ในทะเบียน vs ที่ของขยับจริง" ต้องอยู่ใน `minAlerts` (utils/replenish.js)
+       จอ/loader ห้ามเทียบเอง — เทียบ 2 ที่แล้วดริฟท์ = 2 จอบอกคนละเรื่องว่าทะเบียนผิดที่ไหม
+     🔑 ตัวจับ: ไฟล์นอก replenish.js ที่อ่าน `.wrongPlace`/`.elsewhere` ได้ (วาดอย่างเดียว)
+       แต่ถ้าไฟล์นั้น **ตั้งค่า** `wrongPlace:` เอง = ตัดสินเอง = ผิด */
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    if (f.includes('__tests__')) continue;
+    /* 🔴 ROOT ลงท้าย '/' อยู่แล้ว — `ROOT + '/'` ไม่เคยแมตช์ ⇒ ยกเว้นด้วย endsWith */
+    if (f.endsWith('src/utils/replenish.js')) continue;
+    const src = readFileSync(f, 'utf8');
+    if (/\bwrongPlace\s*:/.test(src)) bad.push(`${f.replace(ROOT, '')}  — ตั้ง wrongPlace: เอง`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ มีไฟล์ตัดสิน "ทะเบียนตั้งผิดที่" เอง นอก utils/replenish.js\n'
+    + bad.join('\n')
+    + '\nfix: ส่ง `movesElsewhereOf` เข้า minAlerts() แล้วอ่าน r.wrongPlace / r.elsewhere มาวาด\n');
+});
+
+test('🔎 min-alert-elsewhere-no-autofix — ห้ามย้ายทะเบียน line_part_levels ให้เองจากธง wrongPlace', () => {
+  /* 🔴 "ระบบเสนอ คนตัดสิน" (CLAUDE.md) · ธง wrongPlace เป็น **ข้อเสนอ**
+       ย้ายทะเบียนอัตโนมัติ = ย้ายของไปไลน์ที่ consume ล่าสุด ซึ่งอาจเป็น "ร้านชุบ"/"ผลต่างรอเคลียร์"
+       (วัดจริง 18/11: 1 คู่ชี้ไป `ร้านชุบ · บจก. จรูญรัตน์ โปรดักส์`) ⇒ ทะเบียนเพี้ยนเงียบ
+     ⇒ กฎ: ไฟล์ที่อ่าน `wrongPlace`/`elsewhere` ห้ามเขียน `line_part_levels` ในไฟล์เดียวกัน */
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    if (f.includes('__tests__')) continue;
+    const src = readFileSync(f, 'utf8');
+    if (!/\bwrongPlace\b|\belsewhere\?\.|\belsewhere\./.test(src)) continue;
+    if (/from\('line_part_levels'\)\s*\.\s*(update|upsert|insert|delete)/.test(src)) {
+      bad.push(f.replace(ROOT, ''));
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ไฟล์ที่อ่านธง "ทะเบียนตั้งผิดที่" ไปเขียน line_part_levels ด้วย\n'
+    + bad.join('\n')
+    + '\n   ธงนี้เป็นข้อเสนอ — คนต้องกดย้ายเองที่ /line-stock (ที่ของขยับล่าสุดอาจเป็นร้านชุบ/คลังพัก)\n');
+});
+
+test('🔴 restamp-lane-needs-machine-no — หารเลนต้องมี machine_no ใน dump', () => {
+  /* 23/11: เพิ่ม --lines ให้สคริปต์ restamp ทำไลน์เครื่องขนานได้ (LASER-345/789 · 3 เลน)
+     🔴 `laneWeightFn` ตัดสินจาก `d.machine_no` — dump ที่ไม่มีคอลัมน์นี้ ทุกแถวจะถูกนับเป็น
+        "ไม่ระบุเครื่อง = หยุดทั้งไลน์" ⇒ **ไม่หารเลนเลยเงียบๆ** = อุบัติเหตุ 20/11 ซ้ำรอย
+        (ครั้งนั้นเขียน %A ต่ำผิด 12 กะ เฉลี่ย -33 จุด)
+     ⇒ ต้องมีด่านหยุดก่อน ไม่ใช่ปล่อยให้คำนวณผิดแล้วเขียน */
+  const sc = stripComments(readFileSync(join(ROOT, 'scripts/restamp-dt-rule.mjs'), 'utf8'));
+  assert.match(sc, /'machine_no' in x/,
+    '\n\n❌ ด่าน "dump ต้องมี machine_no เมื่อหารเลน" หายไป — จะหารเลนไม่ได้แบบเงียบๆ\n');
+  assert.match(sc, /parallel_stations\) > 1[\s\S]{0,400}?process\.exit\(1\)/,
+    '\n\n❌ เจอไลน์เครื่องขนานแล้วไม่หยุดเมื่อ dump ขาด machine_no\n');
+  /* 🔴 ด่าน "DT รวม > เวลากะ" ต้องเทียบด้วยนาทีของไลน์ ไม่ใช่นาทีดิบ
+     ไม่งั้นไลน์ 3 เลนจะถูกข้ามทุกกะ (ดิบเกินเวลากะเป็นเรื่องปกติของไลน์ขนาน) */
+  assert.match(sc, /laneN > 1[\s\S]{0,200}?1 \/ laneN/,
+    '\n\n❌ ด่าน DT-เกินเวลากะ ยังเทียบด้วยนาทีดิบ — ไลน์เครื่องขนานจะถูกข้ามทุกกะ\n');
+});
+
+test('🛡️ confirm-sign-must-await — confirmSign() คืน Promise ⇒ ทุกจุดต้อง await (ไม่งั้นกล่องขึ้นแต่ไม่กันอะไรเลย)', () => {
+  /* 24/11 (คำสั่ง user): หน้า /workflows เรียก `if (!confirmSign(...)) return` — Promise เป็น truthy เสมอ
+     ⇒ `!promise` = false ⇒ อนุมัติไปแล้วทั้งที่กล่องยืนยันยังเปิดอยู่ (กดยกเลิกก็ไม่มีผล)
+     ของกลางเปลี่ยนเป็นกล่องในแอป (Promise) ตั้งแต่ 18/11 · จุดที่เขียนก่อนหน้านั้นต้อง await ทุกตัว */
+  const bad = [];
+  const walk = (d) => { for (const n of readdirSync(d, { withFileTypes: true })) {
+    const f = join(d, n.name);
+    if (n.isDirectory()) { if (n.name !== '__tests__' && n.name !== 'node_modules') walk(f); continue; }
+    if (!/\.(jsx?|mjs)$/.test(n.name) || f.endsWith('signConfirm.js')) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    for (const m of src.matchAll(/(\S+\s*)confirmSign\(/g)) {
+      if (/^(await\s*|function\s*)$/.test(m[1]) || /\bawait\s*$/.test(m[1])) continue;
+      if (/import|export/.test(m[1])) continue;
+      bad.push(`${f.replace(ROOT + '/', '')}: ...${m[0]}`);
+    }
+  } };
+  walk(join(ROOT, 'src'));
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุดเรียก confirmSign() โดยไม่ await\n   ${bad.join('\n   ')}\n   แก้: \`if (!await confirmSign({...})) return\` (ฟังก์ชันรอบนอกต้องเป็น async)\n`);
+});
+
+
+test('🛡️ daily-checker-2411 — แผน/อนุมัติ/ลายเซ็น/แจ้งเตือน Daily Checker (24/11 · คำสั่ง user)', () => {
+  const bad = [];
+  const rd = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  const lpa = rd('src/pages/LayerProcessAudit.jsx');
+  for (const [re, why] of [
+    [/lpaPlanCellStatus\(/, 'P4/P5: สถานะช่องแผนต้องผ่าน lpaPlanCellStatus() (นับตามรอบ · ไลน์ไม่เดิน · รอเซ็น)'],
+    [/lpaAutoFillQuarter\(/, 'P3: เติมแผนต้องผ่าน lpaAutoFillQuarter() (ข้ามวันที่ผ่านแล้ว)'],
+    [/levels=\{LAYER_PICK_LEVELS\[k\]\}/, 'P6: ช่องผู้ตรวจต้องดันตำแหน่งที่ตรงขึ้นก่อน'],
+    [/editedByOther \? null/, 'A6: คนอื่นแก้ใบที่เซ็นแล้ว ต้องล้างลายเซ็นผู้ตรวจ'],
+    [/const newFinds = finds\.filter/, 'N5: แจ้ง lpa_finding เฉพาะข้อ N/T ใหม่'],
+  ]) if (!re.test(lpa)) bad.push(why);
+  if (/plan_leader: true[\s\S]{0,40}working\.forEach/.test(lpa)) bad.push('P3: autoFillQuarter เขียนเองในหน้าอีกแล้ว');
+  const bbs = rd('src/pages/BbsCheck.jsx');
+  if (!/const shownSig = sheet\?\.inspector_sig_url \|\| null/.test(bbs)) bad.push('A6: BBS ลายเซ็นบนจอต้องเป็นค่าที่บันทึกไว้ ไม่ resolve จากรหัสที่พิมพ์');
+  if (/employeeSig: signer\?\.signatureUrl \}\);\s*if \(!sigUrl\)/.test(bbs)) bad.push('A6: BBS ใบพิมพ์ห้ามดึงลายเซ็นจากรหัส');
+  const pm = rd('src/pages/PMCheckData.jsx');
+  if (!/lineWrite=\{isAmTeam\(/.test(pm) || !/lineWrite && !lineWrite\.ok/.test(pm)) bad.push('A4: อนุมัติใบ AM ต้องผ่าน canWriteLine ของไลน์อุปกรณ์');
+  const py = rd('src/pages/PokaYokeCheck.jsx');
+  if (!/event: 'pokayoke_fail'/.test(py)) bad.push("N3: Poka-Yoke ไม่ผ่านต้องยิง 'pokayoke_fail'");
+  if (!/event: 'bbs_unsafe'/.test(bbs) || !/notifyBbsUnsafe\(newNg/.test(bbs)) bad.push("25/11: BBS ไม่เหมาะสม (ทามือ + เติมจาก PPE) ต้องยิง 'bbs_unsafe'");
+  const mq = rd('src/utils/myQueue.js');
+  if (!/key: `amappr:\$\{g\.line\}`/.test(mq)) bad.push('A5: ใบ AM รออนุมัติต้องอยู่ในคิวงาน (บรรทัดเดียวต่อไลน์)');
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุด\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🔴 part-oee-range-clamp-visible — ตัดช่วงให้สั้นลงแล้วต้องเขียนบนจอ', () => {
+  /* 24/11: แท็บ "รายพาร์ท" คิด `computeSessionOee()` **ทีละกะ** ⇒ ต้องมีเพดานช่วง (PART_MAX_DAYS)
+     🔴 กับดัก: ตัดช่วงเงียบๆ = คนเลือก "ปีนี้" แล้วอ่านเลขของ 31 วันโดยคิดว่าเป็นทั้งปี
+        (คลาสเดียวกับ `.slice(0,10)` ก่อนคิด % สะสมของพาเรโต — จอโกหกโดยไม่พัง)
+     ⇒ ไฟล์ที่ใช้เพดานตัดช่วง ต้องมีทั้งธง `clamped` และการ render ธงนั้น
+     + ตัวรวมหลายกะต้องมีชุดเดียว (`aggregateByProduct`) ห้ามเขียนลูปรวมชุดที่ 2 ในหน้า */
+  const rel = 'src/pages/OEEAnalytics.jsx';
+  const raw = readFileSync(join(ROOT, rel), 'utf8');
+  assert.match(raw, /PART_MAX_DAYS/, `\n\n❌ ${rel} ไม่มีเพดานช่วงของแท็บรายพาร์ท\n`);
+  assert.match(raw, /clamped:\s*true/, `\n\n❌ ${rel} ตัดช่วงแล้วไม่ตั้งธง clamped\n`);
+  assert.match(raw, /partWin\.clamped\s*&&/,
+    `\n\n❌ ${rel} มีเพดานช่วงแต่ไม่ render ธง clamped — ตัดช่วงเงียบ = จอโกหก\n`);
+  /* สูตร %A/%P/%Q ของ "รายพาร์ทรวมหลายกะ" ต้องมีชุดเดียว = ในตัวรวมกลาง */
+  const code = stripComments(raw);
+  assert.match(code, /function aggregateByProduct\(/,
+    `\n\n❌ ${rel} ไม่มีตัวรวมกลาง aggregateByProduct()\n`);
+  const hits = (code.match(/netAvailMin\s*>\s*0\s*\?/g) || []).length;
+  assert.equal(hits, 1,
+    `\n\n❌ ${rel} มีสูตร %A รายพาร์ท ${hits} ชุด — ต้องอยู่ที่ aggregateByProduct() ที่เดียว\n   (กฎการรวมหลายกะ: ตัวตั้งรวม ÷ ตัวหารรวม · ห้ามเฉลี่ย % รายกะ)\n`);
+});
+
+/* ── 🗺️ order-trace-stations-by-name (24/11 · user "แก้ OrderTrace ด้วย") ──────
+   จุดงานไลน์ลูกผูกด้วย line_name (line_id = null) — หาด้วย line_id อย่างเดียว = สาย APRON ได้ 0 จุด */
+test('🛡️ order-trace-stations-by-name — สอบกลับใบผลิตต้องหาจุดงานด้วยชื่อไลน์ด้วย', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/OrderTrace.jsx'), 'utf8'));
+  assert.ok(/from\(\s*'workstations'\s*\)\s*\.select\(\s*wsCols\s*\)\s*\.in\(\s*'line_name'\s*,\s*famNames\s*\)/.test(code),
+    '\n🗺️ OrderTrace.jsx ต้องหาจุดงานด้วย .in(\'line_name\', famNames) ควบคู่ line_id — '
+    + 'จุดของไลน์ลูกผูกด้วยชื่อ (line_id = null) · เดิมได้ 0 จุด ช่อง "จุดประจำ" ขึ้น "—" (📄 docs/modules/order-trace.md §24/11)\n');
+});
+
+test('🔗 wf-bound-signoff — เอกสารที่ผูก e-Workflow ต้องเซ็นผ่านแผงกลาง + RPC (25/11 · คำสั่ง user)', () => {
+  const bad = [];
+  const rd = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  const py = rd('src/pages/PokaYokeCheck.jsx');
+  if (!/<WfRoundPanel subject="pokayoke"/.test(py)) bad.push('PokaYokeCheck: ต้องฝัง <WfRoundPanel subject="pokayoke"> (การเซ็นอยู่ที่ e-Workflow ห้ามทำตารางลงนามแยก)');
+  const panel = rd('src/components/WfRoundPanel.jsx');
+  if (!/await confirmSign\(/.test(panel)) bad.push('WfRoundPanel: ปุ่มอนุมัติ/รับทราบต้อง await confirmSign()');
+  if (/from\('wf_(instances|tasks|actions)'\)\.(insert|update|delete|upsert)/.test(panel)) bad.push('WfRoundPanel: ห้ามเขียนตาราง wf_* ตรง — ผ่าน RPC');
+  for (const f of ['wf_bound_ensure', 'wf_act', 'wf_revoke']) if (!panel.includes(`'${f}'`)) bad.push(`WfRoundPanel: ต้องเรียก RPC ${f}`);
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261125b_e_workflow_bound_main.sql'), 'utf8');
+  if (!/create trigger trg_pokayoke_checks_wf_lock/.test(mig)) bad.push('migration: ต้องมี trigger ล็อกผลทดสอบที่เซ็นแล้ว');
+  /* 🦺 25/11 BBS เข้า e-Workflow (ใบรายเดือน ผู้ตรวจ→SV→Manager) — เซ็นบนใบ BBS เอง ไม่ออกใบแยก
+     · ทุกขาเขียนผ่าน ensureSheet ⇒ ต้องเช็ค wfLock ที่นั่น (DB trigger เป็นตัวตัดสิน · จอบอกก่อนกด)
+     · ใบพิมพ์ต้องเอาช่องเซ็นจากสายเซ็น (loadRoundSignoff → signoff) ห้ามกลับไปใช้ช่อง "ผู้ตรวจสอบ" ช่องเดียว */
+  const bbs = rd('src/pages/BbsCheck.jsx');
+  if (!/<WfRoundPanel subject="bbs"/.test(bbs)) bad.push('BbsCheck: ต้องฝัง <WfRoundPanel subject="bbs">');
+  if (!/const ensureSheet = useCallback\(async \(\) => \{[\s\S]{0,400}if \(wfLock\)/.test(bbs)) bad.push('BbsCheck: ensureSheet ต้องบล็อกเมื่อใบเดือนนี้เซ็นแล้ว (wfLock)');
+  if (!/loadRoundSignoff\(/.test(bbs) || !/signoff:/.test(bbs)) bad.push('BbsCheck: พิมพ์ใบต้องส่งลายเซ็นตามสายเซ็น (loadRoundSignoff → signoff)');
+  if (!/signoff\?\.rows/.test(rd('src/lib/bbsPrint.js'))) bad.push('bbsPrint: ต้องวาดช่องเซ็นจาก signoff.rows');
+  const migC = readFileSync(join(ROOT, 'supabase/migrations/20261125c_e_workflow_bbs_monthly_main.sql'), 'utf8');
+  for (const t of ['trg_bbs_obs_wf_lock', 'trg_bbs_notes_wf_lock', 'trg_bbs_sheets_wf_lock'])
+    if (!migC.includes(`create trigger ${t}`)) bad.push(`migration 20261125c: ต้องมี trigger ${t}`);
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุด\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🧩 wf-checkgrid — ใบตรวจแบบตาราง: จอเดียว อ่านนิยามจากใบงาน · ด่านเขียนครบ (26/11 · คำสั่ง user)', () => {
+  const bad = [];
+  const rd = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'));
+  const sheet = rd('src/components/WfGridSheet.jsx');
+  /* ทุกขาเขียนผ่าน ensureSheet ⇒ ต้องเช็ค สิทธิ์ (recordPerm) · ชั้น ③ (canWriteLine) · ล็อก (มีคนเซ็น) · ใบที่โชว์ตรงกับที่เลือก */
+  const ens = sheet.slice(sheet.indexOf('const ensureSheet = async'), sheet.indexOf('const notifyAlert'));
+  for (const [re, why] of [[/canRecord/, 'สิทธิ์บันทึก'], [/lineWrite\.ok/, 'ชั้น ③ canWriteLine'], [/if \(lock\)/, 'ล็อกเมื่อเซ็นแล้ว'], [/matches\(/, 'stale guard']])
+    if (!re.test(ens)) bad.push(`WfGridSheet.ensureSheet: ขาดด่าน ${why}`);
+  if (/from '\.\.\/utils\/bbsMarks'/.test(sheet) || /from '\.\.\/utils\/bbsMarks'/.test(rd('src/lib/gridPrint.js')))
+    bad.push('WfGridSheet/gridPrint: ห้าม import สัญลักษณ์ BBS ตายตัว — อ่านจาก checkgrid ของใบงาน');
+  if (/from\('wf_grid_(cells|sheets|row_notes)'\)/.test(rd('src/pages/BbsCheck.jsx'))) bad.push('BbsCheck: ห้ามเขียน wf_grid_* เอง — ใช้ <WfGridSheet>');
+  if (!/isBbsGridMonth\(month\)[\s\S]{0,200}<WfGridSheet defKey=\{BBS_GRID_KEY\}/.test(rd('src/pages/BbsCheck.jsx'))) bad.push('BbsCheck: เดือนตั้งแต่ BBS_GRID_FROM ต้องวาด <WfGridSheet defKey={BBS_GRID_KEY}>');
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261126_wf_checkgrid_main.sql'), 'utf8');
+  for (const t of ['trg_wf_grid_sheets_lock', 'trg_wf_grid_cells_lock', 'trg_wf_grid_notes_lock']) if (!mig.includes(`create trigger ${t}`)) bad.push(`migration: ต้องมี ${t}`);
+  if (!/using \(wf_grid_can_write\(def_key\)\)/.test(mig)) bad.push('migration: RLS เขียน wf_grid_sheets ต้องผ่าน wf_grid_can_write');
+  assert.deepEqual(bad, [], `\n\n❌ ${bad.length} จุด\n   ${bad.join('\n   ')}\n`);
+});
+
+test('🏬 store-leg-always-written — ใบขอเติมต้องเขียน "ออกจาก STORE" เสมอ ห้ามมีเงื่อนไข', () => {
+  /* 🔴 วัดจริง 25/11: ใบขอเติม 726 ใบ → **174 ใบมีแต่ขาเข้าไลน์ ไม่มีขาออกจาก STORE** (116,878 ชิ้น)
+       ต้นเหตุ: โค้ดก่อน 19/11 เขียนว่า
+         else if (!st) note = 'STORE ไม่มีแถวสต็อกของพาร์ทนี้ — บวกเข้าไลน์แล้ว แต่ไม่หัก STORE'
+         else rows.push({ line_name: 'STORE', type: 'consume' })
+       ⇒ พาร์ทที่ STORE ยังไม่มีแถวสรุป (วัตถุดิบซื้อ 3xxx/5xxx แทบทั้งหมด) **ข้ามขาออกทั้งดุ้น**
+       ของโผล่ที่ไลน์โดยไม่ออกจากที่ไหน ⇒ ยอด STORE พองขึ้นเรื่อยๆ **เงียบสนิท ไม่มี error**
+       กว่าจะรู้ = 2 เดือน · คำสั่ง user 19/11 "ตัดเต็มและติดลบ" แก้แล้ว (20/11 เป็นต้นมา 0 ใบ)
+     ⇒ กฎ: การย้ายของต้องเขียน **คู่เสมอ** — ปลายทาง +qty และต้นทาง −qty
+       ไม่มีของให้หัก = **ติดลบไว้** แล้วเขียนเหตุผลบนใบ ห้ามข้ามแถว
+     🔑 ตัวจับ: บรรทัดที่ push แถว STORE ต้องไม่ขึ้นต้นด้วย else/if ในบรรทัดเดียวกัน */
+  const src = readFileSync(join(ROOT, 'src/pages/HeijunkaKanban.jsx'), 'utf8');
+  const bad = [];
+  src.split('\n').forEach((ln, i) => {
+    if (!/rows\.push\(\{[^}]*line_name:\s*'STORE'[^}]*type:\s*'consume'/.test(ln)) return;
+    if (/^\s*(else|if|\}\s*else)\b/.test(ln)) bad.push(`HeijunkaKanban.jsx:${i + 1}  ${ln.trim().slice(0, 100)}`);
+  });
+  assert.deepEqual(bad, [], '\n\n❌ แถว "ออกจาก STORE" ของใบขอเติมถูกเขียนแบบมีเงื่อนไข\n'
+    + bad.join('\n')
+    + '\n   ⇒ พาร์ทที่ไม่เข้าเงื่อนไขจะได้ของเข้าไลน์โดยไม่มีใครหัก = ยอด STORE พองเงียบๆ\n'
+    + '   fix: push เสมอ · ไม่พอให้ติดลบ แล้วแจ้งเหตุผลใน note/toast (กฎ 19/11 "ตัดเต็มและติดลบ")\n');
+});
+
+/* ── 🧭 count-progress-physical-only (25/11 · ขั้น ② นับที่ไลน์ปลายทาง) ──────────
+   `line_stock_transactions.type='adjust'` เป็นถุงรวม: "ตรวจนับ:" (คนไปนับของจริง) ปนกับ
+   "ตั้งยอดให้ตรงไฟล์ Monitoring" (191+102+88 แถว) · "ตั้งต้นใหม่ 01/10" · "ย้ายยอด…" · "แก้ย้อนหลัง…"
+   เอามารวมกันตอบ "ไลน์นี้นับล่าสุดเมื่อไหร่" = จอบอกว่า LINE D นับแล้ว 03/11 ทั้งที่วันนั้นตั้งยอดตามไฟล์
+   (ยอด −100,212 ของ LINE D เกิดจากการตั้งยอดทับกันหลายรอบ ไม่ใช่การผลิต)
+   ⇒ ความคืบหน้ารอบนับต้องใช้ `lastPhysicalCountAt` · เส้นห้ามหักใบส่งย้อนหลังยังใช้ `lastCountAt` (fail-closed คนละทาง)
+   🔴 ห้ามยุบ 2 ฟังก์ชันนี้เป็นตัวเดียว */
+test('🛡️ count-progress-physical-only — ความคืบหน้ารอบนับห้ามนับ "ปรับยอด" เป็นการนับ', () => {
+  const rel = 'src/utils/stockCount.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  assert.match(code, /export function lastCountAt\(/, `\n\n❌ ${rel} ไม่มี lastCountAt() — เส้นห้ามหักใบส่งย้อนหลังหายไป\n`);
+  assert.match(code, /export function lastPhysicalCountAt\(/,
+    `\n\n❌ ${rel} ไม่มี lastPhysicalCountAt() — ความคืบหน้ารอบนับจะไปใช้ adjust ทุกแบบ = จอโกหก\n`);
+  /* ตัวตัดสิน "นี่คือการนับของจริงไหม" ต้องดูที่ note prefix ห้ามถือว่า adjust ทุกใบคือการนับ */
+  assert.match(code, /startsWith\(COUNT_NOTE_PREFIX\)/,
+    `\n\n❌ ${rel}: isPhysicalCount ต้องตัดสินจาก note "ตรวจนับ:" (COUNT_NOTE_PREFIX)\n`);
+  const body = code.slice(code.indexOf('export function countRoundRows('));
+  assert.match(body, /lastPhysicalCountAt\(/,
+    `\n\n❌ ${rel}: countRoundRows() ต้องใช้ lastPhysicalCountAt()\n`);
+  assert.ok(!/\blastCountAt\(/.test(body),
+    `\n\n❌ ${rel}: countRoundRows() เรียก lastCountAt() — "ตั้งยอดตามไฟล์" จะถูกนับเป็นการนับของจริง\n`);
+  /* แผงบนจอต้องอ่านตัวเลขจากของกลาง ห้ามไล่นับ negative/วันนับเองในหน้า */
+  const ui = 'src/components/StockCountSheet.jsx';
+  const uic = stripComments(readFileSync(join(ROOT, ui), 'utf8'));
+  assert.match(uic, /countRoundRows\(/, `\n\n❌ ${ui} ไม่ได้ใช้ countRoundRows() — ตัวเลขรอบนับต้องมีชุดเดียว\n`);
+  assert.ok(!/lastPhysicalCountAt\(/.test(uic),
+    `\n\n❌ ${ui} ไล่หาวันนับเองในหน้า — ให้ผ่าน countRoundRows() ที่เดียว\n`);
+});
+
+/* ── 🛡️ skill-delete-keeps-scores (25/11 · user "ทำด่านกันลบสกิลที่ยังมีคะแนนด้วย") ──────
+   เดิมปุ่มลบสกิลที่ /operator ลบคะแนนพนักงานทุกคนพ่วงไปด้วย · คะแนนค้างไร้นิยาม 22 รหัสขึ้นการ์ดเป็นรหัส
+   ด่านจริงอยู่ DB (trg_skill_def_delete_guard) — ด่านนี้กันจอกลับไปลบคะแนนพ่วง */
+test('🛡️ skill-delete-keeps-scores — ปุ่มลบสกิลห้ามลบคะแนนพนักงานพ่วง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/operator.jsx'), 'utf8'));
+  /* เฉพาะตัวลบสกิล — ฟอร์มแก้พนักงาน (ล้างคะแนนรายคน) ยังลบแถวของคนนั้นได้ตามปกติ */
+  const start = src.indexOf('const handleDeleteSkill');
+  assert.ok(start >= 0, 'หา handleDeleteSkill ใน operator.jsx ไม่เจอ — ย้าย/เปลี่ยนชื่อแล้วต้องตามแก้ด่านนี้');
+  const code = src.slice(start, src.indexOf('const handleUpdateSkill', start));
+  assert.ok(/employee_skills[\s\S]*count:\s*'exact'/.test(code), 'handleDeleteSkill ต้องนับคะแนนก่อนลบ');
+  assert.ok(!/from\(\s*'employee_skills'\s*\)\s*\.delete\(/.test(code),
+    '\n🛡️ operator.jsx ห้าม .from(\'employee_skills\').delete() — ลบสกิลได้เฉพาะตัวที่ยังไม่มีใครมีคะแนน '
+    + '(นับก่อน + trigger trg_skill_def_delete_guard ฝั่ง DB · 📄 docs/modules/employee-skills-exp.md §25/11)\n');
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261125b_skill_def_delete_guard.sql'), 'utf8');
+  assert.ok(/before delete on public\.skill_definitions/.test(mig), 'migration ด่านลบสกิลต้องมี trigger before delete');
+});
+
+test('🪪 account-hint-only-identity-codes — บรรทัด "บัญชีที่กำลังใช้" ห้ามขึ้นกับด่านที่เป็นเรื่องของช่อง/ใบ', () => {
+  /* 25/11 · user: "ช่องนี้ตรงที่บอกว่าใช้บัญชีอะไร มันดูตลก … งานที่ไม่เกี่ยวกับบัญชีที่ล็อกอินอยู่
+     แต่มาแจ้งเป็นชื่อเจ้าของบัญชี เค้าจะสับสนมั้ย ว่าช่องนี้เกี่ยวอะไรกับเค้า ทำไมมีชื่อเค้า"
+     เคสจริง: ช่อง "รอ ผจก.ส่วนซ่อมบำรุง รับทราบ" (code `other_team`) ที่ระบุชื่อช่างไว้คนละคน
+     แล้วต่อท้ายด้วยชื่อ "คนที่กำลังดู" ⇒ อ่านแล้วเหมือนช่องนั้นเป็นของเรา
+     ⇒ กฎ: โชว์ได้เฉพาะโค้ดที่ข้อความของมันพูดถึง "บัญชีนี้" อยู่แล้ว (ทะเบียน ACCOUNT_HINT_CODES) */
+  const perm = readFileSync(ROOT + 'src/utils/mtnStepPerm.js', 'utf8');
+  assert.ok(/export const ACCOUNT_HINT_CODES\b/.test(perm) && /export function showsAccountHint\b/.test(perm),
+    '\n\n❌ ไม่มีทะเบียน ACCOUNT_HINT_CODES / showsAccountHint() ใน utils/mtnStepPerm.js\n');
+  assert.ok(!/ACCOUNT_HINT_CODES\s*=\s*Object\.freeze\(\[[^\]]*'other_team'/.test(perm)
+    && !/ACCOUNT_HINT_CODES\s*=\s*Object\.freeze\(\[[^\]]*'wrong_side'/.test(perm),
+    '\n\n❌ ACCOUNT_HINT_CODES มี other_team / wrong_side — 2 โค้ดนี้บอกว่า "ช่องนี้เป็นของฝั่ง/ทีมอื่น"\n'
+    + '   ต่อท้ายด้วยชื่อคนที่กำลังดู = จอโกหกว่าช่องนั้นเกี่ยวกับเขา\n');
+
+  const page = readFileSync(ROOT + 'src/pages/MtnRepair.jsx', 'utf8');
+  const spots = page.match(/\{whoAmILine[^}]*&&[^}]*<span/g) || [];
+  assert.ok(spots.length > 0, '\n\n❌ หา whoAmILine ใน MtnRepair.jsx ไม่เจอ — ด่านนี้ตามของจริงไม่ทันแล้ว\n');
+  for (const s of spots) {
+    assert.ok(/showsAccountHint\(/.test(s),
+      `\n\n❌ MtnRepair.jsx โชว์บรรทัดบัญชีโดยไม่ถาม showsAccountHint():\n   ${s}\n`
+      + '   ⇒ ต้องเป็น {whoAmILine && showsAccountHint(<code ของด่านนั้น>) && <span …>}\n');
+  }
+});
+
+/* ── ⏳ count-blocks-pending-adjust (25/11 · user "ต่างคนต่างนับ ต่างคนต่างอัพยอด จะมั่วไหม") ────
+   view `line_stock_summary` มี `where status='approved'` ⇒ **ใบ pending ไม่อยู่ใน qty_on_hand**
+   คนที่ 1 นับแล้วใบยังรออนุมัติ · คนที่ 2 เปิดจอเห็น "ยอดระบบ" ตัวเดิม กรอกยอดเดิม = เขียนผลต่างซ้ำ
+   พออนุมัติทั้งคู่ ของหายสองเท่า **ไม่มี error ไม่มีใครรู้** (คลาสเดียวกับการหักซ้ำ 1.3 ล้านชิ้น 25/11)
+   ⇒ ใบนับต้องกันคู่ (ไลน์, mat) ที่มีใบ adjust ค้าง และ **เขียนบนจอว่ากันไว้กี่พาร์ท ห้ามทิ้งเงียบ** */
+test('🛡️ count-blocks-pending-adjust — ใบนับต้องกันพาร์ทที่มีใบปรับยอดค้างรออนุมัติ', () => {
+  const rel = 'src/utils/stockCount.js';
+  const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
+  assert.match(code, /export function pendingAdjustMap\(/, `\n\n❌ ${rel} ไม่มี pendingAdjustMap()\n`);
+  assert.match(code, /export function splitPendingBlocked\(/, `\n\n❌ ${rel} ไม่มี splitPendingBlocked()\n`);
+  /* ต้องกันทุกชนิดของ adjust ที่ pending ไม่ใช่เฉพาะใบตรวจนับ — ใบ 🔧 ปรับยอดก็ทำให้ยอดตั้งต้นเพี้ยน */
+  const body = code.slice(code.indexOf('export function pendingAdjustMap('));
+  assert.ok(!/isPhysicalCount\(/.test(body.slice(0, body.indexOf('export function splitPendingBlocked'))),
+    `\n\n❌ ${rel}: pendingAdjustMap กรองเฉพาะใบตรวจนับ — ใบปรับยอดค้างก็ทำให้นับซ้ำได้เหมือนกัน\n`);
+
+  const ui = 'src/components/StockCountSheet.jsx';
+  const uic = stripComments(readFileSync(join(ROOT, ui), 'utf8'));
+  /* โหลดใบค้างมาจริง (ไม่งั้น map ว่างตลอด = ด่านหลอก) */
+  assert.match(uic, /status'\s*,\s*'pending'\)|eq\('status',\s*'pending'\)/,
+    `\n\n❌ ${ui} ไม่ได้โหลดใบ adjust ที่ pending — ด่านกันนับซ้ำจะว่างเปล่าตลอด\n`);
+  const save = uic.slice(uic.indexOf('const save = async'), uic.indexOf('if (loading)'));
+  assert.match(save, /splitPendingBlocked\(/,
+    `\n\n❌ ${ui}: save() ต้องผ่าน splitPendingBlocked() — ช่องที่ disabled ไม่ใช่ด่าน (กฎชั้น ③)\n`);
+  assert.match(save, /blocked\.length/,
+    `\n\n❌ ${ui}: กันแถวออกแล้วต้องเขียนบนจอว่ากันไว้กี่พาร์ท (ห้ามทิ้งเงียบ)\n`);
+});
+
+test('🎨 no-var-alpha-hex — ห้ามเอา var(--x) ไปต่อ alpha-hex (`${c}14`)', () => {
+  /* 25/11: รอบไล่สีดิบ → token เผลอแปลงค่าที่ถูกเอาไป **ต่อ 2 หลักท้ายเป็น alpha**
+     (`linear-gradient(${c}14, ${c}14)` = ท่าแทน color-mix() ของโปรเจคนี้ · CLAUDE.md §เพดานเบราว์เซอร์)
+     ⇒ ได้ `var(--green)14` ซึ่ง **parse ไม่ได้ = เบราว์เซอร์ทิ้งทั้งบรรทัด declaration**
+     พื้น/ขอบหายเงียบๆ ไม่มี error ไม่มีจอพัง — build/lint/เทส/crashsweep จับไม่ได้เลย
+     (เกิดจริงกับ `PlanFrameRow.jsx` และ**หลุดขึ้น main ไปแล้ว 1 รอบ** ก่อนจะจับได้)
+     ⇒ โทนจางต้องใช้ token ที่เป็น rgba อยู่แล้ว: `--x-dim` (พื้น 12%) · `--x-line` (เส้น 40%)
+
+     วิธีตรวจ: หา `${…}NN` (NN = 2 หลัก hex) แล้วไล่ดูว่า "ค่าที่ไหลมาถึงตรงนั้น" เป็น `var(--…)` ไหม
+     · `${NAME}NN`      → ดู `const NAME =` / `NAME =` (ไม่ดู `NAME:` เพราะชนกับ style prop ทั่วไป)
+     · `${obj.PROP}NN`  → ดูทุก `PROP: '…'` ในไฟล์ (ทะเบียนสถานะมักเขียนแบบนี้ — เคส PlanFrameRow) */
+  const alpha = /\$\{([^}]{1,60})\}([0-9a-fA-F]{2})\b/g
+  const bad = []
+  for (const file of walk(join(ROOT, 'src'), ['.jsx', '.js'])) {
+    const rel = relative(ROOT, file)
+    const code = stripComments(readFileSync(file, 'utf8'))
+    let m
+    while ((m = alpha.exec(code))) {
+      const expr = m[1].trim()
+      const parts = expr.split('.')
+      const head = parts[0]
+      if (!/^[A-Za-z_$][\w$]*$/.test(head)) continue
+      let isVar = false
+      if (parts.length > 1 && /^[A-Za-z_$][\w$]*$/.test(parts[1])) {
+        /* `${st.c}14` — ทะเบียนเขียนเป็น `c: 'var(--green)'`
+           🔴 ชื่อ prop ที่ตรงกับชื่อ CSS property (`color`, `background`, …) **ข้าม** —
+              ไฟล์เดียวกันมักมี `color: 'var(--muted)'` ใน inline style อยู่แล้ว = false positive
+              ⇒ ด่านนี้จับ "ทะเบียนที่ตั้งชื่อ prop เอง" (c/clr/tone/bg) ซึ่งเป็นรูปที่พลาดจริง
+              (รูป `color:` ยังต้องอาศัยคนรีวิว — เขียนไว้ตรงนี้ให้รู้ว่าเป็นช่องโหว่ที่ยอมรับ) */
+        const CSSPROP = ['color', 'background', 'backgroundColor', 'borderColor', 'fill', 'stroke', 'bg'];
+        isVar = !CSSPROP.includes(parts[1])
+          && new RegExp(`\\b${parts[1]}\\s*:\\s*'var\\(--`).test(code)
+      } else {
+        isVar = new RegExp(`(?:const|let|var)\\s+${head}\\s*=\\s*'var\\(--`).test(code)
+          || new RegExp(`(?<![:\\w])${head}\\s*=\\s*'var\\(--`).test(code)
+      }
+      if (isVar) bad.push(`${rel}: \${${expr}}${m[2]}`)
+    }
+  }
+  assert.deepEqual([...new Set(bad)], [],
+    '\n\n❌ เอา var(--x) ไปต่อ alpha-hex — CSS ทิ้งทั้งบรรทัด (พื้น/ขอบหายเงียบ):\n   '
+    + [...new Set(bad)].join('\n   ')
+    + '\n   ⇒ ใช้ var(--x-dim) (พื้น 12%) / var(--x-line) (เส้น 40%) แทน\n')
+})
+
+/* ── 🎛️ scope-select-merged-group (25/11 · user "ยังเด้งมั่วอยู่เห็นมั้ย") ──────
+   กดกรอบ APRON บนภาพรวม Manpower Board ⇒ lline = กลุ่มที่ถูกซ่อน (ชื่อซ้ำแผนก) ⇒ ช่องขึ้น "⚠ ไม่อยู่ในตัวเลือก" */
+test('🛡️ scope-select-merged-group — ไลน์ที่เป็นกลุ่มซ่อน (merged) ต้องชี้แผนก', () => {
+  const code = stripComments(readFileSync(join(ROOT, 'src/components/SectionScopeSelect.jsx'), 'utf8'));
+  assert.ok(/optionOf\?\.\(\s*'line_group'[\s\S]{0,80}\.merged/.test(code),
+    '\n🎛️ SectionScopeSelect (pickLine) ต้องเช็ค optionOf(\'line_group\', line).merged แล้วชี้แผนก — '
+    + 'กลุ่มชื่อซ้ำแผนกถูกซ่อนในลิสต์ (📄 docs/modules/manpower-board.md §25/11)\n');
+});
+
+test('🖼️ jig-frames-no-dup — loadDeptFrames ต้องกันค่าว่างเข้า .in() และยุบ id ซ้ำก่อนคืน', () => {
+  /* 26/11 · crashsweep เจอ "คีย์ซ้ำในลิสต์ 15 ตัว" ที่ /pm?tab=setup ตอนกด "แก้ไข"
+     ต้นเหตุ: `extra` = `refd.data.map(r => r.image_id)` แล้วยัดเข้า `.in('id', extra)` ต่อทันที
+     โดยเชื่อว่าคิวรีก่อนหน้ากรอง `.not('image_id','is',null)` ไว้แล้ว
+     ⇒ หลุดมาตัวเดียว = `.in('id',[null])` ซึ่งคืน **ทุกแถว** แทนที่จะคืน 0 แถว
+     ⇒ `rows` มีของซ้ำ ⇒ ผู้เรียกใช้ `im.id` เป็น React key ⇒ แถวถูกวาดซ้ำ/กลืนแบบไม่การันตี
+     (React เตือนทาง console ไม่ throw ⇒ build/เทส/จอผ่านหมด เห็นจาก crashsweep เท่านั้น)
+     🔴 กฎ: ฟังก์ชันที่ต่อผลหลายคิวรีของ **ตารางเดียวกัน** ต้องยุบ id ซ้ำที่ตัวมันเอง
+        ห้ามฝากให้ผู้เรียกระวัง (ผู้เรียกเห็นแค่ "อาเรย์ของแถว" ไม่รู้ที่มา) */
+  const src = readFileSync(join(ROOT, 'src/utils/jigFrames.js'), 'utf8');
+  assert.match(src, /\.filter\(Boolean\)/,
+    '\n\n❌ jigFrames.js ไม่ได้กรองค่าว่างออกจาก `extra` ก่อนส่งเข้า `.in()`\n'
+    + '   `.in(col, [null])` คืนทุกแถว ไม่ใช่ 0 แถว ⇒ ได้ของซ้ำกลับมาเงียบๆ\n');
+  assert.ok(/new Map\(\)[\s\S]{0,400}byId\.has\(/.test(src),
+    '\n\n❌ jigFrames.js ไม่ได้ยุบ id ซ้ำก่อนคืน `rows`\n'
+    + '   ฟังก์ชันนี้ต่อผล 2 คิวรีของ jig_images ⇒ ต้องการันตี id ไม่ซ้ำที่ตัวเอง\n'
+    + '   (ผู้เรียกใน PMSetup/PMCheckData ใช้ `im.id` เป็น React key)\n');
+});
+
+/* 🚫 ใบรวมสถานี AM ห้ามมีจุดชิม/งาน PM (26/11 · คำสั่ง user "สถานีจะใช้แค่กับ am ไม่ยุ่งกับ pm, shim record
+   เพราะ shim record เป็นงานของส่วนช่าง") + ใบเดี่ยวของทีม AM ดูค่าชิมได้อย่างเดียว
+   คลาสเดียวกับบั๊ก 26/11 "AM ไปแก้ข้อมูลของ JIG MTN" (รูปเครื่องปนแผนก) */
+test('🛡️ am-station-no-shim — ใบรวมสถานี AM ไม่อ่าน/เขียนจุดชิม · ใบ AM บันทึกค่าชิมไม่ได้', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  const a = src.indexOf('function AmStationSheet('), b = src.indexOf('export default function PMCheckData(');
+  assert.ok(a > 0 && b > a, 'หา AmStationSheet ไม่เจอ');
+  const station = src.slice(a, b);
+  for (const bad of ['recordShimEvent', 'fixture_points', 'ShimRecordSection', 'shimPins']) {
+    assert.ok(!station.includes(bad), `\n\n❌ ใบรวมสถานี AM มี "${bad}" — สถานีเป็นงาน AM ล้วน ห้ามแตะจุดชิม (งานของทีมช่าง)\n`);
+  }
+  assert.match(src, /const canShim = can\('fixture_shim', 'record', userRole\) && !shimAmReadOnly/,
+    '\n\n❌ ใบ AM (ใบเดี่ยว) กรอก/บันทึกค่าชิมได้อีกแล้ว — ต้องดูได้อย่างเดียว (shimAmReadOnly = isAmTeam(department))\n');
+});
+
+/* 📈 สูตร SPC มีที่เดียว (26/11) — QA + SPC อุปกรณ์ (ใบ AM/PM · ค่าชิม) ใช้ computeSPC จาก src/utils/spcCalc.js
+   ก๊อปสูตรไปไว้ในหน้า = เส้นควบคุม/Cpk 2 ชุดคิดไม่ตรงกัน (เคยแก้บั๊ก subgroup ไม่เท่ากันที่ QA 20/08 — ชุดที่ก๊อปจะไม่ได้แก้ตาม) */
+test('🛡️ spc-single-formula — computeSPC / SPC_CONST ประกาศที่ src/utils/spcCalc.js เท่านั้น', () => {
+  const bad = [];
+  const walk = (d) => { for (const f of readdirSync(d)) { const p = join(d, f); const st = statSync(p);
+    if (st.isDirectory()) { if (f !== '__tests__') walk(p); continue }
+    if (!/\.(jsx?|mjs)$/.test(f)) continue;
+    const rel = relative(ROOT, p); if (rel === 'src/utils/spcCalc.js') continue;
+    const src = stripComments(readFileSync(p, 'utf8'));
+    if (/function\s+computeSPC\s*\(|const\s+SPC_CONST\s*=/.test(src)) bad.push(rel);
+  } };
+  walk(join(ROOT, 'src'));
+  assert.deepEqual(bad, [], '\n\n❌ มีสูตร SPC ชุดที่ 2 — import { computeSPC } from utils/spcCalc แทน\n');
+});
+
+test('🔌 usability-ask-only-pending-parts — ทวงยืนยันสถานะเครื่องเฉพาะเคส "รอของมาเปลี่ยน"', () => {
+  /* 27/11 · user: "ทำไมยังต้องมีให้กดยืนยัน เคสแบบนี้สเตปถึงรออนุมัติแล้ว ยังไม่แก้หรอ
+     ที่จะขึ้นมาให้ยืนยันแค่เรื่องที่ซ่อมชั่วคราวรอ PR"
+     ของเดิมขึ้น "(ยังไม่มีใครกดยืนยัน)" ทุกใบทุกขั้น ⇒ ใบที่ซ่อมจบรอแค่ลายเซ็นก็ยังทวง
+     = ทวงจนคนเลิกสนใจ (คลาสเดียวกับกระดิ่งท่วม)
+     🔴 เกณฑ์อยู่ `usabilityNeedsAsk()` ที่เดียว · หน้าห้ามเทียบ repair_path / source เอง
+     🔴 "ไม่ทวง" ต้องไม่ใช่ "เอาปุ่มออก" — ช่างต้องตั้งสถานะเองได้ทุกเมื่อ */
+  const util = readFileSync(join(ROOT, 'src/utils/machineUsability.js'), 'utf8');
+  assert.match(util, /export function usabilityNeedsAsk\(/,
+    '\n\n❌ ไม่มี usabilityNeedsAsk() ใน utils/machineUsability.js\n');
+  assert.ok(/source === 'declared'\) return false/.test(util),
+    '\n\n❌ usabilityNeedsAsk ไม่ได้กัน "ประกาศไว้แล้ว = ไม่ทวง"\n');
+  assert.ok(/repairPathMeta\(repairPath\)\?\.needsPr/.test(util),
+    '\n\n❌ usabilityNeedsAsk ไม่ได้ผูกกับทะเบียนเส้นทางซ่อม (needsPr) — ห้ามเทียบคีย์เส้นทางเอง\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/usabilityNeedsAsk\(/.test(page),
+    '\n\n❌ MtnRepair.jsx ไม่ได้ถาม usabilityNeedsAsk() — กลับไปทวงทุกใบแล้ว\n');
+  assert.ok(/ยังไม่มีใครกดยืนยัน/.test(page) === false,
+    '\n\n❌ MtnRepair.jsx ยังมีป้าย "(ยังไม่มีใครกดยืนยัน)" แบบขึ้นทุกใบ\n');
+  assert.ok(/!ask && !openSet/.test(page),
+    '\n\n❌ ไม่มีทางยุบปุ่มตั้งสถานะไว้ (หรือเอาปุ่มออกไปเลย)\n'
+    + '   ไม่ทวง ≠ ปิดปุ่ม — ช่างต้องตั้งสถานะเองได้ทุกเมื่อ\n');
+});
+
+test('✍️ sign-queue-single-rule — ป้าย "รอคุณเซ็น" กับลิสต์ที่ป้ายพาไป ต้องใช้กฎเดียวกัน', () => {
+  /* 27/11 · หน้างานแจ้ง: "ทำไมแจ้งเตือนงานที่รออนุมัติ พอกดเข้ามายังเจองานที่ยังติด loop PR อยู่
+     มันยังอนุมัติไม่ได้นิ"
+     ป้ายนับถูกแล้ว (ตัดใบติดลูป PR ออกตั้งแต่ 23/11) แต่ลิงก์พาไป `?wait=<stage>`
+     = "ใบที่ค้างขั้นนี้" เฉยๆ ⇒ ไม่รู้จักทั้งกฎ "รอเราจริง" และกฎ PR ⇒ ป้ายบอก 4 เจอ 14
+     คลาสเดียวกับ ack-queue-single-rule (23/11) เป๊ะ */
+  const q = readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8');
+  assert.match(q, /export function signWaitsOnMe\(/,
+    '\n\n❌ ไม่มี signWaitsOnMe() ใน utils/myQueue.js — กฎ "ใบนี้รอเราเซ็นไหม" ไม่มีเจ้าของ\n');
+  assert.ok(/signWaitsOnMe\(o, me, src\.prOf/.test(q),
+    '\n\n❌ ตัวนับป้ายในคิวไม่ได้ใช้ signWaitsOnMe() — กลับไปเขียนเงื่อนไขซ้ำแล้ว\n');
+  assert.ok(/to: `\/mtn-repair\?tab=list&sign=/.test(q),
+    '\n\n❌ ลิงก์ของป้าย "รอคุณเซ็น" ไม่ได้ชี้ `?sign=<stage>`\n'
+    + '   ชี้ `?wait=` = "ใบที่ค้างขั้นนี้" ซึ่งไม่รู้จักกฎรอเราจริง/กฎ PR ⇒ เลขไม่ตรงป้ายอีกรอบ\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/signWaitsOnMe\(o, signMe/.test(page),
+    '\n\n❌ ตัวกรอง `?sign=` ในหน้า MO ไม่ได้ใช้ signWaitsOnMe()\n');
+  assert.ok(/actorSide: actorSideOf\(/.test(page) && /posRank: positionRank\(/.test(page),
+    '\n\n❌ ctx ของตัวกรอง `?sign=` ขาด actorSide / posRank\n'
+    + '   soleSignerFor() จะคืน false ทุกแถว (ไม่รู้ฝั่ง/ตำแหน่ง = ไม่นับ) ⇒ จอว่างเปล่าโดยไม่มีอะไรบอก\n');
+  assert.ok(/prsForLabel\(o\), fSign\)/.test(page),
+    '\n\n❌ ตัวกรอง `?sign=` ไม่ได้ส่งใบขอซื้อ (prsForLabel) ⇒ ใบที่ติดลูป PR จะปนกลับมาอีก\n');
 });

@@ -206,3 +206,78 @@ test('ด่านความสดไม่แตะของที่ "พอ
     { lastMoveOf: () => '2026-01-01T00:00:00Z', now: NOW16 })[0];
   assert.equal(r.state, 'ok');
 });
+
+/* ═══ 🔎 "ทะเบียนตั้ง min ผิดที่" (18/11 · วัดจริง 35/41 คู่) ════════════════════════
+ * โซ่จริง: ไลน์ปั๊ม ──issue──▶ STORE ──ใบขอเติม──▶ ไลน์ประกอบ ──คอนเฟิร์ม FG──▶ consume
+ * ทะเบียนตั้ง min ที่ไลน์ปั๊ม = บัญชีที่นั่นนิ่งถาวร ⇒ ต้องชี้ที่จริงให้คนแก้ ไม่ใช่บอก "ตอบไม่ได้"
+ * ═════════════════════════════════════════════════════════════════════════════════ */
+const EL = (line, lastAt = '2026-11-18T03:00:00Z', moves = 291) => () => ({ line_name: line, lastAt, moves });
+
+test('🔎 บัญชีที่ไลน์ทะเบียนนิ่ง + ของขยับที่อื่น = ติดธง wrongPlace + ชี้ชื่อที่จริง', () => {
+  const r = minAlerts([LV('X', 2400, null)], () => 0, () => 'LINE C',
+    { lastMoveOf: () => '2026-10-27T00:00:00Z', movesElsewhereOf: EL('STORE'), now: NOW16 })[0];
+  assert.equal(r.state, 'unknown');                 // ยัง "ติด min" ไม่ได้ — ของไม่ได้อยู่ที่นี่
+  assert.equal(r.wrongPlace, true);
+  assert.equal(r.elsewhere.line_name, 'STORE');
+  assert.equal(r.elsewhere.moves, 291);
+  assert.match(r.why, /ขยับจริงที่ "STORE"/);
+  assert.match(r.why, /2026-11-18/);
+  assert.match(r.why, /ตั้ง min ผิดที่/);
+});
+
+test('🔎 บัญชีไม่เคยขยับเลย + ของขยับที่อื่น = ติดธงเหมือนกัน (เคส 3 คู่ที่ไม่มีบัญชี)', () => {
+  const r = minAlerts([LV('X', 600, null)], () => 0, () => 'LINE D',
+    { lastMoveOf: () => null, movesElsewhereOf: EL('Assembly Line D - GWM&RA'), now: NOW16 })[0];
+  assert.equal(r.state, 'unknown');
+  assert.equal(r.wrongPlace, true);
+  assert.match(r.why, /ไม่เคยขยับ/);
+  assert.match(r.why, /Assembly Line D - GWM&RA/);
+});
+
+test('🔴 ที่จริง = ไลน์เดิม ⇒ ห้ามติดธง (บัญชีเก่าจริงๆ ไม่ใช่ตั้งผิดที่ · 3 คู่ที่ LINE D)', () => {
+  const r = minAlerts([LV('X', 3600, null)], () => 0, () => 'L',
+    /* 🔴 'Line 60' = ไลน์ในทะเบียน (`LV` ตั้งไว้) · 'L' คือไลน์เจ้าของงาน — คนละแกน ห้ามปน */
+    { lastMoveOf: () => '2026-10-21T00:00:00Z', movesElsewhereOf: EL('Line 60'), now: NOW16 })[0];
+  assert.equal(r.state, 'unknown');
+  assert.equal(r.wrongPlace, false);
+  assert.equal(r.elsewhere, null);
+  assert.doesNotMatch(r.why, /ผิดที่/);
+});
+
+test('🔴 ไม่ส่ง movesElsewhereOf = พฤติกรรมเดิมเป๊ะ (ข้อความไม่เปลี่ยน)', () => {
+  const a = minAlerts([LV('X', 100, null)], () => 0, () => 'L',
+    { lastMoveOf: () => '2026-10-30T00:00:00Z', now: NOW16 })[0];
+  assert.equal(a.wrongPlace, false);
+  assert.equal(a.elsewhere, null);
+  assert.match(a.why, /ไม่ขยับมา 17 วัน \(ล่าสุด 2026-10-30\) — ยอดคงเหลือเชื่อเป็นของจริงไม่ได้$/);
+});
+
+test('🔴 movesElsewhereOf โยน/คืนค่าขยะ = ไม่ติดธง ไม่พัง (อ่านไม่ได้ ≠ ตั้งผิดที่)', () => {
+  const run = (fn) => minAlerts([LV('X', 100, null)], () => 0, () => 'L',
+    { lastMoveOf: () => '2026-10-30T00:00:00Z', movesElsewhereOf: fn, now: NOW16 })[0];
+  for (const fn of [() => { throw new Error('boom'); }, () => null, () => ({}), () => ({ line_name: '  ' }), () => 7]) {
+    const r = run(fn);
+    assert.equal(r.wrongPlace, false, String(fn));
+    assert.equal(r.elsewhere, null);
+  }
+});
+
+test('🔴 ของยังพอ = ok ไม่ติดธง (ธงนี้ใช้อธิบาย "ตอบไม่ได้" เท่านั้น)', () => {
+  const r = minAlerts([LV('X', 100, null)], () => 500, () => 'L',
+    { lastMoveOf: () => '2026-01-01T00:00:00Z', movesElsewhereOf: EL('STORE'), now: NOW16 })[0];
+  assert.equal(r.state, 'ok');
+  assert.equal(r.wrongPlace, false);
+});
+
+test('minAlertSummary — wrongPlace แยกออกจากกองตอบไม่ได้ทั่วไป', () => {
+  const rows = minAlerts(
+    [LV('A', 2400, null), LV('B', 2400, null), LV('C', 100, null)],
+    (ln, mat) => (mat === 'C' ? 500 : 0), () => 'L',
+    { lastMoveOf: (ln, mat) => (mat === 'A' ? '2026-10-27T00:00:00Z' : null),
+      movesElsewhereOf: (ln, mat) => (mat === 'A' ? { line_name: 'STORE', lastAt: '2026-11-18T00:00:00Z' } : null),
+      now: NOW16 });
+  const s = minAlertSummary(rows);
+  assert.equal(s.unknown, 2);        // A (นิ่ง) + B (ไม่มีบัญชี)
+  assert.equal(s.wrongPlace, 1);     // เฉพาะ A ที่ชี้ที่จริงได้ = แก้ได้
+  assert.equal(s.ok, 1);
+});

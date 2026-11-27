@@ -14,11 +14,11 @@ import { tr } from '../utils/i18n';
 const HEAD = ['พาร์ท / รายการ', 'ไป / มาจาก', 'จำนวน', 'รายละเอียด', 'สถานะ', ''];
 export function RowTable({ children, head = HEAD }) {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflowX: 'auto', background: 'var(--card)', boxShadow: 'var(--shadow-sm)' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflowX: 'auto', background: 'var(--card-surf)', boxShadow: 'var(--shadow-sm)' }}>
       <div role="table" style={{ minWidth: PART_ROW_MIN_W }}>
         <div role="row" style={{ display: 'grid', gridTemplateColumns: PART_ROW_COLS, gap: 12, padding: '7px 12px 7px 16px',
           background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-          {head.map((h, i) => <span key={i} role="columnheader" style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: i === 2 ? 'right' : 'left' }}>{tr(h)}</span>)}
+          {head.map((h, i) => <span key={i} role="columnheader" style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: i === 2 ? 'right' : 'left' }}>{tr(h)}</span>)}
         </div>
         <CardLayoutContext.Provider value="row">{children}</CardLayoutContext.Provider>
       </div>
@@ -31,14 +31,14 @@ export default function StatusZones({ rows, zones, statusOf, renderCard, emptyTe
   if (layout === 'table') return (
     <RowTable>
       {groups.map(z => (
-        <section key={z.key} aria-label={`${z.label} ${z.rows.length} ใบ`}>
+        <section key={z.key} aria-label={`${z.label} ${z.rows.length} ${tr("ใบ")}`}>
           <header style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '7px 12px',
             borderLeft: `6px solid ${z.color}`, borderBottom: '1px solid var(--border)',
             background: 'var(--card)', backgroundImage: `linear-gradient(${z.color}1f, ${z.color}1f)` }}>
-            <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>{tr(z.label)}</span>
+            <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>{tr(z.label)}</span>
             <span style={{ minWidth: 26, textAlign: 'center', padding: '0 8px', borderRadius: 'var(--r-pill)', background: z.color,
-              color: textOn(z.color), fontSize: 12.5, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{z.rows.length}</span>
-            {z.hint && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr(z.hint)}</span>}
+              color: textOn(z.color), fontSize: 14, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{z.rows.length}</span>
+            {z.hint && <span style={{ fontSize: 13.5, color: 'var(--text2)' }}>{tr(z.hint)}</span>}
           </header>
           {z.rows.length === 0
             ? <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>{emptyText}</div>
@@ -50,9 +50,9 @@ export default function StatusZones({ rows, zones, statusOf, renderCard, emptyTe
   return (
     <div style={{ display: 'grid', gap: 16, alignContent: 'start' }}>
       {groups.map(z => (
-        <section key={z.key} aria-label={`${z.label} ${z.rows.length} ใบ`} style={{
+        <section key={z.key} aria-label={`${z.label} ${z.rows.length} ${tr("ใบ")}`} style={{
           border: `1px solid ${z.color}66`, borderRadius: 'var(--radius-lg)', overflow: 'hidden',
-          background: 'var(--bg2)', boxShadow: 'var(--shadow-sm)',
+          background: 'var(--bg2-surf)', boxShadow: 'var(--shadow-sm)',
         }}>
           <header style={{
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',

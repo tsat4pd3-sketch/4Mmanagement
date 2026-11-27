@@ -73,7 +73,7 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
 
       /* ของนอกทะเบียน (`part_id` ว่าง) = ไม่มีที่ให้เข้าสต็อก — จบแค่สถานะ ต้องบอกบนจอ */
       if (!row.part_id) {
-        toast.success(`รับ "${row.part_name}" กลับแล้ว — ไม่ได้ผูกอะไหล่ในทะเบียน จึงไม่เข้าสต็อก`);
+        toast.success(`${tr("รับ")} "${row.part_name}" ${tr("กลับแล้ว — ไม่ได้ผูกอะไหล่ในทะเบียน จึงไม่เข้าสต็อก")}`);
       } else {
         const { error } = await supabaseDR.rpc('mtn_stock_move', {
           p_part_id: row.part_id, p_type: 'in', p_qty: q,
@@ -90,13 +90,13 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
           await load();
           if (undo.error || !(undo.data || []).length) {
             return toast.error(
-              `เข้าสต็อกไม่สำเร็จ (${error.message}) — และคืนสถานะไม่สำเร็จด้วย! `
-              + `รายการนี้จะขึ้นว่า "รับกลับแล้ว" ทั้งที่ของยังไม่เข้าสต็อก `
-              + `· แจ้งแอดมินพร้อมรหัส ${row.id}`);
+              `${tr("เข้าสต็อกไม่สำเร็จ")} (${error.message}) — ${tr("และคืนสถานะไม่สำเร็จด้วย")}! `
+              + `${tr("รายการนี้จะขึ้นว่า \"รับกลับแล้ว\" ทั้งที่ของยังไม่เข้าสต็อก")} `
+              + `· ${tr("แจ้งแอดมินพร้อมรหัส")} ${row.id}`);
           }
-          return toast.error(`เข้าสต็อกไม่สำเร็จ — คืนสถานะเป็น "ยังอยู่ข้างนอก" แล้ว: ${error.message}`);
+          return toast.error(`${tr("เข้าสต็อกไม่สำเร็จ — คืนสถานะเป็น \"ยังอยู่ข้างนอก\" แล้ว")}: ${error.message}`);
         }
-        toast.success(`รับ "${row.part_name}" กลับเข้าสต็อก ${q} แล้ว`);
+        toast.success(`${tr("รับ")} "${row.part_name}" ${tr("กลับเข้าสต็อก")} ${q} ${tr("แล้ว")}`);
         onStockChanged?.();
       }
       setBackFor(null); await load();
@@ -104,7 +104,7 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
   };
 
   const cancel = async (row) => {
-    const reason = window.prompt(`ยกเลิกรายการ "${row.part_name}" — เพราะอะไร? (ซ่อมไม่ได้ / ไม่เอากลับ)`);
+    const reason = window.prompt(`${tr("ยกเลิกรายการ")} "${row.part_name}" — ${tr("เพราะอะไร? (ซ่อมไม่ได้ / ไม่เอากลับ")})`);
     if (reason == null) return;
     if (!reason.trim()) return toast.error('ต้องใส่เหตุผล');
     const r = await supabaseDR.from('mtn_outsource_parts')
@@ -116,18 +116,18 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
   if (!orderId) return null;
 
   return (
-    <div style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+    <div style={{ marginBottom: 10, padding: '9px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)', border: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
         <b style={{ fontSize: 12.5 }}>{tr('🔧 ของที่ถอดออกมา ส่งซ่อมนอก')}</b>
         <span style={{ fontSize: 11.5, fontWeight: 600, color: pending.length ? 'var(--amber)' : 'var(--muted)' }}>
-          ยังอยู่ข้างนอก {pending.length}
+          {tr("ยังอยู่ข้างนอก")} {pending.length}
         </span>
         {!!done.length && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('· จบแล้ว')} {done.length}</span>}
         {canEdit && <button onClick={() => setAdding(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{adding ? tr('ปิดฟอร์ม') : tr('+ ส่งของไปซ่อม')}</button>}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 6 }}>
-        ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้ = <b>{tr('ปิดใบ MO ได้เลย ไม่ต้องรอของ')}</b> ·
-        ตัวที่ถอดออกมาส่งซ่อมแล้วบันทึกไว้ตรงนี้ · <b>กดรับของเข้า = เข้าสต็อกอะไหล่ให้อัตโนมัติ</b>
+        {tr("ใส่อะไหล่สำรองเข้าเครื่องแล้วเครื่องเดินได้")} = <b>{tr('ปิดใบ MO ได้เลย ไม่ต้องรอของ')}</b> ·
+        {tr("ตัวที่ถอดออกมาส่งซ่อมแล้วบันทึกไว้ตรงนี้")} · <b>{tr("กดรับของเข้า = เข้าสต็อกอะไหล่ให้อัตโนมัติ")}</b>
       </div>
       {err && <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6 }}>{tr('⚠ โหลดรายการส่งซ่อมนอกไม่สำเร็จ:')} {err} {tr('— ตัวนับข้างบนอาจไม่ครบ')}</div>}
 
@@ -141,7 +141,7 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
       {rows.map(r => {
         const state = outsourceState(r);
         return (
-          <div key={r.id} style={{ padding: '6px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${state.color}`, marginBottom: 5 }}>
+          <div key={r.id} style={{ padding: '6px 9px', borderRadius: 8, background: 'var(--card-surf)', border: '1px solid var(--border)', borderLeft: `3px solid ${state.color}`, marginBottom: 5 }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12 }}>
               <b style={{ flex: 1, minWidth: 150 }}>{r.part_name}</b>
               <span style={{ color: 'var(--muted)' }}>× {r.qty}</span>
@@ -155,13 +155,13 @@ export default function MtnOutsourcePanel({ order, parts = [], fullName = '', ca
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
               {!r.part_id && <span style={{ color: 'var(--amber)' }}>{tr('ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก) ·')} </span>}
-              ส่ง {fmtDateTime(r.sent_at)}{r.sent_by ? ` · ${r.sent_by}` : ''}
-              {r.supplier ? ` · ร้าน ${r.supplier}` : ''}
+              {tr("ส่ง")} {fmtDateTime(r.sent_at)}{r.sent_by ? ` · ${r.sent_by}` : ''}
+              {r.supplier ? ` · ${tr("ร้าน")} ${r.supplier}` : ''}
               {r.pr_no ? ` · PR ${r.pr_no}` : ''}
-              {r.repair_cost != null ? ` · ค่าซ่อม ${r.repair_cost}` : ''}
-              {r.expected_at ? ` · นัดรับ ${r.expected_at}` : ' · ไม่ได้นัดวันรับ'}
-              {r.back_at ? ` · รับกลับ ${fmtDateTime(r.back_at)}${r.back_by ? ` โดย ${r.back_by}` : ''}` : ''}
-              {r.cancelled_at ? ` · ยกเลิก ${fmtDateTime(r.cancelled_at)}${r.cancel_reason ? ` — ${r.cancel_reason}` : ''}` : ''}
+              {r.repair_cost != null ? ` · ${tr("ค่าซ่อม")} ${r.repair_cost}` : ''}
+              {r.expected_at ? ` · ${tr("นัดรับ")} ${r.expected_at}` : tr(" · ไม่ได้นัดวันรับ")}
+              {r.back_at ? ` · ${tr("รับกลับ")} ${fmtDateTime(r.back_at)}${r.back_by ? ` ${tr("โดย")} ${r.back_by}` : ''}` : ''}
+              {r.cancelled_at ? ` · ${tr("ยกเลิก")} ${fmtDateTime(r.cancelled_at)}${r.cancel_reason ? ` — ${r.cancel_reason}` : ''}` : ''}
               {r.note ? ` · ${r.note}` : ''}
             </div>
             {backFor === r.id && canEdit && <BackForm row={r} busy={busy} onCancel={() => setBackFor(null)} onConfirm={receive} />}
@@ -178,13 +178,13 @@ function BackForm({ row, busy, onCancel, onConfirm }) {
   const [note, setNote] = useState('');
   const short = num(q) != null && num(q) < Number(row.qty || 0);
   return (
-    <div style={{ marginTop: 6, padding: '7px 9px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+    <div style={{ marginTop: 6, padding: '7px 9px', borderRadius: 7, background: 'var(--bg2-surf)', border: '1px solid var(--border)' }}>
       <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 4 }}>{tr('รับกลับเข้าสต็อก —')} {row.part_name}</div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 6 }}>
         <label style={lbl}>{tr('จำนวนที่รับกลับ')}<input type="number" min="0" value={q} onChange={e => setQ(e.target.value)} style={inp} /></label>
         <label style={lbl}>{tr('หมายเหตุ')}<input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('เช่น ซ่อมแล้วใช้ได้')} style={inp} /></label>
       </div>
-      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{tr('⚠ น้อยกว่าที่ส่งไป (')}{row.qty}) — ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน</div>}
+      {short && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{tr('⚠ น้อยกว่าที่ส่งไป (')}{row.qty}) — {tr("ส่วนที่ขาดจะไม่ถูกบันทึกเป็นค้างอีก ถ้ายังรอของให้รับทีหลังแทน")}</div>}
       <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
         <button disabled={busy} onClick={() => onConfirm(row, q, note)} style={{ ...btnPri, opacity: busy ? 0.5 : 1 }}>{busy ? tr('กำลังบันทึก…') : tr('ยืนยันรับเข้าสต็อก')}</button>
         <button disabled={busy} onClick={onCancel} style={btnGhost}>{tr('ยกเลิก')}</button>
@@ -201,7 +201,7 @@ function AddForm({ parts, fullName, orderId, onCancel, onDone }) {
 
   const partOpts = useMemo(() => (parts || []).map(p => ({
     id: p.id, title: p.name, code: p.code || p.mat_no || '',
-    sub: `คงเหลือ ${p.stock_qty ?? 0} ${p.unit || ''}${p.shelf ? ` · ${p.shelf}` : ''}`,
+    sub: `${tr("คงเหลือ")} ${p.stock_qty ?? 0} ${p.unit || ''}${p.shelf ? ` · ${p.shelf}` : ''}`,
     keywords: [p.code, p.mat_no, p.part_no, p.shelf].filter(Boolean).join(' '), label: p.name,
   })), [parts]);
 
@@ -228,11 +228,11 @@ function AddForm({ parts, fullName, orderId, onCancel, onDone }) {
   };
 
   return (
-    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', marginBottom: 7 }}>
+    <div style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--card-surf)', border: '1px solid var(--border)', marginBottom: 7 }}>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>
-        อะไหล่ในทะเบียน (เลือก = รับกลับแล้วเข้าสต็อกให้เอง · พิมพ์เอง = ของนอกทะเบียน ไม่เข้าสต็อก)
+        {tr("อะไหล่ในทะเบียน (เลือก = รับกลับแล้วเข้าสต็อกให้เอง · พิมพ์เอง = ของนอกทะเบียน ไม่เข้าสต็อก")})
       </div>
-      <SearchSelect value={f.part_id} text={f.part_name} options={partOpts} allowFree freeHint="ไม่เข้าสต็อก"
+      <SearchSelect value={f.part_id} text={f.part_name} options={partOpts} allowFree freeHint={tr("ไม่เข้าสต็อก")}
         placeholder={tr('ค้นอะไหล่ — ชื่อ / รหัส / ชั้นวาง หรือพิมพ์เอง')}
         onChange={({ id, text }) => setF(o => ({ ...o, part_id: id || '', part_name: text || '' }))} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 6, marginTop: 6 }}>

@@ -36,18 +36,16 @@ export default function StorageMaintenance() {
 
       {/* ทำไมต้องมีหน้านี้ — เขียนไว้เพราะเป็นเหตุการณ์ที่ทำให้ทั้งโรงงาน login ไม่ได้ */}
       <div style={{
-        background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-lg)',
+        background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-lg)',
         padding: 12, marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.7,
       }}>
-        <b style={{ color: 'var(--text)' }}>{tr('ทำไมต้องบีบ:')}</b> Supabase คิดค่าบริการตาม
-        “จำนวนไบต์ที่ส่งออกไปหาเครื่องผู้ใช้” (egress) — ไม่ใช่จำนวนครั้ง
-        · รูปผัง PNG ใบเดียว 8 MB × จอที่เปิด 40 เครื่อง = 320 MB จากรูปใบเดียว
+        <b style={{ color: 'var(--text)' }}>{tr('ทำไมต้องบีบ:')}</b> Supabase {tr("คิดค่าบริการตาม “จำนวนไบต์ที่ส่งออกไปหาเครื่องผู้ใช้” (egress) — ไม่ใช่จำนวนครั้ง · รูปผัง PNG ใบเดียว 8 MB × จอที่เปิด 40 เครื่อง = 320 MB จากรูปใบเดียว")}
         <br />
         <InfoMore label={tr('ทำไมต้องบีบรูป')} size={11.5}>
-          เคยเกิดจริง 11 ก.ย. 2026: โควต้าเต็ม → Supabase ระงับบริการทั้ง organization →
+          {tr("เคยเกิดจริง 11 ก.ย. 2026: โควต้าเต็ม → Supabase ระงับบริการทั้ง")} organization →
           <b style={{ color: 'var(--accent2)' }}> {tr('ทั้งโรงงาน login ไม่ได้')}</b>
-          {' '}· WebP เล็กกว่า PNG/JPEG ราวครึ่งหนึ่งที่คุณภาพเท่ากัน และ
-          <b> {tr('ไม่ลดความละเอียด')}</b> (เคยลดแล้วผังเบลออ่านไม่ออก — ห้ามทำซ้ำ)
+          {' '}· WebP {tr("เล็กกว่า PNG/JPEG ราวครึ่งหนึ่งที่คุณภาพเท่ากัน และ")}
+          <b> {tr('ไม่ลดความละเอียด')}</b> ({tr("เคยลดแล้วผังเบลออ่านไม่ออก — ห้ามทำซ้ำ")})
         </InfoMore>
       </div>
 

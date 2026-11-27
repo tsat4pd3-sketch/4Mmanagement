@@ -113,12 +113,12 @@ export default function QrLabels() {
       };
       if (kind === 'machine' || kind === 'die') {
         const { data, error } = await mcQuery(kind);
-        if (error) toast.error('โหลดรายการไม่ได้: ' + error.message);   // ห้ามเงียบ — จอว่างจะอ่านว่า "ไม่มีอุปกรณ์"
+        if (error) toast.error((tr('โหลดรายการไม่ได้') + ': ') + error.message);   // ห้ามเงียบ — จอว่างจะอ่านว่า "ไม่มีอุปกรณ์"
         if (alive) setRows((data || []).map(r => ({ ...r, _qr: 'machine' })));
       } else if (kind === 'part') {
         /* ทะเบียนสินค้า (cache กลาง · แบ่งหน้าครบ) — ตัดขั้นย่อย OP (ไม่มีคัมบังของตัวเอง) + ตัวปิดใช้ แล้วบอกจำนวนบนจอ */
         let all = [];
-        try { all = await loadProductsMaster(); } catch (e) { toast.error('โหลดทะเบียนสินค้าไม่ได้: ' + (e?.message || e)); }
+        try { all = await loadProductsMaster(); } catch (e) { toast.error((tr('โหลดทะเบียนสินค้าไม่ได้') + ': ') + (e?.message || e)); }
         const keep = (all || []).filter(p => p.mat_no && p.is_active !== false && !p.is_operation);
         if (alive) {
           setRows(keep.map(p => ({ ...p, id: String(p.mat_no).trim(), _qr: 'product' })));
@@ -128,7 +128,7 @@ export default function QrLabels() {
         if (alive) setRows([]);   // แท็บใบสแกนโหลดของตัวเองใน ScanSheetPanel
       } else if (kind === 'storage') {
         let all = [];
-        try { all = await loadStorageLocations(); } catch (e) { toast.error('โหลดทะเบียนคลังไม่ได้: ' + (e?.message || e)); }
+        try { all = await loadStorageLocations(); } catch (e) { toast.error((tr('โหลดทะเบียนคลังไม่ได้') + ': ') + (e?.message || e)); }
         if (alive) setRows((all || []).filter(r => r.code && r.is_active !== false).map(r => {
           const lns = Array.isArray(r.line_names) ? r.line_names : [];
           return { ...r, id: String(r.code).trim(), _qr: 'storage', line_name: lns.join(' / '), _lines: lns };
@@ -139,7 +139,7 @@ export default function QrLabels() {
         const { data, error } = await supabaseDR.from('line_delivery_points')
           .select('id, code, name, line_names, note, is_active')
           .eq('is_active', true).order('sort_order').order('name');
-        if (error && error.code !== '42P01') toast.error('โหลดจุดส่งไม่ได้: ' + error.message);
+        if (error && error.code !== '42P01') toast.error((tr('โหลดจุดส่งไม่ได้') + ': ') + error.message);
         if (alive) setRows((data || []).map(d => ({ ...d, _qr: 'delivery', line_name: (Array.isArray(d.line_names) ? d.line_names : []).join(' / '), _lines: Array.isArray(d.line_names) ? d.line_names : [] })));
       } else {
         // ⚠️ ตาราง jigs ไม่ใช่ "ตารางจิ๊ก" — เป็นทะเบียนอุปกรณ์ที่มีแผน PM · แถวที่มี machine_id = "เงา" ของแถวใน machines
@@ -149,8 +149,8 @@ export default function QrLabels() {
           supabaseDR.from('jigs').select('id, jig_no, name, part_name, line_name, equipment_type, machine_id')
             .order('line_name').order('jig_no'),
         ]);
-        if (mc.error) toast.error('โหลดจิ๊กไม่ได้: ' + mc.error.message);
-        if (pm.error) toast.error('โหลดทะเบียน PM ไม่ได้: ' + pm.error.message);
+        if (mc.error) toast.error((tr('โหลดจิ๊กไม่ได้') + ': ') + mc.error.message);
+        if (pm.error) toast.error((tr('โหลดทะเบียน PM ไม่ได้') + ': ') + pm.error.message);
         const m = mergeJigLabelRows(mc.data || [], pm.data || []);
         if (alive) { setRows(m.rows); setShadowCount(m.shadow); setDupJigs(m.dup); }
       }
@@ -216,7 +216,7 @@ export default function QrLabels() {
       // margin:0 + errorCorrectionLevel M — ป้ายเล็กสแกนติดง่ายกว่าเมื่อ QR เต็มพื้นที่
       const svg = await QR.toString(payload, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' });
       const no = isDp ? `🎯 ${nameOf(r)}` : (noOf(r) || '— ยังไม่มีเลข —');
-      const nm = isDp ? (noOf(r) ? `รหัส ${noOf(r)} · จุดส่งงาน` : 'จุดส่งงาน') : nameOf(r);
+      const nm = isDp ? (noOf(r) ? `${tr("รหัส")} ${noOf(r)} · ${tr("จุดส่งงาน")}` : 'จุดส่งงาน') : nameOf(r);
       cells.push(`<div class="lb">
         <div class="qr">${svg}</div>
         <div class="tx">
@@ -261,7 +261,7 @@ export default function QrLabels() {
   if (kind === 'sheet') {
     return (
       <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
-        <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
+        <ReadOnlyNote show={!canPrint} role={role} what={tr("พิมพ์ป้าย QR")} permKey="qr_labels:print" />
         <PageHeader title={tr('พิมพ์ป้าย QR อุปกรณ์')} icon="🏷️" sub={tr('พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น')} />
         <FilterBar>
           <Segmented value={kind} onChange={setKind} label={tr('ชนิดป้าย')} options={KIND_OPTIONS} />
@@ -273,21 +273,21 @@ export default function QrLabels() {
 
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
-      <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
+      <ReadOnlyNote show={!canPrint} role={role} what={tr("พิมพ์ป้าย QR")} permKey="qr_labels:print" />
       <PageHeader title={tr('พิมพ์ป้าย QR อุปกรณ์')} icon="🏷️" sub={tr('พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น')} />
 
       {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
       <div data-page-note="1" style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 10,
         borderRadius: 'var(--r-md)', fontSize: 12.5, lineHeight: 1.7,
-        background: 'var(--bg2)', border: `1px solid ${linkLabels ? 'var(--border2)' : 'var(--amber)'}`,
+        background: 'var(--bg2-surf)', border: `1px solid ${linkLabels ? 'var(--border2)' : 'var(--amber)'}`,
       }}>
         {linkLabels ? (
           <span>{tr('ป้ายที่พิมพ์จะเป็น')} <b>{tr('ลิงก์')}</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
             {' '}{tr('— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน')}</span>
         ) : (
-          <span data-warn="1">{tr('⚠️ ตอนนี้เปิดจาก')} <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
-            <b> {tr('ข้อความแบบเดิม')}</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
+          <span data-warn="1">{tr('⚠️ ตอนนี้เปิดจาก')} <code>{origin || '—'}</code> {tr("ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น")}
+            <b> {tr('ข้อความแบบเดิม')}</b> ({tr("สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป")})
             {' '}{tr('— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ')}</span>
         )}
       </div>
@@ -300,9 +300,9 @@ export default function QrLabels() {
         <LineSelect
           lines={prodLines.filter(l => lineOpts.includes(l.name))}
           value={filterLine} onChange={setFilterLine} placeholder={ALL.line}
-          extraGroups={[{ label: 'อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          extraGroups={[{ label: tr("อื่นๆ"), options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
         />
-        <SearchInput value={q} onChange={setQ} fields="เลข/ชื่อ" />
+        <SearchInput value={q} onChange={setQ} fields={tr("เลข/ชื่อ")} />
         <span className="spacer" />
         <span className="filter-count">{tr('เลือก')} {sel.size} / {visible.length}</span>
         <span className="filter-label">{tr('ขนาดป้าย')}</span>
@@ -317,56 +317,55 @@ export default function QrLabels() {
         )}
       </FilterBar>
       {kind === 'delivery' && (
-        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด <b>{tr('ใหญ่ 90×60')}</b> (สแกนจากระยะแร็ค)
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
+          {tr("ป้ายที่สโตร์สแกนตอนวางของถึงไลน์ (ลูปเรียกชิ้นส่วนขั้น 7) — ติดที่จุดวางของจริงหน้าไลน์ · ตั้ง/แก้จุดที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน · แนะนำขนาด")} <b>{tr('ใหญ่ 90×60')}</b> ({tr("สแกนจากระยะแร็ค")})
         </div>
       )}
       {kind === 'part' && (
-        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
-          ป้ายติดกล่อง/บัตรคัมบัง/ชั้นวางของพาร์ท — ส่องด้วยกล้องมือถือแล้วเปิดเมนูของพาร์ทนั้น:
-          <b> {tr('✅ ตรวจชิ้นงาน (ใบตรวจ QA)')}</b> · ใบผลิตของพาร์ท · สโตร์ยิงป้ายนี้ตอนหยิบของได้เหมือนบาร์โค้ด MAT เดิม
-          {' '}· <b>{tr('ไม่ต้องรื้อบาร์โค้ดเดิม')}</b> (ยังสแกนในแอปได้) — ติดเพิ่มเฉพาะจุดที่อยากส่องด้วยกล้องมือถือ
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
+          {tr("ป้ายติดกล่อง/บัตรคัมบัง/ชั้นวางของพาร์ท — ส่องด้วยกล้องมือถือแล้วเปิดเมนูของพาร์ทนั้น")}:
+          <b> {tr('✅ ตรวจชิ้นงาน (ใบตรวจ QA)')}</b> · {tr("ใบผลิตของพาร์ท · สโตร์ยิงป้ายนี้ตอนหยิบของได้เหมือนบาร์โค้ด MAT เดิม")}
+          {' '}· <b>{tr('ไม่ต้องรื้อบาร์โค้ดเดิม')}</b> ({tr("ยังสแกนในแอปได้) — ติดเพิ่มเฉพาะจุดที่อยากส่องด้วยกล้องมือถือ")}
           {opHidden > 0 && <><br />{tr('ℹ️ ไม่แสดง')} {opHidden} {tr('รายการ (ขั้นย่อย OP ที่ไม่มีคัมบังของตัวเอง หรือสินค้าที่ปิดใช้งาน)')}</>}
         </div>
       )}
       {kind === 'delivery' && !loading && !visible.length && (
         <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
-          ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์
+          {tr("ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์")}
         </NoticeBar>
       )}
 
 
       {kind === 'jig' && shadowCount > 0 && (
-        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ℹ️ ซ่อน {shadowCount} {tr('รายการในทะเบียน PM ที่เป็น')}<b>{tr('เงา')}</b>ของเครื่อง/จิ๊ก/แม่พิมพ์ในทะเบียนอุปกรณ์ (มีแผนตรวจ) —
-          ป้ายของตัวจริงพิมพ์จากแถวหลักทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดของชิ้นเดียวกัน
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
+          ℹ️ {tr("ซ่อน")} {shadowCount} {tr('รายการในทะเบียน PM ที่เป็น')}<b>{tr('เงา')}</b>{tr("ของเครื่อง/จิ๊ก/แม่พิมพ์ในทะเบียนอุปกรณ์ (มีแผนตรวจ) — ป้ายของตัวจริงพิมพ์จากแถวหลักทางเดียว ไม่งั้นจะได้ QR 2 ใบคนละรหัสติดของชิ้นเดียวกัน")}
         </div>
       )}
       {kind === 'jig' && (
-        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          แท็บนี้ = <b>{tr('จิ๊กในทะเบียนอุปกรณ์')}</b> {tr('+ อุปกรณ์ที่มีแต่แผนตรวจ PM (ป้ายชิป')} <b>{tr('ทะเบียน PM')}</b>) ·
-          🔨 <b>{tr('ป้ายแม่พิมพ์อยู่แท็บ 🔨 แม่พิมพ์')}</b> (สแกนแล้วเด้งเข้าผังจัดเก็บได้)
-          {dupJigs.length > 0 && <><br />{tr('⚠️ ข้าม')} {dupJigs.length} รายการในทะเบียน PM ที่เลขซ้ำกับจิ๊กในทะเบียนอุปกรณ์
-            ({dupJigs.map(j => j.jig_no).join(', ')}) — พิมพ์จากแถวจิ๊กแทน · ควรผูกแถว PM เข้ากับจิ๊กตัวนั้นที่หน้า PM Setup</>}
+        <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
+          {tr("แท็บนี้")} = <b>{tr('จิ๊กในทะเบียนอุปกรณ์')}</b> {tr('+ อุปกรณ์ที่มีแต่แผนตรวจ PM (ป้ายชิป')} <b>{tr('ทะเบียน PM')}</b>) ·
+          🔨 <b>{tr('ป้ายแม่พิมพ์อยู่แท็บ 🔨 แม่พิมพ์')}</b> ({tr("สแกนแล้วเด้งเข้าผังจัดเก็บได้")})
+          {dupJigs.length > 0 && <><br />{tr('⚠️ ข้าม')} {dupJigs.length} {tr("รายการในทะเบียน PM ที่เลขซ้ำกับจิ๊กในทะเบียนอุปกรณ์")}
+            ({dupJigs.map(j => j.jig_no).join(', ')}) — {tr("พิมพ์จากแถวจิ๊กแทน · ควรผูกแถว PM เข้ากับจิ๊กตัวนั้นที่หน้า")} PM Setup</>}
         </div>
       )}
       {kind === 'die' && !loading && !visible.length && (
         <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
-          ไม่พบแม่พิมพ์{rows.length ? 'ตามตัวกรอง/ขอบเขตไลน์ที่เห็นได้' : 'ในทะเบียน'} — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ 🔨 แม่พิมพ์ ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+          {tr("ไม่พบแม่พิมพ์")}{rows.length ? tr("ตามตัวกรอง/ขอบเขตไลน์ที่เห็นได้") : tr("ในทะเบียน")} — {tr("ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ 🔨 แม่พิมพ์ ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที")}
         </NoticeBar>
       )}
       {kind === 'jig' && !loading && !visible.length && (
         <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
-          ยังไม่มีจิ๊ก — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ JIG (หรือ PM Setup) ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+          {tr("ยังไม่มีจิ๊ก — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ JIG (หรือ PM Setup) ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที")}
         </NoticeBar>
       )}
       {missingNo > 0 && kind !== 'delivery' && (
         <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
-          {missingNo} รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน
+          {missingNo} {tr("รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน")}
         </NoticeBar>
       )}
 
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>

@@ -43,7 +43,7 @@ import {
   buildMaintenanceLevels, summarizeItems, actionsOf, splitWindows,
   PRIORITY, TREND_META, THRESH, WINDOW,
 } from '../utils/maintenanceLevels';
-import { tr as trI18n } from '../utils/i18n';
+import { tr as trI18n, dateLocale } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
@@ -64,10 +64,10 @@ const pvMeta = (s) => STATUS_META[s] || PV_EXTRA[s] || { label: s, color: '#9aa3
 const fmtYmd = (ymd) => {
   if (!ymd) return '—';
   const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('th-TH', { timeZone: 'UTC', day: 'numeric', month: 'short' });
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(dateLocale(), { timeZone: 'UTC', day: 'numeric', month: 'short' });
 };
-const fmtMs = (ms) => (ms ? new Date(ms).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' }) : '—');
-const n1 = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 1 }));
+const fmtMs = (ms) => (ms ? new Date(ms).toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' }) : '—');
+const n1 = (v) => (v == null ? '—' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: 1 }));
 
 function Chip({ color, children, title }) {
   return (
@@ -169,19 +169,19 @@ export default function MaintenanceLevels() {
          ล้ม = กฎนี้ไม่ทำงาน แต่ต้องบอกบนจอ (ห้ามแปลว่า "อะไหล่พอ") */
       const spareRes = await sparePromise;
       if (!alive) return;
-      const NAMES = ['ทะเบียนเครื่อง', 'downtime', 'กะการผลิต', 'นโยบายพัก', 'ใบตรวจ PM', 'อุปกรณ์ PM', 'แผน PM', 'ผลตรวจ'];
+      const NAMES = ['ทะเบียนเครื่อง', 'downtime', 'กะการผลิต', 'นโยบายพัก', 'ใบตรวจ PM', 'อุปกรณ์ PM', trI18n("แผน PM"), 'ผลตรวจ'];
       const errs = res.map((r, i) => (r.error ? NAMES[i] : null)).filter(Boolean);
-      if (spareRes.error) errs.push('อะไหล่ของแผน PM (คำแนะนำเรื่องอะไหล่ไม่ครบ)');
+      if (spareRes.error) errs.push(trI18n("อะไหล่ของแผน PM (คำแนะนำเรื่องอะไหล่ไม่ครบ)"));
       if (errs.length) {
-        setLoadErr(`โหลดไม่สำเร็จ: ${errs.join(' · ')} — ตัวเลขบนจอไม่ครบ`);
-        toast.error(`โหลดข้อมูลไม่ครบ: ${errs.join(' · ')}`);
+        setLoadErr(`${trI18n("โหลดไม่สำเร็จ")}: ${errs.join(' · ')} — ${trI18n("ตัวเลขบนจอไม่ครบ")}`);
+        toast.error(`${trI18n("โหลดข้อมูลไม่ครบ")}: ${errs.join(' · ')}`);
       }
       const [mc, dt, ss, bp, cl, jg, pl, ins] = res.map(r => r.data || []);
       const lastInsp = {};
       for (const i of ins) if (!lastInsp[i.checklist_id]) lastInsp[i.checklist_id] = i.inspected_at;
       const rateRes = await ratePromise;
       if (!alive) return;
-      if (rateRes.error) setLoadErr(e => `${e ? `${e} · ` : ''}โหลดอัตราต้นทุน (cost center) ไม่สำเร็จ — มูลค่าบาทไม่แสดง`);
+      if (rateRes.error) setLoadErr(e => `${e ? `${e} · ` : ''}${trI18n("โหลดอัตราต้นทุน (cost center) ไม่สำเร็จ — มูลค่าบาทไม่แสดง")}`);
       setRaw({ machines: mc, downtimes: dt, sessions: ss, breakPolicies: bp, checklists: cl, jigs: jg, plans: pl, lastInsp, spare: spareRes.demand || null, rates: rateRes.data || [] });
       setLoading(false);
     })();
@@ -263,44 +263,44 @@ export default function MaintenanceLevels() {
       <FilterBar>
         <LineSelect lines={scopedLineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
         <Segmented value={view} onChange={setView} label={trI18n('มุมมอง')} options={[
-          { value: 'todo', label: `🎯 สิ่งที่ควรทำ (${actionsOf(scoped).length})` },
-          { value: 'equip', label: `📋 รายอุปกรณ์ (${scoped.length})` },
+          { value: 'todo', label: `🎯 ${trI18n("สิ่งที่ควรทำ")} (${actionsOf(scoped).length})` },
+          { value: 'equip', label: `📋 ${trI18n("รายอุปกรณ์")} (${scoped.length})` },
         ]} />
-        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+        <SearchInput value={q} onChange={setQ} fields={trI18n("เลขเครื่อง / ชื่อ / ไลน์")} ariaLabel={trI18n("ค้นหาอุปกรณ์")} />
         <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>{trI18n('รีเฟรช')}</button>
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>{trI18n('รีเฟรช')}</button>
       </FilterBar>
       {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
           ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
       {/* ── บันได 3 ขั้น ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, alignContent: 'start' }}>
         <LevelCard step="1" title={trI18n('Preventive — ป้องกันตามแผน')} en="Time-based PM" color="#4a90e0"
-          question="แผนบอกว่าถึงเวลาหรือยัง"
+          question={trI18n("แผนบอกว่าถึงเวลาหรือยัง")}
           foot={sum.preventive.failingNoPlan > 0
-            ? `ช่องว่าง: ${sum.preventive.failingNoPlan} อุปกรณ์เสีย ≥${THRESH.minStops} ครั้ง/30 วัน แต่ยังไม่มีแผน PM ที่มีรอบ`
-            : 'แผนที่เป็น "ตามรอบ" ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้'}>
-          <Stat label={trI18n('มีแผน PM')} value={sum.preventive.withPlan} sub={`(มีรอบจริง ${sum.preventive.withCycle})`} />
+            ? `${trI18n("ช่องว่าง")}: ${sum.preventive.failingNoPlan} ${trI18n("อุปกรณ์เสีย")} ≥${THRESH.minStops} ${trI18n("ครั้ง/30 วัน แต่ยังไม่มีแผน PM ที่มีรอบ")}`
+            : trI18n("แผนที่เป็น \"ตามรอบ\" ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้")}>
+          <Stat label={trI18n('มีแผน PM')} value={sum.preventive.withPlan} sub={`(${trI18n("มีรอบจริง")} ${sum.preventive.withCycle})`} />
           <Stat label={trI18n('เลยกำหนด')} value={sum.preventive.overdue} color={sum.preventive.overdue ? 'var(--red)' : undefined} />
           <Stat label={trI18n('ใกล้ครบกำหนด')} value={sum.preventive.dueSoon} color={sum.preventive.dueSoon ? '#f59a3f' : undefined} />
           <Stat label={trI18n('มีรอบแต่ยังไม่เคยตรวจ')} value={sum.preventive.never} />
         </LevelCard>
 
         <LevelCard step="2" title={trI18n('Predictive — ดูจากข้อมูลจริง')} en="Reliability-based (downtime)" color="var(--blue)"
-          question="เครื่องกำลังเสียบ่อยขึ้นไหม · จะเสียอีกเมื่อไหร่"
-          foot={`เทียบ ${WINDOW.recentDays} วันล่าสุด (ตั้งแต่ ${fmtYmd(cov?.recentFrom)}) กับ ${WINDOW.baseDays} วันก่อนหน้า · ต่อชั่วโมงเดินเครื่องจริง (หักพักแล้ว)`}>
-          <Stat label={trI18n('วิเคราะห์ได้')} value={sum.predictive.analysed} sub={sum.predictive.nodata ? `(ไม่รู้ชั่วโมงเดิน ${sum.predictive.nodata})` : ''} />
+          question={trI18n("เครื่องกำลังเสียบ่อยขึ้นไหม · จะเสียอีกเมื่อไหร่")}
+          foot={`${trI18n("เทียบ")} ${WINDOW.recentDays} ${trI18n("วันล่าสุด (ตั้งแต่")} ${fmtYmd(cov?.recentFrom)}) ${trI18n("กับ")} ${WINDOW.baseDays} ${trI18n("วันก่อนหน้า · ต่อชั่วโมงเดินเครื่องจริง (หักพักแล้ว")})`}>
+          <Stat label={trI18n('วิเคราะห์ได้')} value={sum.predictive.analysed} sub={sum.predictive.nodata ? `(${trI18n("ไม่รู้ชั่วโมงเดิน")} ${sum.predictive.nodata})` : ''} />
           <Stat label={trI18n('แนวโน้มแย่ลง')} value={sum.predictive.worse} color={sum.predictive.worse ? 'var(--red)' : undefined} />
-          <Stat label={`คาดเสียภายใน ${THRESH.soonDays} วัน`} value={sum.predictive.etaSoon} color={sum.predictive.etaSoon ? '#f59a3f' : undefined} />
+          <Stat label={`${trI18n("คาดเสียภายใน")} ${THRESH.soonDays} ${trI18n("วัน")}`} value={sum.predictive.etaSoon} color={sum.predictive.etaSoon ? '#f59a3f' : undefined} />
           <Stat label={trI18n('ดีขึ้น')} value={sum.predictive.better} color={sum.predictive.better ? '#3dd65c' : undefined} />
           <Stat label={trI18n('เวลาหยุดที่คาด 30 วันข้างหน้า')} value={fmtDur(sum.predictive.riskMin30)} />
-          <Stat label={trI18n('มูลค่าโดยประมาณ')} value={sum.predictive.riskBaht30 ? `฿${fmtBaht(sum.predictive.riskBaht30)}` : '—'}
-            sub={sum.predictive.riskNoRate ? `(ไม่รวม ${sum.predictive.riskNoRate} ตัวที่ไลน์ไม่มี rate)` : ''} />
+          <Stat label={trI18n('มูลค่าโดยประมาณ')} value={sum.predictive.riskBaht30 ? `${trI18n("฿")}${fmtBaht(sum.predictive.riskBaht30)}` : '—'}
+            sub={sum.predictive.riskNoRate ? `(${trI18n("ไม่รวม")} ${sum.predictive.riskNoRate} ${trI18n("ตัวที่ไลน์ไม่มี")} rate)` : ''} />
         </LevelCard>
 
         <LevelCard step="3" title={trI18n('Prescriptive — บอกว่าควรทำอะไร')} en="Recommended actions" color="#3dd65c"
-          question="ควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร"
-          foot="กฎที่อ่านออกได้ ไม่ใช่ AI — ทุกข้อบอกเหตุผลเป็นตัวเลข · ระบบไม่เลื่อนแผนให้เอง ช่างเป็นคนตัดสิน">
-          <Stat label={trI18n('คำแนะนำทั้งหมด')} value={sum.prescriptive.total} sub={`(${sum.prescriptive.equip} อุปกรณ์)`} />
+          question={trI18n("ควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร")}
+          foot={trI18n("กฎที่อ่านออกได้ ไม่ใช่ AI — ทุกข้อบอกเหตุผลเป็นตัวเลข · ระบบไม่เลื่อนแผนให้เอง ช่างเป็นคนตัดสิน")}>
+          <Stat label={trI18n('คำแนะนำทั้งหมด')} value={sum.prescriptive.total} sub={`(${sum.prescriptive.equip} ${trI18n("อุปกรณ์")})`} />
           <Stat label={trI18n(PRIORITY[1].label)} value={sum.prescriptive.p1} color={sum.prescriptive.p1 ? PRIORITY[1].color : undefined} />
           <Stat label={trI18n(PRIORITY[2].label)} value={sum.prescriptive.p2} color={sum.prescriptive.p2 ? PRIORITY[2].color : undefined} />
           <Stat label={trI18n(PRIORITY[3].label)} value={sum.prescriptive.p3} color={sum.prescriptive.p3 ? PRIORITY[3].color : undefined} />
@@ -308,22 +308,22 @@ export default function MaintenanceLevels() {
       </div>
 
       {/* ชนิดอุปกรณ์ = แท็บเส้นใต้ · ความสำคัญ (todo) = Segmented ปลายแถว (UI §6.36 ข้อ 0 · 06/11) */}
-      <TabBar size="sm" value={kind} onChange={setKind} tabs={KIND_CHIPS.map(c => ({ key: c.key, label: c.label }))}
+      <TabBar size="sm" value={kind} onChange={setKind} tabs={KIND_CHIPS.map(c => ({ key: c.key, label: trI18n(c.label) }))}
         right={view === 'todo' && (
           <Segmented size="sm" label={trI18n('ความสำคัญ')} value={prio} onChange={setPrio}
-            options={[0, 1, 2, 3].map(p => ({ value: p, label: p ? PRIORITY[p].label : ALL.priority }))} />
+            options={[0, 1, 2, 3].map(p => ({ value: p, label: p ? trI18n(PRIORITY[p].label) : ALL.priority }))} />
         )} />
 
       {/* ── ตาราง ── */}
       {!shownRows.length ? (
         <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 30 }}>
-          {view === 'todo' ? 'ไม่มีคำแนะนำในตัวกรองนี้ ✅' : 'ไม่มีอุปกรณ์ในตัวกรองนี้ (อุปกรณ์ที่ไม่มีแผน PM และไม่เคยเสียใน 90 วัน ไม่ขึ้นรายการ)'}
+          {view === 'todo' ? trI18n("ไม่มีคำแนะนำในตัวกรองนี้ ✅") : trI18n("ไม่มีอุปกรณ์ในตัวกรองนี้ (อุปกรณ์ที่ไม่มีแผน PM และไม่เคยเสียใน 90 วัน ไม่ขึ้นรายการ)")}
         </div>
       ) : view === 'todo' ? (
         <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['ความด่วน', 'อุปกรณ์', 'ควรทำ', 'เพราะอะไร (ข้อมูลจริง)', 'ภายใน', ''].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
+              {[trI18n("ความด่วน"), trI18n("อุปกรณ์"), trI18n("ควรทำ"), trI18n("เพราะอะไร (ข้อมูลจริง)"), trI18n("ภายใน"), ''].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
             </tr></thead>
             <tbody>
               {acts.slice(0, limit).map(a => (
@@ -334,7 +334,7 @@ export default function MaintenanceLevels() {
                   <td style={{ ...td, color: 'var(--text2)', lineHeight: 1.55, minWidth: 280 }}>{a.why}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }}>{a.byYmd === todayStr ? trI18n('วันนี้') : fmtYmd(a.byYmd)}</td>
                   <td style={td}>
-                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3-surf)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {a.linkLabel} →
                     </button>
                   </td>
@@ -347,7 +347,7 @@ export default function MaintenanceLevels() {
         <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
+              {[trI18n("อุปกรณ์"), trI18n("① แผน PM"), trI18n("② เสีย 30 วัน"), trI18n("ต่อ 100 ชม.เดิน"), trI18n("แนวโน้ม"), 'MTBF', trI18n("คาดเสียครั้งถัดไป"), trI18n("เวลาหยุดที่คาด 30 วัน"), trI18n("≈ มูลค่า"), trI18n("③ คำแนะนำ")].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
             </tr></thead>
             <tbody>
               {scoped.slice(0, limit).map(it => {
@@ -362,7 +362,7 @@ export default function MaintenanceLevels() {
                       {it.pv.dueYmd && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>{trI18n('ครบ')} {fmtYmd(it.pv.dueYmd)}</div>}
                     </td>
                     <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
-                      <b>{it.pd.stopsR}</b> ครั้ง
+                      <b>{it.pd.stopsR}</b> {trI18n("ครั้ง")}
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{trI18n('หยุด')} {fmtDur(it.pd.dtMinR)} {trI18n('· ช่วงก่อน')} {it.pd.stopsB} {trI18n('ครั้ง/60 วัน')}</div>
                     </td>
                     <td style={{ ...td, fontVariantNumeric: 'tabular-nums' }}>
@@ -376,11 +376,11 @@ export default function MaintenanceLevels() {
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap', color: it.pd.etaDays != null && it.pd.etaDays <= THRESH.soonDays ? '#f59a3f' : 'var(--text)' }}>
                       {it.pd.etaMs == null ? <span style={{ color: 'var(--muted)' }}>—</span>
-                        : <>{fmtMs(it.pd.etaMs)}<div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{it.pd.etaDays < 0 ? `เลยรอบเฉลี่ยมา ${-it.pd.etaDays} วัน` : `อีก ${it.pd.etaDays} วัน`}</div></>}
+                        : <>{fmtMs(it.pd.etaMs)}<div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{it.pd.etaDays < 0 ? `${trI18n("เลยรอบเฉลี่ยมา")} ${-it.pd.etaDays} ${trI18n("วัน")}` : `${trI18n("อีก")} ${it.pd.etaDays} ${trI18n("วัน")}`}</div></>}
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDur(it.pd.riskMin30)}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                      {it.pd.riskBaht30 != null ? `฿${fmtBaht(it.pd.riskBaht30)}` : <span style={{ color: 'var(--muted)' }} title={it.pd.riskMin30 ? trI18n('ไลน์นี้ยังไม่มี cost center / rate — ตั้งที่ /org-setup') : ''}>—</span>}
+                      {it.pd.riskBaht30 != null ? `${trI18n("฿")}${fmtBaht(it.pd.riskBaht30)}` : <span style={{ color: 'var(--muted)' }} title={it.pd.riskMin30 ? trI18n('ไลน์นี้ยังไม่มี cost center / rate — ตั้งที่ /org-setup') : ''}>—</span>}
                     </td>
                     <td style={td}>
                       {top ? <Chip color={PRIORITY[top].color}>{it.actions.length} {trI18n('ข้อ ·')} {trI18n(PRIORITY[top].label)}</Chip> : <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>}
@@ -401,21 +401,17 @@ export default function MaintenanceLevels() {
       {/* ── วิธีคิด + ข้อจำกัดของข้อมูล (ห้ามถอด — กฎความซื่อสัตย์ของจอ) ── */}
       <div style={{ ...card, fontSize: 12, color: 'var(--muted)', lineHeight: 1.7 }}>
         <b style={{ color: 'var(--text2)' }}>{trI18n('วิธีคิด')}</b> ·
-        ① สถานะแผน PM ใช้กติกาเดียวกับแท็บ "แผน PM" ·
-        ② นับ "เครื่องเสีย" จาก downtime ที่ระบุเครื่อง (ไม่นับหยุดตามแผน) หารด้วยชั่วโมงเดินเครื่องของไลน์ (หักพักตามนโยบายแล้ว) ·
-        MTBF/MTTR สูตรเดียวกับแท็บ KPI ช่าง · MTTR นับจากไลน์หยุดถึงเดินต่อ (รวมเวลารอช่าง) ·
-        "คาดเสียครั้งถัดไป" = เสียล่าสุด + MTBF เฉลี่ย — <b>{trI18n('เป็นค่าเฉลี่ย ไม่ใช่คำทำนายแม่นยำ')}</b> ·
-        มูลค่า ≈ นาทีที่คาด ÷ 60 × อัตรา บาท/ชม. ของ cost center ไลน์ (DL+DP+IDP+OH · สูตรเดียวกับแกน C ของ SQDCM · rate ทั้งไลน์ ไม่ใช่ต่อเครื่อง) · ③ อะไหล่: เทียบยอดใช้สะสมของ PM ทุกใบทั้งโรงงาน (ตัวเดียวกับแถบ 🔩 ในแท็บแผน PM) กับสต็อก · แนวโน้มต้องเสีย ≥{THRESH.minStops} ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ)
+        ① {trI18n("สถานะแผน PM ใช้กติกาเดียวกับแท็บ \"แผน PM\" · ② นับ \"เครื่องเสีย\" จาก downtime ที่ระบุเครื่อง (ไม่นับหยุดตามแผน) หารด้วยชั่วโมงเดินเครื่องของไลน์ (หักพักตามนโยบายแล้ว) · MTBF/MTTR สูตรเดียวกับแท็บ KPI ช่าง · MTTR นับจากไลน์หยุดถึงเดินต่อ (รวมเวลารอช่าง) · \"คาดเสียครั้งถัดไป\" = เสียล่าสุด + MTBF เฉลี่ย")} — <b>{trI18n('เป็นค่าเฉลี่ย ไม่ใช่คำทำนายแม่นยำ')}</b> ·
+        {trI18n("มูลค่า ≈ นาทีที่คาด ÷ 60 × อัตรา บาท/ชม. ของ cost center ไลน์ (DL+DP+IDP+OH · สูตรเดียวกับแกน C ของ SQDCM · rate ทั้งไลน์ ไม่ใช่ต่อเครื่อง) · ③ อะไหล่: เทียบยอดใช้สะสมของ PM ทุกใบทั้งโรงงาน (ตัวเดียวกับแถบ 🔩 ในแท็บแผน PM) กับสต็อก · แนวโน้มต้องเสีย")} ≥{THRESH.minStops} {trI18n("ครั้งจึงนับ (น้อยกว่านั้นอาจบังเอิญ")})
         <br />
         <b style={{ color: 'var(--text2)' }}>{trI18n('ข้อจำกัดตอนนี้')}</b> ·
-        แม่พิมพ์/จิ๊ก ใช้ชั่วโมงเดินของไลน์แทนเวลาที่ถูกใช้จริง (อัตราเสียต่ำกว่าจริง) ·
-        ยังไม่มีผลวัดค่า SPC จากใบตรวจ ⇒ ยังทำ predictive จากสภาพเครื่อง (condition-based) ไม่ได้ ·
-        {cov?.unmatched ? ` เลขเครื่องที่กรอกแต่ไม่อยู่ในทะเบียน ${cov.unmatched} เลข (ติดป้าย "นอกทะเบียน") ·` : ''}
-        {cov?.unknownShifts ? ` กะที่หาชั่วโมงไม่ได้ ${cov.unknownShifts} กะ (ชั่วโมงเดินต่ำกว่าจริง) ·` : ''}
-        {cov && !cov.hasBreakPolicy ? ' ⚠️ ไม่พบนโยบายเวลาพัก — ชั่วโมงเดินสูงกว่าจริง ·' : ''}
-        {cov?.checklistNoEquip ? ` ใบตรวจ PM ที่หาอุปกรณ์ไม่เจอ ${cov.checklistNoEquip} ใบ ·` : ''}
-        {cov?.amChecklists ? ` ใบตรวจ AM (ผลิตตรวจเอง) ${cov.amChecklists} ใบ ไม่นับในชั้น Preventive — ดูที่จอ AM ·` : ''}
-        {' '}อุปกรณ์ที่ไม่มีแผน PM และไม่เสียเลยใน 90 วันไม่ขึ้นรายการ
+        {trI18n("แม่พิมพ์/จิ๊ก ใช้ชั่วโมงเดินของไลน์แทนเวลาที่ถูกใช้จริง (อัตราเสียต่ำกว่าจริง) · ยังไม่มีผลวัดค่า SPC จากใบตรวจ ⇒ ยังทำ predictive จากสภาพเครื่อง (condition-based) ไม่ได้")} ·
+        {cov?.unmatched ? ` ${trI18n("เลขเครื่องที่กรอกแต่ไม่อยู่ในทะเบียน")} ${cov.unmatched} ${trI18n("เลข (ติดป้าย \"นอกทะเบียน")}") ·` : ''}
+        {cov?.unknownShifts ? ` ${trI18n("กะที่หาชั่วโมงไม่ได้")} ${cov.unknownShifts} ${trI18n("กะ (ชั่วโมงเดินต่ำกว่าจริง")}) ·` : ''}
+        {cov && !cov.hasBreakPolicy ? trI18n(" ⚠️ ไม่พบนโยบายเวลาพัก — ชั่วโมงเดินสูงกว่าจริง ·") : ''}
+        {cov?.checklistNoEquip ? ` ${trI18n("ใบตรวจ PM ที่หาอุปกรณ์ไม่เจอ")} ${cov.checklistNoEquip} ${trI18n("ใบ")} ·` : ''}
+        {cov?.amChecklists ? ` ${trI18n("ใบตรวจ AM (ผลิตตรวจเอง")}) ${cov.amChecklists} ${trI18n("ใบ ไม่นับในชั้น Preventive — ดูที่จอ")} AM ·` : ''}
+        {' '}{trI18n("อุปกรณ์ที่ไม่มีแผน PM และไม่เสียเลยใน 90 วันไม่ขึ้นรายการ")}
       </div>
     </Page>
   );

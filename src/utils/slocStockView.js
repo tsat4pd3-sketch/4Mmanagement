@@ -14,6 +14,7 @@
 
    ไฟล์นี้ pure — ห้าม import react/supabase (เทสตรงได้) */
 import { slocOfStockRow, slocLabel } from './storageLoc.js';
+import { tr } from './i18n.js';
 
 const num = (v) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0);
 
@@ -81,6 +82,6 @@ export function groupStockBySloc(rows, { slocs = [], lines = [], homeOf = null, 
 
 /** ป้ายหัวกลุ่มของโหมดพื้นที่ — `code` ว่าง = ยังไม่ผูก (ต้องเขียนบนจอ ห้ามปล่อยว่าง) */
 export function slocGroupTitle(g) {
-  if (!g?.code) return '🏬 ยังไม่ผูกพื้นที่ SAP / ยังไม่ตั้งที่จัดเก็บหลัก';
+  if (!g?.code) return tr("🏬 ยังไม่ผูกพื้นที่ SAP / ยังไม่ตั้งที่จัดเก็บหลัก");
   return `🏬 ${g.code}${g.name ? ` · ${g.name}` : ''}`;
 }

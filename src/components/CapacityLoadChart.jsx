@@ -1,4 +1,6 @@
 import { BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts';
+import { tr } from '../utils/i18n';
+import { chartAnim } from '../utils/motion';
 import {
   AXIS_FS, CELL_BAR_FILL, tooltipProps, axisTick, CHART_MARGIN, axisUnitLabel, axisUnitTop,
 } from '../utils/chartAxis';
@@ -12,7 +14,7 @@ import {
 
    🔴 กติกากราฟของโปรเจค (UI §6.19 · utils/chartAxis.js · มีด่าน build):
    • `YAxis width="auto"` · margin ซ้ายห้ามติดลบ ⇒ ใช้ `CHART_MARGIN`
-   • `<Bar>` ที่ลูกเป็น `<Cell>` ต้องมี `fill={CELL_BAR_FILL}` + `<Tooltip {...tooltipProps()}>`
+   • `<Bar {...chartAnim()}>` ที่ลูกเป็น `<Cell>` ต้องมี `fill={CELL_BAR_FILL}` + `<Tooltip {...tooltipProps()}>`
      (ไม่งั้น tooltip เป็นตัวหนังสือดำบนการ์ดเข้ม)
    • **ห้ามแกน Y 2 ข้าง** — ที่นี่มีแกนเดียว (กะ) เพราะทั้งภาระและกำลังเป็นหน่วยเดียวกัน
      ⇒ "กำลังที่มี" วาดเป็น **เส้นอ้างอิง** ไม่ใช่ series ที่มีแกนของตัวเอง
@@ -29,7 +31,7 @@ export default function CapacityLoadChart({
   capacity = null,      // กะที่มีตามปกติ (กะเช้า) · null = ไม่รู้ ⇒ ไม่วาดเส้น
   capacityMax = null,   // กะที่มีถ้าเปิดเต็มที่ (เช้า+ดึก) · null = ไม่รู้
   height = 150,
-  unit = 'กะ',
+  unit = tr("กะ"),
 }) {
   if (!data.length) return null;
   const colorOf = (v) => {
@@ -60,7 +62,7 @@ export default function CapacityLoadChart({
             <ReferenceLine y={capacityMax} stroke={C_HARD} strokeDasharray="2 4"
               label={{ value: `เปิดเต็มที่ ${capacityMax}`, position: 'insideTopRight', fill: C_HARD, fontSize: AXIS_FS, fontWeight: 700 }} />
           ) : null}
-          <Bar dataKey="load" fill={CELL_BAR_FILL} radius={[3, 3, 0, 0]}>
+          <Bar {...chartAnim()} dataKey="load" fill={CELL_BAR_FILL} radius={[3, 3, 0, 0]}>
             {data.map((d) => <Cell key={d.key} fill={colorOf(d.load)} />)}
           </Bar>
         </BarChart>

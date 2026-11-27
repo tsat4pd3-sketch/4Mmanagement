@@ -20,7 +20,7 @@ import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import InfoMore from '../components/InfoMore';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
@@ -49,7 +49,7 @@ function reviewDefaultDate() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 const shiftDate = (s, delta) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + delta); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
+const fmtThaiDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString(dateLocale(), { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }); } catch { return s; } };
 const fmtNum = (n) => (n == null ? '0' : Math.round(n).toLocaleString('en-US'));
 /* สี OEE เทียบเป้ากลุ่มจริง (oeeTargetForLines + statusOf) — ประกาศใน component · 05/10 เดิม 80/65 ตายตัว */
 const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
@@ -160,7 +160,7 @@ const LTYPES = [
    (ถ้าจะยุบทั้งระบบจริง ต้องแก้ LINE_TYPES ใน src/utils/lineTypes.js + migrate ข้อมูลไลน์ที่เป็น hydroform) */
 const LT_MERGE = { hydroform: 'stamping' };
 const normLt = (v) => (v ? (LT_MERGE[v] || v) : null);
-const ltLabel = (v) => LTYPES.find(t => t.value === v)?.label || '📦 ไม่ระบุประเภท';
+const ltLabel = (v) => LTYPES.find(t => t.value === v)?.label || tr("📦 ไม่ระบุประเภท");
 const ltShort = (v) => (ltLabel(v).split(' / ')[0] || '').trim();
 
 const SHIFT_MIN_FALLBACK = 570;
@@ -250,7 +250,7 @@ export default function GroupOverview() {
         loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวที่ 5 ไม่เข้า destructure แค่ให้ cache พร้อม
         loadBreakPolicies(),   // ล้ม = โยน ⇒ จอบอกโหลดไม่สำเร็จ (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ)
       ]);
-      const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, 'เครื่องหยุด'), defs = need(defRes, 'ของเสีย');
+      const orders = need(ordRes, 'ใบผลิต'), dts = need(dtRes, tr("เครื่องหยุด")), defs = need(defRes, 'ของเสีย');
       // น้ำหนัก wLoad = shift_min − planned ที่ "หักได้จริง" (ตัดส่วนทับพัก · กฎเหล็ก OEE downtime ทับพัก)
       const effBySess = dtMinBySession(sessions, dts || [], brk || [], { lines: plRes.data || [], affectsBy: await loadAffectsLanes() });   // หารเลนไลน์เครื่องขนาน (oee.js §3.2)
       const ngBySess = {}; (defs || []).forEach(x => { ngBySess[x.session_id] = (ngBySess[x.session_id] || 0) + (Number(x.qty_ng) || 0) + (Number(x.qty_suspect) || 0); });
@@ -347,7 +347,7 @@ export default function GroupOverview() {
 
     // สร้างบริษัททั้งหมดครั้งเดียว แล้วค่อยจัดกลุ่ม 2 แกน (กลุ่มธุรกิจ / โซนพื้นที่)
     const built = ORG.groups.flatMap(g => {
-      const gMeta = { key: g.key, name: g.name, short: g.short, icon: g.icon };
+      const gMeta = { key: g.key, name: tr(g.name), short: tr(g.short), icon: g.icon };
       return g.companies.map(c => {
         let lines;
         if (c.real) {
@@ -448,7 +448,7 @@ export default function GroupOverview() {
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
               <div style={{ width: `${clamp(it.actual / maxT * 100, 0, 100)}%`, height: '100%', background: pctCol(it.pct), opacity: 0.85, position: 'relative' }} />
               <span style={{ position: 'absolute', left: 8, top: 0, lineHeight: '22px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
-                {fmtNum(it.actual)} / {fmtNum(it.target)} ชิ้น
+                {fmtNum(it.actual)} / {fmtNum(it.target)} {tr("ชิ้น")}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: isMobile ? 'flex-start' : 'flex-end', fontSize: 13 }}>
@@ -464,7 +464,7 @@ export default function GroupOverview() {
   const lv1Switch = (
     <span style={{ marginLeft: 'auto' }}>
       <Segmented value={lv1View} onChange={setLv1View}
-        options={[{ value: 'map', label: 'แผนที่' }, { value: 'rank', label: 'เทียบรายโซน' }]} />
+        options={[{ value: 'map', label: tr("แผนที่") }, { value: 'rank', label: tr("เทียบรายโซน") }]} />
     </span>
   );
   const crumbBtn = (label, onClick, active) => (
@@ -481,9 +481,9 @@ export default function GroupOverview() {
       <PageHeader
         icon="🏢"
         title={<>
-          {ORG.code} — ภาพรวมกลุ่มบริษัท
+          {ORG.code} — {tr("ภาพรวมกลุ่มบริษัท")}
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-pill)', padding: '2px 10px' }}>
-            MOCKUP · ตัวอย่างหน้าจอ
+            MOCKUP · {tr("ตัวอย่างหน้าจอ")}
           </span>
         </>}
         sub={<>
@@ -503,7 +503,7 @@ export default function GroupOverview() {
         filters={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
           <Segmented label={tr('แกนมอง')} value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
-            options={[{ value: 'map', label: 'ตามพื้นที่' }, { value: 'biz', label: 'ตามกลุ่มธุรกิจ' }]} />
+            options={[{ value: 'map', label: tr("ตามพื้นที่") }, { value: 'biz', label: tr("ตามกลุ่มธุรกิจ") }]} />
           <span className="sep" />
           <span className="filter-label">{tr('วันงาน')}</span>
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
@@ -516,9 +516,9 @@ export default function GroupOverview() {
       {/* ── จริง vs จำลอง — บรรทัดเดียวที่เห็นตลอด (กันเข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว · ห้ามพับ)
            รายละเอียดวิธีอ่านพับไว้ใน InfoMore (UX audit 05/10: เดิมกล่องเส้นประ 4 บรรทัดดันเนื้อหาลง) ── */}
       <InfoMore id="group_overview_mock" tone="warn" size={12.5}
-        lead={<><b style={{ color: 'var(--green)' }}>TSAT4 = ข้อมูลจริง</b> (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: 'var(--amber)' }}>{tr('ตัวเลขจำลอง')}</b> {tr('· หน้านี้ไม่เขียนข้อมูล')}</>}>
-        โครงองค์กร: <b>{ORG.code}</b> {tr('→ กลุ่มธุรกิจ (')}{ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>{tr('พื้นที่')}</b> ({ZONES.length} โซน/ประเทศ) ได้จากปุ่ม "แกนมอง" — <b>{tr('กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป')}</b>
-        · ตัวเลขจำลองปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบคงที่ ไม่เปลี่ยนทุกครั้งที่รีเฟรช) · ยังไม่มีทะเบียนบริษัท/โรงงานจริง — ดู "ถ้าจะรองรับหลายบริษัทจริง" ท้ายหน้า
+        lead={<><b style={{ color: 'var(--green)' }}>TSAT4 = {tr("ข้อมูลจริง")}</b> ({tr("กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น")} = <b style={{ color: 'var(--amber)' }}>{tr('ตัวเลขจำลอง')}</b> {tr('· หน้านี้ไม่เขียนข้อมูล')}</>}>
+        {tr("โครงองค์กร")}: <b>{ORG.code}</b> {tr('→ กลุ่มธุรกิจ (')}{ORG.groups.map(g => tr(g.short)).join(' / ')}) → {tr("บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น")} <b>{tr('พื้นที่')}</b> ({ZONES.length} {tr("โซน/ประเทศ) ได้จากปุ่ม \"แกนมอง")}" — <b>{tr('กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป')}</b>
+        · {tr("ตัวเลขจำลองปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบคงที่ ไม่เปลี่ยนทุกครั้งที่รีเฟรช) · ยังไม่มีทะเบียนบริษัท/โรงงานจริง — ดู \"ถ้าจะรองรับหลายบริษัทจริง\" ท้ายหน้า")}
       </InfoMore>
 
       {/* ── กรองตามประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ: ปั๊ม / เชื่อมประกอบ / ฉีด / พ่นสี ...) ──
@@ -530,16 +530,15 @@ export default function GroupOverview() {
             <TabBar size="sm" value={ltFilter ?? ''} onChange={k => setLtFilter(k || null)} style={{ flex: 1, minWidth: 240 }}
               tabs={[{ value: null, label: ALL.type }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => ({
                 key: t.value ?? '', label: `${t.label}${t.extra ? ' *' : ''}`, badge: t.value ? tree.typeCount[t.value] : undefined,
-                title: t.extra ? 'ยังไม่มีใน master ประเภทไลน์ปัจจุบัน (ต้องเพิ่มถ้าทำ multi-company จริง)' : undefined }))} />
+                title: t.extra ? tr("ยังไม่มีใน master ประเภทไลน์ปัจจุบัน (ต้องเพิ่มถ้าทำ multi-company จริง)") : undefined }))} />
             <InfoMore size={11.5}>
-              ประเภทไลน์ของ <b>TSAT4</b> มาจากที่ตั้งไว้ในหน้า ⚙️ ตั้งค่าผังไลน์ ·
-              <b> ไฮโดรฟอร์มนับรวมใน "ปั๊มขึ้นรูป / Metal Forming"</b> (งานขึ้นรูปโลหะเหมือนกัน — รวมเฉพาะการแสดงผลหน้านี้) ·
-              * = ประเภทที่โรงงานเรายังไม่มี (เราเป็นงานโลหะ) ต้องเพิ่มเมื่อเปิดใช้หลายบริษัทจริง
+              {tr("ประเภทไลน์ของ")} <b>TSAT4</b> {tr("มาจากที่ตั้งไว้ในหน้า ⚙️ ตั้งค่าผังไลน์")} ·
+              <b> {tr("ไฮโดรฟอร์มนับรวมใน \"ปั๊มขึ้นรูป")} / Metal Forming"</b> ({tr("งานขึ้นรูปโลหะเหมือนกัน — รวมเฉพาะการแสดงผลหน้านี้) · * = ประเภทที่โรงงานเรายังไม่มี (เราเป็นงานโลหะ) ต้องเพิ่มเมื่อเปิดใช้หลายบริษัทจริง")}
             </InfoMore>
           </div>
           {ltFilter && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 7 }}>
-              กำลังดูเฉพาะไลน์ <b style={{ color: 'var(--text)' }}>{ltLabel(ltFilter)}</b> — ตัวเลขทุกช่องในหน้านี้นับเฉพาะไลน์ประเภทนี้
+              {tr("กำลังดูเฉพาะไลน์")} <b style={{ color: 'var(--text)' }}>{ltLabel(ltFilter)}</b> — {tr("ตัวเลขทุกช่องในหน้านี้นับเฉพาะไลน์ประเภทนี้")}
               {tree.hiddenComps > 0 && <> {tr('· ซ่อน')} <b>{tree.hiddenComps}</b> {tr('บริษัทที่ไม่มีไลน์ประเภทนี้')}</>}
             </div>
           )}
@@ -549,13 +548,13 @@ export default function GroupOverview() {
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>{tr('กำลังโหลดข้อมูล...')}</div>}
       {!loading && loadErr && (
         <div role="alert" style={{ ...card, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
-          🔴 โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอนี้ยังเชื่อไม่ได้ (ไม่ใช่ "ไม่มีผลิต")
+          🔴 {tr("โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอนี้ยังเชื่อไม่ได้ (ไม่ใช่ \"ไม่มีผลิต")}")
           <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, wordBreak: 'break-all' }}>{loadErr}</div>
         </div>
       )}
       {!loading && !loadErr && !baseLines.length && (
         <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>
-          ไม่พบข้อมูลการผลิตย้อนหลัง 7 วันจากวันที่เลือก — ลองเลือกวันอื่น
+          {tr("ไม่พบข้อมูลการผลิตย้อนหลัง 7 วันจากวันที่เลือก — ลองเลือกวันอื่น")}
         </div>
       )}
 
@@ -566,20 +565,20 @@ export default function GroupOverview() {
           <Kpi
             label={compNode ? tr('🏭 ไลน์ผลิต') : bizNode ? tr('🏢 บริษัทใน') + (sel.axis === 'map' ? tr('โซนนี้') : tr('กลุ่มธุรกิจ')) : (sel.axis === 'map' ? tr('🗺️ โซนพื้นที่') : tr('🗂️ กลุ่มธุรกิจ'))}
             /* 📏 ใส่หน่วยกำกับเสมอ — เลขนับลอยๆ ตอบไม่ได้ว่านับอะไร (UI §6.18 ข้อ 4) */
-            value={compNode ? `${compNode.lines.length} ไลน์`
-              : bizNode ? `${bizNode.companies.length} บริษัท`
-                : `${axisNodes.length} ${sel.axis === 'map' ? 'โซน' : 'กลุ่ม'}`}
-            sub={compNode ? `บริษัท ${compNode.code}`
-              : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
-                : `${tree.allComps.length} บริษัท · ${tree.allLines.length} ไลน์`} />
+            value={compNode ? `${compNode.lines.length} ${tr("ไลน์")}`
+              : bizNode ? `${bizNode.companies.length} ${tr("บริษัท")}`
+                : `${axisNodes.length} ${sel.axis === 'map' ? tr('โซน') : tr('กลุ่ม')}`}
+            sub={compNode ? `${tr("บริษัท")} ${compNode.code}`
+              : bizNode ? `${bizNode.lines.length} ${tr("ไลน์ผลิตรวม")}`
+                : `${tree.allComps.length} ${tr("บริษัท")} · ${tree.allLines.length} ${tr("ไลน์")}`} />
           <Kpi label={tr('ผลิตรวม')} value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
-            sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
+            sub={`${tr("เป้า")} ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
           <Kpi label={tr('OEE (ถ่วงน้ำหนัก)')} value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
             sub={tr('ถ่วงด้วยเวลารับภาระของแต่ละไลน์')} />
           <Kpi label={tr('Downtime นอกแผน')} value={fmtNum(scope.dtMin)} sub={tr('นาที')} color={scope.dtMin > 0 ? 'var(--amber)' : undefined} />
           <Kpi label={tr('ของเสีย')} value={fmtNum(scope.ng)} sub={tr('ชิ้น (NG + สงสัย)')} color={scope.ng > 0 ? 'var(--red)' : undefined} />
           <Kpi label={tr('คนเข้างาน')} value={pplText(scope.present, scope.head)}
-            sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : 'ยังไม่มีรายชื่อพนักงานผูกไลน์'} />
+            sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ${tr("ของกำลังคน")}` : tr("ยังไม่มีรายชื่อพนักงานผูกไลน์")} />
         </div>
 
         {/* ══ ระดับ 1: TSG ══ (แกนแผนที่ = โซนพื้นที่ · แกนกลุ่มธุรกิจ = การ์ดกลุ่ม) */}
@@ -592,13 +591,13 @@ export default function GroupOverview() {
                 <div style={{ fontSize: 15, fontWeight: 700 }}>{tr('แผนที่โรงงานทั่วโลก')}</div>
                 {lv1Switch}
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {tree.allComps.length} {tr('โรงงาน ·')} {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
+                  {tree.allComps.length} {tr('โรงงาน ·')} {new Set(tree.allComps.map(c => c.cc)).size} {tr("ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก")}
                 </span>
               </div>
               <WorldFactoryMap
                 comps={tree.allComps}
                 countries={COUNTRY_META}
-                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
+                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: tr(g.short) }))}
                 isMobile={isMobile}
                 height={isMobile ? 420 : 500}
                 onPickCompany={(c) => setPickComp(c)}
@@ -609,12 +608,12 @@ export default function GroupOverview() {
           {(sel.axis !== 'map' || lv1View === 'rank') && (
           <div style={card}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>{tr('เทียบผลการผลิต')}{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>{tr('เทียบผลการผลิต')}{sel.axis === 'map' ? tr("รายโซนพื้นที่") : tr("รายกลุ่มธุรกิจ")}</div>
               {sel.axis === 'map' && lv1Switch}
             </div>
             <RankBars items={axisNodes} onPick={(g) => setSel(s => ({ ...s, node: g.key, comp: null }))} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-              แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม OEE · <b>{tr('คลิกชื่อเพื่อดูบริษัทข้างใน')}</b>
+              {tr("แถบทึบ = ผลิตได้จริง · พื้นจาง = เป้าของวัน · เรียงตาม")} OEE · <b>{tr('คลิกชื่อเพื่อดูบริษัทข้างใน')}</b>
             </div>
           </div>
           )}
@@ -655,7 +654,7 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="DT" value={`${fmtNum(g.dtMin)} ${tr("น.")}`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
                       <Mini label="NG" value={fmtNum(g.ng)} color={g.ng > 0 ? 'var(--red)' : undefined} />
                       <Mini label={tr('คน')} value={pplText(g.present, g.head)} />
                     </div>
@@ -694,11 +693,11 @@ export default function GroupOverview() {
           {sel.axis === 'map' && bizNode.thaiMap && (
             <div style={card}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-                {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
+                {bizNode.icon} {bizNode.name} — {tr("แผนที่พื้นที่")}
               </div>
               <ThailandZoneMap
                 zones={[bizNode]}
-                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: g.short }))}
+                groups={ORG.groups.map(g => ({ key: g.key, icon: g.icon, short: tr(g.short) }))}
                 isMobile={isMobile}
                 height={isMobile ? 380 : 470}
                 onPickZone={() => { }}
@@ -711,7 +710,7 @@ export default function GroupOverview() {
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>{tr('เทียบผลการผลิตรายบริษัท —')} {bizNode.icon} {bizNode.name}</div>
             <RankBars items={bizNode.companies} onPick={(c) => setPickComp(c)} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
-              เรียงตาม OEE · <b>{tr('คลิกชื่อบริษัทเพื่อดูรายไลน์')}</b>
+              {tr("เรียงตาม")} OEE · <b>{tr('คลิกชื่อบริษัทเพื่อดูรายไลน์')}</b>
             </div>
           </div>
 
@@ -756,7 +755,7 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="DT" value={`${fmtNum(c.dtMin)} ${tr("น.")}`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
                       <Mini label="NG" value={fmtNum(c.ng)} color={c.ng > 0 ? 'var(--red)' : undefined} />
                       <Mini label={tr('คน')} value={pplText(c.present, c.head)} />
                     </div>
@@ -819,7 +818,7 @@ export default function GroupOverview() {
             </div>
             {compNode.real && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-                ตัวเลขชุดนี้มาจากฐานข้อมูลจริง — ตรงกับที่เห็นใน <b>/oee-analytics</b> {tr('และ')} <b>/factory-map</b> (ใช้สูตรกลางชุดเดียวกัน)
+                {tr("ตัวเลขชุดนี้มาจากฐานข้อมูลจริง — ตรงกับที่เห็นใน")} <b>/oee-analytics</b> {tr('และ')} <b>/factory-map</b> ({tr("ใช้สูตรกลางชุดเดียวกัน")})
               </div>
             )}
           </div>
@@ -828,7 +827,7 @@ export default function GroupOverview() {
         {/* ── ไลน์ที่ต้องดูแลด่วน (ตามขอบเขตที่กำลังดู) ── */}
         <div style={card}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
-            ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
+            {tr("ไลน์ที่ต้องดูแลด่วน")} — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
             <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>{tr('เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)')}</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -870,7 +869,7 @@ export default function GroupOverview() {
           </div>
           {hotspots.length > 5 && (
             <button onClick={() => setHotAll(v => !v)} style={{ ...btn, marginTop: 8, fontSize: 12.5, padding: '5px 12px' }}>
-              {hotAll ? 'แสดง 5 อันดับแรก' : `แสดงอีก ${hotspots.length - 5} ไลน์`}
+              {hotAll ? tr("แสดง 5 อันดับแรก") : `${tr("แสดงอีก")} ${hotspots.length - 5} ${tr("ไลน์")}`}
             </button>
           )}
         </div>
@@ -904,7 +903,7 @@ export default function GroupOverview() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, margin: '13px 0 15px' }}>
               <Mini label="OEE" value={pickComp.oee == null ? '—' : pickComp.oee + '%'} color={oeeCol(pickComp.oee)} />
               <Mini label={tr('ผลิต/เป้า')} value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
-              <Mini label="DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
+              <Mini label="DT" value={`${fmtNum(pickComp.dtMin)} ${tr("น.")}`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
               <Mini label="NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? 'var(--red)' : undefined} />
             </div>
 
@@ -923,7 +922,7 @@ export default function GroupOverview() {
               <div style={{ fontSize: 14.5, fontWeight: 800 }}>{tr('เข้าหน้าผังโรงงาน (Floor Plan) ของ')} {pickComp.code}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                 {pickComp.real
-                  ? 'เปิดผังรวมโรงงานจริง — เห็นทุกไลน์บนผัง สีตามสถานะ กดเข้าไลน์ดูรายละเอียดได้'
+                  ? tr("เปิดผังรวมโรงงานจริง — เห็นทุกไลน์บนผัง สีตามสถานะ กดเข้าไลน์ดูรายละเอียดได้")
                   : <>{tr('ยังไม่มีผังของบริษัทจำลอง —')} <b>{tr('ระบบจริง')}</b>{tr(': แต่ละบริษัทมีผังของตัวเอง (ผูกบริษัทเข้ากับผังโรงงาน) กดแล้วเด้งเข้าผังของบริษัทนั้นได้เลย')}</>}
               </div>
             </button>
@@ -934,11 +933,11 @@ export default function GroupOverview() {
               setPickComp(null);
             }} style={{
               width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--r-md)',
-              background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
+              background: 'var(--bg3-surf)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
             }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800 }}>{tr('ดูภาพรวมในหน้านี้ (')}{pickComp.lines.length} ไลน์)</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>{tr('ดูภาพรวมในหน้านี้ (')}{pickComp.lines.length} {tr("ไลน์")})</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
-                อยู่หน้าเดิม — เห็นตารางรายไลน์ (เป้า/ผลิต/OEE/DT/NG/คน) แล้วกดย้อนกลับขึ้นโซนหรือกลุ่มได้ทันที
+                {tr("อยู่หน้าเดิม — เห็นตารางรายไลน์ (เป้า/ผลิต/OEE/DT/NG/คน) แล้วกดย้อนกลับขึ้นโซนหรือกลุ่มได้ทันที")}
               </div>
             </button>
 
@@ -964,19 +963,17 @@ export default function GroupOverview() {
         </button>
         {showHow && (
           <div style={{ fontSize: 13, lineHeight: 1.85, marginTop: 10, color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--text)' }}>{tr('ทำได้ครับ — โครงระบบปัจจุบันรองรับได้โดยไม่ต้องเขียนใหม่')}</b> เพราะทุกอย่างผูกกับ “ไลน์ / ส่วนงาน” อยู่แล้ว
-            แค่ต่อ <b>ผังองค์กรที่มีอยู่ (`org_nodes`)</b> ขึ้นไปอีก 2 ชั้น (กลุ่มธุรกิจ → บริษัท) · งานหลักที่ต้องทำ:
+            <b style={{ color: 'var(--text)' }}>{tr('ทำได้ครับ — โครงระบบปัจจุบันรองรับได้โดยไม่ต้องเขียนใหม่')}</b> {tr("เพราะทุกอย่างผูกกับ “ไลน์ / ส่วนงาน” อยู่แล้ว แค่ต่อ")} <b>{tr("ผังองค์กรที่มีอยู่")} (`org_nodes`)</b> {tr("ขึ้นไปอีก 2 ชั้น (กลุ่มธุรกิจ → บริษัท) · งานหลักที่ต้องทำ")}:
             <ol style={{ margin: '8px 0 0', paddingLeft: 22 }}>
               <li><b>{tr('ขยาย')} <code>org_nodes.kind</code> {tr('ให้มี')} <code>business_group</code> + <code>company</code></b> {tr('(ปัจจุบันมี section / department / line) — โครงต้นไม้ parent_id เดิมรองรับอยู่แล้ว ไม่ต้องสร้างตารางใหม่ · เพิ่ม')} <code>company_id</code> {tr('ที่')} <code>production_lines</code> + <code>profiles</code></li>
               <li><b>{tr('ตารางข้อมูลรายวันไม่ต้องแก้')}</b> {tr('(production_sessions / prod_orders / downtime_logs / defect_logs) — สืบบริษัท↔กลุ่มธุรกิจผ่านไลน์ได้ทั้งหมด')}</li>
               <li><b>{tr('ขยาย scope ของ user')}</b> {tr('จาก “ส่วนงาน (sections)” เป็น “บริษัท → ส่วนงาน” — ต่อยอด')} <code>effectiveSections()</code> {tr('เดิม + เพิ่ม role ระดับกลุ่ม (ผู้บริหาร TSG เห็นทุกบริษัท / ผู้จัดการบริษัทเห็นเฉพาะของตัวเอง)')}</li>
               <li><b>{tr('Master data ที่ต้องแยกต่อบริษัท:')}</b> {tr('ปฏิทินบริษัท · นโยบายเวลาพัก · เป้า OEE · ทะเบียนเอกสาร (เลขฟอร์มคนละชุด) · ห้อง Telegram แจ้งเตือน · ผังโรงงาน')}</li>
               <li><b>{tr('2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้')}</b> {tr('— แยกด้วย')} <code>company_id</code> {tr('ในโครงเดิม ไม่ต้องแตก project ต่อบริษัท (ถ้าบริษัทต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)')}</li>
-              <li><b>{tr('จอนี้ (Group Overview)')}</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง</li>
+              <li><b>{tr('จอนี้ (Group Overview)')}</b> = {tr("ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง")}</li>
             </ol>
             <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
-              <b>{tr('ข้อควรระวัง:')}</b> แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
-              ไม่งั้นตัวเลขเทียบข้ามบริษัทไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐานกลางของกลุ่ม ไม่ใช่งานเขียนโปรแกรม
+              <b>{tr('ข้อควรระวัง:')}</b> {tr("แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน) ไม่งั้นตัวเลขเทียบข้ามบริษัทไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐานกลางของกลุ่ม ไม่ใช่งานเขียนโปรแกรม")}
             </div>
           </div>
         )}
@@ -993,7 +990,7 @@ const btn = {
 function Kpi({ label, value, sub, color }) {
   return (
     <div className="kpi-lift" style={{
-      background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
+      background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
       padding: '11px 13px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 88,
     }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{label}</div>

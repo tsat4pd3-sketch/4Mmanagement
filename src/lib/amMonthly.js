@@ -20,9 +20,13 @@
    · ช่อง "ตรวจแล้ว" เขียน **ผลตรวจ** (`OK`/`NG`/`!`) — คนละชั้นกับสัญลักษณ์สถานะวัน (ขาด/NP/?/·)
      ⇒ ห้ามใช้ `ขาด`/`NP`/`?`/`·` เป็นผลตรวจ และกลับกัน
    · **กะที่กำลังเดินอยู่** ยังไม่ตัดสิน (ถือเป็น `future`) — สถานะสดอยู่แท็บ "สถานะวันนี้"
-     (ไม่งั้นต้นกะทุกเครื่องขึ้น "ขาด" ทั้งที่ยังอยู่ในกรอบ 60 นาที)                                         */
+     (ไม่งั้นต้นกะทุกเครื่องขึ้น "ขาด" ทั้งที่ยังอยู่ในกรอบ 60 นาที)
+   · ⚙️ **รายเครื่อง (23/11 · คำสั่ง user)** — ไลน์เปิดกะแล้ว **เครื่องไหนต้องตรวจ** ตัดสินด้วย `amTargetsByRun()`
+     ตัวเดียวกับบอร์ดวันนี้/ตัวเตือน: ใบผลิตของกะลงเลขเครื่องครบ = เครื่องที่ไม่อยู่บนใบ (และเพื่อนร่วมสถานีก็ไม่อยู่) = `NP`
+     ใบไม่ลงเลขเครื่อง/ลงไม่ครบ = **ตัดสินทั้งไลน์** (ไลน์ใหญ่/ไลน์ประกอบ ถูกแล้ว · user 23/11) — ห้ามบีบเป็น "ไม่เดิน"
+     `ordersByKey` ไม่ส่ง/อ่านไม่ได้ = ทั้งไลน์ทุกวัน (พฤติกรรมเดิมเป๊ะ) · แถวไลน์นับ `modeDays` ให้จอเขียนบอก          */
 import { checkDayState, summarizeCheckDays, CHECK_DAY, runKey } from '../utils/dailyCheckDay.js'
-import { openFamilyLines, isDailyAmEquipment } from './pmDailyStatus.js'
+import { openFamilyLines, isDailyAmEquipment, runningMachinesByLine, amTargetsByRun, stationMateKeysFn } from './pmDailyStatus.js'
 
 const pad2 = (n) => String(n).padStart(2, '0')
 
@@ -90,7 +94,8 @@ function notYetJudged(date, shift, cur) {
  * @returns {{ days:string[], rows:object[], sum:object, ngN:number, unknownDays:number, runsUnknown:boolean }}
  */
 export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], amEquipIds = null,
-  inspections = [], runsByKey = null, lines = [], isWorkingDay = null, now = new Date() } = {}) {
+  inspections = [], runsByKey = null, lines = [], isWorkingDay = null, now = new Date(),
+  ordersByKey = null, amStations = null } = {}) {
   const days = amMonthDays(month)
   const cur = amSlotOf(now)
   const jigById = new Map()
@@ -115,6 +120,16 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
     return famByDay.get(date).has(line)
   }
 
+  // ⚙️ รายเครื่อง: เครื่องที่เดินต่อไลน์ของแต่ละวัน (กะที่เลือก) — คำนวณครั้งเดียวต่อวัน
+  const noOf = new Map([...jigById.values()].map(j => [j.id, j.machine_no]))
+  const mateKeysOf = stationMateKeysFn(amStations, (id) => noOf.get(id))
+  const runByDay = new Map()
+  const runOf = (line, date) => {
+    if (!ordersByKey) return null
+    if (!runByDay.has(date)) runByDay.set(date, runningMachinesByLine(lines, ordersByKey.get(runKey(date, shift)) || []))
+    return runByDay.get(date)[line] || null
+  }
+
   // จัดทะเบียนต่อไลน์ — เครื่องซ้ำในไลน์เดียว (แถวทั้งกะ + แถวเฉพาะกะ) นับครั้งเดียว · ลงทะเบียนเร็วสุดชนะ
   const byLine = new Map()
   for (const t of targets) {
@@ -133,6 +148,20 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
   const allStates = []
   let ngAll = 0
   for (const [line, mm] of byLine) {
+    // ⚙️ ต่อวัน: เครื่องไหน "ไม่เดิน" (ตัดสินรายเครื่องได้) · โหมดของวัน — เฉพาะวันที่ไลน์เปิดกะ
+    const tgLine = [...mm.values()].map(({ jig }) => ({ jig_id: jig.id, machine_no: jig.machine_no }))
+    const notRunByDay = new Map()
+    const modeDays = { machine: 0, mixed: 0, line_no_mno: 0, line: 0 }
+    for (const date of days) {
+      if (ranOnLine(line, date) !== true) continue
+      const split = amTargetsByRun(tgLine, runOf(line, date), { mateKeysOf })
+      modeDays[split.mode] = (modeDays[split.mode] || 0) + 1
+      if (split.notRunning.length) notRunByDay.set(date, new Set(split.notRunning.map(t => t.jig_id)))
+    }
+    const machineRan = (jigId, date) => {
+      const ran = ranOnLine(line, date)
+      return ran === true && notRunByDay.get(date)?.has(jigId) ? false : ran
+    }
     const machines = [...mm.values()]
       .sort((a, b) => String(a.jig.machine_no || a.jig.name).localeCompare(String(b.jig.machine_no || b.jig.name), 'th', { numeric: true }))
       .map(({ jig, since }) => {
@@ -140,7 +169,7 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
         const cells = days.map(date => {
           const r = latest.get(`${jig.id}|${date}`)
           const done = !!r && r.status != null && r.status !== 'pending'
-          const ran = ranOnLine(line, date)
+          const ran = machineRan(jig.id, date)
           const holiday = isWorkingDay ? !isWorkingDay(date) : false
           const state = checkDayState({
             hasResult: done,
@@ -162,7 +191,9 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
       const due = st.filter(c => c.state === CHECK_DAY.done || c.state === CHECK_DAY.missed)
       const doneN = st.filter(c => c.state === CHECK_DAY.done).length
       const plannedAny = st.some(c => c.state !== CHECK_DAY.not_planned)
-      const ran = ranOnLine(line, date)
+      // ไลน์เปิดกะแต่ทุกเครื่องในทะเบียน "ไม่เดิน" (ตัดสินรายเครื่อง) = ไลน์นี้ไม่มีอะไรต้องตรวจ ⇒ NP ไม่ใช่ "ขาด"
+      const lineRan = ranOnLine(line, date)
+      const ran = lineRan === true && machines.length > 0 && (notRunByDay.get(date)?.size || 0) >= machines.length ? false : lineRan
       const holiday = isWorkingDay ? !isWorkingDay(date) : false
       const state = checkDayState({
         hasResult: due.length > 0 && due.every(c => c.state === CHECK_DAY.done),
@@ -177,7 +208,7 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
     allStates.push(...mStates)
     const ngN = machines.reduce((a, m) => a + m.ngN, 0)
     ngAll += ngN
-    rows.push({ line_name: line, machines, cells, sum: summarizeCheckDays(mStates), ngN })
+    rows.push({ line_name: line, machines, cells, sum: summarizeCheckDays(mStates), ngN, modeDays })
   }
   rows.sort((a, b) => (a.line_name === '—') - (b.line_name === '—') || a.line_name.localeCompare(b.line_name, 'th', { numeric: true }))
 
@@ -185,8 +216,35 @@ export function buildAmMonthly({ month, shift = 'day', targets = [], jigs = [], 
   return {
     days, rows, sum, ngN: ngAll,
     runsUnknown: !runsByKey,
+    ordersUnknown: !ordersByKey,
     unknownDays: rows.length ? new Set(rows.flatMap(r => r.cells.filter(c => c.state === CHECK_DAY.unknown).map(c => c.date))).size : 0,
   }
+}
+
+/** ป้ายบอกว่าไลน์นี้ตัดสิน "ต้องตรวจ" ระดับไหน (นับเฉพาะวันที่ไลน์เปิดกะ) — จอ/Excel ต้องเขียนบอกเสมอ
+ *  @returns {string|null}  null = ไม่มีวันเปิดกะ */
+export function amModeDaysNote(md) {
+  if (!md) return null
+  const mc = md.machine || 0, mx = md.mixed || 0, ln = (md.line_no_mno || 0) + (md.line || 0)
+  if (!mc && !mx && !ln) return null
+  if (!mc && !mx) return 'ตัดสินทั้งไลน์ (ใบผลิตไม่ลงเลขเครื่อง)'
+  const parts = []
+  if (mc) parts.push(`รายเครื่อง ${mc} วัน`)
+  if (mx) parts.push(`ใบผลิตลงเลขเครื่องไม่ครบ ${mx} วัน (เครื่องที่ไม่อยู่บนใบยังนับต้องตรวจ)`)
+  if (ln) parts.push(`ทั้งไลน์ ${ln} วัน (ใบผลิตไม่ลงเลขเครื่อง)`)
+  return parts.join(' · ')
+}
+
+/** ป้ายสั้นใต้ชื่อไลน์บนจอ (คอลัมน์แคบ) — คำเต็มอยู่ `amModeDaysNote()` (tooltip + Excel) · null = ไม่มีวันเปิดกะ */
+export function amModeDaysShort(md) {
+  if (!md) return null
+  const mc = md.machine || 0, mx = md.mixed || 0, ln = (md.line_no_mno || 0) + (md.line || 0)
+  if (!mc && !mx && !ln) return null
+  const parts = []
+  if (mc) parts.push(`รายเครื่อง ${mc}`)
+  if (mx) parts.push(`ไม่ครบ ${mx}`)
+  if (ln) parts.push(`ทั้งไลน์ ${ln}`)
+  return `${parts.join(' · ')} วัน`
 }
 
 /** สรุปรวมของหลายไลน์ (เช่น หลังกรอง) — ระดับเครื่อง-วัน · ตัวหารจาก `summarizeCheckDays` ที่เดียว */

@@ -33,7 +33,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import NoticeBar from './NoticeBar';
-import { tr as trI18n } from '../utils/i18n';
+import { tr as trI18n, dateLocale } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -50,7 +50,7 @@ const KIND_CHIPS = [
 ];
 
 const fmtDate = (ms) => (ms
-  ? new Date(ms).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' })
+  ? new Date(ms).toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short' })
   : '—');
 
 export default function MachineReliability({ machines = [], lineObjs = [], scopeLines = null }) {
@@ -98,7 +98,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       ]);
       if (!alive) return;
       const errs = [dtRes.error && 'downtime', sesRes.error && 'กะการผลิต'].filter(Boolean);
-      if (errs.length) { setLoadErr(`โหลดไม่สำเร็จ: ${errs.join(' · ')} — ตัวเลขไม่ครบ`); toast.error(`โหลดข้อมูลไม่ครบ: ${errs.join(' · ')}`); }
+      if (errs.length) { setLoadErr(`${trI18n("โหลดไม่สำเร็จ")}: ${errs.join(' · ')} — ${trI18n("ตัวเลขไม่ครบ")}`); toast.error(`${trI18n("โหลดข้อมูลไม่ครบ")}: ${errs.join(' · ')}`); }
       setRaw({ downtimes: dtRes.data || [], sessions: sesRes.data || [] });
       setLoading(false);
     })();
@@ -188,7 +188,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       >
         {/* ── ตัวกรอง — อยู่ในแถบเวลาแถบเดียว (UI-STANDARD 2026-09-24) ── */}
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
-        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
+        <SearchInput value={q} onChange={setQ} fields={trI18n("เลขเครื่อง / ชื่อ / ไลน์")} ariaLabel={trI18n("ค้นหาอุปกรณ์")} />
       </TimeRangeBar>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {KIND_CHIPS.map(c => {
@@ -210,12 +210,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{trI18n('นับแบบ:')}</span>
         <Segmented value={mode} onChange={setMode} label={trI18n('นับแบบ')} options={[
-          { value: 'full', label: 'มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { value: 'line', label: 'มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+          { value: 'full', label: trI18n("มุมเครื่อง (นาทีเต็ม)"), title: trI18n("เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่") },
+          { value: 'line', label: trI18n("มุมไลน์ (ถ่วง 1/N)"), title: trI18n("ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)") },
         ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-            · มีผลกับ {summary.parallelLines} อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด)
+            · {trI18n("มีผลกับ")} {summary.parallelLines} {trI18n("อุปกรณ์บนไลน์เครื่องขนาน (นอกนั้นตัวเลขเท่ากันทั้ง 2 โหมด")})
           </span>
         )}
         {/* ไม่นับเครื่องที่ไม่เคยเสีย = MTBF รวมต่ำกว่าจริง — เปิดไว้เป็นค่าเริ่มต้น (user 2026-09-14) */}
@@ -233,20 +233,19 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── บอกให้ชัดว่าเลขนี้คืออะไร — ไม่งั้นเอาไปเทียบกับระบบส่วนกลางแล้วเถียงกัน ── */}
       <div style={{ ...card, fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
         <InfoMore label={trI18n('ตัวเลขนี้นับจากอะไร · สูตร MTTR/MTBF')} id="mr-def" size={12}>
-        📐 <b>{trI18n('นับจาก downtime ที่หน้างานบันทึกจริง')}</b> {trI18n('(ไม่ใช่ใบแจ้งซ่อม) ในช่วง')} {days} วันล่าสุด ·
-        หยุดตามแผน (PM/เปลี่ยนรุ่น) ไม่นับเป็น "ครั้งที่เสีย" แต่หักออกจากเวลาเดินเครื่อง
-        <div><b>MTTR</b> = เวลาที่ไลน์หยุดเฉลี่ยต่อครั้ง (รวมเวลารอช่าง) — เฉลี่ยเฉพาะครั้งที่ปิดแล้ว</div>
+        📐 <b>{trI18n('นับจาก downtime ที่หน้างานบันทึกจริง')}</b> {trI18n('(ไม่ใช่ใบแจ้งซ่อม) ในช่วง')} {days} {trI18n("วันล่าสุด · หยุดตามแผน (PM/เปลี่ยนรุ่น) ไม่นับเป็น \"ครั้งที่เสีย\" แต่หักออกจากเวลาเดินเครื่อง")}
+        <div><b>MTTR</b> = {trI18n("เวลาที่ไลน์หยุดเฉลี่ยต่อครั้ง (รวมเวลารอช่าง) — เฉลี่ยเฉพาะครั้งที่ปิดแล้ว")}</div>
         <div>
-          <b>{trI18n('MTBF ของกลุ่ม')}</b> = Σ เวลาเดินเครื่อง ÷ Σ ครั้งที่เสีย (<b>{trI18n('รวมกอง ไม่ใช่เฉลี่ยค่าเฉลี่ยรายเครื่อง')}</b>) ·
-          เครื่องที่ไม่เคยเสีย <b>{trI18n('นับชั่วโมงเดินเข้าตัวตั้งด้วย')}</b> แต่ MTBF รายตัวเป็น “—” (เสีย 0 ครั้ง หารไม่ได้)
+          <b>{trI18n('MTBF ของกลุ่ม')}</b> = Σ {trI18n("เวลาเดินเครื่อง ÷ Σ ครั้งที่เสีย")} (<b>{trI18n('รวมกอง ไม่ใช่เฉลี่ยค่าเฉลี่ยรายเครื่อง')}</b>) ·
+          {trI18n("เครื่องที่ไม่เคยเสีย")} <b>{trI18n('นับชั่วโมงเดินเข้าตัวตั้งด้วย')}</b> {trI18n("แต่ MTBF รายตัวเป็น “—” (เสีย 0 ครั้ง หารไม่ได้")})
           {summary.idleCount > 0 && <> {trI18n('· ช่วงนี้มี')} <b>{summary.idleCount} {trI18n('เครื่องที่ไม่เคยเสีย')}</b></>}
-          <br />⚠️ แม่พิมพ์/จิ๊กไม่ถูกเติมเข้ามา — เป็นทูลที่ขึ้นเครื่องเป็นช่วงๆ ชั่วโมงเดินยังวัดไม่ได้
+          <br />⚠️ {trI18n("แม่พิมพ์/จิ๊กไม่ถูกเติมเข้ามา — เป็นทูลที่ขึ้นเครื่องเป็นช่วงๆ ชั่วโมงเดินยังวัดไม่ได้")}
         </div>
-        <div><b>MTBF</b> = เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย · <b style={{ color: 'var(--amber)' }}>{trI18n('เวลาเดินเครื่องเป็นค่าประมาณ')}</b> {trI18n('จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)')}</div>
+        <div><b>MTBF</b> = {trI18n("เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย")} · <b style={{ color: 'var(--amber)' }}>{trI18n('เวลาเดินเครื่องเป็นค่าประมาณ')}</b> {trI18n('จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)')}</div>
         <div>
-          ⏸️ เวลาเดินเครื่อง <b>{trI18n('หักเวลาพักตามนโยบายแล้ว')}</b>
+          ⏸️ {trI18n("เวลาเดินเครื่อง")} <b>{trI18n('หักเวลาพักตามนโยบายแล้ว')}</b>
           {summary.hasBreakPolicy
-            ? <> {trI18n('(ช่วงนี้หักไป')} {fmtDur(summary.breakMin)} — นิยามเดียวกับ %A ใน Daily Report)</>
+            ? <> {trI18n('(ช่วงนี้หักไป')} {fmtDur(summary.breakMin)} — {trI18n("นิยามเดียวกับ %A ใน")} Daily Report)</>
             : <b style={{ color: 'var(--red)' }}> {trI18n('— ยังโหลดนโยบายพักไม่ได้ ตัวเลขนี้จะสูงกว่าจริง')}</b>}
         </div>
         <div style={{ color: weighted ? 'var(--blue)' : 'var(--text2)' }}>
@@ -261,7 +260,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── คุณภาพข้อมูล: บอกตรงๆ ว่าเทียบทะเบียนได้แค่ไหน ห้ามเงียบ ── */}
       {(summary.unmatched > 0 || summary.noMachineNo > 0 || summary.unknownShifts > 0) && (
         <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
-          <b>{trI18n('⚠️ ความครบของข้อมูล')}</b> {trI18n('— เทียบทะเบียนอุปกรณ์ได้')} {summary.matched} {trI18n('จาก')} {summary.equipCount} เลข
+          <b>{trI18n('⚠️ ความครบของข้อมูล')}</b> {trI18n('— เทียบทะเบียนอุปกรณ์ได้')} {summary.matched} {trI18n('จาก')} {summary.equipCount} {trI18n("เลข")}
           {summary.unmatched > 0 && <div>· <b>{summary.unmatched} {trI18n('เลขไม่อยู่ในทะเบียน')}</b> {trI18n('(หน้างานพิมพ์ชื่อเล่น เช่น “เลเซอร์08”) —')} <b>{trI18n('ยังนับ downtime/MTTR ให้')}</b> {trI18n('แต่บอกชนิดและ MTBF ไม่ได้ · ดูได้ที่ชิป ❔ ไม่อยู่ในทะเบียน')}</div>}
           {summary.noMachineNo > 0 && <div>· downtime {summary.noMachineNo} {trI18n('ครั้งไม่ได้ระบุเครื่องเลย — ไม่เข้าตารางนี้')}</div>}
           {summary.unknownShifts > 0 && <div>{trI18n('· กะ')} {summary.unknownShifts} {trI18n('ใบหาชั่วโมงทำงานไม่ได้ → เวลาเดินเครื่อง (และ MTBF) ต่ำกว่าจริงเล็กน้อย')}</div>}
@@ -275,18 +274,18 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 800 }}>{trI18n('เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)')}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-            วัดแยกช่วงได้ <b style={{ color: ph.n > 0 ? '#22c55e' : 'var(--amber)' }}>{ph.n}</b> ครั้ง
+            {trI18n("วัดแยกช่วงได้")} <b style={{ color: ph.n > 0 ? '#22c55e' : 'var(--amber)' }}>{ph.n}</b> {trI18n("ครั้ง")}
             {ph.oneShot > 0 && <> {trI18n('· ตัดใบที่กดรวดเดียว')} {ph.oneShot} {trI18n('ครั้ง')}</>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
           {[
-            { k: 'mttaMin', icon: '⏳', label: 'รอช่าง (MTTA)', color: 'var(--red)', tip: 'ตั้งแต่เครื่องหยุด จนช่างกดรับงาน — คิว/ระยะทาง/การแจ้ง' },
-            { k: 'mttrPureMin', icon: '🔧', label: 'ซ่อมจริง (MTTR)', color: 'var(--amber)', tip: 'ตั้งแต่ช่างรับงาน จนกดซ่อมเสร็จ — ทักษะช่าง/อะไหล่' },
-            { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: 'var(--blue)', tip: 'ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up' },
-            { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: 'ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์' },
+            { k: 'mttaMin', icon: '⏳', label: 'รอช่าง (MTTA)', color: 'var(--red)', tip: trI18n("ตั้งแต่เครื่องหยุด จนช่างกดรับงาน — คิว/ระยะทาง/การแจ้ง") },
+            { k: 'mttrPureMin', icon: '🔧', label: 'ซ่อมจริง (MTTR)', color: 'var(--amber)', tip: trI18n("ตั้งแต่ช่างรับงาน จนกดซ่อมเสร็จ — ทักษะช่าง/อะไหล่") },
+            { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: 'var(--blue)', tip: trI18n("ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up") },
+            { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: trI18n("ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์") },
           ].map(c => (
-            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {trI18n(c.label)}</div>
               <div style={{ fontSize: 19, fontWeight: 800, color: c.color }}>{fmtDur(ph[c.k])}</div>
               {ph.n > 0 && ph.totalMin > 0 && c.k !== 'totalMin' && (
@@ -298,7 +297,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         {/* บอกตรงๆ ว่าทำไมถึงวัดไม่ได้ — คนหน้างานจะได้รู้ว่าต้องกดอะไรเพิ่ม */}
         {(summary.phaseGaps?.no_ack > 0 || summary.phaseGaps?.after_end > 0 || summary.phaseGaps?.no_fix > 0) && (
           <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.7 }}>
-            ทั้งช่วงที่ดู — ยังแยกช่วงไม่ได้เพราะ:
+            {trI18n("ทั้งช่วงที่ดู — ยังแยกช่วงไม่ได้เพราะ")}:
             {summary.phaseGaps.no_ack > 0 && <> · <b>{summary.phaseGaps.no_ack}</b> {trI18n('ครั้งไม่ได้กด “รับงาน”')}</>}
             {summary.phaseGaps.no_fix > 0 && <> · <b>{summary.phaseGaps.no_fix}</b> {trI18n('ครั้งไม่ได้กด “ซ่อมเสร็จ”')}</>}
             {summary.phaseGaps.after_end > 0 && <> · <b style={{ color: 'var(--amber)' }}>{summary.phaseGaps.after_end}</b> {trI18n('ครั้งเปิด/รับใบซ่อม')}<b>{trI18n('หลังเครื่องกลับมารันแล้ว')}</b> {trI18n('(ใบ MO ถูกใช้เป็นเอกสารตามหลัง ไม่ใช่การจ่ายงานสด)')}</>}
@@ -332,7 +331,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       {/* ── ตารางรายอุปกรณ์ ── */}
       {!shown.length ? (
         <div style={{ ...card, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
-          ไม่มีอุปกรณ์ที่ตรงกับตัวกรอง — ลองขยายช่วงวันหรือเลือก “ทั้งหมด”
+          {trI18n("ไม่มีอุปกรณ์ที่ตรงกับตัวกรอง — ลองขยายช่วงวันหรือเลือก “ทั้งหมด")}”
         </div>
       ) : (
         <div className="table-sticky" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
@@ -363,11 +362,11 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                       {/* หลายสะกด = ต้นทางกรอกไม่นิ่ง — โชว์ให้ไปตามแก้ได้ */}
                       {r.rawNos.length > 1 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)' }} title={trI18n('เลขที่หน้างานพิมพ์มาแล้วระบบยุบเป็นเครื่องเดียวกัน')}>
-                          ✎ กรอกมา {r.rawNos.length} {trI18n('แบบ:')} {r.rawNos.join(' · ')}
+                          ✎ {trI18n("กรอกมา")} {r.rawNos.length} {trI18n('แบบ:')} {r.rawNos.join(' · ')}
                         </div>
                       )}
                       {r.openStops > 0 && <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{trI18n('🔴 ยังเปิดค้าง')} {r.openStops} {trI18n('ครั้ง')}</div>}
-                      {r.neverFailed && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>{trI18n('✅ ไม่เคยเสียในช่วงนี้')}</div>}
+                      {r.neverFailed && <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>{trI18n('✅ ไม่เคยเสียในช่วงนี้')}</div>}
                     </td>
                     <td style={td}>
                       {meta
@@ -377,15 +376,15 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>
                       {r.lineName || '—'}
                       {r.parallelN > 1 && (
-                        <div style={{ fontSize: 11, color: 'var(--blue)' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
-                          ⇄ ขนาน {r.parallelN} ตัว
+                        <div style={{ fontSize: 11, color: 'var(--blue)' }} title={`${trI18n("ไลน์นี้มีเครื่องวิ่งขนาน")} ${r.parallelN} ${trI18n("ตัว — โหมดมุมไลน์จะหาร DT ด้วย")} ${r.parallelN}`}>
+                          ⇄ {trI18n("ขนาน")} {r.parallelN} {trI18n("ตัว")}
                         </div>
                       )}
                     </td>
-                    <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} ตามแผน)</span>}</td>
-                    <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
+                    <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} {trI18n("ตามแผน")})</span>}</td>
+                    <td style={tdNum} title={r.parallelN > 1 ? `${trI18n("มุมเครื่อง")} ${fmtDur(r.dtMin)} · ${trI18n("มุมไลน์")} ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
                     <td style={{ ...tdNum, color: 'var(--amber)', fontWeight: 700 }}
-                        title={r.phaseN > 0 ? `แยกช่วง (${r.phaseN} ครั้ง): รอช่าง ${fmtDur(r.mttaMin)} · ซ่อมจริง ${fmtDur(r.mttrPureMin)} · กลับมารัน ${fmtDur(r.restartMin)}` : 'ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง'}>
+                        title={r.phaseN > 0 ? `${trI18n("แยกช่วง")} (${r.phaseN} ${trI18n("ครั้ง): รอช่าง")} ${fmtDur(r.mttaMin)} · ${trI18n("ซ่อมจริง")} ${fmtDur(r.mttrPureMin)} · ${trI18n("กลับมารัน")} ${fmtDur(r.restartMin)}` : trI18n("ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง")}>
                       {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
                     </td>
                     <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : 'var(--blue)', fontWeight: 700 }}

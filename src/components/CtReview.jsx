@@ -48,7 +48,7 @@ export default function CtReview({ lines = [] }) {
     const { data, error } = await supabaseDR.from('ct_proposals')
       .select('id, mat_no, product_name, line_name, ct_standard, ct_observed, sample_orders, dropped_orders, p25, p75, flags, sample_from, sample_to, created_by_name, created_at')
       .eq('status', 'proposed').order('created_at', { ascending: false }).limit(200);
-    if (error) { setErr('โหลดคิวข้อเสนอไม่สำเร็จ: ' + error.message); return; }
+    if (error) { setErr((tr('โหลดคิวข้อเสนอไม่สำเร็จ') + ': ') + error.message); return; }
     setQueue(data || []);
   }, []);
   useEffect(() => { loadQueue(); }, [loadQueue]);
@@ -73,7 +73,7 @@ export default function CtReview({ lines = [] }) {
       ]);
       if (!alive) return;
       const bad = [sRes, pRes, bRes].find(r => r.error);
-      if (bad) { setErr('โหลดข้อมูลไม่สำเร็จ: ' + bad.error.message); setLoading(false); return; }
+      if (bad) { setErr((tr('โหลดข้อมูลไม่สำเร็จ') + ': ') + bad.error.message); setLoading(false); return; }
 
       const sessions = sRes.data || [];
       if (!sessions.length) { setRows([]); setSpan(null); setLoading(false); return; }
@@ -95,7 +95,7 @@ export default function CtReview({ lines = [] }) {
       ]);
       if (!alive) return;
       if (oRes.error || dRes.error) {
-        setErr('โหลดใบผลิต/downtime ไม่สำเร็จ: ' + (oRes.error || dRes.error));
+        setErr((tr('โหลดใบผลิต/downtime ไม่สำเร็จ') + ': ') + (oRes.error || dRes.error));
         setRows([]); setSpan(null); setLoading(false); return;
       }
       /* 🔴 **fail-closed** — โหลดไม่ครบแล้วยังเสนอค่า = เสนอจากข้อมูลที่ขาด แล้วคนกดอนุมัติ
@@ -148,34 +148,34 @@ export default function CtReview({ lines = [] }) {
       flags: r.flags, created_by_name: fullName || null,
     }), 'เสนอปรับ CT');
     setBusy('');
-    if (ok) { toast.success(`เสนอปรับ CT ของ ${r.matNo} เข้าคิวแล้ว — รอวิศวกรอนุมัติ`); loadQueue(); }
+    if (ok) { toast.success(`${tr("เสนอปรับ CT ของ")} ${r.matNo} ${tr("เข้าคิวแล้ว — รอวิศวกรอนุมัติ")}`); loadQueue(); }
   };
 
   /* ── อนุมัติ = เขียน master จริง (ทางเดียวที่ CT มาตรฐานเปลี่ยน) ── */
   const approve = async (q) => {
     if (!await askConfirm(
-      `อนุมัติปรับ CT ของ ${q.mat_no}\n\n`
-      + `${q.ct_standard ?? '—'} → ${q.ct_observed} วินาที/ชิ้น\n\n`
+      `${tr("อนุมัติปรับ CT ของ")} ${q.mat_no}\n\n`
+      + `${q.ct_standard ?? '—'} → ${q.ct_observed} ${tr("วินาที/ชิ้น")}\n\n`
       + 'CT มาตรฐานจะถูกเปลี่ยนทันที และ %P ของกะถัดไปจะคิดจากค่าใหม่\n'
-      + '(กะที่ปิดไปแล้วไม่กระทบ — ค่าที่ stamp ไว้ไม่ถูกคำนวณใหม่)')) return;
+      + ('(' + tr('กะที่ปิดไปแล้วไม่กระทบ — ค่าที่ stamp ไว้ไม่ถูกคำนวณใหม่') + ')'))) return;
     setBusy(q.id);
     // 🔴 RLS ปฏิเสธ UPDATE = 0 แถวเงียบ (กฎเหล็ก 2) ⇒ นับแถวผ่าน checkWriteRows
     const ok1 = checkWriteRows(await supabaseDR.from('dr_products')
       .update({ cycle_time_sec: q.ct_observed }).eq('mat_no', q.mat_no).select('mat_no'),
-      'เขียน CT มาตรฐาน', { zeroMsg: `ไม่พบสินค้า ${q.mat_no} ใน Product Master — CT ไม่ถูกเปลี่ยน` });
+      'เขียน CT มาตรฐาน', { zeroMsg: `${tr("ไม่พบสินค้า")} ${q.mat_no} ${tr("ใน Product Master — CT ไม่ถูกเปลี่ยน")}` });
     if (!ok1) { setBusy(''); return; }
     const ok = checkWriteRows(await supabaseDR.from('ct_proposals').update({
       status: 'accepted', decided_by: fullName || null, decided_at: new Date().toISOString(),
     }).eq('id', q.id).select('id'), 'ปิดใบข้อเสนอ');
     setBusy('');
     if (ok) {
-      toast.success(`อนุมัติแล้ว — CT ของ ${q.mat_no} เป็น ${q.ct_observed} วินาที/ชิ้น (ดูประวัติได้ที่ v_ct_history)`);
+      toast.success(`${tr("อนุมัติแล้ว — CT ของ")} ${q.mat_no} ${tr("เป็น")} ${q.ct_observed} ${tr("วินาที/ชิ้น (ดูประวัติได้ที่")} v_ct_history)`);
       loadQueue(); setLine(l => l);
     }
   };
 
   const reject = async (q) => {
-    const reason = window.prompt(`ปฏิเสธข้อเสนอของ ${q.mat_no} — เหตุผล (บังคับ)`);
+    const reason = window.prompt(`${tr("ปฏิเสธข้อเสนอของ")} ${q.mat_no} — ${tr("เหตุผล (บังคับ")})`);
     if (reason == null) return;
     if (!reason.trim()) { toast.error('ต้องระบุเหตุผล'); return; }
     setBusy(q.id);
@@ -194,20 +194,19 @@ export default function CtReview({ lines = [] }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ ...card, borderColor: 'var(--accent)' }}>
         <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)', marginBottom: 4 }}>
-          ⏱ ทบทวน Cycle Time — ระบบเสนอ วิศวกรตัดสิน
+          ⏱ {tr("ทบทวน Cycle Time — ระบบเสนอ วิศวกรตัดสิน")}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-          เทียบ <b>{tr('CT มาตรฐาน')}</b> {tr('(ที่ใช้คิด %P) กับ')} <b>{tr('CT ที่สังเกตได้จริง')}</b> {tr('จากใบผลิตย้อนหลัง')} {DAYS_BACK} วัน ·
+          {tr("เทียบ")} <b>{tr('CT มาตรฐาน')}</b> {tr('(ที่ใช้คิด %P) กับ')} <b>{tr('CT ที่สังเกตได้จริง')}</b> {tr('จากใบผลิตย้อนหลัง')} {DAYS_BACK} {tr("วัน")} ·
           <b> {tr('ระบบไม่แก้ CT เอง')}</b> {tr('— ต้องมีคนกดอนุมัติเท่านั้น และ %P ยังหารด้วย CT มาตรฐานเสมอ')}<br />
-          คัดเฉพาะใบที่เชื่อได้: ปิดใบครบ · ≥ {SAMPLE_RULES.MIN_QTY_PER_ORDER} ชิ้น · หัก downtime + เวลาพักแล้ว ·
-          ตัดใบที่ได้ผลเป็นไปไม่ได้ทิ้ง (มักมาจาก<b>{tr('ลง downtime เกินจริง')}</b>) · ใช้<b>{tr('มัธยฐาน')}</b>ไม่ใช่ค่าเฉลี่ย
+          {tr("คัดเฉพาะใบที่เชื่อได้: ปิดใบครบ")} · ≥ {SAMPLE_RULES.MIN_QTY_PER_ORDER} {tr("ชิ้น · หัก downtime + เวลาพักแล้ว · ตัดใบที่ได้ผลเป็นไปไม่ได้ทิ้ง (มักมาจาก")}<b>{tr('ลง downtime เกินจริง')}</b>) · {tr("ใช้")}<b>{tr('มัธยฐาน')}</b>{tr("ไม่ใช่ค่าเฉลี่ย")}
         </div>
       </div>
 
       {queue.length > 0 && (
         <div style={{ ...card, borderColor: '#f59e0b' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 8 }}>
-            รออนุมัติ {queue.length} {tr('รายการ')} {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)')}</span>}
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)', marginBottom: 8 }}>
+            {tr("รออนุมัติ")} {queue.length} {tr('รายการ')} {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)')}</span>}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
@@ -227,7 +226,7 @@ export default function CtReview({ lines = [] }) {
                     <td style={{ ...td, textAlign: 'right' }}>{fmt(q.ct_standard)}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{fmt(q.ct_observed)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5, color: 'var(--text2)' }}>
-                      {q.sample_orders} {tr('ใบ')}{q.dropped_orders ? ` · ตัดทิ้ง ${q.dropped_orders}` : ''}<br />
+                      {q.sample_orders} {tr('ใบ')}{q.dropped_orders ? ` · ${tr("ตัดทิ้ง")} ${q.dropped_orders}` : ''}<br />
                       <span style={{ color: 'var(--muted)' }}>{fmt(q.p25)}–{fmt(q.p75)} {tr('วิ')}</span>
                     </td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--text2)' }}>{q.created_by_name || '—'}</td>
@@ -257,12 +256,12 @@ export default function CtReview({ lines = [] }) {
             role={role} lineId={lineId} sections={sections} style={{ width: 260 }} />
           {span && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              จาก {span.sessions} {tr('กะที่ปิดแล้ว ·')} {span.from} → {span.to}
+              {tr("จาก")} {span.sessions} {tr('กะที่ปิดแล้ว ·')} {span.from} → {span.to}
             </span>
           )}
         </div>
 
-        {err && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 8 }}>⚠ {err}</div>}
+        {err && <div style={{ fontSize: 12, color: 'var(--red)', marginBottom: 8 }}>⚠ {err}</div>}
         {!line && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('เลือกไลน์เพื่อดูว่าพาร์ทไหน CT ควรทบทวน')}</div>}
         {line && loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('⏳ กำลังคำนวณจากใบผลิตจริง…')}</div>}
         {line && !loading && !err && rows.length === 0 &&
@@ -286,11 +285,11 @@ export default function CtReview({ lines = [] }) {
                     <td style={{ ...td, fontWeight: 700 }}>{r.matNo}</td>
                     <td style={{ ...td, color: 'var(--text2)', maxWidth: 230 }}>{r.name || '—'}</td>
                     <td style={{ ...td, textAlign: 'right' }}>{r.ctStd == null
-                      ? <span style={{ color: '#f59e0b' }}>{tr('ยังไม่ตั้ง')}</span> : fmt(r.ctStd)}</td>
+                      ? <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่ตั้ง')}</span> : fmt(r.ctStd)}</td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700 }}>{fmt(r.p50)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5, color: 'var(--muted)' }}>{fmt(r.p25)}–{fmt(r.p75)}</td>
                     <td style={{ ...td, textAlign: 'right', fontSize: 11.5 }}>
-                      {r.n}{r.nDropped ? <span style={{ color: '#f59e0b' }}> {tr('(ตัด')} {r.nDropped})</span> : ''}
+                      {r.n}{r.nDropped ? <span style={{ color: 'var(--amber)' }}> {tr('(ตัด')} {r.nDropped})</span> : ''}
                     </td>
                     <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: gapColor(r.gapPct) }}>
                       {r.gapPct == null ? '—' : `${r.gapPct > 0 ? '+' : ''}${Math.round(r.gapPct)}%`}
@@ -300,7 +299,7 @@ export default function CtReview({ lines = [] }) {
                     </td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {inQueue.has(r.matNo)
-                        ? <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('อยู่ในคิวแล้ว')}</span>
+                        ? <span style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('อยู่ในคิวแล้ว')}</span>
                         : r.canPropose
                           ? <button className="tbtn" disabled={busy === r.matNo} onClick={() => propose(r)}>{tr('เสนอปรับ')}</button>
                           : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}

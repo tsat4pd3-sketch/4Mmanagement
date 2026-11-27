@@ -133,13 +133,15 @@ export function dailyAmTargetsByLine({ targets = [], jigs = [], shift } = {}) {
  * @returns { [line_name]: { status, total, checked, ngN, late, wait, notStarted, hasSession, missing, ng, firstOrderAt } }
  */
 export function dailyAmLineStatus({ targets, jigs, resultByJig = {}, firstOrderByLine = {}, openSessionLines, shift, now,
-  runByLine, moFollow } = {}) {
+  runByLine, moFollow, amStations = null } = {}) {
   const byLine = dailyAmTargetsByLine({ targets, jigs, shift })
+  const noOf = new Map((jigs || []).map(j => [j.id, j.machine_no]))
+  const mateKeysOf = stationMateKeysFn(amStations, (id) => noOf.get(id))
   const out = {}
   for (const [line_name, tgAll] of Object.entries(byLine)) {
     /* ⚙️ B1 — เครื่องไหน "ต้องตรวจ" ตัดสินจากใบผลิตที่สแกนในกะนี้ (`runByLine` จาก loader)
        ไม่ส่ง `runByLine` = พฤติกรรมเดิมเป๊ะ (ทุกเครื่องในทะเบียนต้องตรวจ · ตัดสินทั้งไลน์) */
-    const split = runByLine ? amTargetsByRun(tgAll, runByLine[line_name]) : null
+    const split = runByLine ? amTargetsByRun(tgAll, runByLine[line_name], { mateKeysOf }) : null
     const tg = split ? split.required : tgAll
     const r = computeDailyPmStatus({ targets: tg, results: resultByJig, firstOrderAt: firstOrderByLine[line_name] ?? null, now })
     const missingN = r.missing.length
@@ -159,6 +161,7 @@ export function dailyAmLineStatus({ targets, jigs, resultByJig = {}, firstOrderB
       noMnoOrders: split ? split.noMnoOrders : 0,
       allNotRunning,
       registeredN: tgAll.length,
+      requiredIds: tg.map(t => t.jig_id),   // 🧩 23/11 ชุดเครื่องที่ "ต้องตรวจกะนี้" จริง (ตัวหาร total) — บอร์ดนับเป็นสถานีใช้ ห้ามเดาเองจากทะเบียน
     }
     // 🔧 B3 — ผลตรวจ NG ของกะนี้ผูกใบซ่อมหรือยัง + ใบซ่อมค้างจากวันก่อน (ไม่ส่ง moFollow = ไม่มีข้อมูลส่วนนี้)
     if (moFollow) {
@@ -236,7 +239,7 @@ export function runningMachinesByLine(lines = [], orders = []) {
  *   required[i].startAt = เวลาเปิดใบแรกของเครื่องนั้น (ไม่มี = ใช้เวลาของไลน์)
  *   required[i].byLine = true เมื่อถอยไปตัดสินแบบทั้งไลน์ (ระบบไม่รู้ว่าเครื่องนี้เดินไหม)
  */
-export function amTargetsByRun(tg = [], run) {
+export function amTargetsByRun(tg = [], run, { mateKeysOf = null } = {}) {
   if (!run || !run.orders) return { required: tg, notRunning: [], mode: 'line', noMnoOrders: 0 }
   const keyN = Object.keys(run.keys || {}).length
   if (!keyN) return { required: tg.map(t => ({ ...t, byLine: true })), notRunning: [], mode: 'line_no_mno', noMnoOrders: run.noMno }
@@ -247,6 +250,15 @@ export function amTargetsByRun(tg = [], run) {
     if (hit.length) {
       const ats = hit.map(k => run.keys[k]).filter(Boolean).sort()
       required.push(ats.length ? { ...t, startAt: ats[0] } : { ...t })
+      continue
+    }
+    /* 🧩 สถานี AM (23/11) — robot/stationary/nut feeder ไม่เคยอยู่บนใบผลิต (ใบลงเลขที่จิ๊ก/ปืนเชื่อม)
+       แต่เดินพร้อมเพื่อนร่วมสถานี ⇒ เพื่อนตัวไหนมีใบผลิต = ทั้งสถานีต้องตรวจ (ไม่ใช่ "ไม่เดิน") */
+    const mates = (mateKeysOf ? mateKeysOf(t.jig_id) : null) || []
+    const mh = mates.filter(k => k in run.keys)
+    if (mh.length) {
+      const ats = mh.map(k => run.keys[k]).filter(Boolean).sort()
+      required.push(ats.length ? { ...t, startAt: ats[0], viaStation: true } : { ...t, viaStation: true })
     } else if (!ks.length || run.noMno > 0) {
       required.push({ ...t, byLine: true })   // ไม่รู้ว่าเดินไหม ⇒ ต้องตรวจ (ห้ามบีบเป็น "ไม่เดิน")
     } else {
@@ -254,6 +266,30 @@ export function amTargetsByRun(tg = [], run) {
     }
   }
   return { required, notRunning, mode: run.noMno > 0 ? 'mixed' : 'machine', noMnoOrders: run.noMno }
+}
+
+/**
+ * 🧩 เพื่อนร่วมสถานี AM → เลขเครื่อง (machineKey) ของเพื่อน — ป้อน `amTargetsByRun(…, { mateKeysOf })`
+ * @param {{stations:object[], members:object[]}|null} amStations  แถว `am_stations` / `am_station_members` · null = อ่านไม่ได้/ไม่มี
+ * @param {(jigId:string)=>string|null} machineNoOf
+ * @returns {((jigId:string)=>string[])|null}  null = ไม่มีข้อมูลสถานี (= พฤติกรรมเดิม)
+ * 🔴 สำเนาใน `supabase/functions/pm-daily-scan/amRun.js` ต้องตรงกัน (ด่าน pmDailyScanParity)
+ */
+export function stationMateKeysFn(amStations, machineNoOf) {
+  if (!amStations || !Array.isArray(amStations.stations) || !Array.isArray(amStations.members)) return null
+  const active = new Set(amStations.stations.filter(s => s && s.is_active !== false).map(s => s.id))
+  const byStation = new Map(), stationOf = new Map()
+  for (const m of amStations.members) {
+    if (!m || !active.has(m.station_id)) continue
+    if (!byStation.has(m.station_id)) byStation.set(m.station_id, [])
+    byStation.get(m.station_id).push(m.jig_id)
+    stationOf.set(m.jig_id, m.station_id)
+  }
+  return (jigId) => {
+    const sid = stationOf.get(jigId)
+    if (!sid) return []
+    return [...new Set(byStation.get(sid).filter(id => id !== jigId).flatMap(id => amMachineKeys(machineNoOf(id))))]
+  }
 }
 
 /** ป้ายโหมดการตัดสินของไลน์ — จอต้องเขียนบอกเสมอเมื่อไม่ได้ตัดสินรายเครื่อง (กฎความซื่อสัตย์ของจอ) */

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countDelta, toAdjustTxns, countSummary, lastCountAt, pendingShipCuts, STOCK_BASELINE_AT } from '../stockCount.js';
+import { countDelta, toAdjustTxns, countSummary, lastCountAt, pendingShipCuts, STOCK_BASELINE_AT,
+  isPhysicalCount, lastPhysicalCountAt, countRoundRows,
+  pendingAdjustMap, splitPendingBlocked, pendingKey } from '../stockCount.js';
 
 /* ─── countDelta — "นับได้เท่าไหร่" ไม่ใช่ "เพิ่ม/ลดเท่าไหร่" ─────────────── */
 test('countDelta: ช่องว่าง = ยังไม่นับ ไม่ใช่ศูนย์', () => {
@@ -156,4 +158,132 @@ test('pendingShipCuts: รอบนับรายพาร์ทที่ให
   const counted = { 'FG\u0000A1': '2026-10-08T00:00:00Z' };
   const r = pendingShipCuts({ orders, cutIds: new Set(), counted, fgLine: 'FG' });
   assert.deepEqual(r.closedByCount.map(x => x.id), ['a']);
+});
+
+/* ─── 🧭 ขั้น ② รอบนับตั้งต้น — "ปรับยอด" ไม่ใช่ "นับของจริง" ────────────────
+   เคสจริงที่ทำให้ต้องมีด่านนี้: LINE D ติดลบ −100,212 เพราะ "ตั้งยอดให้ตรงไฟล์ Monitoring"
+   ทับกันหลายรอบ ถ้าจอเอา adjust ทุกแบบมาตอบ "นับล่าสุด" จะบอกว่านับแล้ว = จอโกหก */
+
+test('isPhysicalCount: เฉพาะ note "ตรวจนับ:" เท่านั้นที่แปลว่าคนไปนับของจริง', () => {
+  const base = { type: 'adjust', status: 'approved' };
+  assert.equal(isPhysicalCount({ ...base, note: 'ตรวจนับ: ระบบ 100 → นับได้ 80' }), true);
+  assert.equal(isPhysicalCount({ ...base, note: 'ตั้งยอดให้ตรงไฟล์ Monitoring 300T' }), false);
+  assert.equal(isPhysicalCount({ ...base, note: 'ตั้งต้นใหม่ 01/10 — ยอดเดิมเชื่อถือไม่ได้' }), false);
+  assert.equal(isPhysicalCount({ ...base, note: 'แก้ย้อนหลัง 25/11: ใบขอเติม' }), false);
+  assert.equal(isPhysicalCount({ ...base, note: 'ย้ายยอดรับเข้าล็อตไป STORE' }), false);
+  assert.equal(isPhysicalCount({ ...base, note: null }), false);
+  /* ใบที่ยังรออนุมัติยังไม่มีผลกับยอด ⇒ ยังไม่ถือว่านับแล้ว (กติกาเดียวกับ lastCountAt) */
+  assert.equal(isPhysicalCount({ type: 'adjust', status: 'pending', note: 'ตรวจนับ: x' }), false);
+  /* ขาเข้า/ขาออกปกติไม่ใช่การนับ */
+  assert.equal(isPhysicalCount({ type: 'consume', status: 'approved', note: 'ตรวจนับ: x' }), false);
+});
+
+test('lastPhysicalCountAt: ไม่เอาวันที่ของการตั้งยอดตามไฟล์มาเคลมว่านับแล้ว', () => {
+  const txns = [
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'approved', note: 'ตรวจนับ: ระบบ 5 → นับได้ 4', created_at: '2026-10-06T01:00:00Z' },
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'approved', note: 'ตั้งยอดให้ตรงไฟล์ Monitoring', created_at: '2026-11-03T01:00:00Z' },
+  ];
+  assert.deepEqual(lastPhysicalCountAt(txns), { 'L1\u0000A': '2026-10-06T01:00:00Z' });
+  /* ตัวเก่ายังตอบ "วันล่าสุดของ adjust ทุกแบบ" เหมือนเดิม — คนละคำถาม ห้ามยุบ */
+  assert.equal(lastCountAt(txns)['L1\u0000A'], '2026-11-03T01:00:00Z');
+});
+
+test('countRoundRows: อ่าน ledger ไม่ได้ = null ห้ามคืนลิสต์ว่าง', () => {
+  assert.equal(countRoundRows({ stock: null, txns: [] }), null);
+  assert.equal(countRoundRows({ stock: [], txns: null }), null);
+  assert.deepEqual(countRoundRows({ stock: [], txns: [] }), []);
+});
+
+test('countRoundRows: นับพาร์ทที่ทะเบียนตั้งไว้แต่ยังไม่มีแถว ด้วย (ของควรอยู่ที่นี่)', () => {
+  const r = countRoundRows({
+    stock: [{ line_name: 'L1', mat_no: 'A', qty_on_hand: -20 }],
+    txns: [],
+    levels: [{ line_name: 'L1', mat_no: 'A' }, { line_name: 'L1', mat_no: 'B' }],
+  });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].parts, 2);          // A (มีแถว) + B (ทะเบียนตั้งไว้)
+  assert.equal(r[0].noRowParts, 1);     // B นับไม่ได้ถ้าไม่เติมเข้าใบนับ
+  assert.equal(r[0].negParts, 1);
+  assert.equal(r[0].negQty, -20);
+  assert.equal(r[0].status, 'none');    // ยังไม่เคยนับทั้ง 2 ตัว
+});
+
+test('countRoundRows: สถานะ none → partial → done ตามจำนวนพาร์ทที่ถูกนับ', () => {
+  const stock = [
+    { line_name: 'L1', mat_no: 'A', qty_on_hand: 10 },
+    { line_name: 'L1', mat_no: 'B', qty_on_hand: 0 },
+  ];
+  const cnt = (mat, at) => ({ line_name: 'L1', mat_no: mat, type: 'adjust', status: 'approved',
+    note: 'ตรวจนับ: ระบบ 1 → นับได้ 2', created_at: at });
+  assert.equal(countRoundRows({ stock, txns: [] })[0].status, 'none');
+  assert.equal(countRoundRows({ stock, txns: [cnt('A', '2026-11-20T00:00:00Z')] })[0].status, 'partial');
+  const done = countRoundRows({ stock, txns: [cnt('A', '2026-11-20T00:00:00Z'), cnt('B', '2026-11-21T00:00:00Z')] })[0];
+  assert.equal(done.status, 'done');
+  assert.equal(done.counted, 2);
+  assert.equal(done.never, 0);
+  assert.equal(done.lastAt, '2026-11-21T00:00:00Z');   // วันล่าสุดของไลน์
+  assert.equal(done.zeroParts, 1);
+});
+
+test('countRoundRows: driftAfter = คนมาปรับยอดหลังนับแล้ว (สัญญาณว่าการนับไม่อยู่)', () => {
+  const stock = [{ line_name: 'L1', mat_no: 'A', qty_on_hand: 100 }];
+  const txns = [
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'approved', qty: -5,
+      note: 'ตรวจนับ: ระบบ 105 → นับได้ 100', created_at: '2026-11-10T00:00:00Z' },
+    /* ก่อนรอบนับ = ไม่นับเป็น drift (ยอดที่นับสะท้อนไปแล้ว) */
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'approved', qty: -900,
+      note: 'ตั้งยอดให้ตรงไฟล์ Monitoring', created_at: '2026-11-01T00:00:00Z' },
+    /* หลังรอบนับ = drift จริง · ติดลบก็คิดเป็นขนาด */
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'approved', qty: -300,
+      note: 'ตั้งยอดให้ตรงไฟล์ Monitoring', created_at: '2026-11-20T00:00:00Z' },
+  ];
+  const r = countRoundRows({ stock, txns })[0];
+  assert.equal(r.driftAfter, 300);
+  assert.equal(r.status, 'done');
+});
+
+test('countRoundRows: เรียงงานมากก่อน — ติดลบหนักสุดขึ้นก่อน', () => {
+  const stock = [
+    { line_name: 'เบา',  mat_no: 'A', qty_on_hand: -10 },
+    { line_name: 'หนัก', mat_no: 'A', qty_on_hand: -9000 },
+    { line_name: 'ปกติ', mat_no: 'A', qty_on_hand: 50 },
+  ];
+  assert.deepEqual(countRoundRows({ stock, txns: [] }).map(r => r.line_name), ['หนัก', 'เบา', 'ปกติ']);
+});
+
+/* ─── ⏳ กันนับซ้ำเมื่อมีใบค้างรออนุมัติ (25/11 · user "ต่างคนต่างนับ ต่างคนต่างอัพยอด จะมั่วไหม") ──
+   view line_stock_summary = `where status='approved'` ⇒ ใบ pending ไม่อยู่ใน qty_on_hand
+   คนที่ 2 จึงเห็นยอดเดิม แล้วเขียนผลต่างซ้ำ = ของหายสองเท่าเงียบๆ */
+
+test('pendingAdjustMap: รวมใบ adjust ที่ยัง pending ต่อ (คลัง, mat) — ทุกชนิด ไม่ใช่เฉพาะใบตรวจนับ', () => {
+  const m = pendingAdjustMap([
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'pending', qty: -220, created_by: 'สมชาย', created_at: '2026-11-25T01:00:00Z', note: 'ตรวจนับ: x' },
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'pending', qty: -30,  created_by: 'สมหญิง', created_at: '2026-11-25T03:00:00Z', note: 'ปรับยอดมือ' },
+    { line_name: 'L1', mat_no: 'B', type: 'adjust', status: 'approved', qty: -99, created_at: '2026-11-25T01:00:00Z', note: 'ตรวจนับ: y' },
+    { line_name: 'L1', mat_no: 'C', type: 'consume', status: 'pending', qty: 5, created_at: '2026-11-25T01:00:00Z' },
+  ]);
+  assert.equal(m[pendingKey('L1', 'A')].n, 2);
+  assert.equal(m[pendingKey('L1', 'A')].qty, -250);
+  assert.equal(m[pendingKey('L1', 'A')].by, 'สมหญิง');          // ใบล่าสุด
+  assert.equal(m[pendingKey('L1', 'B')], undefined);            // อนุมัติแล้ว = อยู่ในยอดแล้ว ไม่ต้องกัน
+  assert.equal(m[pendingKey('L1', 'C')], undefined);            // ไม่ใช่ adjust
+});
+
+test('splitPendingBlocked: คู่ที่มีใบค้างต้องถูกกันไว้ ห้ามทิ้งเงียบ', () => {
+  const pend = pendingAdjustMap([
+    { line_name: 'L1', mat_no: 'A', type: 'adjust', status: 'pending', qty: -220, created_at: '2026-11-25T01:00:00Z' },
+  ]);
+  const { ok, blocked } = splitPendingBlocked([
+    { line_name: 'L1', mat_no: 'A', qty: -220 },
+    { line_name: 'L1', mat_no: 'B', qty: 10 },
+  ], pend);
+  assert.deepEqual(ok.map(t => t.mat_no), ['B']);
+  assert.deepEqual(blocked.map(t => t.mat_no), ['A']);
+  assert.equal(blocked[0].pending.n, 1);                        // จอต้องบอกได้ว่าค้างกี่ใบ
+});
+
+test('splitPendingBlocked: ไม่มีใบค้าง = ผ่านทั้งหมด (พฤติกรรมเดิมเป๊ะ)', () => {
+  const r = splitPendingBlocked([{ line_name: 'L1', mat_no: 'A' }], {});
+  assert.equal(r.ok.length, 1);
+  assert.equal(r.blocked.length, 0);
 });

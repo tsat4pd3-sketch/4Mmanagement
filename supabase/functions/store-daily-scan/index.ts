@@ -33,11 +33,20 @@ function workDateBangkok() {
 
 // จัดกลุ่มตามเคส (A..E) แล้วส่งข้อความเดียว — ไม่ยิงทีละรายการ
 // (บทเรียนจาก shipping_phase_alert ที่ยิง 592 ครั้งใน 4 วันจนไม่มีใครอ่าน)
-const CODE_ORDER = ['C', 'D', 'A', 'E', 'B'];
+// F = ไลน์ใช้ของแต่สโตร์ยังไม่ลงจ่ายเกิน 1 กะ (20/11 · v_line_issue_gaps) — ขึ้นก่อนเพราะต้องกดยืนยันที่สโตร์
+const CODE_ORDER = ['F', 'C', 'D', 'A', 'E', 'B'];
 
-Deno.serve(async () => {
+Deno.serve(async (req) => {
   try {
     const workDate = workDateBangkok();
+    /* 20/11 — รอบเตือนกะดึก (cron store-gap-shift-scan 19:50) ส่ง body {"only":["F"]} = ส่งเฉพาะเคสที่ระบุ
+       ไม่ส่ง/อ่านไม่ได้ = ทุกเคส (พฤติกรรมเดิมของรอบเช้า 07:50) */
+    let only: string[] | null = null;
+    try {
+      const b = await req.json();
+      if (Array.isArray(b?.only) && b.only.length) only = b.only.map(String);
+    } catch { /* body ว่าง = ทุกเคส */ }
+    const scoped = (q: any) => (only ? q.in('code', only) : q);
 
     /* 🔴 กับดักเพดาน 1000 แถว (แก้ 2026-08-26 · user เห็นแจ้งเตือน "พบ 1000 รายการ" เป๊ะๆ):
        เดิม `.select('*')` เฉยๆ → PostgREST ตัดที่ 1000 แถว → `rows.length` = 1000 พอดี
@@ -45,8 +54,8 @@ Deno.serve(async () => {
          ถูกตัดทิ้งเงียบ = เคสรุนแรงอาจหลุดออกจากลิสต์ไปเลย
        กติกา: **จำนวนที่โชว์ต้องมาจาก head-count (ไม่ดึงแถว = ไม่ติดเพดาน) เสมอ**
               ส่วนตัวแถวค่อยดึงแบบแบ่งหน้า และถ้าดึงไม่ครบต้องบอกตรงๆ ห้ามเงียบ */
-    const { count: exactTotal, error: cntErr } = await db.from('v_store_abnormal')
-      .select('*', { count: 'exact', head: true });
+    const { count: exactTotal, error: cntErr } = await scoped(db.from('v_store_abnormal')
+      .select('*', { count: 'exact', head: true }));
     if (cntErr) throw cntErr;
     if (!exactTotal) return new Response(JSON.stringify({ ok: true, findings: 0 }), { status: 200 });
 
@@ -56,7 +65,7 @@ Deno.serve(async () => {
     for (; page < MAX_PAGES; page++) {
       // ⚠️ `.range()` ต้องคู่กับ `.order()` ที่คงที่ — ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
       //    เรียงรุนแรงก่อน เผื่อชนเพดาน จะได้ตัดตัวเบาทิ้ง ไม่ใช่ตัดตัวหนัก
-      const { data, error } = await db.from('v_store_abnormal').select('*')
+      const { data, error } = await scoped(db.from('v_store_abnormal').select('*'))
         .order('sev', { ascending: false }).order('code').order('mat_no')
         .range(page * PAGE, (page + 1) * PAGE - 1);
       if (error) throw error;

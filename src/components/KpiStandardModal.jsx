@@ -26,16 +26,16 @@ import { tr } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 import { MoreMark } from './InfoMore';
 /* 23/09: รับ `scope`/`scopeCols` จาก OrgScopePicker (แทน section+group) — แถวที่หยิบเขียน scope_kind/scope_value ตรง */
-export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged, closedDefs = [], onRestore }) {
+export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged, closedDefs = [], onRestore, initialUnit = '', onLinkUnit = null }) {
   /* หน่วยงานมาตรฐานที่ใบนี้อิงอยู่ — จำไว้ที่ `kpi_definitions.std_unit` ของแถวในใบ
      (ไม่มีตารางตั้งค่าแยก: ใบคือของจริง ทะเบียนเป็นเอกสารอ้างอิง) */
   const savedUnit = useMemo(() => defs.map(d => d.std_unit).find(Boolean) || '', [defs]);
-  const [unit, setUnit] = useState(savedUnit);
+  const [unit, setUnit] = useState(savedUnit || initialUnit);   // 25/11: แถบสถานะส่งหน่วยที่เลือกไว้มาได้ (ใบยังว่าง)
   const [items, setItems] = useState(null);      // null = ยังไม่โหลด
   const [missing, setMissing] = useState(false); // ยังไม่ apply migration
   const [busy, setBusy] = useState('');
 
-  useEffect(() => { setUnit(savedUnit); }, [savedUnit]);
+  useEffect(() => { if (savedUnit) setUnit(savedUnit); }, [savedUnit]);
 
   const load = useCallback(async () => {
     if (!unit) { setItems(null); return; }
@@ -44,7 +44,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
       .eq('year', year).eq('std_unit', unit).order('sort_order');
     if (error) {
       setMissing((error.code || '') === '42P01');
-      if ((error.code || '') !== '42P01') toast.error('โหลดทะเบียนมาตรฐานไม่สำเร็จ: ' + error.message);
+      if ((error.code || '') !== '42P01') toast.error((tr('โหลดทะเบียนมาตรฐานไม่สำเร็จ') + ': ') + error.message);
       setItems([]);
       return;
     }
@@ -81,11 +81,11 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
       }
       const res = await supabase.from('kpi_definitions').insert(payload);
       if (res.error?.code === '23505') {
-        toast.error(`"${it.topic}" มีอยู่ในใบนี้แล้ว (อาจอยู่ในสถานะปิดใช้งาน — ดูแผง 🗄️ ปิดใช้งานอยู่ ที่ตารางแล้วกด เปิดคืน)`);
+        toast.error(`"${it.topic}" ${tr("มีอยู่ในใบนี้แล้ว (อาจอยู่ในสถานะปิดใช้งาน — ดูแผง 🗄️ ปิดใช้งานอยู่ ที่ตารางแล้วกด เปิดคืน")})`);
         return;
       }
-      const ok = checkWrite(res, `หยิบ "${it.topic}" เข้าใบ`);
-      if (ok) { toast.success(`เพิ่ม "${it.topic}" แล้ว — ไปตั้งเป้า/น้ำหนักที่ตาราง`); onChanged?.(); }
+      const ok = checkWrite(res, `${tr("หยิบ")} "${it.topic}" ${tr("เข้าใบ")}`);
+      if (ok) { toast.success(`${tr("เพิ่ม")} "${it.topic}" ${tr("แล้ว — ไปตั้งเป้า/น้ำหนักที่ตาราง")}`); onChanged?.(); }
     } finally { setBusy(''); }
   };
 
@@ -93,7 +93,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
   const pickAllFixed = async () => {
     const todo = matched.filter(m => !m.row && isStdFixed(m.item)).map(m => m.item);
     if (!todo.length) return;
-    if (!await askConfirm(`หยิบข้อบังคับที่ยังขาด ${todo.length} ข้อเข้าใบของ ${scopeText || 'ทั้งโรงงาน'} ปี ${year + 543}?\n\nเป้า/น้ำหนักยังต้องกรอกเองที่ตาราง`)) return;
+    if (!await askConfirm(`${tr("หยิบข้อบังคับที่ยังขาด")} ${todo.length} ${tr("ข้อเข้าใบของ")} ${scopeText || tr('ทั้งโรงงาน')} ${tr("ปี")} ${year + 543}?\n\n${tr("เป้า/น้ำหนักยังต้องกรอกเองที่ตาราง")}`)) return;
     setBusy('all');
     try {
       const ok = checkWrite(await supabase.from('kpi_definitions').insert(todo.map(it => ({
@@ -102,7 +102,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
         std_item_id: it.id,                       // ดูเหตุผลที่ `pick()` ด้านบน
         std_unit: unit, is_active: true,
       }))), 'หยิบข้อบังคับที่ขาด');
-      if (ok) { toast.success(`เพิ่ม ${todo.length} ข้อแล้ว`); onChanged?.(); }
+      if (ok) { toast.success(`${tr("เพิ่ม")} ${todo.length} ${tr("ข้อแล้ว")}`); onChanged?.(); }
     } finally { setBusy(''); }
   };
 
@@ -128,14 +128,12 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
   return (
     /* ไม่ใช่ฟอร์มที่กรอกค้าง แต่ปิดด้วยปุ่มอย่างเดียวให้เหมือนโมดัลอื่นในหน้านี้ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-          KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
+          KPI Standard {tr("ของกลุ่ม — ปี")} {year + 543} · {scopeText || tr("ทั้งโรงงาน")}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '4px 0 10px', lineHeight: 1.6 }}>
-          ทะเบียนนี้มาจาก <b>{tr('KPI Guideline ของกลุ่ม')}</b> (อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง ·
-          หยิบข้อ <b style={{ color: '#ef4444' }}>{tr('บังคับ')}</b> {tr('ให้ครบ + ติ๊ก')} <b style={{ color: '#3b82f6' }}>{tr('เลือกได้')}</b> ตามภาระงานจริง
-          แล้วถ่วงน้ำหนักรวมให้เป็น <b>{KPI_TOTAL_WEIGHT}</b> ที่ตาราง KPI
+          {tr("ทะเบียนนี้มาจาก")} <b>{tr('KPI Guideline ของกลุ่ม')}</b> ({tr("อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง · หยิบข้อ")} <b style={{ color: '#ef4444' }}>{tr('บังคับ')}</b> {tr('ให้ครบ + ติ๊ก')} <b style={{ color: '#3b82f6' }}>{tr('เลือกได้')}</b> {tr("ตามภาระงานจริง แล้วถ่วงน้ำหนักรวมให้เป็น")} <b>{KPI_TOTAL_WEIGHT}</b> {tr("ที่ตาราง")} KPI
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
@@ -143,17 +141,24 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
           <select value={unit} onChange={e => setUnit(e.target.value)} style={sel}>
             <option value="">{tr('— เลือกหน่วยงาน —')}</option>
             {KPI_STD_UNITS.map(u => (
-              <option key={u.unit} value={u.unit}>{stdUnitLabel(u.unit)}{u.seeded ? '' : ' (ยังไม่มีในทะเบียน)'}</option>
+              <option key={u.unit} value={u.unit}>{stdUnitLabel(u.unit)}{u.seeded ? '' : tr(" (ยังไม่มีในทะเบียน)")}</option>
             ))}
           </select>
+          {/* 25/11: เปลี่ยนหน่วยที่นี่ = แค่ "ดู" — ใบที่มีแถวแล้วต้องกดบันทึกการผูกจึงจะหายเตือน (เดิมไม่มีทางผูกเลย = user: "ผูกหมดแล้วทำไมยังแจ้งเตือน") */}
+          {unit && unit !== savedUnit && defs.length > 0 && canManage && onLinkUnit && (
+            <button type="button" className="pg-btn sm" onClick={() => onLinkUnit(unit)}
+              title={tr('เขียนหน่วยงานนี้ลงทุกแถวของใบ — แถบสถานะและข้อบังคับจะอ่านจากหน่วยนี้')}>
+              {tr('ใช้หน่วยนี้กับใบนี้')} ({defs.length} {tr('แถว')})
+            </button>
+          )}
           {savedUnit && unit !== savedUnit && (
-            <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('ใบนี้อิง')} <b>{savedUnit}</b> {tr('อยู่ — เปลี่ยนที่นี่ไม่ย้อนไปแก้แถวเดิม')}</span>
+            <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('ใบนี้อิง')} <b>{savedUnit}</b> {tr('อยู่ — กำลังดูหน่วยอื่น')}</span>
           )}
         </div>
 
         {missing && (
           <div style={{ fontSize: 12.5, color: '#f59e0b' }}>
-            ยังไม่ได้ apply migration <code>20260921_kpi_standard_2026_main.sql</code> (Main) — แจ้ง admin
+            {tr("ยังไม่ได้")} apply migration <code>20260921_kpi_standard_2026_main.sql</code> (Main) — {tr("แจ้ง")} admin
           </div>
         )}
 
@@ -175,13 +180,13 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
           <>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
               <span style={{ color: 'var(--text2)' }}>
-                บังคับ <b style={{ color: nPickedFixed === nFixed ? '#22c55e' : '#ef4444' }}>{nPickedFixed}/{nFixed}</b>
+                {tr("บังคับ")} <b style={{ color: nPickedFixed === nFixed ? '#22c55e' : '#ef4444' }}>{nPickedFixed}/{nFixed}</b>
                 <span style={{ color: 'var(--muted)' }}> {tr('· เลือกได้')} {nPickedChoice}/{nChoice}</span>
               </span>
               <span style={{ color: 'var(--text2)' }}>
-                น้ำหนักรวมในใบ <b style={{ color: check.diff === 0 ? '#22c55e' : '#f59e0b' }}>{check.weight}</b>
+                {tr("น้ำหนักรวมในใบ")} <b style={{ color: check.diff === 0 ? '#22c55e' : '#f59e0b' }}>{check.weight}</b>
                 <span style={{ color: 'var(--muted)' }}> / {KPI_TOTAL_WEIGHT}</span>
-                {check.diff !== 0 && <b style={{ color: '#f59e0b' }}> ({check.diff > 0 ? `เกิน ${check.diff}` : `ขาด ${-check.diff}`})</b>}
+                {check.diff !== 0 && <b style={{ color: '#f59e0b' }}> ({check.diff > 0 ? `${tr("เกิน")} ${check.diff}` : `${tr("ขาด")} ${-check.diff}`})</b>}
               </span>
               {/* 🧾 ของนอกมาตรฐาน — เตือนให้เห็น ห้ามลบให้เอง (คนตัดสินว่าจะเก็บหรือปิด)
                   เคส Die MTN 19/11: ใบถือแบบของธุรกิจขายแม่พิมพ์ค้างอยู่ จอเดิมมองไม่เห็นเลย */}
@@ -220,11 +225,11 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                           </td>
                           <td style={{ ...td, width: 130, whiteSpace: 'nowrap' }}>
                             {row
-                              ? <span style={{ color: '#22c55e', fontSize: 11.5 }}>{tr('✅ มีในใบแล้ว')}{row.weight != null ? ` (น้ำหนัก ${row.weight})` : ' (ยังไม่ตั้งน้ำหนัก)'}</span>
+                              ? <span style={{ color: '#22c55e', fontSize: 11.5 }}>{tr('✅ มีในใบแล้ว')}{row.weight != null ? ` (${tr("น้ำหนัก")} ${row.weight})` : tr(" (ยังไม่ตั้งน้ำหนัก)")}</span>
                               : isStdParent(item)
                                 ? <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
                                 : <span style={{ color: isStdFixed(item) ? '#ef4444' : 'var(--muted)', fontSize: 11.5 }}>
-                                  {isStdFixed(item) ? '⚠ ยังไม่ได้หยิบ' : 'ยังไม่ได้หยิบ'}
+                                  {isStdFixed(item) ? tr("⚠ ยังไม่ได้หยิบ") : tr("ยังไม่ได้หยิบ")}
                                 </span>}
                           </td>
                           <td style={{ ...td, width: 76, whiteSpace: 'nowrap' }}>
@@ -241,8 +246,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
             </div>
 
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
-              หยิบเข้าใบแล้ว <b>{tr('ยังไม่มีเป้า/น้ำหนัก')}</b> — ตั้งต่อที่ตาราง KPI (เอกสารกลุ่มให้หน่วยงานถ่วงน้ำหนักเอง ระบบเดาแทนไม่ได้) ·
-              ตัวเลขข้างบนเป็น <b>{tr('คำเตือน ไม่ได้บล็อกการบันทึก')}</b> — ใบจริงเพิ่มข้อนอกมาตรฐานได้
+              {tr("หยิบเข้าใบแล้ว")} <b>{tr('ยังไม่มีเป้า/น้ำหนัก')}</b> — {tr("ตั้งต่อที่ตาราง KPI (เอกสารกลุ่มให้หน่วยงานถ่วงน้ำหนักเอง ระบบเดาแทนไม่ได้) · ตัวเลขข้างบนเป็น")} <b>{tr('คำเตือน ไม่ได้บล็อกการบันทึก')}</b> — {tr("ใบจริงเพิ่มข้อนอกมาตรฐานได้")}
             </div>
           </>
         )}

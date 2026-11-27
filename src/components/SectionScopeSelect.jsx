@@ -19,6 +19,9 @@ import { ALL } from '../utils/filterLabels';
 import { tr } from '../utils/i18n';
 const PICKABLE = ['section'];
 const PICKABLE_DEPT = ['section', 'department'];
+/* 🧩 `pickLine` (23/11 · user "ให้ช่องเลือกส่วนงานเลือกไลน์ลูกได้ด้วย" — Manpower Board) — ไลน์/กลุ่มไลน์กดเลือกได้
+   **ไม่บังคับ** · หน้าอื่นไม่ส่ง = เหมือนเดิมเป๊ะ (ไลน์เป็นหัวสีเทา) */
+const PICKABLE_LINE = ['section', 'department', 'line_group', 'line'];
 
 /**
  * @param lines      ทะเบียนไลน์ที่หน้านี้มี (ให้ต้นไม้มีกลุ่มไลน์/ไลน์เป็นหัวสีเทาเหมือนจออื่น) — ไม่มีก็ได้
@@ -28,9 +31,10 @@ const PICKABLE_DEPT = ['section', 'department'];
  * @param only       จำกัดส่วนงานที่เลือกได้เพิ่มจากขอบเขต user (array ชื่อ) — ว่าง = ตามขอบเขต user
  * @param index      ดัชนีผัง (`useOrgScope(lines).index`) จากหน้าแม่ ถ้าโหลดไว้แล้ว — ไม่ส่ง = โหลดเอง
  * @param allLabel   ป้ายตัวเลือก "ทุกส่วนงาน" (default `ALL.section`)
+ * @param pickLine   ไลน์เลือกได้ด้วย (คู่กับ `line` = ชื่อไลน์ที่เลือกอยู่) — onChange ได้ `{ kind:'line', unit:<ชื่อไลน์>, dept:<แผนกที่ครอบ|''> }`
  */
 export default function SectionScopeSelect({
-  lines = [], value = '', dept = '', pickDept = false, onChange, only = null, index: givenIndex = null, failed: givenFailed = '',
+  lines = [], value = '', dept = '', pickDept = false, pickLine = false, line = '', onChange, only = null, index: givenIndex = null, failed: givenFailed = '',
   allLabel = ALL.section, disabled, id, style, width = 240, title,
 }) {
   const ctx = useContext(UserContext) || {};
@@ -45,12 +49,29 @@ export default function SectionScopeSelect({
   }, [only, scopeSecs]);
 
   const cur = useMemo(() => {
+    /* กลุ่มไลน์ที่ถูกซ่อนเพราะชื่อซ้ำแผนก (`merged` · orgScope.js 30/10 — 📂 LINE APRON ASSY · HYDROFORM · GOR)
+       ⇒ ชี้แผนกที่แสดงแทน ไม่งั้นช่องขึ้น "⚠ ไม่อยู่ในตัวเลือก" (user 25/11 · กดกรอบบนภาพรวมโรงงาน Manpower Board)
+       · กลุ่มที่ไม่ได้ซ่อน (STORE · JIG MTN — มีทั้งแผนกและกลุ่มชื่อเดียวกัน) = คงเป็นกลุ่มไลน์เหมือนเดิม */
+    if (pickLine && line) {
+      if (index?.has?.('line', line)) return { kind: 'line', value: line };
+      if (index?.has?.('line_group', line)) {
+        const hidden = index?.optionOf?.('line_group', line)?.merged && index?.has?.('department', line);
+        return { kind: hidden ? 'department' : 'line_group', value: line };
+      }
+      return { kind: 'line', value: line };
+    }
     if (pickDept && dept) return { kind: 'department', value: dept };
     return value ? { kind: 'section', value } : PLANT;
-  }, [value, dept, pickDept]);
+  }, [value, dept, pickDept, pickLine, line, index]);
 
   const emit = (sc) => {
     if (!sc || !sc.kind || sc.kind === 'plant') { onChange?.('', { kind: 'all', unit: '' }); return; }
+    if (pickLine && (sc.kind === 'line' || sc.kind === 'line_group')) {
+      const sec = index?.sectionOf?.(sc.kind, sc.value) || '';
+      const dep = (index?.ancestorsOf?.(sc.kind, sc.value) || []).find(a => a.kind === 'department')?.value || '';
+      onChange?.(sec, { kind: 'line', unit: sc.value, dept: dep });
+      return;
+    }
     if (sc.kind === 'department') {
       const sec = index?.sectionOf?.('department', sc.value) || '';
       onChange?.(sec, { kind: 'department', unit: sc.value });
@@ -61,8 +82,8 @@ export default function SectionScopeSelect({
 
   return (
     <OrgScopePicker index={index} value={cur} onChange={emit} scopeSet={null} sections={sections} failed={failed}
-      costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} plantLabel={allLabel}
+      costCenter={false} pickable={pickLine ? PICKABLE_LINE : pickDept ? PICKABLE_DEPT : PICKABLE} plantLabel={allLabel}
       disabled={disabled} id={id} style={style} width={width}
-      title={title || (pickDept ? tr('ขอบเขต: ส่วนงาน / แผนก (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)') : tr('ขอบเขต: ส่วนงาน (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)'))} />
+      title={title || (pickLine ? tr('ขอบเขต: ส่วนงาน / แผนก / ไลน์') : pickDept ? tr('ขอบเขต: ส่วนงาน / แผนก (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)') : tr('ขอบเขต: ส่วนงาน (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)'))} />
   );
 }

@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 // นำเข้า/อัพเดทคลังอะไหล่จากไฟล์ Excel/CSV — ตัวแปลงล้วน (pure) ไม่แตะ DB/DOM
 // ใช้กับแท็บคลังอะไหล่: อัพโหลดไฟล์เดิมซ้ำได้เรื่อยๆ ระบบจะ "อัพเดททับ" ไม่สร้างซ้ำ
 //   (key = รหัสภายใน หรือ เลข MAT — เลือกได้ตอนนำเข้า)
@@ -116,7 +117,7 @@ export function parseSpareSheet(matrix = [], opts = {}) {
     const rank = txt(cell('rank_override'))?.toUpperCase()
     const data = {
       code, name,
-      unit: txt(cell('unit')) || 'ชิ้น',
+      unit: txt(cell('unit')) || tr("ชิ้น"),
       mat_no: mat,
       part_no: txt(cell('part_no')),
       supplier: txt(cell('supplier')),

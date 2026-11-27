@@ -3,6 +3,7 @@ import { supabase } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
+import { ngReasonCheck } from '../utils/ngReason';   // 🚩 "ไม่ผ่านต้องมีเหตุผล" — กฎเดียวกับใบตรวจ AM/PM (23/11)
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/คน อ่านจากทะเบียน · สถานีจาก workstations ของไลน์
@@ -22,6 +23,8 @@ import NoticeBar from '../components/NoticeBar';
 import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import { askConfirm } from '../utils/askConfirm';
+import { notifyEvent } from '../utils/notifyEvent';
+import WfRoundPanel from '../components/WfRoundPanel';   // ✍️ การเซ็นของรอบ (e-Workflow โหมดผูกเอกสาร · 25/11)   // 🔔 N3 (24/11): ทดสอบไม่ผ่าน = แจ้ง (เดิมเงียบ)
 import { checkWriteRows } from '../utils/dbWrite';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้น ③ (19/11 · ออดิท check sheet)
 const NO_LINES = [];
@@ -117,15 +120,36 @@ export default function PokaYokeCheck() {
     const w = canWriteLine(wCtx, lineName, lines);
     if (w.ok) return true;
     const sec = lines.find(l => l.name === lineName)?.section || '';
-    toast.error(writeBlockText(w, { what: `${what}ของไลน์ ${lineName}`, unit: sec }));
+    toast.error(writeBlockText(w, { what: `${what}${tr("ของไลน์")} ${lineName}`, unit: sec }));
     return false;
   };
+
+  /* 🚩 "ไม่ผ่าน" ต้องมีเหตุผล (23/11 · คำสั่ง user — ขยายจากใบตรวจ AM/PM)
+     ทำไม: ปุ่มนี้ **กดครั้งเดียวเขียนฐานทันที** (upsert) ⇒ กดพลาดคือบันทึกไปแล้ว
+     เคสเดียวกับที่หน้างานเจอกับใบตรวจ AM/PM (*"เกิดการกดผิดและพนักงานไม่รู้ตัว"*)
+     🔴 กด "ไม่ผ่าน" แล้ว **ยังไม่เขียน** — เปิดช่องเหตุผลก่อน ต้องกดยืนยันถึงบันทึก
+     🔴 ตัดสินด้วย `ngReasonCheck()` ตัวเดียวกับใบตรวจ ห้ามเขียนเกณฑ์ชุดที่ 2
+        (`fail` ของจอนี้ = `ng` ของกฎนั้น) · "ผ่าน" ไม่บังคับเหมือนเดิม */
+  const [pendFail, setPendFail] = useState({});   // deviceId → ข้อความเหตุผลที่กำลังพิมพ์
+  const askFail = (d) => setPendFail(m => ({ ...m, [d.id]: checks[d.id]?.note || '' }));
+  const dropFail = (id) => setPendFail(m => { const n = { ...m }; delete n[id]; return n; });
 
   // บันทึกผลทดสอบ 1 อุปกรณ์ (upsert)
   const saveCheck = async (device, patch) => {
     if (!canRecord) { toast.error('ไม่มีสิทธิ์บันทึก'); return; }
     if (!lineGuard(device.line_name, 'ผลทดสอบ Poka-Yoke ')) return;
     const prev = checks[device.id] || {};
+    /* 🔴 ด่านตอนเขียนจริง ไม่ใช่แค่ซ่อนปุ่ม — ช่องหมายเหตุเดิมลบข้อความทิ้งได้ */
+    {
+      const willResult = patch.result ?? prev.result ?? 'pass';
+      const willNote = patch.note ?? prev.note ?? '';
+      const chk = ngReasonCheck({ attr: willResult === 'fail' ? 'ng' : 'ok', text: willNote });
+      if (!chk.ok) {
+        toast.error(`${device.code ? `${device.code} · ` : ''}${device.name}: ${chk.blockText}`);
+        askFail(device);
+        return;
+      }
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const row = {
       device_id: device.id, check_date: selDate, shift: selShift,
@@ -137,8 +161,22 @@ export default function PokaYokeCheck() {
     };
     const { data, error } = await supabase.from('pokayoke_checks')
       .upsert(row, { onConflict: 'device_id,check_date,shift' }).select().single();
-    if (error) { toast.error('บันทึกไม่สำเร็จ: ' + error.message); return; }
+    if (error) { toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + error.message); return; }
     setChecks(m => ({ ...m, [device.id]: data }));
+    dropFail(device.id);
+    /* 🔔 N3 (24/11 · คำสั่ง user): อุปกรณ์กันผิดพลาด "จับของเสียไม่ได้" = ของต้องสงสัยไหลต่อ ⇒ แจ้งทันที
+       ผู้รับตามทะเบียน `pokayoke_fail` (supervisor + QA ของส่วนงานไลน์ · แก้ที่ /notification-config)
+       · แจ้งเฉพาะตอนเปลี่ยนเป็น "ไม่ผ่าน" (บันทึกซ้ำ/แก้โน้ตของใบที่ไม่ผ่านอยู่แล้ว = ไม่ยิงซ้ำ) */
+    if (row.result === 'fail' && prev.result !== 'fail') notifyEvent({
+      event: 'pokayoke_fail', type: 'error', ref_table: 'pokayoke_checks', ref_id: data?.id,
+      line_name: device.line_name, actor: row.checker_name || fullName,
+      link: `/daily-checker?tab=pokayoke`,
+      lines: [
+        `🏭 ${tr("ไลน์")}: ${device.line_name} · ${selShift === 'night' ? tr('กะดึก') : tr('กะเช้า')} · 📅 ${selDate}`,
+        `🛡️ ${device.code ? `${device.code} · ` : ''}${device.name}${device.station ? ` (${device.station})` : ''}`,
+        `❌ ${tr("ทดสอบไม่ผ่าน")}: ${row.note || '-'}`,
+      ],
+    });
   };
 
   // ── ทะเบียนอุปกรณ์ ──
@@ -157,7 +195,7 @@ export default function PokaYokeCheck() {
       is_active: dEditing.is_active !== false,
     };
     const { error } = await supabase.from('pokayoke_devices').upsert(row, { onConflict: 'id' });
-    if (error) { toast.error('บันทึกไม่สำเร็จ: ' + error.message); return; }
+    if (error) { toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + error.message); return; }
     toast.success('บันทึกอุปกรณ์แล้ว'); setDEditing(null); load();
   };
   /* 🗑️ ลบอุปกรณ์ (19/11 · ออดิท check sheet ข้อ 3) — เดิม FK `on delete cascade` ⇒ ลบอุปกรณ์ =
@@ -169,14 +207,14 @@ export default function PokaYokeCheck() {
     if (!lineGuard(d.line_name, 'อุปกรณ์ Poka-Yoke ')) return;
     const { count, error: cErr } = await supabase.from('pokayoke_checks')
       .select('id', { count: 'exact', head: true }).eq('device_id', d.id);
-    if (cErr || count == null) { toast.error(`นับประวัติผลทดสอบไม่สำเร็จ — ยังไม่ลบ${cErr ? `: ${cErr.message}` : ''}`); return; }
+    if (cErr || count == null) { toast.error(`${tr("นับประวัติผลทดสอบไม่สำเร็จ — ยังไม่ลบ")}${cErr ? `: ${cErr.message}` : ''}`); return; }
     if (count > 0) {
-      if (!await askConfirm(`"${d.name}" มีผลทดสอบย้อนหลัง ${count} ครั้ง — ลบไม่ได้เพราะจะทำให้ประวัติการตรวจหาย\n\nปิดใช้งานแทนไหม? (หายจากใบตรวจ แต่ผลทดสอบย้อนหลังยังอยู่ครบ)`)) return;
+      if (!await askConfirm(`"${d.name}" ${tr("มีผลทดสอบย้อนหลัง")} ${count} ${tr("ครั้ง — ลบไม่ได้เพราะจะทำให้ประวัติการตรวจหาย\\n\\nปิดใช้งานแทนไหม? (หายจากใบตรวจ แต่ผลทดสอบย้อนหลังยังอยู่ครบ")})`)) return;
       if (!checkWriteRows(await supabase.from('pokayoke_devices').update({ is_active: false })
         .eq('id', d.id).select('id'), 'ปิดใช้งานอุปกรณ์')) return;
-      toast.success(`ปิดใช้งาน "${d.name}" แล้ว`); load(); return;
+      toast.success(`${tr("ปิดใช้งาน")} "${d.name}" ${tr("แล้ว")}`); load(); return;
     }
-    if (!await askConfirm(`ลบอุปกรณ์ "${d.name}"? (ยังไม่มีผลทดสอบ)`)) return;
+    if (!await askConfirm(`${tr("ลบอุปกรณ์")} "${d.name}"? (${tr("ยังไม่มีผลทดสอบ")})`)) return;
     if (!checkWriteRows(await supabase.from('pokayoke_devices').delete().eq('id', d.id).select('id'), 'ลบอุปกรณ์')) return;
     load();
   };
@@ -189,7 +227,7 @@ export default function PokaYokeCheck() {
   return (
     <Page>
       <PageHeader title="Poka-Yoke Check" icon="🛡️"
-        sub={`ทดสอบ error-proofing ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]}`} />
+        sub={`${tr("ทดสอบ error-proofing ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน")} · ${tr(SHIFT_LABEL[selShift])}`} />
 
       {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
       <FilterBar style={{ marginBottom: 12 }}>
@@ -197,7 +235,7 @@ export default function PokaYokeCheck() {
         {/* <LineSelect> — visibleLines กรอง scope แล้ว (ไม่มี option ว่าง เหมือนเดิม) · 2026-09-07 */}
         <LineSelect lines={visibleLines} value={selLine} onChange={setSelLine} placeholder={null} />
         <Segmented value={selShift} onChange={setSelShift} label={tr('กะ')}
-          options={[{ value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />
+          options={[{ value: 'day', label: tr(SHIFT_LABEL.day) }, { value: 'night', label: tr(SHIFT_LABEL.night) }]} />
         <span className="filter-label">{tr('วันที่')}</span>
         <input type="date" value={selDate} onChange={e => setSelDate(e.target.value)} />
         <span className="filter-label">{tr('ผู้ตรวจ')}</span>
@@ -208,7 +246,7 @@ export default function PokaYokeCheck() {
       </FilterBar>
 
       {(canRecord || canManage) && selLine && !lineWrite.ok && (
-        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>🔒 {writeBlockText(lineWrite, { what: `ใบ Poka-Yoke ของไลน์ ${selLine}`, unit: lines.find(l => l.name === selLine)?.section || '' })}</NoticeBar>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>🔒 {writeBlockText(lineWrite, { what: `${tr("ใบ Poka-Yoke ของไลน์")} ${selLine}`, unit: lines.find(l => l.name === selLine)?.section || '' })}</NoticeBar>
       )}
 
       {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
@@ -216,15 +254,20 @@ export default function PokaYokeCheck() {
       {ran === false && (
         <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', marginBottom: 10, fontSize: 12.5,
           background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
-          ⚪ <b>{selLine}</b> {tr('ไม่ได้เปิดกะใน')} {SHIFT_LABEL[selShift]} {tr('วันที่')} {selDate} — <b>{tr('ยังไม่ต้องทดสอบ')}</b> ·
-          อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
+          ⚪ <b>{selLine}</b> {tr('ไม่ได้เปิดกะใน')} {tr(SHIFT_LABEL[selShift])} {tr('วันที่')} {selDate} — <b>{tr('ยังไม่ต้องทดสอบ')}</b> ·
+          {tr("อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ")}
         </div>
       )}
       {ran == null && runs && (
         <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
-          อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
+          {tr("อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น \"ไม่ได้ผลิต\" ไม่ใช่ \"ขาดตรวจ")}"
         </NoticeBar>
       )}
+
+      {/* ✍️ 25/11 (คำสั่ง user "ทุกเอกสาร issued/checked/approved คุมด้วย e-workflow"): ใครเซ็น/ความถี่ไหน = ตั้งที่ /workflow-designer
+          · เซ็นแล้ว = ผลทดสอบในรอบนั้นถูกล็อกฝั่ง DB (trigger) · แก้ = ผู้มีสิทธิ์กดเพิกถอนพร้อมเหตุผล */}
+      <WfRoundPanel subject="pokayoke" line={selLine} date={selDate} shift={selShift}
+        hasData={done > 0} summary={`${tr('ทดสอบแล้ว')} ${done}/${activeDevs.length}${failN ? ` · ${tr('ไม่ผ่าน')} ${failN}` : ''}`} />
 
       {/* สรุป */}
       {activeDevs.length > 0 && (
@@ -239,26 +282,27 @@ export default function PokaYokeCheck() {
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : activeDevs.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
-          ยังไม่มีอุปกรณ์ poka-yoke ของไลน์ {selLine} — {canManage ? 'กด "➕ เพิ่มอุปกรณ์"' : 'ให้หัวหน้าลงทะเบียนอุปกรณ์ก่อน'}
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card-surf)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
+          {tr("ยังไม่มีอุปกรณ์ poka-yoke ของไลน์")} {selLine} — {canManage ? tr("กด \"➕ เพิ่มอุปกรณ์\"") : tr("ให้หัวหน้าลงทะเบียนอุปกรณ์ก่อน")}
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 8 }}>
           {activeDevs.map(d => {
             const c = checks[d.id]; const res = c?.result;
             return (
-              <div key={d.id} style={{ background: 'var(--card)', border: `1px solid ${res === 'fail' ? 'var(--red)' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
+              <div key={d.id} style={{ background: 'var(--card-surf)', border: `1px solid ${res === 'fail' ? 'var(--red)' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{d.code ? `${d.code} · ` : ''}{d.name}</div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                      {d.station ? `📍 ${d.station}` : ''}{d.test_method ? ` · วิธี: ${d.test_method}` : ''}{d.master_ref ? ` · master NG: ${d.master_ref}` : ''}
+                      {d.station ? `📍 ${d.station}` : ''}{d.test_method ? ` · ${tr("วิธี")}: ${d.test_method}` : ''}{d.master_ref ? ` · master NG: ${d.master_ref}` : ''}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'pass', detected: true })}
                       style={resBtn(res === 'pass', 'var(--green)', canRecord)}>{tr('ผ่าน (จับ NG ได้)')}</button>
-                    <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'fail', detected: false })}
+                    {/* 🚩 ไม่เขียนทันที — เปิดช่องเหตุผลก่อน (กดพลาด = ยังไม่บันทึก) */}
+                    <button disabled={!canRecord} onClick={() => askFail(d)}
                       style={resBtn(res === 'fail', 'var(--red)', canRecord)}>{tr('ไม่ผ่าน')}</button>
                   </div>
                   {canManage && (
@@ -268,6 +312,23 @@ export default function PokaYokeCheck() {
                     </div>
                   )}
                 </div>
+                {/* 🚩 แถว "ยืนยันไม่ผ่าน" — โผล่หลังกดปุ่มไม่ผ่าน · ยังไม่เขียนฐานจนกว่าจะกดยืนยัน (23/11) */}
+                {pendFail[d.id] != null && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input autoFocus value={pendFail[d.id]}
+                      onChange={e => setPendFail(m => ({ ...m, [d.id]: e.target.value }))}
+                      placeholder={tr('เหตุผลที่ไม่ผ่าน (บังคับ) — เจออะไร / ทำอะไรต่อ')}
+                      disabled={!canRecord}
+                      style={{ flex: 1, minWidth: 220, fontSize: 12, borderColor: pendFail[d.id].trim() ? undefined : 'var(--amber)' }} />
+                    <button type="button" disabled={!canRecord || !pendFail[d.id].trim()}
+                      onClick={() => saveCheck(d, { result: 'fail', detected: false, note: pendFail[d.id].trim() })}
+                      style={{ ...btnAccent, padding: '5px 12px', fontSize: 12,
+                               ...(pendFail[d.id].trim() ? null : { opacity: 0.5, cursor: 'not-allowed' }) }}>
+                      {tr('ยืนยันไม่ผ่าน')}
+                    </button>
+                    <button type="button" onClick={() => dropFail(d.id)} style={{ ...btnGray, padding: '5px 12px', fontSize: 12 }}>{tr('ยกเลิก')}</button>
+                  </div>
+                )}
                 {res && (
                   <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     <input placeholder={tr('หมายเหตุ / การแก้ไข (ถ้าไม่ผ่าน)')} defaultValue={c?.note || ''}
@@ -285,9 +346,9 @@ export default function PokaYokeCheck() {
       {/* modal ทะเบียนอุปกรณ์ */}
       {dEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 560px)' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 560px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{dEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}{tr('อุปกรณ์ Poka-Yoke —')} {dEditing.line_name}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{dEditing.id ? tr("✏️ แก้ไข") : tr("➕ เพิ่ม")}{tr('อุปกรณ์ Poka-Yoke —')} {dEditing.line_name}</div>
               <button onClick={() => setDEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -297,7 +358,7 @@ export default function PokaYokeCheck() {
               </div>
               <div><div style={lb}>{tr('จุดงาน/ตำแหน่ง')}</div>
                 {/* เลือกจาก workstations ของไลน์ (ทะเบียนสถานี) — "ระบุเอง" เฉพาะอุปกรณ์ที่ไม่อยู่ประจำสถานี · ค่าเก่าที่ไม่ตรงทะเบียนโชว์ในโหมดระบุเอง · 2026-09-07 */}
-                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder={tr('— ไม่ระบุสถานี —')} freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
+                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder={tr('— ไม่ระบุสถานี —')} freeLabel={tr("✏️ ระบุเอง (ไม่อยู่ประจำสถานี)")} freePlaceholder={tr("ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)")}
                   onChange={v => setDEditing(p => ({ ...p, station: v }))} style={{ width: '100%' }} />
               </div>
               <div><div style={lb}>{tr('วิธีทดสอบ')}</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder={tr('เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน')} /></div>

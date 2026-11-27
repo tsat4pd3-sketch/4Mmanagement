@@ -18,11 +18,11 @@ import { tr } from '../utils/i18n';
 /* 95 → "1:35 ชม." · 45 → "45 น." (จอ TV อ่านชั่วโมง:นาที เร็วกว่าเลขนาทีดิบ 3 หลัก) */
 export function fmtSlipMin(min) {
   const m = Math.max(0, Math.round(min || 0));
-  if (m < 60) return `${m} น.`;
+  if (m < 60) return `${m} ${tr("น.")}`;
   /* ≥ 1 วัน ต้องอ่านเป็น "วัน" — "1368:00 ชม." อ่านไม่ออกและดูเหมือนจอพัง
      (ของจริงเกิดได้เมื่อยกยอดข้ามวันหลายกะ · เคสวันย้อนหลังถูก clamp ที่ heijunkaQueue แล้ว) */
-  if (m >= 1440) { const d = Math.floor(m / 1440), r = m % 1440; return `${d} วัน ${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')} ชม.`; }
-  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ชม.`;
+  if (m >= 1440) { const d = Math.floor(m / 1440), r = m % 1440; return `${d} ${tr("วัน")} ${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')} ${tr("ชม.")}`; }
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ${tr("ชม.")}`;
 }
 
 /* oneLine = ใช้ในคอลัมน์ซ้ายของแถวบอร์ด (ความสูงแถวถูกล็อกด้วยแถบเวลา 2 กะ = 72px)
@@ -46,7 +46,7 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
     /* 🔴 ดูวันย้อนหลังแล้วยังมีใบเปิดค้าง = ใบนั้น**ไม่เคยถูกปิด** — รายงานเป็น "ช้ากว่าแผน N ชม."
        คือเล่าผิดเรื่อง (วันงานจบไปแล้ว ไม่มีใครมาปิดอีก) · วัดจริง 25/09: LINE A 14 ใบ ⇒ 20:49 ชม.
        ⇒ บอกจำนวนใบตรงๆ · เวลาที่หายไปยังอ่านได้ใน tooltip ไม่ได้ซ่อน */
-    parts.push({ t: `🚫 ${neverClosed} ใบไม่เคยถูกปิด`, c: '#ef4444', b: true });
+    parts.push({ t: `🚫 ${neverClosed} ${tr("ใบไม่เคยถูกปิด")}`, c: '#ef4444', b: true });
   } else if (noCt) {
     /* 🔴 ไม่มี CT = ประเมินเวลาไม่ได้ — ต้องเขียนตรงๆ ไม่ใช่โชว์ 0 หรือเงียบ */
     parts.push({ t: compact ? tr('⚠️ ไม่มี CT') : tr('⚠️ ไม่มี CT — ประเมินว่าช้าแค่ไหนไม่ได้'), c: 'var(--muted)' });
@@ -55,7 +55,7 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
        ถูกปิด) ⇒ เปลี่ยนคำให้ตรงความจริง ไม่ใช่รายงานเป็นดีเลย์ของกะ */
     const over1d = slipMin >= 1440;
     parts.push({
-      t: over1d ? `⏱️ ค้างข้ามวัน ${fmtSlipMin(slipMin)}` : `⏱️ ${compact ? 'ช้า' : 'ช้ากว่าแผน'} ${fmtSlipMin(slipMin)}`,
+      t: over1d ? `⏱️ ${tr("ค้างข้ามวัน")} ${fmtSlipMin(slipMin)}` : `⏱️ ${compact ? tr('ช้า') : tr('ช้ากว่าแผน')} ${fmtSlipMin(slipMin)}`,
       c: late || over1d ? '#ef4444' : '#f97316', b: true,
     });
   } else if (showOk) {
@@ -64,21 +64,21 @@ export default function PlanSlipBar({ st, fmtMs, size = 11, showOk = false, oneL
 
   /* ยอด: บอกเป็น "ชิ้น" ได้เฉพาะเมื่อพาร์ทที่เหลือ CT เท่ากันหมด · ไม่งั้นบอกเป็นนาทีของจังหวะงาน */
   if (neverClosed > 0) { /* วันจบแล้ว — ยอดที่ขาดเป็นของที่ไม่ได้ทำ ไม่ใช่ "ตามไม่ทันจังหวะ" ปล่อยให้ยอด done/total พูด */ }
-  else if (behindPcs > 0 && !compact) parts.push({ t: `📦 ขาด ${behindPcs.toLocaleString()} ชิ้น`, c: '#f97316', b: true });
-  else if (behindMin > 0 && !compact) parts.push({ t: `📦 ช้ากว่าจังหวะ ${fmtSlipMin(behindMin)} (หลายพาร์ท บอกเป็นชิ้นไม่ได้)`, c: '#f97316' });
+  else if (behindPcs > 0 && !compact) parts.push({ t: `📦 ${tr("ขาด")} ${behindPcs.toLocaleString()} ${tr("ชิ้น")}`, c: '#f97316', b: true });
+  else if (behindMin > 0 && !compact) parts.push({ t: `📦 ${tr("ช้ากว่าจังหวะ")} ${fmtSlipMin(behindMin)} (${tr("หลายพาร์ท บอกเป็นชิ้นไม่ได้")})`, c: '#f97316' });
 
   /* 🔴 compact: แถวมีที่แค่บรรทัดเดียวสั้นๆ — โชว์ "คาดจบ" เฉพาะเมื่อยังไม่ได้โชว์ตัวช้า
      (ยอด/ชิ้นของแถวมีอยู่แล้วบรรทัดบน `369/375 ชิ้น` ⇒ แถว = ยอด + เวลา ครบตามที่ user สั่ง) */
   if (finishMs != null && typeof fmtMs === 'function' && !neverClosed && !(compact && parts.length)) {
     parts.push({
       t: compact
-        ? `🏁 ${fmtMs(finishMs)}${late ? ' ⚠️เกินกะ' : ''}`
-        : `🏁 คาดจบ ~${fmtMs(finishMs)}${late ? ` (เกินกะ ${fmtSlipMin(overShiftMin)})` : ''}`,
+        ? `🏁 ${fmtMs(finishMs)}${late ? tr(' ⚠️เกินกะ') : ''}`
+        : `🏁 ${tr("คาดจบ")} ~${fmtMs(finishMs)}${late ? ` (${tr("เกินกะ")} ${fmtSlipMin(overShiftMin)})` : ''}`,
       c: late ? '#ef4444' : slipping ? '#f97316' : 'var(--text2)', b: late,
     });
   }
-  if (lateCards > 0 && !compact) parts.push({ t: `🔴 ${lateCards} ใบไม่ทันกะ`, c: '#ef4444', b: true });
-  else if (delayed > 0 && !slipping && !compact) parts.push({ t: `⚠️ ค้าง ${delayed} ใบ`, c: '#f97316' });
+  if (lateCards > 0 && !compact) parts.push({ t: `🔴 ${lateCards} ${tr("ใบไม่ทันกะ")}`, c: '#ef4444', b: true });
+  else if (delayed > 0 && !slipping && !compact) parts.push({ t: `⚠️ ${tr("ค้าง")} ${delayed} ${tr("ใบ")}`, c: '#f97316' });
 
   if (!parts.length) return null;
 

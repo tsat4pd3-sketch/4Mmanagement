@@ -12,6 +12,15 @@ export const SUSPENSE_LOC = 'ผลต่างรอเคลียร์';
 export const RETURN_LOC = 'STORE';
 export const SIDE_LABEL = { store: '🏬 สโตร์', line: '🏭 ผลิต' };
 export const OUTCOME_LABEL = { returned: '↩️ คืน STORE', written_off: '🗑️ ตัดหาย' };
+/* 🧾 20/11 — เคส "สโตร์ยืนยันว่าไม่ได้จ่าย" (คิวไลน์ใช้ของแต่ยังไม่ลงจ่าย · RPC `line_issue_gap_reject` DR)
+   ทิศกลับกับเคสรับไม่ครบ: คลังพัก **ติดลบ** = "ไลน์ใช้ไปแล้วแต่ไม่รู้ว่าของมาจากไหน"
+   · returned = สุดท้ายพบว่าสโตร์จ่ายจริง → STORE − / คลังพัก + · written_off = ปรับยอดทิ้ง → คลังพัก + (adjust) */
+export const GAP_SOURCE = 'line_issue_gap';
+const GAP_OUTCOME_LABEL = { returned: '🏬 สโตร์จ่ายจริง (หัก STORE)', written_off: '🗑️ ปรับยอดทิ้ง' };
+/** ป้ายผลเคลียร์ตามชนิดเคส — ห้ามใช้ OUTCOME_LABEL ตรงๆ กับเคส line_issue_gap (ความหมายกลับทิศ) */
+export function outcomeLabel(outcome, d) {
+  return (d?.source === GAP_SOURCE ? GAP_OUTCOME_LABEL : OUTCOME_LABEL)[outcome] || '';
+}
 export const STATUS_LABEL = { open: '⏳ รอเคลียร์', proposed: '🤝 รออีกฝ่ายยืนยัน', returned: '↩️ คืน STORE แล้ว', written_off: '🗑️ ตัดหายแล้ว' };
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -56,6 +65,16 @@ export function resolveLedgerRows(d, { outcome, by, workDate, sapDoc }) {
   if (!(q > 0) || !d?.mat_no) return [];
   const tag = `ผลต่าง: ${d.line_name} ${d.mat_no}${sapDoc ? ` · SAP ${sapDoc}` : ''}`;
   const base = { mat_no: d.mat_no, part_name: d.part_name || null, qty: q, work_date: workDate, created_by: by || null, status: 'approved' };
+  if (d.source === GAP_SOURCE) {
+    if (outcome === 'returned') return [
+      { ...base, line_name: SUSPENSE_LOC, type: 'issue', note: `${tag} — เคลียร์: สโตร์จ่ายจริง (ยืนยันคู่)` },
+      { ...base, line_name: RETURN_LOC, type: 'consume', note: `${tag} — หัก STORE ย้อนหลัง (จ่ายให้ไลน์แล้วไม่ได้ลง)` },
+    ];
+    if (outcome === 'written_off') return [
+      { ...base, line_name: SUSPENSE_LOC, type: 'adjust', qty: q, note: `${tag} — เคลียร์: ปรับยอดทิ้ง (ยืนยันคู่)` },
+    ];
+    return [];
+  }
   if (outcome === 'returned') return [
     { ...base, line_name: SUSPENSE_LOC, type: 'consume', note: `${tag} — เคลียร์: คืน STORE (ยืนยันคู่)` },
     { ...base, line_name: RETURN_LOC, type: 'issue', note: `${tag} — คืนจากคลังพัก (ส่งไม่ครบ ของยังอยู่สโตร์)` },

@@ -73,7 +73,7 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('จองเครื่องทดลองงานใหม่')}</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-              {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
+              {lineName} · {tr("งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง")}
             </div>
           </div>
           {/* ปิดได้จาก ✕ / ยกเลิก เท่านั้น (ชั้น backdrop ไม่รับคลิก — ดูคอมเมนต์ด้านบน) */}
@@ -96,8 +96,8 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
         </div>
         {/* 🔴 ความซื่อสัตย์: บอกตรงๆ ว่าทำไมไม่ให้เลือกจากทะเบียนสินค้า */}
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
-          ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>{tr('ไม่สร้างพาร์ทลงทะเบียนสินค้าให้')}</b>
-          เพราะพาร์ทอาจยังไม่เกิดจริง · เก็บ Part No. ไว้บนใบนี้ก่อน พอเลข MAT ออกค่อยผูกเข้าระบบทีหลัง
+          ℹ️ {tr("งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ")}<b>{tr('ไม่สร้างพาร์ทลงทะเบียนสินค้าให้')}</b>
+          {tr("เพราะพาร์ทอาจยังไม่เกิดจริง · เก็บ Part No. ไว้บนใบนี้ก่อน พอเลข MAT ออกค่อยผูกเข้าระบบทีหลัง")}
         </div>
 
         <div style={row}>
@@ -166,8 +166,8 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 11.5, color: estMin > 0 ? 'var(--text2)' : '#f59e0b', marginRight: 'auto' }}>
             {estMin > 0
-              ? `จะจองเวลาเครื่อง ${Math.floor(estMin / 60)}:${String(estMin % 60).padStart(2, '0')} ชม. ต่อท้ายคิว`
-              : '⚠️ ยังไม่ได้ระบุเวลา — วางลงไทม์ไลน์ไม่ได้'}
+              ? `${tr("จะจองเวลาเครื่อง")} ${Math.floor(estMin / 60)}:${String(estMin % 60).padStart(2, '0')} ${tr("ชม. ต่อท้ายคิว")}`
+              : tr("⚠️ ยังไม่ได้ระบุเวลา — วางลงไทม์ไลน์ไม่ได้")}
           </span>
           <button onClick={onClose}>{tr('ยกเลิก')}</button>
           <button onClick={submit} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800 }}>

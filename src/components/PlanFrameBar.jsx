@@ -67,18 +67,18 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-      {chip(C.frame, `🧾 กรอบแผน ${pcs(rec.planPcs)} ชิ้น · ${rec.rows.length - trial.length} ล็อต`,
+      {chip(C.frame, `🧾 ${tr("กรอบแผน")} ${pcs(rec.planPcs)} ${tr("ชิ้น")} · ${rec.rows.length - trial.length} ${tr("ล็อต")}`,
         'กรอบที่ทีมวางแผนตีไว้ (Layer 1) — ไม่ใช่ใบผลิต ไม่นับเป็นยอดที่ทำได้')}
       {chip(pct != null && pct >= 100 ? C.ok : C.none,
-        `เข้าระบบแล้ว ${pcs(rec.donePcs)}${pct != null ? ` (${pct}%)` : ''}`,
+        `${tr("เข้าระบบแล้ว")} ${pcs(rec.donePcs)}${pct != null ? ` (${pct}%)` : ''}`,
         'ยอดที่สแกนคัมบังเข้าระบบจริง รวมทุกใบของพาร์ทนั้น (Layer 2)')}
-      {pending.length > 0 && chip(C.gap, `🔲 ยังไม่เปิดใบ ${pending.length} ล็อต`,
-        `มีกรอบแต่ยังไม่มีใบคัมบังเลย: ${pending.map(r => r.lot.mat_no).join(' · ')}`)}
-      {offPcs > 0 && chip(C.off, `⚠ นอกแผน ${pcs(offPcs)} ชิ้น`,
-        `ผลิตจริงแต่ไม่มีในกรอบ: ${rec.offPlan.map(x => `${x.mat_no} ${pcs(x.pcs)}`).join(' · ')}`)}
-      {overPcs > 0 && chip(C.off, `↗ เกินกรอบ ${pcs(overPcs)} ชิ้น`,
-        `ทำเกินยอดที่วางแผนไว้: ${rec.over.map(x => `${x.mat_no} +${pcs(x.pcs)}`).join(' · ')}`)}
-      {trial.length > 0 && chip(C.none, `🧪 จองทดลอง ${trial.length}`,
+      {pending.length > 0 && chip(C.gap, `🔲 ${tr("ยังไม่เปิดใบ")} ${pending.length} ${tr("ล็อต")}`,
+        `${tr("มีกรอบแต่ยังไม่มีใบคัมบังเลย")}: ${pending.map(r => r.lot.mat_no).join(' · ')}`)}
+      {offPcs > 0 && chip(C.off, `⚠ ${tr("นอกแผน")} ${pcs(offPcs)} ${tr("ชิ้น")}`,
+        `${tr("ผลิตจริงแต่ไม่มีในกรอบ")}: ${rec.offPlan.map(x => `${x.mat_no} ${pcs(x.pcs)}`).join(' · ')}`)}
+      {overPcs > 0 && chip(C.off, `↗ ${tr("เกินกรอบ")} ${pcs(overPcs)} ${tr("ชิ้น")}`,
+        `${tr("ทำเกินยอดที่วางแผนไว้")}: ${rec.over.map(x => `${x.mat_no} +${pcs(x.pcs)}`).join(' · ')}`)}
+      {trial.length > 0 && chip(C.none, `🧪 ${tr("จองทดลอง")} ${trial.length}`,
         'ใบจองเครื่องทดลอง — ยังไม่มีเลข MAT ให้จับคู่ ประเมินความคืบหน้าไม่ได้ (ไม่ใช่ 0)')}
     </span>
   );

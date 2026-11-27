@@ -27,8 +27,8 @@ export default function NpiTemplates({ templates, onChanged }) {
     setSaving(true);
     const { error } = await fn();
     setSaving(false);
-    if (error) return toast.error(`${label}ไม่สำเร็จ: ${error.message}${error.code === '23505' ? ' (code ซ้ำ)' : ''}`);
-    toast.success(`${label}แล้ว`); onChanged();
+    if (error) return toast.error(`${label}${tr("ไม่สำเร็จ")}: ${error.message}${error.code === '23505' ? tr(' (code ซ้ำ)') : ''}`);
+    toast.success(`${label}${tr("แล้ว")}`); onChanged();
     return true;
   };
 
@@ -59,10 +59,10 @@ export default function NpiTemplates({ templates, onChanged }) {
   };
   const delPhase = async (p) => {
     const n = delivs.filter(d => d.phase_code === p.code).length;
-    if (!await askConfirm(`ลบเฟส "${p.label}"? ${n ? `รายการ ${n} รายการในเฟสนี้จะไม่มีเฟส (ไปกลุ่ม "ไม่อยู่ในเฟส")` : ''}\nพาร์ทที่สร้างไปแล้วไม่ถูกแตะ`)) return;
+    if (!await askConfirm(`${tr("ลบเฟส")} "${p.label}"? ${n ? `${tr("รายการ")} ${n} ${tr("รายการในเฟสนี้จะไม่มีเฟส (ไปกลุ่ม \"ไม่อยู่ในเฟส")}")` : ''}\n${tr("พาร์ทที่สร้างไปแล้วไม่ถูกแตะ")}`)) return;
     run('ลบเฟส', () => supabase.from('npi_template_phases').delete().eq('id', p.id));
   };
-  const delDeliv = async (d) => { if (await askConfirm(`ลบรายการ "${d.label}" ออกจากแม่แบบ? (พาร์ทที่สร้างไปแล้วไม่ถูกแตะ)`)) run('ลบรายการ', () => supabase.from('npi_template_deliverables').delete().eq('id', d.id)); };
+  const delDeliv = async (d) => { if (await askConfirm(`${tr("ลบรายการ")} "${d.label}" ${tr("ออกจากแม่แบบ? (พาร์ทที่สร้างไปแล้วไม่ถูกแตะ")})`)) run('ลบรายการ', () => supabase.from('npi_template_deliverables').delete().eq('id', d.id)); };
 
   return (
     <div style={card}>
@@ -70,7 +70,7 @@ export default function NpiTemplates({ templates, onChanged }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('แม่แบบเฟส / รายการเอกสาร')}</div>
           <select value={tpl?.id || ''} onChange={e => setTplId(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 240 }}>
-            {templates.map(t => <option key={t.id} value={t.id}>{tr(t.label)}{t.customer ? ` (${t.customer})` : ''}{t.is_active ? '' : ' · ปิดใช้'}</option>)}
+            {templates.map(t => <option key={t.id} value={t.id}>{tr(t.label)}{t.customer ? ` (${t.customer})` : ''}{t.is_active ? '' : tr(" · ปิดใช้")}</option>)}
           </select>
           {tpl && <button style={ghost} onClick={() => setTplModal({ ...tpl })}>{tr('✏️ แม่แบบ')}</button>}
         </div>
@@ -96,7 +96,7 @@ export default function NpiTemplates({ templates, onChanged }) {
                 </tr>
               ))}</tbody>
             </table>
-            {!phases.length && <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700 }}>{tr('ยังไม่มีเฟส — พาร์ทที่ใช้แม่แบบนี้จะไม่มีเฟส/รายการ')}</div>}
+            {!phases.length && <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>{tr('ยังไม่มีเฟส — พาร์ทที่ใช้แม่แบบนี้จะไม่มีเฟส/รายการ')}</div>}
           </div>
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -108,7 +108,7 @@ export default function NpiTemplates({ templates, onChanged }) {
                 <thead><tr><th style={thSt}>{tr('เฟส')}</th><th style={thSt}>#</th><th style={thSt}>{tr('รายการ')}</th><th style={thSt}>{tr('ชนิด')}</th><th style={thSt}>{tr('เจ้าของ')}</th><th style={thSt}>{tr('บังคับ')}</th><th style={thSt}>PPAP</th><th style={thSt}></th></tr></thead>
                 <tbody>{delivs.map(d => (
                   <tr key={d.id} style={{ opacity: d.is_active === false ? 0.5 : 1 }}>
-                    <td style={tdSt}>{phases.find(p => p.code === d.phase_code)?.label || <span style={{ color: '#f59e0b' }}>{d.phase_code} {tr('(ไม่มีเฟส)')}</span>}</td>
+                    <td style={tdSt}>{phases.find(p => p.code === d.phase_code)?.label || <span style={{ color: 'var(--amber)' }}>{d.phase_code} {tr('(ไม่มีเฟส)')}</span>}</td>
                     <td style={tdSt}>{d.seq}</td>
                     <td style={tdSt}><b style={{ color: 'var(--text)' }}>{tr(d.label)}</b><div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{d.code}</div></td>
                     <td style={tdSt}>{DOC_KIND[d.doc_kind]?.icon} {tr(DOC_KIND[d.doc_kind]?.label)}</td>
@@ -123,7 +123,7 @@ export default function NpiTemplates({ templates, onChanged }) {
           </div>
         </div>
       )}
-      {!templates.length && <div style={{ color: '#f59e0b', fontSize: 12.5, fontWeight: 700 }}>{tr('ยังไม่มีแม่แบบ — apply migration 20260907_npi_apqp_main จะได้ APQP (AIAG) + Toyota SPTT มาให้')}</div>}
+      {!templates.length && <div style={{ color: 'var(--amber)', fontSize: 12.5, fontWeight: 700 }}>{tr('ยังไม่มีแม่แบบ — apply migration 20260907_npi_apqp_main จะได้ APQP (AIAG) + Toyota SPTT มาให้')}</div>}
 
       {tplModal && (
         <Modal title={tplModal.id ? tr('แก้ไขแม่แบบ') : tr('สร้างแม่แบบ (ลูกค้าใหม่)')} onClose={() => setTplModal(null)} width={560}

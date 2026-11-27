@@ -25,15 +25,15 @@ import {
   summarizeMachineFacts, compareWithSessions, reasonRows, tagRows, suggestDowntimeType, stopTotals, STATE_META, STATE_ORDER,
 } from '../utils/machineFacts';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 const DAYS = 7;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)', minWidth: 0 };
 const th = { textAlign: 'left', padding: '6px 8px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
 const td = { padding: '6px 8px', fontSize: 12.5, borderBottom: '1px solid var(--border)', verticalAlign: 'top' };
 const KIND_LABEL = { onplan: 'หยุดตามแผน (OnplanMaster)', alarm: 'Alarm (AlarmMaster)', unplan: 'หยุดนอกแผน/รอ (UnplanMaster)' };
-const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
-const fmtDate = (d) => new Date(`${d}T00:00:00+07:00`).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' });
+const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+const fmtDate = (d) => new Date(`${d}T00:00:00+07:00`).toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', weekday: 'short', day: 'numeric', month: 'short' });
 const minTxt = (sec) => (sec == null ? '–' : `${Math.round(sec / 60).toLocaleString()}`);
 const num = (v) => (v == null ? '–' : Number(v).toLocaleString());
 
@@ -57,7 +57,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
       supabaseDR.from('dr_downtime_types').select('id, name_th, category, process_type, is_active, sort_order').order('sort_order'),
     ]);
     if (id !== req.current) return;
-    const errs = [st.error && 'ช่วงหยุด', pc.error && 'นับชิ้น', tm.error && 'การผูกเครื่อง', rm.error && 'การจับคู่เหตุผล', dt.error && 'ประเภท downtime'].filter(Boolean);
+    const errs = [st.error && tr('ช่วงหยุด'), pc.error && tr('นับชิ้น'), tm.error && tr('การผูกเครื่อง'), rm.error && tr('การจับคู่เหตุผล'), dt.error && tr('ประเภท downtime')].filter(Boolean);
     // ฝั่ง Daily Report โหลดแยก (loadDr) — คงค่ารอบก่อนไว้ ไม่งั้นตารางเทียบหายไปค้าง "กำลังโหลด" จนรอบหน้า
     setData(prev => ({ states: st.data || [], counters: pc.data || [], tagMap: tm.data || [], reasonMap: rm.data || [], dtTypes: dt.data || [],
       errs, fromDate: bkkDateStr(fromMs), sessions: prev?.sessions ?? null, downtimes: prev?.downtimes ?? null, drErr: prev?.drErr ?? null }));
@@ -103,7 +103,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
   const save = async (key, action, payload, okText) => {
     setBusy(key);
     try { await callAdmin(action, { id: src.id, ...payload }); toast.success(okText); await load(); }
-    catch (e) { toast.error(`${okText}ไม่สำเร็จ: ${e.message}`); }
+    catch (e) { toast.error(`${okText}${tr("ไม่สำเร็จ")}: ${e.message}`); }
     finally { setBusy(''); }
   };
 
@@ -114,8 +114,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
   return (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
       <NoticeBar tone="info">
-        🏭 ข้อมูลจากเครื่อง · <b>{tr('เฟสเดินคู่')}</b> — ยังไม่เข้าสูตร OEE และไม่สร้างใบ downtime · ใช้เทียบกับที่คนลงใน Daily Report เท่านั้น
-        · ย้อนหลัง {DAYS} {tr('วัน (ตั้งแต่')} {data.fromDate ? fmtDate(data.fromDate) : '—'}) · ข้อมูลเก็บ 90 วัน
+        🏭 {tr("ข้อมูลจากเครื่อง")} · <b>{tr('เฟสเดินคู่')}</b> — {tr("ยังไม่เข้าสูตร OEE และไม่สร้างใบ downtime · ใช้เทียบกับที่คนลงใน Daily Report เท่านั้น · ย้อนหลัง")} {DAYS} {tr('วัน (ตั้งแต่')} {data.fromDate ? fmtDate(data.fromDate) : '—'}) · {tr("ข้อมูลเก็บ 90 วัน")}
       </NoticeBar>
       {data.errs.length > 0 && <NoticeBar tone="bad">{tr('อ่านไม่สำเร็จ:')} {data.errs.join(' · ')} {tr('— ตัวเลขด้านล่างไม่ครบ')}</NoticeBar>}
       {machinesFailed && <NoticeBar tone="warn">{tr('โหลดทะเบียนเครื่องไม่สำเร็จ — ยังผูกเครื่อง/รู้ไลน์ไม่ได้')}</NoticeBar>}
@@ -127,7 +126,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('① รหัสเครื่องของต้นทาง ↔ เครื่องในทะเบียน ESM')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
-          ผูกแล้วข้อมูลย้อนหลังตามเอง (เก็บรหัสต้นทางไว้ ไม่ต้องย้ายข้อมูล) · ระบบเสนอเฉพาะเลขที่ตรงกับทะเบียนตัวเดียว — กดยืนยันเอง
+          {tr("ผูกแล้วข้อมูลย้อนหลังตามเอง (เก็บรหัสต้นทางไว้ ไม่ต้องย้ายข้อมูล) · ระบบเสนอเฉพาะเลขที่ตรงกับทะเบียนตัวเดียว — กดยืนยันเอง")}
         </div>
         {!tags.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่เห็นรหัสเครื่องจากต้นทางนี้')}</div> : (
           <div style={{ overflowX: 'auto' }}>
@@ -144,26 +143,26 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                         {canManage ? (
                           <div style={{ display: 'grid', gap: 6 }}>
                             <MachineSelect valueKey="id" value={cur} machines={machines} groupByLine disabled={!!busy}
-                              onChange={(m) => m?.id && m.id !== cur && save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: m.id }, `ผูก ${t.tag}`)} />
+                              onChange={(m) => m?.id && m.id !== cur && save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: m.id }, `${tr("ผูก")} ${t.tag}`)} />
                             {cur && !machinesFailed && machines.length > 0 && !machineNo(cur) && (
                               <span style={{ fontSize: 12, color: 'var(--red)' }}>{tr('⚠ เครื่องที่ผูกไว้ไม่อยู่ในทะเบียนแล้ว — เลือกใหม่หรือเลิกผูก')}</span>
                             )}
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                               {t.suggest && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: t.suggest.id }, `ผูก ${t.tag}`)}>
+                                  onClick={() => save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: t.suggest.id }, `${tr("ผูก")} ${t.tag}`)}>
                                   {tr('✓ ใช้ข้อเสนอ:')} {t.suggest.machine_no}{t.suggest.line_name ? ` · ${t.suggest.line_name}` : ''}</button>
                               )}
                               {cur && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={async () => await askConfirm(`เลิกผูก ${t.tag}? ข้อมูลของรหัสนี้จะหายจากตารางเทียบจนกว่าจะผูกใหม่`) &&
-                                    save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: null }, `เลิกผูก ${t.tag}`)}>{tr('เลิกผูก')}</button>
+                                  onClick={async () => await askConfirm(`${tr("เลิกผูก")} ${t.tag}? ${tr("ข้อมูลของรหัสนี้จะหายจากตารางเทียบจนกว่าจะผูกใหม่")}`) &&
+                                    save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: null }, `${tr("เลิกผูก")} ${t.tag}`)}>{tr('เลิกผูก')}</button>
                               )}
                             </div>
                           </div>
                         ) : (
                           cur ? <b>{machineNo(cur) || (machinesFailed || !machines.length ? '…' : tr('⚠ เครื่องนี้ไม่อยู่ในทะเบียนแล้ว'))}</b>
-                            : <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่ผูก')}{t.suggest ? ` (ข้อเสนอ: ${t.suggest.machine_no})` : ''}</span>
+                            : <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่ผูก')}{t.suggest ? ` (${tr("ข้อเสนอ")}: ${t.suggest.machine_no})` : ''}</span>
                         )}
                       </td>
                       <td style={{ ...td, fontSize: 12, color: 'var(--muted)' }}>
@@ -182,17 +181,16 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('② เหตุผลหยุดของต้นทาง ↔ ประเภท downtime ของ ESM')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
-          เลือกเองทีละรายการ · ระบบเสนอเฉพาะชื่อที่ตรงเป๊ะ · ไม่มีตัวตรงก็กด "ไม่มีใน ESM" ได้ (บันทึกว่าตรวจแล้ว) · ตอนนี้ใช้แสดงชื่อเท่านั้น ยังไม่สร้างใบ downtime
+          {tr("เลือกเองทีละรายการ · ระบบเสนอเฉพาะชื่อที่ตรงเป๊ะ · ไม่มีตัวตรงก็กด \"ไม่มีใน ESM\" ได้ (บันทึกว่าตรวจแล้ว) · ตอนนี้ใช้แสดงชื่อเท่านั้น ยังไม่สร้างใบ")} downtime
         </div>
         {reasons.noReason.count > 0 && (
           <NoticeBar tone="info" style={{ marginBottom: 8 }}>
-            {reasons.noReason.count.toLocaleString()} ช่วง ({minTxt(reasons.noReason.sec)} นาที) ไม่ได้กดเหตุผลที่หน้าเครื่อง
-            (รหัส 0 = ปกติ / รีเซ็ต) — ไม่ใช่เหตุผลหยุด จึงไม่อยู่ในรายการให้จับคู่
+            {reasons.noReason.count.toLocaleString()} {tr("ช่วง")} ({minTxt(reasons.noReason.sec)} {tr("นาที) ไม่ได้กดเหตุผลที่หน้าเครื่อง (รหัส 0 = ปกติ / รีเซ็ต) — ไม่ใช่เหตุผลหยุด จึงไม่อยู่ในรายการให้จับคู่")}
           </NoticeBar>
         )}
         {reasons.unmappable > 0 && (
           <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
-            {reasons.unmappable.toLocaleString()} ช่วงเป็นสถานะ ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่
+            {reasons.unmappable.toLocaleString()} {tr("ช่วงเป็นสถานะ ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่")}
           </NoticeBar>
         )}
         {!reasons.rows.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่เห็นเหตุผลหยุดจากต้นทางนี้')}</div> : (
@@ -214,44 +212,44 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                         {r.map?.is_break ? (
                           /* 🍱 เวลาพัก — ESM ใช้นโยบายพัก (โควตานาที) · กดพักเกินนโยบาย = เสีย A (16/11 · ทาง A) */
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <b style={{ color: 'var(--blue)' }}>🍱 เวลาพัก — ESM คิดจากนโยบายพักเอง</b>
-                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>กดพักเกินโควตานโยบาย = เสีย A (พักเกินเวลา)</span>
+                            <b style={{ color: 'var(--blue)' }}>🍱 {tr("เวลาพัก — ESM คิดจากนโยบายพักเอง")}</b>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr("กดพักเกินโควตานโยบาย = เสีย A (พักเกินเวลา")})</span>
                             {canManage && (
                               <button type="button" className="pg-btn" disabled={!!busy}
-                                onClick={() => save(k, 'map_reason', { ...base, clear: true }, `ล้างป้ายเวลาพัก ${r.code}`)}>ล้าง</button>
+                                onClick={() => save(k, 'map_reason', { ...base, clear: true }, `${tr("ล้างป้ายเวลาพัก")} ${r.code}`)}>{tr("ล้าง")}</button>
                             )}
                           </div>
                         ) : canManage ? (
                           <div style={{ display: 'grid', gap: 6 }}>
                             <SearchSelect value={cur} options={dtOptions} placeholder={tr('ค้นประเภท downtime…')}
-                              loadFail={data.errs.includes('ประเภท downtime') ? 'โหลดประเภท downtime ไม่สำเร็จ' : ''}
-                              onChange={({ id }) => id && id !== cur && save(k, 'map_reason', { ...base, downtime_type_id: id }, `จับคู่เหตุผล ${r.code}`)} />
+                              loadFail={data.errs.includes('ประเภท downtime') ? tr("โหลดประเภท downtime ไม่สำเร็จ") : ''}
+                              onChange={({ id }) => id && id !== cur && save(k, 'map_reason', { ...base, downtime_type_id: id }, `${tr("จับคู่เหตุผล")} ${r.code}`)} />
                             {cur && !dtById.has(cur) && !data.errs.includes('ประเภท downtime') && (
                               <span style={{ fontSize: 12, color: 'var(--red)' }}>{tr('⚠ ประเภทที่จับคู่ไว้ถูกลบจากทะเบียนแล้ว — เลือกใหม่หรือล้าง')}</span>
                             )}
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                               {sug && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: sug.id }, `จับคู่เหตุผล ${r.code}`)}>{tr('✓ ใช้ข้อเสนอ:')} {sug.name_th}</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: sug.id }, `${tr("จับคู่เหตุผล")} ${r.code}`)}>{tr('✓ ใช้ข้อเสนอ:')} {sug.name_th}</button>
                               )}
                               {r.kind === 'onplan' && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  title="ใช้กับเหตุผลที่เป็นการกดพักหน้าเครื่อง — ESM คิดเวลาพักจากนโยบายเอง ส่วนที่เกินนโยบายนับเป็นเสีย"
-                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null, is_break: true }, `ติดป้ายเวลาพัก ${r.code}`)}>🍱 เวลาพัก (ESM คิดเอง)</button>
+                                  title={tr("ใช้กับเหตุผลที่เป็นการกดพักหน้าเครื่อง — ESM คิดเวลาพักจากนโยบายเอง ส่วนที่เกินนโยบายนับเป็นเสีย")}
+                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null, is_break: true }, `${tr("ติดป้ายเวลาพัก")} ${r.code}`)}>🍱 {tr("เวลาพัก (ESM คิดเอง")})</button>
                               )}
                               {!(r.map && !cur) && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null }, `บันทึก "ไม่มีใน ESM" ${r.code}`)}>{tr('ไม่มีใน ESM')}</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null }, `${tr("บันทึก \"ไม่มีใน")} ESM" ${r.code}`)}>{tr('ไม่มีใน ESM')}</button>
                               )}
                               {r.map && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, clear: true }, `ล้างการจับคู่ ${r.code}`)}>{tr('ล้าง')}</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, clear: true }, `${tr("ล้างการจับคู่")} ${r.code}`)}>{tr('ล้าง')}</button>
                               )}
                               {r.map && !cur && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ตรวจแล้ว: ไม่มีตัวตรงใน ESM')}</span>}
                             </div>
                           </div>
                         ) : (
-                          r.map ? (cur ? <b>{dtById.get(cur)?.name_th || tr('⚠ ประเภทนี้ถูกลบแล้ว')}</b> : 'ไม่มีตัวตรงใน ESM')
+                          r.map ? (cur ? <b>{dtById.get(cur)?.name_th || tr('⚠ ประเภทนี้ถูกลบแล้ว')}</b> : tr("ไม่มีตัวตรงใน ESM"))
                             : <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่จับคู่')}</span>
                         )}
                       </td>
@@ -268,12 +266,11 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
       <div style={card}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('③ เทียบกับ Daily Report (รายไลน์ × กะ)')}</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 8px' }}>
-          ชิ้นแสดงรายเครื่อง ไม่รวมเป็นยอดไลน์ (ชิ้นเดียวอาจผ่านหลายเครื่อง) · นาที = เวลาหยุดที่เครื่องบันทึก แบ่งตามกะ ESM (เช้า 08–20 · ดึก 20–08)
-          · "–" = ไม่มีข้อมูล ไม่ใช่ 0
+          {tr("ชิ้นแสดงรายเครื่อง ไม่รวมเป็นยอดไลน์ (ชิ้นเดียวอาจผ่านหลายเครื่อง) · นาที = เวลาหยุดที่เครื่องบันทึก แบ่งตามกะ ESM (เช้า 08–20 · ดึก 20–08) · \"–\" = ไม่มีข้อมูล ไม่ใช่")} 0
         </div>
         {unmappedTags.length > 0 && (
           <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
-            {unmappedTags.length} {tr('รหัสเครื่องยังไม่ผูก (')}{unmappedTags.map(t => t.tag).join(', ')}) — ไม่อยู่ในตารางนี้จนกว่าจะผูกที่ ①
+            {unmappedTags.length} {tr('รหัสเครื่องยังไม่ผูก (')}{unmappedTags.map(t => t.tag).join(', ')}) — {tr("ไม่อยู่ในตารางนี้จนกว่าจะผูกที่")} ①
           </NoticeBar>
         )}
         {data.drErr && <NoticeBar tone="bad" style={{ marginBottom: 8 }}>{data.drErr}</NoticeBar>}
@@ -296,7 +293,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                     return ms.map((m, i) => (
                       <tr key={`${r.key}|${m?.tag || '-'}`}>
                         {i === 0 && <>
-                          <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }} rowSpan={ms.length}>{fmtDate(r.workDate)} · {r.shift === 'day' ? 'เช้า' : 'ดึก'}</td>
+                          <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }} rowSpan={ms.length}>{fmtDate(r.workDate)} · {r.shift === 'day' ? tr("เช้า") : tr("ดึก")}</td>
                           <td style={{ ...td, whiteSpace: 'nowrap' }} rowSpan={ms.length}>{r.line}</td>
                           <td style={td} rowSpan={ms.length}>
                             {r.session ? <b>{num(r.session.actual_qty)}</b> : <span style={{ color: 'var(--muted)' }}>{tr('ไม่มีใบผลิต')}</span>}
@@ -326,8 +323,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
           )}
         {compare?.length > 0 && (
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-            หยุดรวมที่เครื่องบันทึก {DAYS} {tr('วัน:')} {minTxt(facts.reduce((s, f) => s + stopTotals(f.stopSec).all, 0))} นาที
-            · DT ที่คนลง: {num(compare.reduce((s, r) => s + (r.humanDtMin || 0), 0))} นาที
+            {tr("หยุดรวมที่เครื่องบันทึก")} {DAYS} {tr('วัน:')} {minTxt(facts.reduce((s, f) => s + stopTotals(f.stopSec).all, 0))} {tr("นาที · DT ที่คนลง")}: {num(compare.reduce((s, r) => s + (r.humanDtMin || 0), 0))} {tr("นาที")}
           </div>
         )}
       </div>

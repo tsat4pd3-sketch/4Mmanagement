@@ -40,8 +40,8 @@ function TimeInput24({ value = '', onChange, style = {} }) {
           borderRadius: 'var(--ctl-r)', padding: '5px 8px', ...style }} />
       <button type="button" title={tr('ใช้เวลาปัจจุบัน')}
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
-        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-        ตอนนี้
+        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        {tr("ตอนนี้")}
       </button>
     </div>
   );
@@ -83,7 +83,7 @@ function calcDuration(workDate, eventTime, approvedAt) {
   const totalMin = Math.round(diffMs / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  return h > 0 ? `${h} ชม. ${m} นาที` : `${m} นาที`;
+  return h > 0 ? `${h} ${tr("ชม.")} ${m} ${tr("นาที")}` : `${m} ${tr("นาที")}`;
 }
 
 // Get effective approved_at: from log field or fallback to max approval timestamp
@@ -282,7 +282,7 @@ export default function EventLog() {
       fetchAll();
     } catch (e) {
       console.error(e);
-      toast.error('บันทึกไม่สำเร็จ: ' + e.message);
+      toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + e.message);
     } finally {
       setSubmitting(false);
     }
@@ -391,7 +391,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Station Number</label>
             {/* station = เลขเครื่อง (SP-67) จากทะเบียน machines (DR) — ออกรายงาน CQI-15 ให้ลูกค้าตรวจ ต้องสะกดตรงทะเบียน (2026-09-07) */}
-            <MachineSelect value={form.station_number || ''} lines={famNames} allowFree history={stationHist} freeHint="สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines"
+            <MachineSelect value={form.station_number || ''} lines={famNames} allowFree history={stationHist} freeHint={tr("สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines")}
               placeholder={tr('เช่น SP-67')} onChange={r => f('station_number', r.machine_no)} />
           </div>
           <div>
@@ -408,7 +408,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           <select value={form.event_no} onChange={e => f('event_no', e.target.value)}>
             <option value="">{tr('-- เลือก Event --')}</option>
             {Object.entries(groupedEvents).map(([cat, evs]) => (
-              <optgroup key={cat} label={`Category ${cat}: ${CAT_META[cat].labelTh}`}>
+              <optgroup key={cat} label={`Category ${cat}: ${tr(CAT_META[cat].labelTh)}`}>
                 {evs.map(ev => (
                   <option key={ev.event_no} value={ev.event_no}>
                     #{ev.event_no} {ev.name_th || ev.name_en}
@@ -473,17 +473,17 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
       {/* Right: Checklist preview */}
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
-          Checklist ตาม Matrix
+          Checklist {tr("ตาม")} Matrix
           {selectedEvent && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>Event #{selectedEvent.event_no} · {eventChecks.length} {tr('รายการ')}</span>}
         </div>
 
         {!selectedEvent ? (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>
-            เลือก Event เพื่อดู Checklist
+            {tr("เลือก Event เพื่อดู")} Checklist
           </div>
         ) : Object.keys(checksByRole).length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>
-            ไม่มี Checklist สำหรับ Event นี้
+            {tr("ไม่มี Checklist สำหรับ Event นี้")}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -555,7 +555,7 @@ async function exportExcel(logs) {
   rows.push([
     'Date', 'Start Time', 'Operator', 'Weld cell Operator', 'Station Number',
     'Issue', 'Event (A)', 'Event (B)', 'Event (C)', 'Event ID', '',
-    'ส่วนงาน', 'รายละเอียดงานซ่อม', "Product Q'ty", "OK Q'ty", "NG Q'ty",
+    tr("ส่วนงาน"), 'รายละเอียดงานซ่อม', "Product Q'ty", "OK Q'ty", "NG Q'ty",
     "Rework(OK) Q'ty", "Scrap Q'ty", 'Approved by (Leader up)',
     'End Time before Start Production (QA)', 'Remark'
   ]);
@@ -646,7 +646,7 @@ async function exportExcel(logs) {
   // เลขฟอร์มจากทะเบียนเอกสาร (ตั้งที่ /doc-forms) — ไม่ตั้ง = ไฟล์หน้าตาเดิม
   const dfCqi = docFormSync('cqi15_event_log', {});
   const cqiCode = fullCode(dfCqi);
-  if (cqiCode) { rows.push([]); rows.push([`เลขฟอร์ม: ${cqiCode}${dfCqi.effective_date ? ` · Effective: ${dfCqi.effective_date}` : ''}`]); }
+  if (cqiCode) { rows.push([]); rows.push([`${tr("เลขฟอร์ม")}: ${cqiCode}${dfCqi.effective_date ? ` · Effective: ${dfCqi.effective_date}` : ''}`]); }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws['!merges'] = merges;
@@ -860,16 +860,16 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
         {filtered.length > 0 && (
           <>
             <button
-              onClick={() => { exportExcel(filtered).catch(e => toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e))); }}
-              title="Export Excel"
+              onClick={() => { exportExcel(filtered).catch(e => toast.error((tr('ทำไฟล์ Excel ไม่สำเร็จ') + ': ') + (e?.message || e))); }}
+              title={tr('ส่งออก Excel')}
               style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--green)40', background: 'var(--green-dim)', color: 'var(--green)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              Export Excel
+              {tr('ส่งออก Excel')}
             </button>
             <button
               onClick={() => exportPDF(filtered)}
-              title="Export PDF / Print"
+              title={tr('ส่งออก PDF / พิมพ์')}
               style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)40', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              Export PDF
+              {tr('ส่งออก PDF')}
             </button>
           </>
         )}
@@ -884,7 +884,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 12, padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
         {[
           { label: 'ทั้งหมด', value: stats.total, tone: 'none', primary: true,
-            sub: `ใบ CQI-15 ในช่วงที่กรองอยู่` },
+            sub: `${tr("ใบ CQI-15 ในช่วงที่กรองอยู่")}` },
           // คิวรออนุมัติ = เหลือง ไม่ใช่แดง (งานยังเดินอยู่) — ให้ตรงกับการ์ด 4M บนหน้าแรก
           { label: 'รออนุมัติ', value: stats.pending, tone: toneOf({ value: stats.pending, zeroIsGood: true, over: 'warn' }) },
           // จำนวนที่อนุมัติแล้ว = ข้อเท็จจริง ไม่มีเป้า ⇒ เทา (ห้ามเขียวตายตัว)
@@ -900,7 +900,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
               {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{tr('ใบ')}</span>
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
-              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
+              {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ${tr("ของ")} ${stats.total} ${tr("ใบ")}` : tr("ยังไม่มีใบในช่วงนี้"))}
             </div>
           </div>
         ))}
@@ -1054,7 +1054,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
       toast.success('ลบ Event Log สำเร็จ');
       onRefresh();
     } catch (err) {
-      toast.error('ลบไม่สำเร็จ: ' + err.message);
+      toast.error((tr('ลบไม่สำเร็จ') + ': ') + err.message);
       setDeleting(false);
       setConfirmDelete(false);
     }
@@ -1097,7 +1097,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         toast.success(status === 'approved' ? 'อนุมัติสำเร็จ' : 'ปฏิเสธแล้ว');
         onRefresh();
       } else {
-        toast.success(status === 'approved' ? `อนุมัติ [${roleKey}] สำเร็จ` : `ปฏิเสธ [${roleKey}]`);
+        toast.success(status === 'approved' ? `${tr("อนุมัติ")} [${roleKey}] ${tr("สำเร็จ")}` : `${tr("ปฏิเสธ")} [${roleKey}]`);
       }
       // Send Telegram + in-app notification for every approval action (partial or final)
       try {
@@ -1108,7 +1108,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
       setShowReject(null);
       setRejectNote('');
     } catch (e) {
-      toast.error('เกิดข้อผิดพลาด: ' + e.message);
+      toast.error((tr('เกิดข้อผิดพลาด') + ': ') + e.message);
     } finally {
       setApprovingRole(null);
     }
@@ -1119,7 +1119,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
     // เดิมไม่อ่าน error — บันทึกผลตรวจล้มแล้วจอไม่บอก (QC 05/10 · กฎเขียน DB ข้อ 1)
     if (!checkWrite(await supabase.from('cqi15_check_completions')
       .upsert({ event_log_id: log.id, check_no: checkNo, result, completed_by: user.id, completed_at: new Date().toISOString() },
-               { onConflict: 'event_log_id,check_no' }), `บันทึกผลตรวจข้อ ${checkNo} `)) return;
+               { onConflict: 'event_log_id,check_no' }), `${tr("บันทึกผลตรวจข้อ")} ${checkNo} `)) return;
     const { data } = await supabase.from('cqi15_check_completions')
       .select('*, profiles(full_name)').eq('event_log_id', log.id);
     setCompletions(data || []);
@@ -1160,7 +1160,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
   return (
     <div className="overlay" style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 28,
+        style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 28,
           width: 'min(95vw,860px)', boxShadow: 'var(--shadow-lg)', marginTop: 20, marginBottom: 20 }}>
 
         {/* Modal Header */}
@@ -1171,7 +1171,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{tr(sm.label)}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || tr("ไม่ระบุ Station")} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
             {(() => {
               const approvedAt = finalApprovedAt;
               if (!approvedAt) return null;
@@ -1180,11 +1180,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               return (
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, background: 'var(--green-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
-                    ✓ อนุมัติสำเร็จ {approvedTime} น.
+                    ✓ {tr("อนุมัติสำเร็จ")} {approvedTime} {tr("น.")}
                   </span>
                   {dur && (
                     <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, background: 'var(--blue-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
-                      ⏱ รวมเวลา {dur}
+                      ⏱ {tr("รวมเวลา")} {dur}
                     </span>
                   )}
                 </div>
@@ -1206,7 +1206,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                   {deleting ? '...' : tr('ยืนยัน')}
                 </button>
                 <button onClick={() => setConfirmDelete(false)}
-                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                  style={{ background: 'var(--bg2-surf)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
                   {tr('ยกเลิก')}
                 </button>
               </div>
@@ -1224,7 +1224,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             { label: 'Rework',      value: log.qty_rework, color: 'var(--amber)' },
             { label: 'Scrap',       value: log.qty_scrap, color: 'var(--blue)' },
           ].map(q => (
-            <div key={q.label} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
+            <div key={q.label} style={{ background: 'var(--card-surf)', borderRadius: 'var(--r-md)', padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{tr(q.label)}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: q.color, fontFamily: 'var(--font-display)' }}>{q.value}</div>
             </div>
@@ -1241,7 +1241,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         {/* Approval section */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-            ✅ การอนุมัติตาม Role
+            ✅ {tr("การอนุมัติตาม")} Role
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
             {approvals.map(appr => {
@@ -1254,13 +1254,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return comp && comp.result !== 'pending';
               }).length;
               return (
-                <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? 'var(--red)40' : 'var(--border)'}` }}>
+                <div key={appr.role_key} style={{ background: 'var(--card-surf)', borderRadius: 'var(--r-md)', padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? 'var(--red)40' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, color: rm.color }}>{appr.role_key}</span>
                     <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-pill)',
                       background: appr.status === 'approved' ? rm.bg : appr.status === 'rejected' ? 'var(--red-dim)' : 'var(--bg3)',
                       color: appr.status === 'approved' ? rm.color : appr.status === 'rejected' ? 'var(--red)' : 'var(--muted)' }}>
-                      {appr.status === 'approved' ? '✓ อนุมัติ' : appr.status === 'rejected' ? '✗ ปฏิเสธ' : '⋯ รอ'}
+                      {appr.status === 'approved' ? tr("✓ อนุมัติ") : appr.status === 'rejected' ? tr("✗ ปฏิเสธ") : tr("⋯ รอ")}
                     </span>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{tr(rm.label)}</div>
@@ -1274,8 +1274,8 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                   {canApprove && checklistItems.length > 0 && (
                     <div style={{ fontSize: 11, marginBottom: 8, color: checklistDone ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
                       {checklistDone
-                        ? `✓ Checklist ครบ (${doneCount}/${checklistItems.length})`
-                        : `⚠ ต้องทำ Checklist ก่อน (${doneCount}/${checklistItems.length} เสร็จ)`}
+                        ? `✓ Checklist ${tr("ครบ")} (${doneCount}/${checklistItems.length})`
+                        : `⚠ ${tr("ต้องทำ Checklist ก่อน")} (${doneCount}/${checklistItems.length} ${tr("เสร็จ")})`}
                     </div>
                   )}
                   {canApprove && (
@@ -1326,7 +1326,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         {/* Checklist */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-            Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
+            Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} {tr("รายการเสร็จ")})
           </div>
           {loadingChecks ? (
             <div style={{ color: 'var(--muted)', fontSize: 12 }}>{tr('กำลังโหลด...')}</div>

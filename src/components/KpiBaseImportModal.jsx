@@ -10,9 +10,11 @@ import { detectMonthColumns, detectVarRows, extractValues, rowLabels, IMPORT_MUL
 import { getWorkDate } from '../utils/workDate';
 import { PLANT_BASE_KEY } from '../utils/kpiFormula';
 
-import { tr } from '../utils/i18n';
-const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-const fmt = (v) => (v == null ? '–' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
+import { tr, dateLocale } from '../utils/i18n';
+import { ImportInfo, WrongFileNote } from './ImportKit';
+import { importLabel, whichImport } from '../utils/importRegistry';
+import { monthsShort } from '../utils/dateFormat';
+const fmt = (v) => (v == null ? '–' : Number(v).toLocaleString(dateLocale(), { maximumFractionDigits: 2 }));
 const memKey = (sheet) => `esm.kpiBaseImport.${sheet}`;
 const loadMem = (sheet) => { try { return JSON.parse(localStorage.getItem(memKey(sheet)) || 'null'); } catch { return null; } };
 const saveMem = (sheet, v) => { try { localStorage.setItem(memKey(sheet), JSON.stringify(v)); } catch { /* private mode */ } };
@@ -23,11 +25,11 @@ const saveMem = (sheet, v) => { try { localStorage.setItem(memKey(sheet), JSON.s
  * @param canPlant   เขียนค่ากลางได้ไหม (ดู ทั้งโรงงาน + สิทธิ์) · canUnit เขียนยอดเงินของหน่วยได้ไหม
  * @param onSave     async (values {varKey:{month:value}}) → จำนวนที่บันทึก
  */
-const MONTH_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 
 export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canPlant, canUnit, onSave, onClose }) {
   const [file, setFile] = useState(null);
   const [wb, setWb] = useState(null);            // { sheets: {name: grid} }
+  const [wrong, setWrong] = useState(null);      // 📥 ไฟล์ของจุดนำเข้าอื่น (importRegistry)
   const [sheet, setSheet] = useState('');
   const [monthRow, setMonthRow] = useState(null); // แถวหัวเดือนที่ใช้ (override ได้)
   const [varRows, setVarRows] = useState({});
@@ -54,16 +56,19 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   /* เดือนที่ยังไม่ปิดในไฟล์บัญชีเป็น 0 (ไม่ใช่ว่าง) — ถ้า "ถึงเดือน" เลยเดือนสุดท้ายที่มียอดขาย/กำลังคน > 0 จะนำเข้า 0 เป็นค่าจริง ⇒ เตือน */
   const allVals = useMemo(() => (grid ? extractValues(grid, { varRows, monthCols: monthInfo?.cols || {}, multiplier: mult }) : {}), [grid, varRows, monthInfo, mult]);
   const closedM = useMemo(() => lastClosedMonth(allVals), [allVals]);
-  const zeroWarn = closedM != null && maxMonth > closedM ? `⚠ ในไฟล์นี้เดือนหลัง ${MONTH_TH[closedM - 1]} ยอดขาย/กำลังคนเป็น 0 (ยังไม่ปิดเดือน) — ตั้ง "ถึงเดือน" = ${MONTH_TH[closedM - 1]} ไม่งั้นจะบันทึก 0 เป็นค่าจริง` : '';
+  const zeroWarn = closedM != null && maxMonth > closedM ? `⚠ ${tr("ในไฟล์นี้เดือนหลัง")} ${monthsShort()[closedM - 1]} ${tr("ยอดขาย/กำลังคนเป็น 0 (ยังไม่ปิดเดือน) — ตั้ง \"ถึงเดือน")}" = ${monthsShort()[closedM - 1]} ${tr("ไม่งั้นจะบันทึก 0 เป็นค่าจริง")}` : '';
 
   const pick = async (f) => {
-    setFile(f); setErr(''); setWb(null); setSheet('');
+    setFile(f); setErr(''); setWb(null); setSheet(''); setWrong(null);
     if (!f) return;
     try {
       const XLSX = await import('xlsx');
       const book = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
       const sheets = {};
       book.SheetNames.forEach((name) => { sheets[name] = XLSX.utils.sheet_to_json(book.Sheets[name], { header: 1, raw: true, defval: null, blankrows: false }); });
+      /* 📥 ไม่มีชีทหน้าตา monthly report เลย + เป็นไฟล์ของจุดนำเข้าอื่น = บอกทางไป (ไม่รู้จัก = ทำงานเดิม) */
+      const other = bestSheet(sheets) ? null : whichImport(book.SheetNames.map(name => ({ name, rows: sheets[name] })), 'kpi_acct');
+      if (other) { setWrong(other); return; }
       setWb({ sheets, names: book.SheetNames });
       setSheet(bestSheet(sheets) || book.SheetNames[0] || '');   // ไฟล์บัญชีมี 10+ ชีท — เลือกชีทที่จับตัวแปรได้มากสุดก่อน (เปลี่ยนเองได้)
       /* เดือนจากชื่อไฟล์ ("… Jan-2026 …") ชนะการเดาจากวันนี้ — เดือนถัดไปในไฟล์เป็น 0/แผน ไม่ใช่ค่าจริง */
@@ -97,7 +102,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   }, [grid, sheet, labels, fileMonth]);
 
   const writable = (v) => (v.level === 'plant' ? canPlant : canUnit);
-  const targetOf = (v) => (v.level === 'plant' ? 'ทั้งโรงงาน' : unitLabel);
+  const targetOf = (v) => (v.level === 'plant' ? tr("ทั้งโรงงาน") : unitLabel);
   const skOf = (v) => (v.level === 'plant' ? PLANT_BASE_KEY : unitSk);
   const chosen = KPI_BASE_VARS.filter(v => on[v.key] && values[v.key] && writable(v));
   const nCells = chosen.reduce((a, v) => a + Object.keys(values[v.key]).length, 0);
@@ -110,7 +115,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
     setBusy(false);
     if (n > 0) {
       saveMem(sheet, { labels: Object.fromEntries(Object.entries(varRows).filter(([, r]) => r != null).map(([k, r]) => [k, labels.find(x => x.row === r)?.label || ''])), mult });
-      toast.success(`นำเข้าแล้ว ${n} ค่า จาก "${file?.name}" (${sheet})`);
+      toast.success(`${tr("นำเข้าแล้ว")} ${n} ${tr("ค่า จาก")} "${file?.name}" (${sheet})`);
       onClose?.();
     }
   };
@@ -123,13 +128,14 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
   return (
     /* ห้ามปิดจากคลิกพื้นหลัง — มีฟอร์มที่คนกำลังเลือกแถว (ด่าน modal-closes-on-backdrop) */
     <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', width: 'min(1180px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 16 }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', width: 'min(1180px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <b style={{ fontSize: 14, color: 'var(--text)' }}>{tr('นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี')} {year + 543}</b>
+          <b style={{ fontSize: 14, color: 'var(--text)' }}>📥 {tr(importLabel('kpi_acct'))} — {tr('ปี')} {year + 543}</b>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ค่ากลาง → ทั้งโรงงาน · ยอดเงินของหน่วย →')} {unitLabel}</span>
           <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>{tr('ปิด')}</button>
         </div>
+        <div style={{ marginTop: 10 }}><ImportInfo k="kpi_acct" /></div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
           <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" onChange={e => pick(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
           {wb && (
@@ -141,7 +147,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('ถึงเดือน')}</span>
               <select style={inp} value={maxMonth} onChange={e => setMaxMonth(Number(e.target.value))} title={tr('เดือนล่าสุดที่บัญชีปิดแล้ว — เดือนหลังจากนี้ในไฟล์เป็นแผน/Rolling ไม่นำเข้า')}>
                 <option value={0}>{tr('— ไม่นำเข้า —')}</option>
-                {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{tr(MONTH_TH[i])}</option>)}
+                {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{tr(monthsShort()[i])}</option>)}
               </select>
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('แถวหัวเดือน')}</span>
               <select style={inp} value={monthRow ?? ''} onChange={e => setMonthRow(e.target.value === '' ? null : Number(e.target.value))}>
@@ -151,20 +157,21 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
             </>
           )}
         </div>
-        {err && <div style={{ marginTop: 8, color: '#ef4444', fontSize: 12.5 }}>{err}</div>}
+        {err && <div style={{ marginTop: 8, color: 'var(--red)', fontSize: 12.5 }}>{err}</div>}
+        {wrong && <div style={{ marginTop: 8 }}><WrongFileNote k={wrong} here="kpi_acct" onGo={onClose} /></div>}
         {wb && monthInfo?.subRow != null && (
-          <div style={{ marginTop: 6, fontSize: 12, color: '#38bdf8' }}>{tr('ℹ️ หัวเดือนคร่อมบล็อก PLAN | Rolling | ACTUAL — ใช้คอลัมน์')} <b>ACTUAL → Amount</b> {tr('ของแต่ละเดือน (แถว')} {monthInfo.subRow + 1})</div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--blue)' }}>{tr('ℹ️ หัวเดือนคร่อมบล็อก PLAN | Rolling | ACTUAL — ใช้คอลัมน์')} <b>ACTUAL → Amount</b> {tr('ของแต่ละเดือน (แถว')} {monthInfo.subRow + 1})</div>
         )}
         {wb && rollingM.length > 0 && (
-          <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>{tr('⚠ เดือน')} {rollingM.map(m => MONTH_TH[m - 1]).join(' · ')} {tr('ไม่มีคอลัมน์ ACTUAL — ใช้')} <b>Rolling</b> แทน (เดือนที่ยังไม่ปิด Rolling = แผน) · ลด "ถึงเดือน" ถ้าไม่ใช่ตัวเลขจริง</div>
+          <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--amber)' }}>{tr('⚠ เดือน')} {rollingM.map(m => monthsShort()[m - 1]).join(' · ')} {tr('ไม่มีคอลัมน์ ACTUAL — ใช้')} <b>Rolling</b> {tr("แทน (เดือนที่ยังไม่ปิด Rolling = แผน) · ลด \"ถึงเดือน\" ถ้าไม่ใช่ตัวเลขจริง")}</div>
         )}
-        {wb && magWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>{magWarn}</div>}
-        {wb && zeroWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>{zeroWarn} <button type="button" onClick={() => setMaxMonth(closedM)} style={{ ...inp, cursor: 'pointer', marginLeft: 6 }}>{tr('ตั้งเป็น')} {MONTH_TH[closedM - 1]}</button></div>}
+        {wb && magWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--amber)' }}>{magWarn}</div>}
+        {wb && zeroWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>{zeroWarn} <button type="button" onClick={() => setMaxMonth(closedM)} style={{ ...inp, cursor: 'pointer', marginLeft: 6 }}>{tr('ตั้งเป็น')} {monthsShort()[closedM - 1]}</button></div>}
         {wb && grid && sheetKind(grid, sheet) === 'inventory' && (
-          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}>ℹ️ ชีทสต็อก — จับให้เฉพาะ "มูลค่าสินค้าคงคลัง" (แถว Inventory Balance All) · COGS/RM/ยอดขายในชีทนี้เป็นคนละฐานกับ PL Summary จึงไม่จับอัตโนมัติ (เลือกเองได้ถ้าบัญชียืนยัน)</div>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}>ℹ️ {tr("ชีทสต็อก — จับให้เฉพาะ \"มูลค่าสินค้าคงคลัง\" (แถว Inventory Balance All) · COGS/RM/ยอดขายในชีทนี้เป็นคนละฐานกับ PL Summary จึงไม่จับอัตโนมัติ (เลือกเองได้ถ้าบัญชียืนยัน")})</div>
         )}
         {wb && !Object.keys(monthInfo?.cols || {}).length && (
-          <div style={{ marginTop: 8, fontSize: 12.5, color: '#f59e0b' }}>⚠ ยังหาแถวหัวเดือนไม่เจอ (ต้องมีช่อง Jan/Feb… หรือ ม.ค./ก.พ.… หรือเลข 1–12 อย่างน้อย 6 ช่อง) — เลือกแถวเองจากช่อง "แถวหัวเดือน"</div>
+          <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--amber)' }}>⚠ {tr("ยังหาแถวหัวเดือนไม่เจอ (ต้องมีช่อง Jan/Feb… หรือ ม.ค./ก.พ.… หรือเลข 1–12 อย่างน้อย 6 ช่อง) — เลือกแถวเองจากช่อง \"แถวหัวเดือน")}"</div>
         )}
         {grid && (
           <div style={{ overflowX: 'auto', marginTop: 10 }}>
@@ -174,7 +181,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
                   <th style={{ ...th, textAlign: 'left' }}>{tr('นำเข้า')}</th>
                   <th style={{ ...th, textAlign: 'left' }}>{tr('ตัวแปร → เขียนที่')}</th>
                   <th style={{ ...th, textAlign: 'left' }}>{tr('แถวในไฟล์')}</th>
-                  {months.map(m => <th key={m} style={th}>{tr(MONTHS[m - 1])}</th>)}
+                  {months.map(m => <th key={m} style={th}>{tr(monthsShort()[m - 1])}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -189,8 +196,8 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
                         <input type="checkbox" checked={!!on[v.key] && ok && row != null} disabled={!ok || row == null} onChange={e => setOn(p => ({ ...p, [v.key]: e.target.checked }))} />
                       </td>
                       <td style={{ ...td, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
-                        <b>{tr(v.label)}</b> <span style={{ color: 'var(--muted)' }}>({v.unit})</span>
-                        <div style={{ fontSize: 11, color: ok ? 'var(--muted)' : '#f59e0b' }}>→ {targetOf(v)}{!ok ? (v.level === 'plant' ? ' · นำเข้าได้เฉพาะตอนดู ทั้งโรงงาน' : ' · ไม่มีสิทธิ์เขียนขอบเขตนี้') : ''}</div>
+                        <b>{tr(v.label)}</b> <span style={{ color: 'var(--muted)' }}>({tr(v.unit)})</span>
+                        <div style={{ fontSize: 11, color: ok ? 'var(--muted)' : '#f59e0b' }}>→ {targetOf(v)}{!ok ? (v.level === 'plant' ? tr(" · นำเข้าได้เฉพาะตอนดู ทั้งโรงงาน") : tr(" · ไม่มีสิทธิ์เขียนขอบเขตนี้")) : ''}</div>
                       </td>
                       <td style={{ ...td, textAlign: 'left' }}>
                         <select style={{ ...inp, maxWidth: 260 }} value={row ?? ''} onChange={e => setVarRows(p => ({ ...p, [v.key]: e.target.value === '' ? null : Number(e.target.value) }))}>
@@ -203,7 +210,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
                         const old = base?.get ? base.get(sk, v.key, m) : null;
                         const changed = nv != null && old != null && Math.abs(nv - old) > 1e-9;
                         return (
-                          <td key={m} style={td} title={old != null ? `ค่าที่มีอยู่: ${fmt(old)}` : 'ยังไม่มีค่า'}>
+                          <td key={m} style={td} title={old != null ? `${tr("ค่าที่มีอยู่")}: ${fmt(old)}` : tr("ยังไม่มีค่า")}>
                             <div style={{ color: nv == null ? 'var(--muted)' : changed ? '#f59e0b' : 'var(--text)' }}>{fmt(nv)}</div>
                             {old != null && <div style={{ fontSize: 11, color: 'var(--muted)', textDecoration: changed ? 'line-through' : 'none' }}>{fmt(old)}</div>}
                           </td>
@@ -215,7 +222,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
               </tbody>
             </table>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
-              สีส้ม = ค่าใหม่ต่างจากที่มีอยู่ (ค่าเดิมขีดฆ่า) · ช่อง "–" ในไฟล์ = ไม่นำเข้า (ไม่เขียนทับด้วย 0) · ระบบจำแถวที่เลือกของชีท "{sheet}" ไว้ในเครื่องนี้ให้เดือนหน้า
+              {tr("สีส้ม = ค่าใหม่ต่างจากที่มีอยู่ (ค่าเดิมขีดฆ่า) · ช่อง \"–\" ในไฟล์ = ไม่นำเข้า (ไม่เขียนทับด้วย 0) · ระบบจำแถวที่เลือกของชีท")} "{sheet}" {tr("ไว้ในเครื่องนี้ให้เดือนหน้า")}
             </div>
           </div>
         )}
@@ -223,7 +230,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
           <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
           <button onClick={doImport} disabled={busy || !nCells}
             style={{ ...inp, cursor: nCells ? 'pointer' : 'not-allowed', background: nCells ? 'var(--accent)' : 'var(--bg2)', color: nCells ? 'var(--accent-ink)' : 'var(--muted)', fontWeight: 700 }}>
-            {busy ? '⏳ กำลังบันทึก…' : `💾 นำเข้า ${nCells} ค่า (${chosen.length} ตัวแปร)`}
+            {busy ? tr("⏳ กำลังบันทึก…") : `💾 ${tr("นำเข้า")} ${nCells} ${tr("ค่า")} (${chosen.length} ${tr("ตัวแปร")})`}
           </button>
         </div>
       </div>

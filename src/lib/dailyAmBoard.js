@@ -19,7 +19,9 @@ import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { MO_DONE_STATUSES } from '../utils/mtnStepPerm'
 import { amShiftInfo, isDailyAmEquipment, openFamilyLines, runningMachinesByLine, amCarryOverByJig } from './pmDailyStatus'
 import { loadRunDays } from '../utils/runDays'
-import { amMonthRange } from './amMonthly'
+import { runKey } from '../utils/dailyCheckDay'
+import { amMonthRange, amSlotOf } from './amMonthly'
+import { amFreqOf, lookbackStart } from '../utils/amCheckFreq'
 
 // ส่วน pure (กะ · ขอบเขตอุปกรณ์ · สรุปต่อไลน์) อยู่ใน pmDailyStatus.js (ไม่แตะ supabase ⇒ เทสได้) — re-export ให้จอเรียกจากที่เดียว
 export { amShiftInfo, isDailyAmEquipment, dailyAmTargetsByLine, dailyAmLineStatus, amModeNote } from './pmDailyStatus'
@@ -121,13 +123,27 @@ export async function loadDailyAm({ now = new Date(), lines = null } = {}) {
   for (const [n, at] of Object.entries(startedRaw)) if (!firstOrderByLine[n]) firstOrderByLine[n] = at
 
   const runByLine = runningMachinesByLine(linesForFam, runOrders)
+  const st = await loadAmStations()
   // 🔧 B3 — ล้มได้โดยไม่ทำให้บอร์ดล้ม: `moFollow.ok=false` ⇒ จอเขียนว่า "อ่านสถานะใบซ่อมไม่ได้" (ไม่ใช่ "ยังไม่เปิดใบ")
   const moFollow = await loadAmMoFollow({ resultByJig, amClIds, shiftStart: si.shiftStart })
 
   return {
     ok: true, shift: si, jigs, targets, lines: linesForFam, resultByJig, firstOrderByLine,
     openSessionLines: openFam, runByLine, moFollow,
+    amStations: st.data, amStationsError: st.error,
   }
+}
+
+/** 🧩 สถานี AM (23/11) — ป้อน `stationMateKeysFn()`: เพื่อนร่วมสถานีมีใบผลิต = ตัวนี้ต้องตรวจด้วย
+ *  🔴 อ่านไม่ได้ = `data:null` + `error` (ไม่ล้มทั้งบอร์ด) ⇒ กฎสถานีไม่ทำงาน = พฤติกรรมเดิม · จอต้องเขียนบอก
+ *  ตารางเล็ก (หลักสิบแถว) — ไม่ผ่าน cache ให้แก้สถานีแล้วเห็นผลทันที */
+export async function loadAmStations() {
+  const [s, m] = await Promise.all([
+    supabaseDR.from('am_stations').select('id, name, line_name, is_active, sort_order').eq('is_active', true),
+    supabaseDR.from('am_station_members').select('station_id, jig_id, sort_order'),
+  ])
+  if (s.error || m.error) return { data: null, error: (s.error || m.error).message || String(s.error || m.error) }
+  return { data: { stations: s.data || [], members: m.data || [] }, error: null }
 }
 
 /* 🔧 B3 (02/11) — ใบซ่อมของผลตรวจ AM: (ก) NG กะนี้ผูก MO หรือยัง (ข) MO จากผลตรวจ AM วันก่อนที่ยังไม่ปิด
@@ -218,8 +234,56 @@ export async function loadMonthlyAm({ month, lines = null } = {}) {
   }
   const runs = await loadRunDays({ lineNames: [...names], from: rg.first, to: rg.last })
 
+  /* ⚙️ รายเครื่อง (23/11 · คำสั่ง user) — ใบผลิตของกะจริงทั้งเดือน + เลขเครื่อง ⇒ `amTargetsByRun()` ตัวเดียวกับบอร์ดวันนี้
+     🔴 อ่านไม่ได้ = `ordersByKey:null` ⇒ ตัดสินทั้งไลน์ (กฎเดิม) + จอเขียนบอก — ห้ามบีบเครื่องเป็น "ไม่เดิน" */
+  let ordersByKey = null, ordersError = null
+  if (runs.ok) {
+    const sess = runs.sessions || []
+    const sById = new Map(sess.map(x => [x.id, x]))
+    const r = sess.length
+      ? await fetchByIds(sess.map(x => x.id), c => supabaseDR.from('prod_orders').select('id, session_id, machine_no').in('session_id', c))
+      : { rows: [], error: null }
+    if (r.error) ordersError = r.error
+    else {
+      ordersByKey = new Map()
+      for (const o of r.rows || []) {
+        const x = sById.get(o.session_id)
+        if (!x?.work_date || !x.shift) continue
+        const k = runKey(x.work_date, x.shift)
+        if (!ordersByKey.has(k)) ordersByKey.set(k, [])
+        ordersByKey.get(k).push({ line_name: x.line_name, machine_no: o.machine_no ?? null })
+      }
+    }
+  }
+  const st = await loadAmStations()
+
   return {
     ok: true, month, range: rg, jigs: jigRes.data ?? [], amEquipIds, targets, lines: linesAll, inspections,
     runsByKey: runs.ok ? runs.byKey : null, runsError: runs.ok ? null : (runs.error?.message || String(runs.error)),
+    ordersByKey, ordersError, amStations: st.data, amStationsError: st.error,
   }
+}
+
+/** 🗓️ รอบตรวจรายหัวข้อ AM (26/11 · utils/amCheckFreq.js) — "ข้อนี้มีผลตรวจในช่องไหนบ้าง" ย้อนถึงต้นรอบที่ยาวสุด
+ *  ดึงเฉพาะข้อที่ไม่ใช่ "ทุกกะ" · ไม่มีข้อแบบนั้น = ไม่ยิงฐาน
+ *  @returns {Promise<{ map: Map<string,{workDate:string,shift:string}[]>|null, error: string|null }>}
+ *   🔴 `map:null` = อ่านไม่ได้ ⇒ ผู้เรียกถือว่าทุกข้อถึงรอบ + เขียนบนจอ (splitDueCps) */
+export async function loadAmCpLastDone(cps = [], now = new Date()) {
+  const ids = (cps || []).filter(c => amFreqOf(c) !== 'shift').map(c => c.id)
+  if (!ids.length) return { map: new Map(), error: null }
+  const slot = amSlotOf(now)
+  const from = slot ? lookbackStart(slot.workDate) : null
+  if (!from) return { map: null, error: 'คำนวณช่วงรอบไม่ได้' }
+  const r = await fetchByIds(ids, c => supabaseDR.from('inspection_results')
+    .select('id, checkpoint_id, inspections!inner(inspected_at)').in('checkpoint_id', c)
+    .gte('inspections.inspected_at', `${from}T08:00:00+07:00`))
+  if (r.error) return { map: null, error: r.error }
+  const map = new Map()
+  for (const row of r.rows || []) {
+    const s = amSlotOf(row.inspections?.inspected_at)
+    if (!s) continue
+    if (!map.has(row.checkpoint_id)) map.set(row.checkpoint_id, [])
+    map.get(row.checkpoint_id).push(s)
+  }
+  return { map, error: null }
 }

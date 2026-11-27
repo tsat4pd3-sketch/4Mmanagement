@@ -42,13 +42,13 @@ const COLS = 'id, prod_order_id, prod_no, mat_no, part_name, qty_expected, dest_
   + 'partial_reason, status, qty_received, diff_reason, received_by, received_at, created_at';
 
 const ZONES = (withDone) => [
-  { key: 'stale', statuses: ['stale'], label: '⏰ ค้างเกินกำหนด', color: '#ef4444', hint: 'ปิดใบผลิตนานแล้วยังไม่มีใครรับ — ตามของก่อน' },
-  { key: 'pending', statuses: ['pending'], label: 'รอรับเข้า', color: '#f59e0b', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
-  ...(withDone ? [{ key: 'received', statuses: ['received'], label: '✅ รับแล้ว (วันนี้)', color: '#22c55e', hint: '' }] : []),
+  { key: 'stale', statuses: ['stale'], label: '⏰ ค้างเกินกำหนด', color: 'var(--red)', hint: 'ปิดใบผลิตนานแล้วยังไม่มีใครรับ — ตามของก่อน' },
+  { key: 'pending', statuses: ['pending'], label: 'รอรับเข้า', color: 'var(--amber)', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
+  ...(withDone ? [{ key: 'received', statuses: ['received'], label: '✅ รับแล้ว (วันนี้)', color: 'var(--green)', hint: '' }] : []),
 ];
 const hhmm = (iso) => {
   const d = iso ? new Date(iso) : null;
-  return d && !isNaN(d) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} น.` : null;
+  return d && !isNaN(d) ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} ${tr("น.")}` : null;
 };
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -136,10 +136,10 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
       p_by: fullName || actor.name || '', p_by_uid: actor.uid || null,
     });
     setBusy(null);
-    if (error) { toast.error(`รับเข้าไม่สำเร็จ — ${error.message}`); load(); return false; }
+    if (error) { toast.error(`${tr("รับเข้าไม่สำเร็จ")} — ${error.message}`); load(); return false; }
     toast.success(Number(qty) === Number(r.qty_expected)
-      ? `✅ รับเข้า ${r.dest_line_name} · ${r.mat_no} +${fmt(qty)}`
-      : `✅ รับเข้า ${fmt(qty)} จากใบ ${fmt(r.qty_expected)} (${reason})`);
+      ? `✅ ${tr("รับเข้า")} ${r.dest_line_name} · ${r.mat_no} +${fmt(qty)}`
+      : `✅ ${tr("รับเข้า")} ${fmt(qty)} ${tr("จากใบ")} ${fmt(r.qty_expected)} (${reason})`);
     load();
     return true;
   };
@@ -156,11 +156,11 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
       p_by: fullName || actor.name || '', p_by_uid: actor.uid || null,
     });
     setBusy(null);
-    if (error) { toast.error(`รับเข้าไม่สำเร็จ — ${error.message}`); load(); return false; }
+    if (error) { toast.error(`${tr("รับเข้าไม่สำเร็จ")} — ${error.message}`); load(); return false; }
     toast.success(alloc.diff === 0
-      ? `✅ รับเข้า ${g.dest_line_name} · ${g.mat_no} +${fmt(alloc.got)} (ปิด ${g.count} ใบ)`
-      : `✅ รับเข้า ${fmt(alloc.got)} จากใบรวม ${fmt(g.expected)} · ปิด ${g.count} ใบ`
-        + (alloc.zeroed ? ` · ${alloc.zeroed} ใบยังมาไม่ถึง (ได้ 0)` : ''));
+      ? `✅ ${tr("รับเข้า")} ${g.dest_line_name} · ${g.mat_no} +${fmt(alloc.got)} (${tr("ปิด")} ${g.count} ${tr("ใบ")})`
+      : `✅ ${tr("รับเข้า")} ${fmt(alloc.got)} ${tr("จากใบรวม")} ${fmt(g.expected)} · ${tr("ปิด")} ${g.count} ${tr("ใบ")}`
+        + (alloc.zeroed ? ` · ${alloc.zeroed} ${tr("ใบยังมาไม่ถึง (ได้")} 0)` : ''));
     load();
     return true;
   };
@@ -187,7 +187,7 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
           <option value="">{tr('ต้นทาง: ทุกไลน์')}</option>
           {srcs.map(x => <option key={x} value={x}>{tr('ต้นทาง:')} {x}</option>)}
         </select>
-        <SearchInput value={q} onChange={setQ} fields="เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์" grow={false} onKeyDown={onSearchKey} />
+        <SearchInput value={q} onChange={setQ} fields={tr("เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์")} grow={false} onKeyDown={onSearchKey} />
         <button type="button" onClick={() => { setByGroup(v => !v); setDiffFor(null); setOpenKey(null); }}
           style={storeBtn(byGroup ? 'primary' : 'secondary', { minHeight: 36, padding: '6px 12px', fontSize: 12.5 })}>
           {byGroup ? tr('🧺 รวมเป็นกอง') : tr('📄 ทีละใบ')}
@@ -212,12 +212,12 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
       {/* ตัวเลขสรุป 4 ช่อง (mockup) — "รับแล้ว"/"รับไม่ครบ" = 24 ชม. ล่าสุดตามที่คิวนี้โหลดจริง ไม่ใช่ "วันนี้" */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
         {[
-          { k: 'รอรับ', v: `${fmt(pendingCount)} ใบ`, sub: `${fmt(pendingQty)} ชิ้น` },
-          { k: 'ค้างเกินกำหนด', v: `${fmt(staleCount)} ใบ`, sub: 'ปิดใบนานแล้วยังไม่มีคนรับ', bad: staleCount > 0 },
-          { k: 'รับแล้ว 24 ชม.', v: `${fmt(recv24.length)} ใบ` },
-          { k: 'รับไม่ครบ 24 ชม.', v: `${fmt(short24)} ใบ`, link: short24 > 0 },
+          { k: 'รอรับ', v: `${fmt(pendingCount)} ${tr("ใบ")}`, sub: `${fmt(pendingQty)} ${tr("ชิ้น")}` },
+          { k: 'ค้างเกินกำหนด', v: `${fmt(staleCount)} ${tr("ใบ")}`, sub: 'ปิดใบนานแล้วยังไม่มีคนรับ', bad: staleCount > 0 },
+          { k: 'รับแล้ว 24 ชม.', v: `${fmt(recv24.length)} ${tr("ใบ")}` },
+          { k: 'รับไม่ครบ 24 ชม.', v: `${fmt(short24)} ${tr("ใบ")}`, link: short24 > 0 },
         ].map(c => (
-          <div key={c.k} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '8px 12px', boxShadow: 'var(--shadow-sm)' }}>
+          <div key={c.k} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '8px 12px', boxShadow: 'var(--shadow-sm)' }}>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>{tr(c.k)}</div>
             <div style={{ fontSize: 21, fontWeight: 800, color: c.bad ? 'var(--red)' : 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{c.v}</div>
             {c.sub && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr(c.sub)}</div>}
@@ -226,11 +226,11 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
         ))}
       </div>
 
-      {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>{tr('⚠ โหลดคิวไม่ครบ —')} {loadErr} {tr('· ตัวเลขบนจออาจขาด')}</div>}
+      {loadErr && <div style={{ fontSize: 12.5, color: 'var(--red)' }}>{tr('⚠ โหลดคิวไม่ครบ —')} {loadErr} {tr('· ตัวเลขบนจออาจขาด')}</div>}
 
       {byGroup && (groups.length === 0
         ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            {pendingCount === 0 && !loadErr ? 'ไม่มีของรอรับเข้า — ใบที่ปิดแล้วรับครบหมด' : `ไม่มีใบที่ตรงตัวกรอง${q ? ` "${q}"` : ''}`}
+            {pendingCount === 0 && !loadErr ? tr("ไม่มีของรอรับเข้า — ใบที่ปิดแล้วรับครบหมด") : `${tr("ไม่มีใบที่ตรงตัวกรอง")}${q ? ` "${q}"` : ''}`}
           </div>
         : <StatusZones layout={table ? 'table' : 'cards'} rows={groups} zones={ZONES(false)} statusOf={g => receiptZoneStatus(g.slips[0], staleOf, now)} renderCard={g => {
             const oldest = g.slips[0];
@@ -245,57 +245,57 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
             return (
               <PartCard key={g.key} code={g.mat_no} name={g.part_name} img={imgOf(g.mat_no)} alert={stale}
                 status={stale ? { label: tr('⏰ ค้าง'), color: toneVar('bad') } : { label: tr('📥 รอรับ'), color: toneVar('warn') }}
-                metric={{ label: 'ยอดตามใบผลิตรวม', value: fmt(g.expected), unit: 'ชิ้น' }}
-                aside={{ label: 'เข้าคลัง', value: g.dest_line_name }}
+                metric={{ label: tr("ยอดตามใบผลิตรวม"), value: fmt(g.expected), unit: tr("ชิ้น") }}
+                aside={{ label: tr("เข้าคลัง"), value: g.dest_line_name }}
                 rows={[
-                  { k: 'จากไลน์', v: g.source_line },
-                  { k: 'จำนวนใบ', v: `${g.count} ใบ` },
-                  { k: 'ค้างนานสุด', v: `${ageText(age)} (ปิดใบ ${hhmm(oldest?.created_at) || '—'})` },
+                  { k: tr("จากไลน์"), v: g.source_line },
+                  { k: tr("จำนวนใบ"), v: `${g.count} ${tr("ใบ")}` },
+                  { k: tr("ค้างนานสุด"), v: `${ageText(age)} (${tr("ปิดใบ")} ${hhmm(oldest?.created_at) || '—'})` },
                 ]}
                 footer={
                   <div style={{ display: 'grid', gap: 8 }}>
                     {canReceive && (editing ? (
                       <>
                         <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-                          ยอดที่นับได้จริงของทั้งกอง (ใบผลิตรวม {fmt(g.expected)})
+                          {tr("ยอดที่นับได้จริงของทั้งกอง (ใบผลิตรวม")} {fmt(g.expected)})
                           <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                             onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                             style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', fontSize: 15, fontWeight: 800,
-                              borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
+                              borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2-surf)', color: 'var(--text)', boxSizing: 'border-box' }} />
                         </label>
                         {prev && prev.diff !== 0 && (
                           <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-                            ปันแบบ <b>ใบเก่าก่อน</b>: {nFull} ใบได้เต็ม{nPart ? ` · ${nPart} ใบได้บางส่วน` : ''}
+                            {tr("ปันแบบ")} <b>{tr("ใบเก่าก่อน")}</b>: {nFull} {tr("ใบได้เต็ม")}{nPart ? ` · ${nPart} ${tr("ใบได้บางส่วน")}` : ''}
                             {prev.zeroed ? <> · <b style={{ color: toneVar('warn') }}>{prev.zeroed} {tr('ใบได้ 0')}</b> {tr('(ของยังมาไม่ถึง)')}</> : null}
                           </div>
                         )}
                         <input placeholder={tr('เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 24 / ยังมาไม่ครบ')} value={form.reason}
                           onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                          style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                          style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2-surf)', color: 'var(--text)' }} />
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button type="button" disabled={busy === g.key} style={storeBtn('primary', { flex: 1 })}
                             onClick={async () => { if (await receiveGroup(g, form.qty, form.reason.trim())) setDiffFor(null); }}>
-                            {busy === g.key ? 'กำลังบันทึก…' : `✅ รับเข้า ${form.qty === '' ? '' : fmt(form.qty)}`}
+                            {busy === g.key ? tr("กำลังบันทึก…") : `✅ ${tr("รับเข้า")} ${form.qty === '' ? '' : fmt(form.qty)}`}
                           </button>
-                          <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>ยกเลิก</button>
+                          <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>{tr("ยกเลิก")}</button>
                         </div>
                       </>
                     ) : (
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button type="button" disabled={busy === g.key} style={storeBtn('primary', { flex: 1 })}
                           onClick={() => receiveGroup(g, g.expected, '')}>
-                          {busy === g.key ? 'กำลังบันทึก…' : `✅ นับแล้วตรง · รับ ${fmt(g.expected)} (${g.count} ใบ)`}
+                          {busy === g.key ? tr("กำลังบันทึก…") : `✅ ${tr("นับแล้วตรง · รับ")} ${fmt(g.expected)} (${g.count} ${tr("ใบ")})`}
                         </button>
                         <button type="button" style={storeBtn('secondary')}
                           onClick={() => { setDiffFor(g.key); setForm({ qty: String(g.expected), reason: '' }); }}>
-                          ✏️ ยอดไม่ตรง
+                          ✏️ {tr("ยอดไม่ตรง")}
                         </button>
                       </div>
                     ))}
                     {/* 🔴 "กางดูรายใบ" ต้องมีเสมอ — ยุบเพื่อกด ไม่ใช่ยุบการเก็บ */}
                     <button type="button" style={storeBtn('secondary', { minHeight: 30, fontSize: 12 })}
                       onClick={() => setOpenKey(k => (k === g.key ? null : g.key))}>
-                      {open ? '▲ ซ่อนรายใบ' : `▼ กางดูรายใบ (${g.count} ใบ)`}
+                      {open ? tr("▲ ซ่อนรายใบ") : `▼ ${tr("กางดูรายใบ")} (${g.count} ${tr("ใบ")})`}
                     </button>
                     {open && (
                       <div style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 'var(--radius)' }}>
@@ -305,7 +305,7 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
                             <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {x.prod_no || '—'}{x.partial_reason ? ` · ${x.partial_reason}` : ''}
                             </span>
-                            <span style={{ whiteSpace: 'nowrap' }}>{fmt(x.qty_expected)} ชิ้น · {hhmm(x.created_at) || '—'}</span>
+                            <span style={{ whiteSpace: 'nowrap' }}>{fmt(x.qty_expected)} {tr("ชิ้น")} · {hhmm(x.created_at) || '—'}</span>
                           </div>
                         ))}
                       </div>
@@ -317,7 +317,7 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
 
       {!byGroup && (shown.length === 0
         ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            {rows.length === 0 && !loadErr ? 'ไม่มีของรอรับเข้า — ใบที่ปิดแล้วรับครบหมด' : `ไม่มีใบที่ตรงตัวกรอง${q ? ` "${q}"` : ''}`}
+            {rows.length === 0 && !loadErr ? tr("ไม่มีของรอรับเข้า — ใบที่ปิดแล้วรับครบหมด") : `${tr("ไม่มีใบที่ตรงตัวกรอง")}${q ? ` "${q}"` : ''}`}
           </div>
         : <StatusZones layout={table ? 'table' : 'cards'} rows={shown} zones={ZONES(showDone)} statusOf={r => receiptZoneStatus(r, staleOf, now)} renderCard={r => {
             const age = receiptAgeMin(r, now);
@@ -327,19 +327,19 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
             return (
               <PartCard key={r.id} code={r.mat_no} name={r.part_name} img={imgOf(r.mat_no)} alert={stale}
                 status={pending
-                  ? (stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: 'รอรับ', color: '#f59e0b' })
-                  : { label: '✅ รับแล้ว', color: '#22c55e' }}
-                metric={{ label: pending ? 'ยอดตามใบผลิต' : 'รับเข้าจริง', value: fmt(pending ? r.qty_expected : r.qty_received), unit: 'ชิ้น' }}
-                aside={{ label: 'เข้าคลัง', value: r.dest_line_name }}
+                  ? (stale ? { label: '⏰ ค้าง', color: 'var(--red)' } : { label: 'รอรับ', color: 'var(--amber)' })
+                  : { label: '✅ รับแล้ว', color: 'var(--green)' }}
+                metric={{ label: pending ? 'ยอดตามใบผลิต' : 'รับเข้าจริง', value: fmt(pending ? r.qty_expected : r.qty_received), unit: tr("ชิ้น") }}
+                aside={{ label: tr("เข้าคลัง"), value: r.dest_line_name }}
                 dim={!pending}
                 rows={[
-                  { k: 'จากไลน์', v: r.source_line },
-                  { k: 'ใบผลิต', v: r.prod_no },
-                  { k: 'ปิดใบ', v: `${hhmm(r.created_at) || '—'} · ${ageText(age)} ที่แล้ว` },
+                  { k: tr("จากไลน์"), v: r.source_line },
+                  { k: tr("ใบผลิต"), v: r.prod_no },
+                  { k: tr("ปิดใบ"), v: `${hhmm(r.created_at) || '—'} · ${ageText(age)} ${tr("ที่แล้ว")}` },
                   /* 19/11 — ใบคืนจากถังเหลือง (QA งานดี/ซ่อมผ่าน · trigger fn_qbin_return_receipt) เขียนเหตุผลเต็มประโยคมาเอง */
-                  { k: 'หมายเหตุ', v: r.partial_reason ? (String(r.partial_reason).startsWith('คืนจาก') ? r.partial_reason : `ยอดบางส่วนจาก${r.partial_reason}`) : null },
-                  { k: 'ผู้รับ', v: pending ? null : `${r.received_by || '—'} · ${hhmm(r.received_at) || ''}` },
-                  { k: 'ส่วนต่าง', v: !pending && r.diff_reason ? `${fmt(r.qty_received - r.qty_expected)} — ${r.diff_reason}` : null },
+                  { k: tr("หมายเหตุ"), v: r.partial_reason ? (String(r.partial_reason).startsWith('คืนจาก') ? r.partial_reason : `${tr("ยอดบางส่วนจาก")}${r.partial_reason}`) : null },
+                  { k: tr("ผู้รับ"), v: pending ? null : `${r.received_by || '—'} · ${hhmm(r.received_at) || ''}` },
+                  { k: tr("ส่วนต่าง"), v: !pending && r.diff_reason ? `${fmt(r.qty_received - r.qty_expected)} — ${r.diff_reason}` : null },
                 ]}
                 footer={pending && canReceive ? (editing ? (
                   <div style={{ display: 'grid', gap: 8 }}>
@@ -348,15 +348,15 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
                       <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                         onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                         style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', fontSize: 15, fontWeight: 800,
-                          borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
+                          borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2-surf)', color: 'var(--text)', boxSizing: 'border-box' }} />
                     </label>
                     <input placeholder={tr('เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ')} value={form.reason}
                       onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2-surf)', color: 'var(--text)' }} />
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button type="button" disabled={busy === r.id} style={storeBtn('primary', { flex: 1 })}
                         onClick={async () => { if (await receive(r, form.qty, form.reason.trim())) setDiffFor(null); }}>
-                        {busy === r.id ? 'กำลังบันทึก…' : `✅ รับเข้า ${form.qty === '' ? '' : fmt(form.qty)}`}
+                        {busy === r.id ? tr("กำลังบันทึก…") : `✅ ${tr("รับเข้า")} ${form.qty === '' ? '' : fmt(form.qty)}`}
                       </button>
                       <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>{tr('ยกเลิก')}</button>
                     </div>
@@ -365,11 +365,11 @@ export default function StockReceiptQueue({ banner = null, table = false }) {
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button type="button" disabled={busy === r.id} style={storeBtn('primary', { flex: 1 })}
                       onClick={() => receive(r, r.qty_expected, '')}>
-                      {busy === r.id ? 'กำลังบันทึก…' : `✅ นับแล้วตรง · รับ ${fmt(r.qty_expected)}`}
+                      {busy === r.id ? tr("กำลังบันทึก…") : `✅ ${tr("นับแล้วตรง · รับ")} ${fmt(r.qty_expected)}`}
                     </button>
                     <button type="button" style={storeBtn('secondary')}
                       onClick={() => { setDiffFor(r.id); setForm({ qty: String(r.qty_expected), reason: '' }); }}>
-                      ✏️ ยอดไม่ตรง
+                      ✏️ {tr("ยอดไม่ตรง")}
                     </button>
                   </div>
                 )) : null} />

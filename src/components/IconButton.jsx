@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ 🔘 IconButton / DeleteButton — ปุ่มไอคอนในแถวรายการ (2026-10-06 · feedback user) ══════════
    *"รูปถังขยะสำหรับลบก็ดูไม่สมส่วน เล็กจนดูไม่ออก"* (ภาพ /org-setup บน Windows)
    ต้นเหตุ: ปุ่มลบเดิมเป็นอีโมจิ 🗑️ เปล่าๆ `fontSize 11–13` ไม่มีกรอบ ⇒
@@ -33,7 +34,7 @@ export function TrashIcon({ size = 16 }) {
 }
 
 /** ปุ่มลบมาตรฐาน — `title` ควรบอกว่าลบอะไร (เช่น "ลบไลน์") ไม่ใช่แค่ "ลบ" */
-export function DeleteButton({ title = 'ลบ', ...rest }) {
+export function DeleteButton({ title = tr("ลบ"), ...rest }) {
   return <IconButton danger title={title} {...rest}><TrashIcon /></IconButton>;
 }
 

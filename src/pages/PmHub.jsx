@@ -33,6 +33,8 @@ const PmForecast    = lazy(() => import('./PmForecast'));
 const PmCoordination = lazy(() => import('./PmCoordination'));
 const PMSetup       = lazy(() => import('./PMSetup'));
 const MaintenanceLevels = lazy(() => import('./MaintenanceLevels'));
+const PmMonthlyReport = lazy(() => import('../components/PmMonthlyReport'));
+const EquipSpc = lazy(() => import('../components/EquipSpcTab'));
 
 /* เรียงตาม "ความถี่ที่ใช้จริง" ไม่ใช่ลำดับ workflow —
    ช่างเปิดจอมาเพื่อ *ตรวจ* ทุกวัน ส่วน *ตั้งค่า* นานๆ ครั้ง (หลักเดียวกับ DailyChecker) */
@@ -47,6 +49,13 @@ const TABS = [
      piggyback สิทธิ์ page:/pm-forecast (ทุก role เข้าได้อยู่แล้ว) ⇒ ไม่ต้อง seed สิทธิ์ใหม่ · ไม่มี route แยก */
   { key: 'levels',   label: '3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
     hint: 'แผนบอกว่าถึงเวลาไหม → ข้อมูลเสียจริงบอกว่าแย่ลงไหม → ระบบแนะนำว่าควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร' },
+  /* 📅 สรุปรายเดือน + ลงนาม ③④ (19/11 · คำสั่ง user) — piggyback page:/pm-check (คนที่เห็นใบตรวจ)
+     ปุ่มลงนามคุมด้วยคีย์ pm:monthly_signoff + มอบหมายในผัง (utils/pmMonthly.js) ไม่ใช่สิทธิ์หน้า */
+  { key: 'monthly',  label: 'สรุปรายเดือน',       page: '/pm-check',        Comp: PmMonthlyReport,
+    hint: 'สรุปใบ PM ของช่างทั้งเดือน + ผจก.อนุมัติ (③) / ส่วนงานที่ถูกตรวจรับทราบ (④) + Excel' },
+  /* 📈 SPC อุปกรณ์ (26/11 · คำสั่ง user) — ค่าตัวเลขจากใบ AM/PM + ค่าชิม · piggyback page:/pm-check (คนที่เห็นใบตรวจ) · อ่านอย่างเดียว */
+  { key: 'spc',      label: 'SPC อุปกรณ์',         page: '/pm-check',        Comp: EquipSpc,
+    hint: 'กราฟควบคุม (I-MR / X̄-R) จากค่าตัวเลขในใบตรวจ AM/PM และค่าชิม — ครบ 20 จุดจึงตัดสิน in/out of control' },
   { key: 'coord',    label: 'ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
     hint: 'งาน PM ที่กินหลายวัน — นัด Production ล่วงหน้า + ช่วง Production Support' },
   { key: 'setup',    label: 'ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
@@ -67,7 +76,7 @@ export default function PmHub() {
             — 5 แท็บชื่อคล้ายกัน ไม่มีคำอธิบายคนใหม่แยกไม่ออกว่าจะเข้าอันไหน */}
         <PageHeader title={tr('ซ่อมบำรุงตามแผน (PM)')} icon="🔧"
           sub={tr(cur?.hint) || tr('ตั้งจุดตรวจ → ครบกำหนด → เตรียมล่วงหน้า → นัดผลิต → ตรวจจริง → เลื่อนรอบถัดไปเอง')}
-          tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
+          tabs={available.map(t => ({ key: t.key, label: tr(t.label) }))} tab={active} onTab={setActive} />
 
       {cur ? (
         <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>}>

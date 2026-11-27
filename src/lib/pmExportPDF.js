@@ -4,6 +4,7 @@
    ไฟล์พี่น้อง `pmExportExcel.js` lazy อยู่แล้ว · DailyReport/Checkin ก็ lazy · ตัวนี้เป็นตัวที่ตก
    ⚠️ `exportInspectionPDF` เป็น async อยู่แล้ว ⇒ เปลี่ยนเป็น lazy ได้โดยไม่กระทบผู้เรียก */
 import { supabaseDR } from '../supabaseClient'
+import { loadDeptFrames } from '../utils/jigFrames'
 import { fitContain, pinsOnFrame } from '../utils/imageFit.js'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -118,9 +119,17 @@ export async function exportInspectionPDF({
   let frameId = 'legacy'
   let frameErr = null
   {
-    const { data: fr, error: frErr } = await supabaseDR.from('jig_images')
-      .select('id, image_path, sort').eq('jig_id', jig.id).order('sort').limit(1)
-    if (frErr) frameErr = frErr.message
+    /* รูปแยกตามแผนก (26/11 · utils/jigFrames.js) — เฟรมแรกของ "แผนกเจ้าของใบนี้" ไม่ใช่ของแผนกอื่น
+       อ่านแผนกของใบไม่ได้ = เขียนบอกบนใบ (frameErr) แล้วถอยไปทุกรูปของเครื่องแบบเดิม */
+    let dept = null
+    if (inspection.checklist_id) {
+      const { data: cl, error: clErr } = await supabaseDR.from('checklists').select('department').eq('id', inspection.checklist_id).maybeSingle()
+      if (clErr) frameErr = clErr.message
+      dept = cl?.department ?? null
+    }
+    const { rows: frRows, error: frErr } = await loadDeptFrames([jig.id], dept)
+    const fr = frRows.slice(0, 1)
+    if (frErr) frameErr = frErr.message || String(frErr)
     const first = !frErr && fr?.[0]?.image_path ? fr[0] : null
     const path = first ? first.image_path : jig.image_path
     if (first) frameId = first.id

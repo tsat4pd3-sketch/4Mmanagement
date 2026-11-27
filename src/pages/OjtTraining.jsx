@@ -55,11 +55,7 @@ const LIST_SELECT_FILES = '*, ojt_training_attendees(id, sign_url), ojt_training
 const LIST_SELECT_BASE  = '*, ojt_training_attendees(id, sign_url)';
 const kbText = (n) => (n == null ? '' : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 const SCORE_LABELS = ['0', '1', '2', '3', '4'];
-const DEFAULT_SCOPE = `- รู้ความสำคัญของเอกสารแต่ละประเภท
-- รู้วัตถุประสงค์ของเอกสารที่ใช้ในไลน์ผลิต
-- เข้าใจเนื้อหาของเอกสารที่ใช้ในไลน์ผลิต
-- สามารถอธิบายเอกสารได้อย่างถูกต้อง
-- สามารถลงบันทึกเอกสารได้อย่างถูกต้อง`;
+const DEFAULT_SCOPE = `- ${tr("รู้ความสำคัญของเอกสารแต่ละประเภท\n- รู้วัตถุประสงค์ของเอกสารที่ใช้ในไลน์ผลิต\n- เข้าใจเนื้อหาของเอกสารที่ใช้ในไลน์ผลิต\n- สามารถอธิบายเอกสารได้อย่างถูกต้อง\n- สามารถลงบันทึกเอกสารได้อย่างถูกต้อง")}`;
 
 const thDate = (d) => {
   if (!d) return '';
@@ -127,7 +123,7 @@ function SignPadModal({ title, onCancel, onDone }) {
   };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <SignCanvas ref={pad} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
@@ -155,7 +151,7 @@ function SignQueueModal({ queue, onCancel, onDone }) {
 
   const keep = async () => {
     const b = await pad.current?.getBlob();
-    if (!b) { toast.error(`${cur.name} ยังไม่ได้เซ็น — ถ้าจะข้ามให้กด "ข้ามคนนี้"`); return null; }
+    if (!b) { toast.error(`${cur.name} ${tr("ยังไม่ได้เซ็น — ถ้าจะข้ามให้กด \"ข้ามคนนี้")}"`); return null; }
     const next = new Map(done); next.set(cur.idx, b); setDone(next);
     return next;
   };
@@ -166,24 +162,24 @@ function SignQueueModal({ queue, onCancel, onDone }) {
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 660px)' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 660px)' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 2 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('✍️ ส่งแท็บเล็ตให้เซ็นทีละคน')}</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>{tr('คนที่')} {pos + 1} / {total} {tr('· เซ็นแล้ว')} {done.size}</div>
         </div>
         {/* ชื่อใหญ่ — คนที่รับแท็บเล็ตต่อต้องรู้ทันทีว่าช่องนี้ของตัวเองหรือเปล่า */}
         <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--text)', lineHeight: 1.25, marginBottom: 2 }}>{cur.name}</div>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{tr('รหัส')} {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{tr('รหัส')} {cur.code || '—'}{cur.hadSign ? tr(" · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)") : ''}</div>
         <SignCanvas ref={pad} height={190} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
           <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>{tr('ข้ามคนนี้')}</button>
           <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
-            {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
+            {done.size ? `${tr("หยุดแล้วบันทึก")} ${done.size} ${tr("ลายเซ็น")}` : tr("ปิด")}
           </button>
           <button onClick={async () => { const m = await keep(); if (m) go(m); }}
             style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 20px', fontWeight: 800 }}>
-            {pos + 1 < total ? 'ถัดไป →' : 'เสร็จสิ้น'}
+            {pos + 1 < total ? tr("ถัดไป →") : tr("เสร็จสิ้น")}
           </button>
         </div>
       </div>
@@ -278,7 +274,7 @@ export default function OjtTraining() {
         .order('train_date', { ascending: false }).order('created_at', { ascending: false }).limit(300);
       setFilesOff(retry.error ? '' : (trErr.message || 'ตารางไฟล์แนบยังไม่พร้อม'));
       setTrainings(retry.data || []);
-      if (retry.error) toast.error('โหลดรายการใบอบรมไม่สำเร็จ: ' + retry.error.message);
+      if (retry.error) toast.error((tr('โหลดรายการใบอบรมไม่สำเร็จ') + ': ') + retry.error.message);
     } else {
       setFilesOff('');
       setTrainings(tr || []);
@@ -439,7 +435,7 @@ export default function OjtTraining() {
       // path ต้องอยู่ในโฟลเดอร์ auth.uid ของคนบันทึก (RLS bucket signatures) — ชื่อไฟล์กันชนด้วย timestamp
       const path = `${user.id}/ojt_${editing.id}_${idx}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.png`;
       const { error } = await supabase.storage.from('signatures').upload(path, blob, uploadOpts({ contentType: 'image/png' }));
-      if (error) { failed.push(editing.attendees[idx]?.emp_name || `คนที่ ${idx + 1}`); continue; }
+      if (error) { failed.push(editing.attendees[idx]?.emp_name || `${tr("คนที่")} ${idx + 1}`); continue; }
       urls.set(idx, supabase.storage.from('signatures').getPublicUrl(path).data.publicUrl);
       /* เซ็นทับของเดิม — **จดไว้ก่อน ลบหลังบันทึกใบสำเร็จ** (QC 05/10)
          เดิมลบไฟล์เก่าทันทีตอนเซ็น ⇒ ยกเลิก/บันทึกล้ม = แถวในฐานยังชี้ไฟล์เก่าที่ถูกลบไปแล้ว = ลายเซ็นหายถาวร
@@ -451,7 +447,7 @@ export default function OjtTraining() {
       }
     }
     /* 🔴 ล้มบางคนต้องบอกเป็นชื่อ — "บันทึกแล้ว" ทั้งที่ขาดไป 3 คน = ต้องมาตามหาทีหลังว่าใคร */
-    if (failed.length) toast.error(`อัปลายเซ็นไม่สำเร็จ ${failed.length} คน: ${failed.join(', ')} — ลองเซ็นใหม่เฉพาะคนนั้น`);
+    if (failed.length) toast.error(`${tr("อัปลายเซ็นไม่สำเร็จ")} ${failed.length} ${tr("คน")}: ${failed.join(', ')} — ${tr("ลองเซ็นใหม่เฉพาะคนนั้น")}`);
     return { urls, oldPaths };
   };
 
@@ -472,7 +468,7 @@ export default function OjtTraining() {
       if (!res) return;
       applySignUrls(res);
       if (res.urls.size) toast.success('บันทึกลายเซ็นแล้ว');
-    } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+    } catch (e) { toast.error((tr('เกิดข้อผิดพลาด') + ': ') + e.message); }
   };
 
   /* 📱 จบโหมดวนเซ็น — อัปทุกลายเซ็นรวดเดียว (เน็ต 1 รอบแทน N รอบ) */
@@ -484,8 +480,8 @@ export default function OjtTraining() {
       const res = await uploadSignatures([...map.entries()].map(([idx, blob]) => ({ idx, blob })));
       if (!res) return;
       applySignUrls(res);
-      if (res.urls.size) toast.success(`บันทึกลายเซ็น ${res.urls.size} คนแล้ว — อย่าลืมกดบันทึกใบ`);
-    } catch (e) { toast.error('เกิดข้อผิดพลาด: ' + e.message); }
+      if (res.urls.size) toast.success(`${tr("บันทึกลายเซ็น")} ${res.urls.size} ${tr("คนแล้ว — อย่าลืมกดบันทึกใบ")}`);
+    } catch (e) { toast.error((tr('เกิดข้อผิดพลาด') + ': ') + e.message); }
     finally { setSigningQueue(false); }
   };
 
@@ -546,7 +542,7 @@ export default function OjtTraining() {
            ไฟล์ลายเซ็นที่ลบด้านล่างเป็นของ "รอบที่ถูกเซ็นทับ" ไม่ใช่ของแถวที่ลบที่นี่ */
         const { error: delErr } = await del;
         // ชุดใหม่บันทึกครบแล้ว — ลบคนที่เอาออกไม่สำเร็จ = เตือน (คนนั้นยังค้างในใบ) ไม่ใช่ล้มทั้งใบ
-        if (delErr) toast.error('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ): ' + delErr.message);
+        if (delErr) toast.error((tr('บันทึกใบแล้ว แต่เอารายชื่อที่ลบออกไม่สำเร็จ (ยังค้างในใบ') + '): ') + delErr.message);
       }
       /* 📎 ไฟล์แนบ — insert เฉพาะตัวใหม่ · ลบเฉพาะตัวที่กดเอาออก (ไฟล์ที่ค้างไว้ไม่มีอะไรให้แก้)
          ล้มที่ขั้นนี้ **ไม่ล้มทั้งใบ** (ใบ+รายชื่อบันทึกไปแล้ว) แต่ต้องบอกให้ชัดว่าใบผ่าน ไฟล์ไม่ผ่าน */
@@ -574,17 +570,17 @@ export default function OjtTraining() {
         event: 'ojt_training', type: 'info', ref_table: 'ojt_trainings', ref_id: editing.id,
         section: sectionValueForSave(editing.section) || null, actor: fullName,
         lines: [
-          `🎓 ${editing.topic || '(ไม่ระบุหัวข้อ)'}`,
+          `🎓 ${editing.topic || tr('(ไม่ระบุหัวข้อ)')}`,
           `📅 ${editing.train_date}${editing.time_from ? ` ${editing.time_from}-${editing.time_to || ''}` : ''}`,
           `🏢 ${[editing.section, editing.department].filter(Boolean).join(' · ') || '—'}`,
-          `👥 ผู้เข้าอบรม ${editing.attendees.length} คน · ผู้สอน ${editing.trainer_name || '—'}`,
+          `👥 ${tr("ผู้เข้าอบรม")} ${editing.attendees.length} ${tr("คน · ผู้สอน")} ${editing.trainer_name || '—'}`,
         ],
       });
       toast.success('บันทึกใบอบรม OJT เรียบร้อย');
       setEditing(null);
       load();
     } catch (e) {
-      toast.error('บันทึกไม่สำเร็จ: ' + e.message);
+      toast.error((tr('บันทึกไม่สำเร็จ') + ': ') + e.message);
     } finally { setSaving(false); }
   };
 
@@ -600,12 +596,12 @@ export default function OjtTraining() {
   const canRemoveSheet = (t) => mayDelete || (ownsSheet(t) && !sheetSigned(t));
 
   const handleDelete = async (t) => {
-    if (!await askConfirm(`ลบใบอบรม "${t.topic || thDate(t.train_date)}" ? (รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย)`)) return;
+    if (!await askConfirm(`${tr("ลบใบอบรม")} "${t.topic || thDate(t.train_date)}" ? (${tr("รายชื่อ+ลายเซ็นพนักงานในใบนี้จะถูกลบด้วย")})`)) return;
     const { data: att, error: attErr } = await supabase.from('ojt_training_attendees').select('sign_url').eq('training_id', t.id);
     if (!mayDelete) {
       // ทางที่ 2 (เจ้าของใบ) — ทวนเงื่อนไขกับข้อมูลสดอีกรอบ ชิปบนจออาจเก่ากว่าความจริง
       if (!ownsSheet(t)) { toast.error('ลบได้เฉพาะใบที่คุณเป็นคนสร้าง — ใบของคนอื่นต้องให้ระดับจัดการลบ'); return; }
-      if (attErr) { toast.error('ตรวจลายเซ็นในใบไม่สำเร็จ จึงยังไม่ลบ: ' + attErr.message); return; }
+      if (attErr) { toast.error((tr('ตรวจลายเซ็นในใบไม่สำเร็จ จึงยังไม่ลบ') + ': ') + attErr.message); return; }
       if ((att || []).some(a => a.sign_url)) { toast.error('ใบนี้มีพนักงานเซ็นแล้ว — ลบได้เฉพาะระดับจัดการ (แก้ไขใบแทนได้)'); return; }
     }
     // ไฟล์แนบ: อ่าน URL ไว้ก่อน (แถวจะหายไปกับ cascade) แล้วค่อยลบไฟล์หลังยืนยันว่าใบหายจริง
@@ -683,6 +679,10 @@ export default function OjtTraining() {
 body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse}
 @media print{@page{size:A4 portrait;margin:7mm}body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+/* เลขฟอร์มซ้ายล่าง · Issue Date ขวาล่าง ทุกหน้า — ตำแหน่งเดียวกับใบกระดาษ FM-HRM-004 (feedback 20/11)
+   เดิมพิมพ์ 9px ต่อท้ายเนื้อหา คนมองไม่เห็น + ไม่มีวันที่ */
+.docfoot{margin-top:4px;font-size:10px;display:flex;justify-content:space-between}
+@media print{.docfoot{position:fixed;left:0;right:0;bottom:0;margin:0}body{padding-bottom:10mm !important}}
 </style></head><body style="padding:6mm">
 <div style="font-size:9px;text-align:right">หน้า 1 ของ ${1 + printImgs.length} ${tr('หน้า')}</div>
 <table style="width:100%;border:1px solid #000">
@@ -696,15 +696,15 @@ table{border-collapse:collapse}
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${makerSig ? `<img src="${makerSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>${sigLabels[0] || 'ผู้จัดทำ'}</div><div>(${t.maker_name || '....................'})</div>
+      <div>${sigLabels[0] || tr('ผู้จัดทำ')}</div><div>(${t.maker_name || '....................'})</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${apprSig ? `<img src="${apprSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>${sigLabels[1] || 'ระดับจัดการอนุมัติ'}</div><div>(${t.approver_name || '....................'})</div>
+      <div>${sigLabels[1] || tr('ระดับจัดการอนุมัติ')}</div><div>(${t.approver_name || '....................'})</div>
     </td>
     <td style="border:1px solid #000;width:130px;text-align:center;vertical-align:bottom;padding:4px;font-size:10px">
       ${hrSig ? `<img src="${hrSig}" style="height:26px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-      <div>${sigLabels[2] || 'ผู้รับทราบ'}</div><div>(${t.hr_name || '....................'})</div>
+      <div>${sigLabels[2] || tr('ผู้รับทราบ')}</div><div>(${t.hr_name || '....................'})</div>
     </td>
   </tr>
   <tr>
@@ -736,7 +736,7 @@ table{border-collapse:collapse}
   <tr>
     <td style="border:1px solid #000;padding:3px 6px;vertical-align:top">${topicHtml}</td>
     <td style="border:1px solid #000;padding:3px 6px;text-align:center;vertical-align:middle">${t.trainer_name || ''}</td>
-    <td style="border:1px solid #000;padding:3px 6px;text-align:center;vertical-align:middle">${t.duration_min ? `${t.duration_min} นาที` : ''}</td>
+    <td style="border:1px solid #000;padding:3px 6px;text-align:center;vertical-align:middle">${t.duration_min ? `${t.duration_min} ${tr("นาที")}` : ''}</td>
     <td style="border:1px solid #000;padding:3px 6px;vertical-align:top">${scopeHtml}</td>
   </tr>
 </table>
@@ -779,10 +779,10 @@ table{border-collapse:collapse}
   4. กำหนดให้มีการทวนสอบภาคทฤษฎีและปฏิบัติหลังการอบรมสอนงานไม่น้อยกว่า 1 เดือนหลังจากการอบรม 1 ฉบับ
 </div>
 ${attachAll.length ? `<div style="margin-top:4px;border:1px solid #000;padding:3px 6px;font-size:9px">
-  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} {tr('รายการ')}</b>${attachImgs.length > printImgs.length ? ` (พิมพ์รูปต่อท้าย ${printImgs.length} รูป · อีก ${attachImgs.length - printImgs.length} รูปดูในระบบ)` : ''}
+  <b>เอกสาร/รูปแนบในระบบ ${attachAll.length} {tr('รายการ')}</b>${attachImgs.length > printImgs.length ? ` (${tr("พิมพ์รูปต่อท้าย")} ${printImgs.length} ${tr("รูป · อีก")} ${attachImgs.length - printImgs.length} ${tr("รูปดูในระบบ")})` : ''}
   ${attachDocs.length ? `<div>ไฟล์เอกสาร (ดูในระบบ): ${attachDocs.map((f, i) => `${i + 1}. ${f.file_name || attachFileName(f.file_url)}`).join(' &nbsp;·&nbsp; ')}</div>` : ''}
 </div>` : ''}
-<div style="margin-top:2px;font-size:9px;display:flex;justify-content:space-between"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Effective Date : " + df.effective_date : ""}</span></div>
+<div class="docfoot"><span>${fullCode(df)}${df.footer_note ? " · " + df.footer_note : ""}</span><span>${df.effective_date ? "Issue Date : " + String(df.effective_date).slice(0, 10).split('-').reverse().join('/') : ""}</span></div>
 ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;padding-top:4mm">
   <div style="font-size:10px;margin-bottom:3px"><b>เอกสารแนบ ${i + 1}/${printImgs.length}</b> — ${f.file_name || attachFileName(f.file_url)}
     &nbsp;·&nbsp; ใบอบรม OJT ${thDate(t.train_date)} ${t.topic ? `(${(t.topic || '').split('\n')[0]})` : ''}</div>
@@ -842,7 +842,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
   const signSelfOjt = async (kind) => {
     const S = SELF_SIGN[kind];
-    if (!editing?.id || editing.isNew) return toast.info(`บันทึกใบก่อน แล้วจึง${S.verb}ได้`);
+    if (!editing?.id || editing.isNew) return toast.info(`${tr("บันทึกใบก่อน แล้วจึง")}${S.verb}${tr("ได้")}`);
     const deny = signDenyFor(kind);
     if (deny) return toast.error(deny);
     const { data: { user } } = await supabase.auth.getUser();
@@ -857,11 +857,11 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
       effect: mySig ? 'ลงชื่อ + ลายเซ็นของคุณบนใบนี้' : 'ลงชื่อ + เวลาของคุณบนใบนี้ (โปรไฟล์ยังไม่มีลายเซ็น)',
     })) return;
     const patch = { [S.nameKey]: fullName || null, [S.uidKey]: user.id, [S.sigKey]: mySig, [S.atKey]: new Date().toISOString() };
-    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), `${S.verb}ใบอบรม`);
+    const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), `${S.verb}${tr("ใบอบรม")}`);
     if (!rows) return;
     setEditing(prev => ({ ...prev, ...patch }));
     setTrainings(prev => prev.map(t => (t.id === editing.id ? { ...t, ...patch } : t)));
-    toast.success(`${S.verb}แล้ว`);
+    toast.success(`${S.verb}${tr("แล้ว")}`);
   };
 
   /* 🔓 ปลดลายเซ็น — เซ็นแล้วเจ้าตัวแก้เองไม่ได้ ต้องให้ผู้ถือสิทธิ์ที่สูงกว่าปลด (หลักเดียวกับใบ MO) */
@@ -869,7 +869,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     const S = SELF_SIGN[kind];
     if (!mayDelete) return toast.error('ปลดลายเซ็นได้เฉพาะผู้ถือสิทธิ์ลบใบอบรม (ojt:delete)');
     if (typeof window !== 'undefined'
-      && !await askConfirm(`ปลดลายเซ็น "${S.label}" ของ "${editing[S.nameKey] || '—'}" ?\n\nใบจะกลับไปสถานะรอ และต้องให้เจ้าตัวกดเซ็นใหม่`)) return;
+      && !await askConfirm(`${tr("ปลดลายเซ็น")} "${S.label}" ${tr("ของ")} "${editing[S.nameKey] || '—'}" ?\n\n${tr("ใบจะกลับไปสถานะรอ และต้องให้เจ้าตัวกดเซ็นใหม่")}`)) return;
     const patch = { [S.nameKey]: null, [S.uidKey]: null, [S.sigKey]: null, [S.atKey]: null };
     const rows = await checkWriteRows(await supabase.from('ojt_trainings').update(patch).eq('id', editing.id).select('id'), 'ปลดลายเซ็น');
     if (!rows) return;
@@ -896,11 +896,11 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
             {editing[S.sigKey] && <img src={editing[S.sigKey]} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2, alignSelf: 'flex-start' }} />}
             {!editing[S.uidKey] && (
               <div style={{ fontSize: 11, color: 'var(--amber)' }}>
-                ⚠️ ลายเซ็นเดิม — ระบบไม่ได้บันทึกว่าใครกด{editing[S.atKey] ? '' : ' และไม่มีเวลา'} (ใบก่อนเปลี่ยนเป็นเซ็นเอง) ตรวจย้อนไม่ได้
+                ⚠️ {tr("ลายเซ็นเดิม — ระบบไม่ได้บันทึกว่าใครกด")}{editing[S.atKey] ? '' : tr(" และไม่มีเวลา")} ({tr("ใบก่อนเปลี่ยนเป็นเซ็นเอง) ตรวจย้อนไม่ได้")}
               </div>
             )}
             {mayDelete && (
-              <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
+              <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
                 {tr('ปลดลายเซ็น')}
               </button>
             )}
@@ -912,7 +912,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
-              {S.verb} {tr('(ในนาม')} {fullName || 'คุณ'})
+              {S.verb} {tr('(ในนาม')} {fullName || tr("คุณ")})
             </button>
             {S.gated && posRank == null && (
               <div style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ')}<b>{tr('ไม่ได้ตรวจ')}</b>{tr('ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)')}</div>
@@ -934,9 +934,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
       {editing[sigKey] && <img src={editing[sigKey]} alt="" style={{ height: 30, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
       {!editing[sigKey] && editing[nameKey] && (isSelfName(editing[nameKey], fullName)
         ? (mySigOjt
-            ? <button onClick={() => setEditing(prev => ({ ...prev, [sigKey]: mySigOjt }))} style={{ marginTop: 4, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>✍️ เซ็นเป็น{label}</button>
-            : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>โปรไฟล์ของคุณยังไม่มีลายเซ็น — อัปโหลดที่เมนูโปรไฟล์ก่อน</div>)
-        : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>รอ {editing[nameKey]} login มาเซ็นเอง</div>)}
+            ? <button onClick={() => setEditing(prev => ({ ...prev, [sigKey]: mySigOjt }))} style={{ marginTop: 4, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>✍️ {tr("เซ็นเป็น")}{label}</button>
+            : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{tr("โปรไฟล์ของคุณยังไม่มีลายเซ็น — อัปโหลดที่เมนูโปรไฟล์ก่อน")}</div>)
+        : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{tr("รอ")} {editing[nameKey]} login {tr("มาเซ็นเอง")}</div>)}
     </div>
   );
 
@@ -956,7 +956,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
   return (
     <Page>
-      <ReadOnlyNote show={!canRecord} role={role} what="สร้าง/แก้ใบอบรม OJT"
+      <ReadOnlyNote show={!canRecord} role={role} what={tr("สร้าง/แก้ใบอบรม OJT")}
         permKey="ojt:record" hint={tr('ยังเปิดดูใบเดิมและพิมพ์ได้ตามปกติ')} />
       {/* PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง — ไม่ทับปุ่ม ➕ สร้างใบอบรม */}
       <PageHeader title={tr('อบรมสอนงาน OJT')} icon="📖"
@@ -970,8 +970,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
       {filesOff && (
         <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
-          ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
-          <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
+          {tr("ไฟล์แนบยังใช้ไม่ได้ — ตาราง")} <code>ojt_training_files</code> {tr("ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน")} migration
+          <code> 20261101_ojt_attachments_main.sql</code>) · {tr("ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง")}
           <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>{tr('รายละเอียด:')} {filesOff}</div>
         </div>
       )}
@@ -995,7 +995,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <td style={{ fontSize: 13 }}>
                     {(t.topic || '—').split('\n')[0]}
                     {(t.ojt_training_files?.length ?? 0) > 0 && (
-                      <span title={`มีไฟล์แนบ ${t.ojt_training_files.length} ไฟล์`}
+                      <span title={`${tr("มีไฟล์แนบ")} ${t.ojt_training_files.length} ${tr("ไฟล์")}`}
                         style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                         {t.ojt_training_files.length}
                       </span>
@@ -1011,7 +1011,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     </button>
                     {canRecord && (
                       <button onClick={() => openEdit(t)}
-                        style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
+                        style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
                     {canRemoveSheet(t) && (
                       <DeleteButton onClick={() => handleDelete(t)}
@@ -1021,7 +1021,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                 </tr>
               ))}
               {visibleTrainings.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30, fontSize: 13 }}>ยังไม่มีใบอบรม — กด "➕ สร้างใบอบรม" เพื่อเริ่ม</td></tr>
+                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 30, fontSize: 13 }}>{tr("ยังไม่มีใบอบรม — กด \"➕ สร้างใบอบรม\" เพื่อเริ่ม")}</td></tr>
               )}
             </tbody>
           </table>
@@ -1031,9 +1031,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
       {/* ── modal ฟอร์ม (มี input — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5) ── */}
       {editing && (
         <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 1150px)' }}>
+          <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}{tr('ใบอบรมสอนงาน OJT')}</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? tr("สร้าง") : tr("แก้ไข")}{tr('ใบอบรมสอนงาน OJT')}</div>
               <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             {/* 🪜 ถึงขั้นไหน — กฎ ojtFlow() (utils/stepFlow.js · ตัดสินจากช่องเซ็นจริง) · UI §6.30 */}
@@ -1121,7 +1121,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <span>{tr('ไฟล์แนบ (')}{(editing.files || []).length})</span>
                   {canRecord && !filesOff && <FilePick onFile={addFile} label={tr('แนบรูป / เอกสาร')} />}
                   <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
-                    รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
+                    {tr("รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน")} {ATTACH_MAX_MB}MB {tr("ต่อไฟล์ (รูปจาก iPhone ใช้ได้")})
                   </span>
                 </div>
                 {filesOff ? (
@@ -1131,7 +1131,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                     {editing.files.map((f, idx) => (
-                      <div key={f.id || f.file_url} style={{ width: 150, border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 7, background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                      <div key={f.id || f.file_url} style={{ width: 150, border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 7, background: 'var(--bg3-surf)', display: 'flex', flexDirection: 'column', gap: 5 }}>
                         <a href={f.file_url} target="_blank" rel="noreferrer" style={{ textDecoration: 'none', color: 'inherit' }}>
                           {isImageAttachment(f.file_url)
                             ? <img src={f.file_url} alt={f.file_name || ''} style={{ width: '100%', height: 86, objectFit: 'cover', borderRadius: 6, background: '#fff', display: 'block' }} />
@@ -1141,7 +1141,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           </div>
                         </a>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 4 }}>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? ' · ยังไม่บันทึก' : ''}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? tr(" · ยังไม่บันทึก") : ''}</span>
                           {canRecord && (
                             <button onClick={() => removeFile(idx)} title={tr('เอาไฟล์นี้ออก')}
                               style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
@@ -1155,18 +1155,18 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
               {/* ผู้เข้าอบรม */}
               <div>
-                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>{tr('พนักงานผู้เข้าอบรม (')}{editing.attendees.length} คน)</div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>{tr('พนักงานผู้เข้าอบรม (')}{editing.attendees.length} {tr("คน")})</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
                   <input type="text" placeholder={tr('ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม...')} value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                   {searchResults.length > 0 && (
-                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
+                    <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
                       {searchResults.map(e => (
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
                           {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
-                            ยืมจาก {e._helperFrom} {tr('มาช่วย')} {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                            {tr("ยืมจาก")} {e._helperFrom} {tr('มาช่วย')} {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? tr('กะดึก') : tr('กะเช้า')} ${fmtDate(editDate)})` : ''}
                           </span>}
                         </div>
                       ))}
@@ -1185,13 +1185,13 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                       <button onClick={() => setSignQueue(mk(rest.length ? rest : editing.attendees.map((a, idx) => ({ idx, a }))))}
                         disabled={signingQueue}
                         style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
-                        {signingQueue ? 'กำลังอัปลายเซ็น…' : `ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
+                        {signingQueue ? tr("กำลังอัปลายเซ็น…") : `${tr("ส่งแท็บเล็ตวนเซ็น")} (${rest.length || total} ${tr("คน")})`}
                       </button>
                       <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? 'var(--green)' : 'var(--muted)' }}>
-                        เซ็นแล้ว {signed}/{total}{signed < total ? ` · ยังขาด ${total - signed}` : ' ✔ ครบแล้ว'}
+                        {tr("เซ็นแล้ว")} {signed}/{total}{signed < total ? ` · ${tr("ยังขาด")} ${total - signed}` : tr(" ✔ ครบแล้ว")}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        เซ็นจนครบแล้วค่อยปล่อยเน็ตทีเดียว — เซ็นกลางคันแล้วปิดก็เก็บเท่าที่เซ็นไป
+                        {tr("เซ็นจนครบแล้วค่อยปล่อยเน็ตทีเดียว — เซ็นกลางคันแล้วปิดก็เก็บเท่าที่เซ็นไป")}
                       </span>
                     </div>
                   );
@@ -1217,9 +1217,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           <td style={{ textAlign: 'center' }}>{scoreSelect(a.post_score, v => setAtt(idx, 'post_score', v))}</td>
                           <td style={{ textAlign: 'center' }}>
                             {a.sign_url
-                              ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} เซ็นใหม่` })}
+                              ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} ${tr("เซ็นใหม่")}` })}
                                   style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title={tr('คลิกเพื่อเซ็นใหม่')} />
-                              : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ลงชื่อ` })}
+                              : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ${tr("ลงชื่อ")}` })}
                                   style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>{tr('เซ็น')}</button>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -1255,7 +1255,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
                   style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? tr('กำลังบันทึก...') : tr('บันทึกใบอบรม')}

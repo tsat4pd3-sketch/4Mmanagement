@@ -72,7 +72,7 @@ export default function InfoMore({
         aria-expanded={open}
         style={{
           marginLeft: lead ? 6 : 0, padding: '1px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-          border: `1px solid var(--border2)`, background: 'var(--bg3)',
+          border: `1px solid var(--border2)`, background: 'var(--bg3-surf)',
           color: 'var(--muted)', fontSize: Math.max(11, size - 1.5), fontWeight: 700,
           whiteSpace: 'nowrap', verticalAlign: 'middle',
         }}>

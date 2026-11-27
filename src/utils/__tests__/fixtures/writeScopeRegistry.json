@@ -1,0 +1,1738 @@
+{
+ "_meta": {
+  "what": "ทะเบียนผู้ใช้จริง (ไม่มีชื่อคน · acct = md5(uid) 8 ตัวแรก) สำหรับด่าน writeScopeRegistryGate — เล่นกฎ \"แก้หน่วยไหนได้\" (ชั้น ③) ซ้ำกับของจริง",
+  "why": "13/11 audit role↔scope: ถอดใบผ่าน scope:all_units ออกจาก role (37 บัญชี) + เลิกใช้ sections ตัดสินการแก้ ⇒ ต้องพิสูจน์กับทะเบียนจริงก่อน merge (กฎ 26/10)",
+  "snapshot_date": "2026-11-13",
+  "project": "Main (MAIN · ewhdfqwfwofivojtsizn)",
+  "refresh_sql": {
+   "1_profiles": "select left(md5(id::text),8)||'|'||role::text||'|'||coalesce(section,'')||'|'||array_to_string(coalesce(sections,'{}'),',')||'|'||array_to_string(coalesce(resp_cost_centers,'{}'),',')||'|'||coalesce(line_id::text,'')||'|'||coalesce(scope_depth,'')||'|'||case when is_dept_admin then '1' else '0' end from profiles order by role, id",
+   "2_assignments": "section key ของหน่วยที่ได้รับมอบ = ไล่ parent ถึง kind='section' (หยุดชั้นบน) — ดู app_section_key_of() ใน migration 20261113_role_scope_p1",
+   "3_all_units": "select left(md5(id::text),8) from profiles where all_units  (หลัง apply migration) — ก่อน apply = 12 ใบที่ user เคาะ 13/11"
+  },
+  "note": "🔴 ห้ามใส่ชื่อคน/อีเมล/uid ดิบ · ค่าส่วนงาน/CC เป็นค่าจริงเพราะกฎตัดสินด้วยค่าพวกนี้",
+  "approved_all_units_accts": [
+   "f4da50a5",
+   "855a8c37",
+   "43601b1c",
+   "a35a29ec",
+   "4ff78ac9",
+   "5d1e26e8",
+   "7302e21b",
+   "fb3edb5d",
+   "9fac379c",
+   "d426e5b3",
+   "a937794d",
+   "3995286d"
+  ],
+  "approved_all_units_note": "user เคาะ 13/11: warehouse_delivery 6 · planner_store 3 · engineer · engineer_nm · ชัยยุทธ (manager) — role อื่นถอดใบผ่าน (manager ใช้ CC · qa ใช้ qaWriteCtx บนจอคุณภาพ · document_control ใช้ CC)",
+  "known_narrowing": {
+   "note": "บัญชีที่ sections กว้างกว่าบ้านและไม่มี CC — วันที่ apply: qa 13 (จอคุณภาพไม่กระทบ · qaWriteCtx) · mtn 2 → migration §6 ย้ายเป็น CC ให้แล้ว",
+   "accts": [
+    "1f5b93ba",
+    "32dea526"
+   ]
+  }
+ },
+ "profiles": [
+  {
+   "acct": "9fd2b9cf",
+   "role": "supervisor",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "3767d113",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "6b010346",
+   "role": "supervisor",
+   "section": "PD2",
+   "sections": [
+    "PD2",
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000",
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "16ec2efa",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9aa86ec9",
+   "role": "supervisor",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "72427fff",
+   "role": "supervisor",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140441000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "148a734f",
+   "role": "supervisor",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "db9270af",
+   "role": "supervisor",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "e961240b",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "d034d61d",
+   "role": "supervisor",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "2dcd2248",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "89d2e5a5",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "24e2b1fc",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "47af0c6c",
+   "role": "supervisor",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "b5bbcbf4",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "6d25a2e1",
+   "role": "supervisor",
+   "section": "PD1",
+   "sections": [
+    "PD1",
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140461000",
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "74fbe85a",
+   "role": "supervisor",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541200"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "21f093c6",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "75e6decb",
+   "role": "supervisor",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541900"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "64061f60",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "8062ce98",
+   "role": "supervisor",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "964c65e2",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "dc0457d0",
+   "role": "supervisor",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [
+    "2140429000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "05858c06",
+   "role": "supervisor",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9b6ca31a",
+   "role": "supervisor",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "24cde956",
+   "role": "supervisor",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "f9f9249b",
+   "role": "supervisor",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "893e892e",
+   "role": "supervisor",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "a2beac97",
+   "role": "supervisor",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "43601b1c",
+   "role": "manager",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "33d2e12a",
+   "role": "manager",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store",
+    "PD1",
+    "PD2",
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140429000",
+    "2140461000",
+    "2140462000",
+    "2140470000",
+    "2140471000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "9ee81a95",
+   "role": "manager",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140461000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "5868712b",
+   "role": "manager",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140441000"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "21319760",
+   "role": "manager",
+   "section": "PD3",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000",
+    "2140462000",
+    "2140563100"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "adca7f8a",
+   "role": "manager",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "410c7cfc",
+   "role": "admin",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541300"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "801621e8",
+   "role": "admin",
+   "section": "Maintenance",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "c2401e87",
+   "role": "admin",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "8fca8f32",
+   "role": "admin",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "00c7dc8b",
+   "role": "admin",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "0ba2f96c",
+   "role": "admin",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9eb758cc",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4b7fd32d",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561002"
+   ],
+   "line_id": 20,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "f67753ab",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "57745084",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "f90ec9ec",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "6541ccf5",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "048c99f8",
+   "role": "leader",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 10,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "04f36cb3",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561001"
+   ],
+   "line_id": 18,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "ba4c067a",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "f9cbcb2b",
+   "role": "leader",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": 9,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "320fb676",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [],
+   "line_id": 18,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "95568bcd",
+   "role": "leader",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140571100"
+   ],
+   "line_id": 10,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "e881a0d9",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 6,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "824d3c24",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": 7,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "158dbb35",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561001"
+   ],
+   "line_id": 17,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "45361287",
+   "role": "leader",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": 8,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "49626671",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "094fbff5",
+   "role": "leader",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": 9,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "20e1b9a1",
+   "role": "leader",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "2bd17004",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561001"
+   ],
+   "line_id": 17,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "3665d37f",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561002"
+   ],
+   "line_id": 19,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "e9d9b66f",
+   "role": "leader",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [
+    "2140561002"
+   ],
+   "line_id": 19,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9e67499d",
+   "role": "leader",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140571200"
+   ],
+   "line_id": 8,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "f57646e8",
+   "role": "leader",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [
+    "2140470000"
+   ],
+   "line_id": 9,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "96d5969f",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541300"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "c883b928",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "04c9b152",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "800c25e9",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "3150c144",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140441000"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "519e8acc",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "ac6954b8",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "bd18c42b",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "af58ddc2",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541800"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "bd098a06",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140541300"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4210ac67",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "f7a029f9",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "12465fd2",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "cac185b0",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4cefd90c",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "cd454da7",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "30dfb872",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "PD3",
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "d6d01e89",
+   "role": "qa",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140441000"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "d0e595dc",
+   "role": "document_control",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [
+    "2140462000"
+   ],
+   "line_id": 7,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "a92c0da3",
+   "role": "document_control",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [
+    "2140471000"
+   ],
+   "line_id": 51,
+   "scope_depth": "branch",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "98ae2d80",
+   "role": "display",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "b46bac2b",
+   "role": "display",
+   "section": "JIG MTN",
+   "sections": [
+    "JIG MTN"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "01ff21e7",
+   "role": "display",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "d8bb5509",
+   "role": "display",
+   "section": "PD4",
+   "sections": [
+    "PD4"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9394fc8e",
+   "role": "display",
+   "section": "Die MTN",
+   "sections": [
+    "DIE MTN"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "6b409129",
+   "role": "display",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "83010b80",
+   "role": "display",
+   "section": "PD2",
+   "sections": [
+    "PD2"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "1328cccc",
+   "role": "display",
+   "section": "PD3",
+   "sections": [
+    "PD3"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "c352dc34",
+   "role": "display",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "84347edc",
+   "role": "display",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "0787bdd8",
+   "role": "display",
+   "section": "QA",
+   "sections": [
+    "QA"
+   ],
+   "resp_cost_centers": [
+    "2140441000"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "728d54bd",
+   "role": "display",
+   "section": "MTN",
+   "sections": [
+    "MTN"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "fb5135e7",
+   "role": "display",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "88978583",
+   "role": "display",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "fcbc6413",
+   "role": "display",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "53fb6a2e",
+   "role": "display",
+   "section": "PD1",
+   "sections": [
+    "PD1"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "e77c654b",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "c7baf62c",
+   "role": "mtn",
+   "section": "Maintenance",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "806a9da6",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4aaeb5d0",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [
+    "JIG MTN"
+   ],
+   "resp_cost_centers": [
+    "2140563100"
+   ],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "ee4e1168",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "226d8c40",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "1f5b93ba",
+   "role": "mtn",
+   "section": "MTN",
+   "sections": [
+    "MTN",
+    "Maintenance"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "2badd58f",
+   "role": "mtn",
+   "section": "Die MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "bd87377e",
+   "role": "mtn",
+   "section": "Tooling MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "9f8280f6",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "35d6b488",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "a8dc8480",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "fa825b9a",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4ed00ee8",
+   "role": "mtn",
+   "section": "JIG MTN",
+   "sections": [
+    "JIG MTN"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "68a33596",
+   "role": "mtn",
+   "section": "Maintenance",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "32dea526",
+   "role": "mtn",
+   "section": "Maintenance",
+   "sections": [
+    "Maintenance",
+    "Tooling MTN"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "f4da50a5",
+   "role": "engineer",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "4ff78ac9",
+   "role": "planner_store",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [
+    "2140429000"
+   ],
+   "line_id": null,
+   "scope_depth": "branch",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "a35a29ec",
+   "role": "planner_store",
+   "section": "Planning&Store",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "5d1e26e8",
+   "role": "planner_store",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": true
+  },
+  {
+   "acct": "855a8c37",
+   "role": "engineer_nm",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "3995286d",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [
+    "2140429000"
+   ],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "fb3edb5d",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "d426e5b3",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [
+    "Planning&Store"
+   ],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "9fac379c",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "a937794d",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "7302e21b",
+   "role": "warehouse_delivery",
+   "section": "Planning&Store",
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "892e6700",
+   "role": "marketing",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "unit",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "ee5aca20",
+   "role": "viewer",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  },
+  {
+   "acct": "6a3d6b2f",
+   "role": "viewer",
+   "section": null,
+   "sections": [],
+   "resp_cost_centers": [],
+   "line_id": null,
+   "scope_depth": "all",
+   "is_dept_admin": false
+  }
+ ],
+ "assignments": [
+  {
+   "acct": "9ee81a95",
+   "kind": "acting",
+   "scope_depth": null,
+   "section_key": "PD1"
+  },
+  {
+   "acct": "21319760",
+   "kind": "head",
+   "scope_depth": null,
+   "section_key": "PD4"
+  },
+  {
+   "acct": "adca7f8a",
+   "kind": "acting",
+   "scope_depth": null,
+   "section_key": "PD2"
+  },
+  {
+   "acct": "68a33596",
+   "kind": "acting",
+   "scope_depth": null,
+   "section_key": "Maintenance"
+  }
+ ]
+}

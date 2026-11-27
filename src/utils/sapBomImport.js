@@ -247,7 +247,7 @@ export function diffSapBom(sapRows, existing, opts = {}) {
   return { add, update, same, extra };
 }
 
-/** mat ที่ยังไม่มีในทะเบียนกลาง Parts Master — ต้องลงทะเบียนก่อน (step 1 ของ workflow) */
+/** mat ที่ยังไม่มีในทะเบียนกลาง Material Master — ต้องลงทะเบียนก่อน (step 1 ของ workflow) */
 export function missingInPartsMaster(sapRows, pmMats) {
   const have = new Set([...(pmMats || [])].map(upper));
   const out = new Map();

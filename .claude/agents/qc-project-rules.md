@@ -162,6 +162,8 @@ model: inherit
   · ต้นแบบ/ด่าน: `qa-bins-queue-only` ใน `regressionGuards` · 📄 `docs/modules/production-problem-report-bins.md`
 - [ ] **ตาราง e-Workflow (`wf_*`) เขียนผ่าน RPC เท่านั้น** (13/11) — grep `from('wf_…').insert|update|upsert|delete` ใน `src/` ต้องได้ 0 ·
   ตารางไม่มี policy เขียนโดยตั้งใจ · ด่าน `wf-tables-write-via-rpc` · 📄 `docs/modules/e-workflow.md`
+- [ ] **ใบตรวจแบบตาราง (`wf_grid_*` · 26/11)** — เขียนได้จาก `src/components/WfGridSheet.jsx` ที่เดียว (ผ่าน `ensureSheet`: สิทธิ์ `recordPerm` + `canWriteLine` + ล็อก + stale) ·
+  สัญลักษณ์/หัวข้อต้องอ่านจากช่อง `checkgrid` ของใบงาน ห้าม hardcode · ใบรอบ (`subject_key` ไม่ว่าง) 1 คนเซ็นได้ขั้นเดียว (`wf_open_step`) · ด่าน `wf-checkgrid` + `wf-bound-signoff`
 
 ### หมวด C — Permissions (data-driven)
 
@@ -304,6 +306,7 @@ model: inherit
 - **[F-TXT]** คำอธิบาย > 1 บรรทัด (≈120 ตัวอักษร) ต้องอยู่หลัง `<InfoMore>` (+`title=` ได้) ไม่วางนิ่งบนจอ · ตรวจ `node audit/textsweep.mjs` ต้อง 0 ก้อนในหน้าที่แตะ · ความผิดปกติ/ข้อมูลไม่ครบห้ามพับ (ใช้ NoticeBar/WarnNote) · 📄 `UI-CONVENTIONS.md` §6.10
 - **[F-ICN]** แท็บ PageHeader = เส้นใต้ (ห้ามวาดแท็บเอง) · จุดวาดกลาง (เมนู/Home/OverflowMenu/หัวเพจ) ต้องวาดไอคอนผ่าน `<Icon glyph>` ไม่ใช่ `{it.icon}` ดิบ · emoji ใหม่ในทะเบียนเมนู/`icon=` ต้องอยู่ใน `ICON_MAP` (ด่าน `iconMap.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.36
 - **[F-PAL]** พาเลต 5 สี + เทา: หน้า/คอมโพเนนต์ใหม่ห้ามมี hex/rgba ดิบ (ใช้ `var(--green|--amber|--red|--blue)` + `-dim`/`-line` หรือ `toneVar/toneDim/toneLine`) · ห้าม `--purple` · ห้าม `${…}20` ต่อ alpha บน token · ด่าน ratchet `colorRatchet.test.mjs` (ไฟล์เดิมลดได้อย่างเดียว) · grep: `#[0-9a-f]{6}` `rgba(` ในไฟล์ที่แตะ · 📄 `UI-CONVENTIONS.md` §6.17
+- **[F-SURF]** ไล่เฉดพื้น = สีเดียว ΔL ≤ 5% ผ่าน token เท่านั้น (20/11): แผง inline (กรอบ+มุมโค้ง) ต้องเป็น `background:'var(--card-surf)'`/`--bg2-surf`/`--bg3-surf` ไม่ใช่ `var(--card)` เปล่า · ห้าม `linear-gradient` ของพื้นเองในหน้า · ห้ามหยิบ `--card-top/-bot` มาใช้ตรง · ด่าน `gradientDeltaCap.test.mjs` + `surf-gradient-token-only` · grep: `linear-gradient(` ในไฟล์ที่แตะ · 📄 `UI-CONVENTIONS.md` §6.17 ข้อ 6
 - **[F-ACT]** คำสั่งระดับหน้า/การ์ด: ปุ่มตายตัว ≤2 (`.pg-btn` / `.pg-btn.primary`) ที่เหลือ `<OverflowMenu>` · แถบแจ้ง = `<NoticeBar>` แถบเดียว · การ์ดตัวเลข = `<KpiTile>` (ตัวเลขสีเดียว) · ป้ายปุ่มไม่มี emoji · grep: `actions={` แล้วนับ `<button` · `rgba(239,68,68` ในแถบเตือนใหม่ · 📄 `UI-CONVENTIONS.md` §6.35
 - **[F-I18N]** ป้ายโครงหลัก (เมนู/หมวด/ชื่อหน้า/แท็บ/ป้ายกรอง) แปลผ่าน `tr()` จาก `utils/useLang` เท่านั้น · 🔴 ห้าม `lang === 'en' ?` / `getLang() === 'en' ?` กระจายในหน้า (grep: `=== 'en' ?`) · ห้ามแก้ค่าไทยใน `NAV_ITEMS`/ชื่อหมวด (เป็นคีย์) · เมนู/หน้าใหม่ต้องมีคำใน `src/i18n/en.js` (ด่าน `i18n.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.34
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
@@ -562,3 +565,7 @@ model: inherit
 ### ด่านที่เพิ่ม 2026-11-19
 > 🔻 **ตัด-จ่ายสต็อกต้องหักเต็ม ยอมติดลบ** — จ่ายจาก STORE / ส่งลูกค้า / ตัดวัตถุดิบตอนปิดใบ ห้าม "ยอดในระบบไม่พอ = ไม่หัก/หักเท่าที่มี"
 > ต้องหักเต็มแล้วเขียนบนจอว่าติดลบ (`STORE_NEG_NOTE` · `inflowDestOf` ใน CustomerDemand · DB `fn_take_raw`) — ด่าน "ตัด-จ่ายสต็อกต้องหักเต็ม"
+
+### ด่านที่เพิ่ม 2026-11-20
+- **📈 อนิเมชันกราฟ** (UI-CONVENTIONS §6.34c · ด่าน `chart-anim-shared` + `src/utils/__tests__/chartAnim.test.mjs`): ทุก series ของ Recharts (`<Bar|Line|Area|Pie|Radar|Scatter>`) ต้องมี `{...chartAnim()}` จาก `src/utils/motion.js` · เจอ `isAnimationActive=` ในหน้า = ขัดกฎ · แถบที่วาดเองด้วย div ใช้ `animClass('sweep'|'grow')` ห้ามเขียน `@keyframes` ใหม่สำหรับกราฟในหน้า
+- **⚡ ค่าไฟหลายชั้น** (`docs/ENERGY_MONITORING_DESIGN.md` §15.3.5–6): ยอดรวมตู้/ทั้งหน้า/สัดส่วนโหลด นับเฉพาะมิเตอร์ชั้นบนสุด (`!m.parent`) — ผลรวมที่บวกทุกมิเตอร์ใน `buildLiveBoard().meters` ตรงๆ = นับซ้ำ (ใช้ `totals`/`panels`/`loadShare()` ของกลาง)

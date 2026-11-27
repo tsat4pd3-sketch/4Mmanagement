@@ -81,6 +81,9 @@ const PM_SOON_DAYS = 7;
 const fmtMin = fmtDtElapsed;
 const daysSince = (iso) => (iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null);
 const normNo = (s) => String(s || '').trim().toUpperCase();
+/* ใบซ่อมที่ "เครื่องยังซ่อมไม่เสร็จ" — ใช้ระบายเหลืองบนผัง (27/11 · คำสั่ง user)
+   ⚠️ ไม่ใช่ OPEN_MO_STATUSES ทั้งชุด: ใบที่ซ่อมเสร็จแล้วรอตรวจ/รับมอบ/เซ็นปิด เครื่องเดินได้แล้ว */
+const REPAIRING_MO = ['pending', 'assigned', 'repairing', 'waiting_vendor'];
 
 const TEAM_ICON = { maintenance: '🔧', jig_maintenance: '🗜️', die_maintenance: '🔨', production: '🏭' };
 
@@ -97,7 +100,7 @@ function severity(x, thrMin) {
   if (x.call_mtn && !x.call_mtn_ack_at) {
     const ct = teamKeyOf(x.call_mtn_team);
     return { k: 'call', rank: 0, color: 'var(--red)', blink: true,
-      label: ct ? `📞 เรียก ${deptNameOf(ct)}` : '📞 เรียกช่าง (ไม่ระบุทีม)' };
+      label: ct ? `📞 ${tr("เรียก")} ${deptNameOf(ct)}` : '📞 เรียกช่าง (ไม่ระบุทีม)' };
   }
   if (isOverDtThreshold(x, thrMin)) return { k: 'over', rank: 1, color: 'var(--amber)', label: '⏰ หยุดเกินเกณฑ์', blink: false };
   return { k: 'new', rank: 2, color: 'var(--blue)', label: '⏱️ เพิ่งหยุด', blink: false };   // 05/11: ฟ้า = ยังอยู่ในกรอบ (เดิมเหลืองสด — พาเลต 5 สี)
@@ -329,21 +332,6 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
     return m;
   }, [live]);
   const openSet = useMemo(() => new Set(openLines), [openLines]);
-  const stateOf = useCallback((lineName) => {
-    const st = lineState[lineName];
-    /* ⚠️ ลำดับนี้ห้ามสลับ: **เครื่องหยุดชนะเสมอ** แม้บนจอสโตร์
-       (ไลน์ที่เครื่องหยุดอยู่ ยังไม่ต้องรีบเอาของไปส่ง — ส่งไปก็ยังผลิตไม่ได้)
-       ⇒ ผังใบเดียวจึงไม่มีทางตอบขัดกันเองระหว่าง 3 แผนก */
-    if (st) return { color: st.color, blink: st.blink, label: `หยุด ${fmtMin(st.min)}` };
-    const w = storeWait[lineName];
-    if (w) return { color: w.color, blink: false, label: `📦 ${w.label}` };
-    /* 📋 จอผลิต: งานประจำกะค้าง (AM/Poka-Yoke/LPA) — รองจากเครื่องหยุด ก่อน "เปิดกะอยู่" (12/10)
-       สีฟ้าอมเขียวแยกจากสีสถานะเครื่องโดยตั้งใจ · ไม่กระพริบ (ดู ROUTINE_MAP_COLOR) */
-    const rt = routineMap[lineName];
-    if (rt) return { color: rt.color, blink: false, label: rt.label };
-    if (openSet.has(lineName)) return { color: 'var(--green)', blink: false, label: null };
-    return null;   // ไม่ได้เปิดกะ → เทาจาง
-  }, [lineState, openSet, storeWait, routineMap]);
 
   /* ── ใบซ่อมค้าง (จาก loader ของส่วนงานซ่อมบำรุง — ไม่ยิงซ้ำ) ── */
   const allMo = useMemo(() => (d.mo || [])
@@ -352,6 +340,41 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
     .sort((a, b) => String(a.report_at || '').localeCompare(String(b.report_at || ''))), [d.mo, inScope]);
   const mo = useMemo(() => (team ? allMo.filter(o => !o.mtn_dept || teamKeyOf(o.mtn_dept) === team) : allMo), [allMo, team]);
   const moHidden = allMo.length - mo.length;
+  /* 🔧 นับใบ "เครื่องยังซ่อมไม่เสร็จ" รายไลน์ → ระบายเหลืองบนผัง (27/11 · คำสั่ง user)
+     · นับเฉพาะ REPAIRING_MO (ซ่อมเสร็จแล้ว รอตรวจ/รับมอบ/เซ็นปิด = เครื่องเดินได้ ไม่นับ)
+     · ทีมช่างเลือกทีมอยู่ = เห็นของทีมตัวเอง (`mo` กรองทีมแล้ว · ใบไม่ระบุทีมยังนับ)
+       ฝ่ายผลิต (จอผลิต / แท็บ PRODUCTION) + "ทุกทีม" = เห็นทุกทีม (`allMo`)
+     · ⚠️ เครื่องหยุด (downtime) ยังไม่กรองทีมเหมือนเดิม — กรองเฉพาะสีของใบซ่อม
+     · ใบที่ไม่ได้ระบุไลน์ = ไม่ระบายผัง (ยังอยู่ในการ์ด "ใบซ่อมค้าง") */
+  const repairByLine = useMemo(() => {
+    const src = team && !isAmTeam(team) ? mo : allMo;
+    const m = {};
+    src.forEach(o => {
+      if (!REPAIRING_MO.includes(o.status)) return;
+      const k = normNo(o.line_name); if (!k) return;
+      m[k] = (m[k] || 0) + 1;
+    });
+    return m;
+  }, [team, mo, allMo]);
+  const stateOf = useCallback((lineName) => {
+    const st = lineState[lineName];
+    /* ⚠️ ลำดับนี้ห้ามสลับ: **เครื่องหยุดชนะเสมอ** แม้บนจอสโตร์
+       (ไลน์ที่เครื่องหยุดอยู่ ยังไม่ต้องรีบเอาของไปส่ง — ส่งไปก็ยังผลิตไม่ได้)
+       ⇒ ผังใบเดียวจึงไม่มีทางตอบขัดกันเองระหว่าง 3 แผนก */
+    if (st) return { color: st.color, blink: st.blink, label: `${tr("หยุด")} ${fmtMin(st.min)}` };
+    /* 🔧 ใบซ่อมที่เครื่องยังซ่อมไม่เสร็จ (27/11 · user "มีใบซ่อมอยู่ระหว่างซ่อม ควรเหลือง ไม่ใช่เงียบ")
+       รองจากเครื่องหยุด · เหลืองนิ่ง + ป้าย "🔧 ซ่อม n ใบ" (แยกจากเหลือง "หยุด xx นาที" ด้วยป้าย) */
+    const nRep = repairByLine[normNo(lineName)];
+    if (nRep) return { color: 'var(--amber)', blink: false, label: `🔧 ${tr("ซ่อม")} ${nRep} ${tr("ใบ")}` };
+    const w = storeWait[lineName];
+    if (w) return { color: w.color, blink: false, label: `📦 ${w.label}` };
+    /* 📋 จอผลิต: งานประจำกะค้าง (AM/Poka-Yoke/LPA) — รองจากเครื่องหยุด ก่อน "เปิดกะอยู่" (12/10)
+       สีฟ้าอมเขียวแยกจากสีสถานะเครื่องโดยตั้งใจ · ไม่กระพริบ (ดู ROUTINE_MAP_COLOR) */
+    const rt = routineMap[lineName];
+    if (rt) return { color: rt.color, blink: false, label: rt.label };
+    if (openSet.has(lineName)) return { color: 'var(--green)', blink: false, label: null };
+    return null;   // ไม่ได้เปิดกะ → เทาจาง
+  }, [lineState, openSet, storeWait, routineMap, repairByLine]);
   const moByStep = useMemo(() => {
     const m = {}; mo.forEach(o => { m[o.status] = (m[o.status] || 0) + 1; }); return m;
   }, [mo]);
@@ -370,7 +393,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       const j = jigById[cl?.equipment_id];
       const dept = teamKeyOf(cl?.department);
       const { bucket, daysTo } = planDueBucket(p, workDate, { frequency: cl?.frequency, soonDays: PM_SOON_DAYS });
-      return { ...p, dept, am: isAmTeam(dept), bucket, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days: daysTo };
+      return { ...p, dept, am: isAmTeam(dept), bucket, name: j?.name || j?.jig_no || j?.machine_no || tr("อุปกรณ์ (ไม่พบชื่อ)"), line: j?.line_name || '', days: daysTo };
     });
   }, [d, workDate]);
   /* 🔭 ขอบเขตบัญชีจอ (09/11 · user: จอ TV โชว์เฉพาะส่วนงาน/ไลน์ของบัญชี — หลักเดียวกับใบซ่อม `allMo` ข้างบน)
@@ -430,14 +453,14 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             backgroundImage: hot ? 'linear-gradient(var(--blue-dim), var(--blue-dim))' : undefined,
           }}>
             <span style={{ fontSize: 15 * big, fontWeight: 900, color: failed ? 'var(--red)' : n ? 'var(--blue)' : 'var(--green)' }}>
-              {!storeTv.loaded ? 'กำลังโหลดคำขอจากไลน์…'
-                : storeTv.reqErr ? '⚠ ดึงคำขอจากไลน์ไม่สำเร็จ'
-                : n ? `🔔 ไลน์เรียกของ ${n} รายการ · ${nl} ไลน์` : '✅ ไม่มีไลน์ไหนเรียกของ'}
+              {!storeTv.loaded ? tr("กำลังโหลดคำขอจากไลน์…")
+                : storeTv.reqErr ? tr("⚠ ดึงคำขอจากไลน์ไม่สำเร็จ")
+                : n ? `🔔 ${tr("ไลน์เรียกของ")} ${n} ${tr("รายการ")} · ${nl} ${tr("ไลน์")}` : tr("✅ ไม่มีไลน์ไหนเรียกของ")}
             </span>
             {nWait > 0 && <span style={{ fontSize: 12 * big, fontWeight: 900, color: 'var(--red)' }}>{tr('รอบส่งค้าง')} {nWait} {tr('ไลน์')}</span>}
             <span style={{ fontSize: 11 * big, fontWeight: 800, color: nShort ? 'var(--amber)' : 'var(--green)' }}>{tr('ต่ำกว่า Min')} {nShort}</span>
             <span style={{ marginLeft: 'auto', fontSize: 11 * big, fontWeight: 800, color: nCall ? 'var(--red)' : live.length ? 'var(--amber)' : 'var(--muted)' }}>
-              {nCall ? `📞 เรียกช่าง ${nCall} เครื่อง` : live.length ? `🔧 เครื่องหยุด ${live.length}` : '✅ ไม่มีเครื่องหยุด'}
+              {nCall ? `📞 ${tr("เรียกช่าง")} ${nCall} ${tr("เครื่อง")}` : live.length ? `🔧 ${tr("เครื่องหยุด")} ${live.length}` : tr("✅ ไม่มีเครื่องหยุด")}
             </span>
           </div>
         );
@@ -449,19 +472,19 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         background: nCall ? 'var(--red-dim)' : live.length ? 'var(--amber-dim)' : 'var(--card)',
       }}>
         <div style={{ fontSize: 15 * big, fontWeight: 900, color: nCall ? 'var(--red)' : live.length ? 'var(--amber)' : 'var(--green)' }}>
-          {nCall ? `📞 เรียกช่าง ${nCall} เครื่อง` : live.length ? `🔧 เครื่องหยุดอยู่ ${live.length} เครื่อง` : '✅ ไม่มีเครื่องหยุดอยู่ตอนนี้'}
+          {nCall ? `📞 ${tr("เรียกช่าง")} ${nCall} ${tr("เครื่อง")}` : live.length ? `🔧 ${tr("เครื่องหยุดอยู่")} ${live.length} ${tr("เครื่อง")}` : tr("✅ ไม่มีเครื่องหยุดอยู่ตอนนี้")}
           {/* 🔴 พาดหัวยังนับ "ทุกทีม" เสมอ (ห้ามกรอง — กฎข้อเท็จจริงของฝ่ายผลิต)
               แต่ห้องช่างต้องตอบได้ทันทีว่า "เรียกเราไหม" ⇒ ต่อท้ายว่าของทีมนี้กี่ใบ
               + ใบที่คนกดไม่ได้เลือกทีม ต้องเขียนบอก (ช่องโหว่ข้อมูล ห้ามกลืน) */}
           {!!nCall && team && (
             <span style={{ fontSize: 11 * big, fontWeight: 800, marginLeft: 10, color: nCallMine ? 'var(--red)' : 'var(--muted)' }}>
-              {nCallMine ? `← ของ ${deptNameOf(team)} ${nCallMine} ใบ` : `← ไม่มีใบของ ${deptNameOf(team)}`}
+              {nCallMine ? `← ${tr("ของ")} ${deptNameOf(team)} ${nCallMine} ${tr("ใบ")}` : `← ${tr("ไม่มีใบของ")} ${deptNameOf(team)}`}
             </span>
           )}
           {!!nCallNoTeam && (
             <span title={tr('ฝ่ายผลิตกดเรียกโดยไม่ได้เลือกทีม — ใบพวกนี้ขึ้นทุกห้องและดังทุกห้อง')}
               style={{ fontSize: 11 * big, fontWeight: 800, marginLeft: 10, color: 'var(--accent2)' }}>
-              · ไม่ระบุทีม {nCallNoTeam} ใบ
+              · {tr("ไม่ระบุทีม")} {nCallNoTeam} {tr("ใบ")}
             </span>
           )}
         </div>
@@ -471,7 +494,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {/* ทีม = แท็บเส้นใต้มาตรฐาน (06/11 · เดิมแคปซูล) · "ทุกทีม" ซ้ายสุด (UI-STANDARD §3) */}
           <TabBar size="sm" value={team ?? ''} onChange={k => setTeam(k || null)}
-            tabs={[{ key: '', label: 'ทุกทีม' }, ...MTN_TEAMS.map(t => ({ key: t, label: deptNameOf(t) }))]} />
+            tabs={[{ key: '', label: tr("ทุกทีม") }, ...MTN_TEAMS.map(t => ({ key: t, label: deptNameOf(t) }))]} />
           {myTeams.length === 1 && !sp.get('team') && (
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('· ตั้งต้นตามทีมของบัญชีนี้')}</span>
           )}
@@ -482,14 +505,14 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12.5 * big, fontWeight: 800 }}>
           {showRoutine && routine.loaded && (
             <span style={{ color: routine.errs.length ? 'var(--red)' : routine.counts?.lines ? 'var(--amber)' : 'var(--green)' }}>
-              {routine.errs.length ? '⚠ งานประจำกะดึงไม่ครบ'
-                : routine.counts?.lines ? `📋 งานประจำกะค้าง ${routine.counts.lines} ไลน์` : '📋 งานประจำกะครบ'}
+              {routine.errs.length ? tr("⚠ งานประจำกะดึงไม่ครบ")
+                : routine.counts?.lines ? `📋 ${tr("งานประจำกะค้าง")} ${routine.counts.lines} ${tr("ไลน์")}` : tr("📋 งานประจำกะครบ")}
             </span>
           )}
           {showMo && <span style={{ color: mo.length ? 'var(--amber)' : 'var(--green)' }}>{tr('ใบซ่อมค้าง')} {mo.length}</span>}
           {showPm && (
           <span onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', color: pmOver ? 'var(--red)' : (pmToday || pm.length) ? 'var(--amber)' : 'var(--green)' }}>
-            {pmOver ? `PM เกินกำหนด ${pmOver}` : '✅ ไม่มี PM เกินกำหนด'}
+            {pmOver ? `PM ${tr("เกินกำหนด")} ${pmOver}` : tr("✅ ไม่มี PM เกินกำหนด")}
             {pm.length - pmOver > 0 && (
               <span style={{ color: 'var(--amber)' }}> {tr('· ถึงกำหนดใน')} {PM_SOON_DAYS} {tr('วัน')} {pm.length - pmOver}</span>
             )}
@@ -503,20 +526,20 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           (PM เดาไม่ได้ ใช้ `checklists.department` = ตัวจริง แต่ก็ยังต้องบอกว่าซ่อนไปกี่แผน) */}
       {team && (moHidden > 0 || pmHidden > 0) && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          ซ่อน<b>{tr('คิวงาน')}</b>{tr('ของทีมอื่น: ใบซ่อม')} {moHidden} {tr('· แผน PM')} {pmHidden} — กด “ทุกทีม” เพื่อดูครบ
-          · <b>{tr('เครื่องที่หยุดไม่เคยถูกซ่อน')}</b> (ไลน์หยุดคือเรื่องของทุกคน — ของทีมอื่นขึ้นป้ายกำกับไว้)
+          {tr("ซ่อน")}<b>{tr('คิวงาน')}</b>{tr('ของทีมอื่น: ใบซ่อม')} {moHidden} {tr('· แผน PM')} {pmHidden} — {tr("กด “ทุกทีม” เพื่อดูครบ")}
+          · <b>{tr('เครื่องที่หยุดไม่เคยถูกซ่อน')}</b> ({tr("ไลน์หยุดคือเรื่องของทุกคน — ของทีมอื่นขึ้นป้ายกำกับไว้")})
         </div>
       )}
 
       {/* โหลด downtime ไม่สำเร็จ = ต้องบอก ห้ามขึ้นจอเขียว "ไม่มีเครื่องหยุด" ทั้งที่แค่ดึงไม่ได้ */}
       {dtErr && (
         <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13 }}>
-          ⚠ ดึงสถานะเครื่องหยุดไม่สำเร็จ — ตัวเลขด้านล่างยังไม่ใช่ของจริง ({dtErr})
+          ⚠ {tr("ดึงสถานะเครื่องหยุดไม่สำเร็จ — ตัวเลขด้านล่างยังไม่ใช่ของจริง")} ({dtErr})
         </div>
       )}
       {d.loadErr && (
         <div style={{ ...card, borderColor: 'var(--amber)', color: 'var(--amber)', fontSize: 13 }}>
-          ⚠ ข้อมูล downtime ย้อนหลังโหลดไม่ครบ — ตัวเลขสรุปอาจต่ำกว่าจริง
+          ⚠ {tr("ข้อมูล downtime ย้อนหลังโหลดไม่ครบ — ตัวเลขสรุปอาจต่ำกว่าจริง")}
         </div>
       )}
 
@@ -553,14 +576,15 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               ⚠️ ห้ามตัดข้อความทิ้ง: legend บอกว่าสีไหนแปลว่าอะไร · ประโยคท้ายกันคนเข้าใจว่า
               เป็นสถานะเครื่องเรียลไทม์ (ยังไม่มี SCADA/มิเตอร์รายเครื่อง — กฎ CLAUDE.md) */}
           <div ref={legRef} style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 11px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
-            <span>กดกรอบไลน์ = ดูปัญหาของไลน์นั้น</span>
+            <span>{tr("กดกรอบไลน์ = ดูปัญหาของไลน์นั้น")}</span>
             <span><b style={{ color: 'var(--red)' }}>■</b> {tr('เรียกช่าง (กระพริบ)')}</span>
             <span><b style={{ color: 'var(--amber)' }}>■</b> {tr('หยุดเกินเกณฑ์')}</span>
+            {showMo && <span><b style={{ color: 'var(--amber)' }}>■</b> {tr('🔧 มีใบซ่อมที่ยังซ่อมไม่เสร็จ')}</span>}
             <span><b style={{ color: 'var(--blue)' }}>■</b> {tr('เพิ่งหยุด (ยังในกรอบ)')}</span>
             <span><b style={{ color: 'var(--green)' }}>■</b> {tr('เปิดกะอยู่')}</span>
             <span><b style={{ color: 'var(--muted)' }}>■</b> {tr('ไม่ได้เปิดกะ')}</span>
-            {showStore && <span><b style={{ color: 'var(--blue)' }}>■</b> ไลน์เรียกของ · ป้าย 📦 = รอบส่งค้าง/รอของ (เครื่องหยุดชนะเสมอ)</span>}
-            {showRoutine && <span><b style={{ color: ROUTINE_MAP_COLOR }}>■</b> งานประจำกะค้าง (📋 AM · PY = Poka-Yoke · LPA · ! = เลยกรอบ AM · เครื่องหยุดชนะเสมอ)</span>}
+            {showStore && <span><b style={{ color: 'var(--blue)' }}>■</b> {tr("ไลน์เรียกของ · ป้าย 📦 = รอบส่งค้าง/รอของ (เครื่องหยุดชนะเสมอ")})</span>}
+            {showRoutine && <span><b style={{ color: ROUTINE_MAP_COLOR }}>■</b> {tr("งานประจำกะค้าง (📋 AM · PY = Poka-Yoke · LPA · ! = เลยกรอบ AM · เครื่องหยุดชนะเสมอ")})</span>}
             {/* 🔴 แผงนี้ขึ้นบน `/tv-board` ด้วย = จอไม่มีเมาส์ ⇒ ท่อนที่เหลือบนจอต้องอ่านรู้เรื่องเอง
                 เก็บข้อเท็จจริง "ผังไม่กรองทีม" ไว้ · เหตุผล/ขอบเขตของชิป → tooltip · user 18/11 */}
             {showPm && (
@@ -600,7 +624,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
 
           {!live.length && (
             <div style={{ ...card, textAlign: 'center', padding: 24, fontSize: 13 * big, fontWeight: 800, color: 'var(--green)' }}>
-              ✅ ไม่มีเครื่องหยุดอยู่ตอนนี้
+              ✅ {tr("ไม่มีเครื่องหยุดอยู่ตอนนี้")}
             </div>
           )}
 
@@ -623,7 +647,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
                 <span style={{ fontSize: 14 * big, fontWeight: 900, color: 'var(--text)', lineHeight: 1.15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {r.production_sessions?.line_name || 'ไม่ระบุไลน์'}
+                  {r.production_sessions?.line_name || tr("ไม่ระบุไลน์")}
                 </span>
                 <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 16 * big, fontWeight: 900, color: r._s.color, lineHeight: 1, whiteSpace: 'nowrap' }}>
                   {fmtMin(r._min)}
@@ -631,10 +655,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11 * big }}>
                 <span style={{ fontWeight: 800, color: r.machine_no ? 'var(--text2)' : 'var(--accent2)' }}>
-                  {r.machine_no || '⚠ ไม่ระบุเครื่อง'}
+                  {r.machine_no || tr("⚠ ไม่ระบุเครื่อง")}
                 </span>
                 <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}
+                  {r.dr_downtime_types?.name_th || tr("ไม่ระบุประเภท")}
                 </span>
                 <span style={{ marginLeft: 'auto', flexShrink: 0, fontWeight: 800, color: r._s.color }}>{tr(r._s.label)}</span>
               </div>
@@ -643,13 +667,13 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               {/* ⚠️ ไม่มี machine_no = จับคู่ทีมไม่ได้ → ขึ้นให้ทุกทีมเห็น และต่อประวัติเครื่อง/ใบซ่อมไม่ได้ */}
               {!r.machine_no && (
                 <div style={{ fontSize: 11 * big, color: 'var(--accent2)', lineHeight: 1.4 }}>
-                  ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม)
+                  {tr("ผู้แจ้งไม่ได้เลือกเครื่องตอนลง Downtime — จัดคิวให้ทีมไม่ได้ (จึงแสดงให้ทุกทีม")})
                 </div>
               )}
               {/* ของทีมอื่น: บอกให้ชัดว่าไลน์หยุดจริง แต่คิวซ่อมไม่ใช่ของห้องนี้ */}
               {oth && (
                 <div style={{ fontSize: 11 * big, color: 'var(--muted)', lineHeight: 1.4 }}>
-                  ไลน์นี้หยุดอยู่จริง แต่เป็นคิวซ่อมของทีม <b>{deptNameOf(r._team)}</b>
+                  {tr("ไลน์นี้หยุดอยู่จริง แต่เป็นคิวซ่อมของทีม")} <b>{deptNameOf(r._team)}</b>
                 </div>
               )}
             </div>
@@ -660,11 +684,11 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           {planned.length > 0 && (
             <div style={{ ...card, background: 'var(--bg3)' }}>
               <div style={{ fontSize: 11 * big, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>
-                หยุดตามแผน {planned.length} รายการ (ไม่นับเป็น Andon)
+                {tr("หยุดตามแผน")} {planned.length} {tr("รายการ (ไม่นับเป็น")} Andon)
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {planned.map(r => (
-                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
+                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
                     {r.machine_no || r.production_sessions?.line_name} · {r.dr_downtime_types?.name_th || ''} · {fmtMin(r._min)}
                   </span>
                 ))}
@@ -684,23 +708,23 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
               <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>{tr('PM ที่ต้องทำ')}</span>
               <span style={{ marginLeft: 'auto', fontSize: 11 * big, color: 'var(--muted)', fontWeight: 700 }}>
-                เกินกำหนด {pmOver} {tr('· วันนี้')} {pmToday}{pmNever ? ` · ไม่เคยตรวจ ${pmNever}` : ''}
+                {tr("เกินกำหนด")} {pmOver} {tr('· วันนี้')} {pmToday}{pmNever ? ` · ${tr("ไม่เคยตรวจ")} ${pmNever}` : ''}
               </span>
             </div>
             {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่แผน (ห้ามเงียบ) */}
             {pmScopeHidden > 0 && pmBuckets.length > 0 && (
               <div style={{ fontSize: 11 * big, color: 'var(--muted)', marginBottom: 6 }}>
-                ไม่แสดงแผน PM ของไลน์นอกขอบเขตจอนี้ {pmScopeHidden} แผน
+                {tr("ไม่แสดงแผน PM ของไลน์นอกขอบเขตจอนี้")} {pmScopeHidden} {tr("แผน")}
               </div>
             )}
             {!pm.length && (
               <div style={{ fontSize: 11.5 * big, fontWeight: 700, color: allPm.length ? 'var(--muted)' : 'var(--green)' }}>
                 {/* "ไม่มีแผนถึงกำหนด" ≠ "ไม่มีแผนเลย" — ถ้าทั้งระบบไม่มีแผน PM ต้องบอกให้ไปตั้ง ไม่ใช่ขึ้นเขียวว่าปกติดี */}
                 {pmBuckets.length
-                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${pmBuckets.length}${pmRunDayN ? ` · AM ตามวันเดิน ${pmRunDayN} ดูจอ AM` : ''}${pmNoCycleN ? ` · ⚠ ไม่ตั้งรอบ ${pmNoCycleN}` : ''})`
+                  ? `✅ ${tr("ไม่มีแผนที่ถึงกำหนดใน")} ${PM_SOON_DAYS} ${tr("วัน (แผนที่ใช้งานอยู่")} ${pmBuckets.length}${pmRunDayN ? ` · AM ${tr("ตามวันเดิน")} ${pmRunDayN} ${tr("ดูจอ")} AM` : ''}${pmNoCycleN ? ` · ⚠ ${tr("ไม่ตั้งรอบ")} ${pmNoCycleN}` : ''})`
                   : (d.plans || []).length
-                    ? `ไม่มีแผน PM ของไลน์ในขอบเขตจอนี้ (แผนของไลน์อื่น ${pmScopeHidden} แผนไม่แสดง)`
-                    : '⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ'}
+                    ? `${tr("ไม่มีแผน PM ของไลน์ในขอบเขตจอนี้ (แผนของไลน์อื่น")} ${pmScopeHidden} ${tr("แผนไม่แสดง")})`
+                    : tr("⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ")}
               </div>
             )}
             {pm.slice(0, 8).map(p => (
@@ -714,13 +738,13 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {p.am && <span style={{ color: 'var(--green)', fontWeight: 800 }}> · AM</span>}
                 </span>
                 <b style={{ flexShrink: 0, color: p.bucket === 'never' ? 'var(--amber)' : p.days < 0 ? 'var(--red)' : p.days === 0 ? 'var(--amber)' : 'var(--muted)' }}>
-                  {p.bucket === 'never' ? 'ไม่เคยตรวจ' : p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
+                  {p.bucket === 'never' ? tr("ไม่เคยตรวจ") : p.days < 0 ? `${tr("เกิน")} ${Math.abs(p.days)} ${tr("วัน")}` : p.days === 0 ? tr("วันนี้") : `${tr("อีก")} ${p.days} ${tr("วัน")}`}
                 </b>
               </div>
             ))}
             {pm.length > 8 && (
               <div onClick={() => navigate('/pm?tab=plan')} style={{ cursor: 'pointer', fontSize: 11 * big, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
-                + อีก {pm.length - 8} แผน — ดูทั้งหมดที่แผน PM ›
+                + {tr("อีก")} {pm.length - 8} {tr("แผน — ดูทั้งหมดที่แผน")} PM ›
               </div>
             )}
           </div>
@@ -743,12 +767,12 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               {mo.slice(0, 4).map(o => {
                 const age = daysSince(o.report_at);
                 return (
-                  <div key={o.id} onClick={() => navigate('/mtn-repair')}
+                  <div key={o.id} onClick={() => navigate(`/mtn-repair?mo=${encodeURIComponent(o.id)}`)}
                     style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border)', fontSize: 11 * big }}>
                     <span style={{ color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {o.machine_no || o.line_name || o.mo_no || '-'}
                     </span>
-                    <b style={{ flexShrink: 0, color: age >= 3 ? 'var(--red)' : 'var(--muted)' }}>{age != null ? `${age} วัน` : '-'}</b>
+                    <b style={{ flexShrink: 0, color: age >= 3 ? 'var(--red)' : 'var(--muted)' }}>{age != null ? `${age} ${tr("วัน")}` : '-'}</b>
                   </div>
                 );
               })}
@@ -774,12 +798,12 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         const zLive = zDt.filter(r => r._s.k !== 'planned');
         return (
           <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 19, fontWeight: 900, color: 'var(--text)' }}>{zoom}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                    {zLive.length ? `🔴 เครื่องหยุดอยู่ ${zLive.length} รายการ` : '✅ ไม่มีเครื่องหยุดอยู่ตอนนี้'}
+                    {zLive.length ? `🔴 ${tr("เครื่องหยุดอยู่")} ${zLive.length} ${tr("รายการ")}` : tr("✅ ไม่มีเครื่องหยุดอยู่ตอนนี้")}
                     {' · '}{tr('🛠️ ใบซ่อมค้าง')} {zMo.length}{' · '}{tr('📅 PM ถึงกำหนด')} {zPm.length}
                   </div>
                 </div>
@@ -792,7 +816,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {!zDt.length ? <div style={{ fontSize: 12.5, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ไม่มีรายการหยุดค้างของไลน์นี้')}</div> : (
                     <div style={{ display: 'grid', gap: 6 }}>
                       {zDt.map(r => (
-                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
+                        <div key={r.id} style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <b style={{ fontSize: 13, color: r.machine_no ? 'var(--text)' : 'var(--accent2)' }}>{r.machine_no || tr('⚠ ไม่ระบุเครื่อง')}</b>
                             <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.dr_downtime_types?.name_th || tr('ไม่ระบุประเภท')}</span>
@@ -811,10 +835,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {!zMo.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีใบค้างของไลน์นี้')}</div> : (
                     <div style={{ display: 'grid', gap: 4 }}>
                       {zMo.slice(0, 8).map(o => (
-                        <div key={o.id} onClick={() => navigate('/mtn-repair')} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
+                        <div key={o.id} onClick={() => navigate(`/mtn-repair?mo=${encodeURIComponent(o.id)}`)} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, cursor: 'pointer' }}>
                           <b style={{ color: 'var(--text)', flexShrink: 0 }}>{o.mo_no || tr('⏳ รอออกเลข')}</b>
                           <span style={{ color: 'var(--muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {o.machine_no || 'ไม่ระบุเครื่อง'}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
+                            {o.machine_no || tr("ไม่ระบุเครื่อง")}{o.problem_characteristic ? ` · ${o.problem_characteristic}` : ''}
                           </span>
                           <span style={{ marginLeft: 'auto', flexShrink: 0, color: 'var(--amber)', fontWeight: 700 }}>{moStatusLabel(o)}</span>
                         </div>
@@ -825,7 +849,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                 </div>
 
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>{tr('PM ที่ถึงกำหนด (ภายใน')} {PM_SOON_DAYS} วัน)</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 5 }}>{tr('PM ที่ถึงกำหนด (ภายใน')} {PM_SOON_DAYS} {tr("วัน")})</div>
                   {!zPm.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีแผนที่ถึงกำหนดของไลน์นี้')}</div> : (
                     <div style={{ display: 'grid', gap: 4 }}>
                       {zPm.map(p => (
@@ -833,8 +857,8 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                           <span style={{ color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {p.name}{p.am && <span style={{ color: 'var(--green)', fontWeight: 800 }}> · AM</span>}
                           </span>
-                          <b style={{ marginLeft: 'auto', flexShrink: 0, color: p.days < 0 ? 'var(--red)' : p.days === 0 ? 'var(--amber)' : 'var(--muted)' }}>
-                            {p.days < 0 ? `เกิน ${Math.abs(p.days)} วัน` : p.days === 0 ? 'วันนี้' : `อีก ${p.days} วัน`}
+                          <b style={{ marginLeft: 'auto', flexShrink: 0, color: p.bucket === 'never' ? 'var(--amber)' : p.days < 0 ? 'var(--red)' : p.days === 0 ? 'var(--amber)' : 'var(--muted)' }}>
+                            {p.bucket === 'never' ? tr("ไม่เคยตรวจ") : p.days < 0 ? `${tr("เกิน")} ${Math.abs(p.days)} ${tr("วัน")}` : p.days === 0 ? tr("วันนี้") : `${tr("อีก")} ${p.days} ${tr("วัน")}`}
                           </b>
                         </div>
                       ))}

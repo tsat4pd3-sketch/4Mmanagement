@@ -24,6 +24,7 @@
    ══════════════════════════════════════════════════════════════════════════════════════════ */
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { MoreMark } from './InfoMore';
+import NoticeBar from './NoticeBar';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { can, canSeeded } from '../utils/permissions';
@@ -56,7 +57,7 @@ import { askConfirm } from '../utils/askConfirm';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
 const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap' };
-const fmtMin = (m) => m == null ? '—' : m < 60 ? `${Math.round(m)} น.` : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')} ชม.`;
+const fmtMin = (m) => m == null ? '—' : m < 60 ? `${Math.round(m)} ${tr("น.")}` : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')} ${tr("ชม.")}`;
 /* ข้ามวัน = เวลาเปล่าๆ ไม่พอ ("22:34" ของวันไหน?) */
 const fmtDayTime = (ms) => {
   const d = new Date(ms);
@@ -84,36 +85,36 @@ function DieMatLinkNote({ lot, dies, role, mayWrite, onDone }) {
   if (mats.includes(String(lot.mat_no).trim().toUpperCase())) return null;   // ผูกไว้แล้ว
   /* ทะเบียนบอกว่าชุดนี้ทำพาร์ทอื่น — อาจเป็นเรื่องจริง (gang die) หรือเลือกผิดชุด · คนตัดสิน */
   if (mats.length) return (
-    <div style={{ fontSize: 11, color: '#f59e0b' }}>
-      ⚠ ทะเบียนบอกว่าชุดนี้ทำ {mats.join(' + ')} — ถ้าปั๊มคู่กับพาร์ทนี้จริง เพิ่มช่องที่ 2 ที่ /equipment?tab=die
+    <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+      ⚠ {tr("ทะเบียนบอกว่าชุดนี้ทำ")} {mats.join(' + ')} — {tr("ถ้าปั๊มคู่กับพาร์ทนี้จริง เพิ่มช่องที่ 2 ที่")} /equipment?tab=die
     </div>
   );
   if (slot !== 'mat_no' || !mayWrite) return null;
 
   async function link() {
-    if (!await askConfirm(`ผูก MAT ${lot.mat_no} เข้ากับชุดแม่พิมพ์ ${set.set_code}?\n\n`
+    if (!await askConfirm(`${tr("ผูก")} MAT ${lot.mat_no} ${tr("เข้ากับชุดแม่พิมพ์")} ${set.set_code}?\n\n`
       + 'ทะเบียนแม่พิมพ์จะจำว่าชุดนี้ทำพาร์ทนี้ ⇒ ล็อตถัดไปของพาร์ทนี้ระบบเลือกชุดให้เอง\n'
-      + 'แก้ได้ภายหลังที่ /equipment?tab=die')) return;
+      + (tr('แก้ได้ภายหลังที่') + ' /equipment?tab=die'))) return;
     setBusy(true);
     try {
       /* คาดค่าเดิมไว้ด้วย — ระหว่างนี้มีคนกรอกช่องนี้ไปแล้ว = 0 แถว ไม่ทับของเขา */
       const q = supabaseDR.from('die_sets').update({ mat_no: String(lot.mat_no).trim() }).eq('id', set.id);
       const cas = set.mat_no == null ? q.is('mat_no', null) : q.eq('mat_no', set.mat_no);
-      if (!checkWriteRows(await cas.select('id'), `ผูก MAT กับชุด ${set.set_code}`,
-        { zeroMsg: `ช่อง MAT ของชุด ${set.set_code} ถูกกรอกไปแล้ว หรือบัญชีคุณไม่มีสิทธิ์ — โหลดใหม่แล้วดูอีกครั้ง` })) return;
-      toast.success(`ผูก ${lot.mat_no} → ${set.set_code} แล้ว`);
+      if (!checkWriteRows(await cas.select('id'), `${tr("ผูก MAT กับชุด")} ${set.set_code}`,
+        { zeroMsg: `${tr("ช่อง MAT ของชุด")} ${set.set_code} ${tr("ถูกกรอกไปแล้ว หรือบัญชีคุณไม่มีสิทธิ์ — โหลดใหม่แล้วดูอีกครั้ง")}` })) return;
+      toast.success(`${tr("ผูก")} ${lot.mat_no} → ${set.set_code} ${tr("แล้ว")}`);
       await onDone?.();
     } finally { setBusy(false); }
   }
 
   if (!can('machines', 'edit', role)) return (
-    <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่ผูก MAT — ผูกได้ที่ /equipment?tab=die</div>
+    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr("ยังไม่ผูก MAT — ผูกได้ที่")} /equipment?tab=die</div>
   );
   return (
     <button type="button" onClick={link} disabled={busy}
       style={{ marginTop: 2, fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-md)', cursor: busy ? 'default' : 'pointer',
-        background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
-      {busy ? 'กำลังผูก…' : `🔗 ผูก MAT นี้กับ ${set.set_code}`}
+        background: 'var(--card-surf)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
+      {busy ? tr("กำลังผูก…") : `🔗 ${tr("ผูก MAT นี้กับ")} ${set.set_code}`}
     </button>
   );
 }
@@ -155,7 +156,7 @@ export default function ProdLotPlanner({
     if (lines.some(l => l.name === lineName)) return;
     const prev = lineName;
     setLineName(lines[0].name);
-    toast.info(`ไลน์ "${prev}" ไม่อยู่ในขอบเขตที่เลือก — สลับไป "${lines[0].name}" ให้แล้ว`);
+    toast.info(`${tr("ไลน์")} "${prev}" ${tr("ไม่อยู่ในขอบเขตที่เลือก — สลับไป")} "${lines[0].name}" ${tr("ให้แล้ว")}`);
   }, [lines, lineName]);
 
   /* 🔔 ของถึง min แล้ว — ตัวป้อนงานให้แพลนนิ่ง (คำสั่ง user 13/11)
@@ -197,7 +198,7 @@ export default function ProdLotPlanner({
       supabaseDR.from('break_policies').select('*').eq('is_active', true),
     ]);
     if (!alive()) return;                       // สลับไลน์/วันก่อนคำตอบกลับ = ทิ้งคำตอบเก่า
-    if (lotRes.error) toast.error(`โหลดแผนไม่สำเร็จ: ${lotRes.error.message}`);
+    if (lotRes.error) toast.error(`${tr("โหลดแผนไม่สำเร็จ")}: ${lotRes.error.message}`);
     /* 🔴 `seq` เป็นลำดับ**ภายในกะ** ⇒ โหลดหลายกะแล้วเรียงด้วย seq เฉยๆ จะได้ 1,1,2,2,3
        = งานกะดึกแทรกกลางกะเช้า · ต้องเรียงตามลำดับกะในขอบเขตก่อนเสมอ */
     setLots(orderAcrossHorizon(lotRes.data || [], segRef.current));
@@ -207,7 +208,7 @@ export default function ProdLotPlanner({
     /* 🔴 QC 05/10 — เดิม error ถูกกลืนเป็น [] ⇒ ยอดจริงทุกล็อตขึ้น 0 "ยังไม่เริ่ม" ทั้งที่คิวรีล้ม (จอโกหก · กฎข้อ 12)
        + `.in(session_id)` ยาว/เกิน 1000 แถว ⇒ ผ่าน fetchByIds (แบ่งก้อน+แบ่งหน้า) */
     if (sessRes.error) {
-      setOrders([]); setOrdersErr(`โหลดกะของไลน์ไม่ได้: ${sessRes.error.message}`);
+      setOrders([]); setOrdersErr(`${tr("โหลดกะของไลน์ไม่ได้")}: ${sessRes.error.message}`);
     } else {
       const sids = (sessRes.data || []).map(s => s.id);
       if (sids.length) {
@@ -216,7 +217,7 @@ export default function ProdLotPlanner({
           .in('session_id', part));
         if (alive()) {
           setOrders(r.rows);
-          setOrdersErr(r.error ? `โหลดใบผลิตไม่ครบ: ${r.error}` : r.truncated ? 'ใบผลิตเยอะเกินเพดาน — ยอดจริงอาจไม่ครบ' : null);
+          setOrdersErr(r.error ? `${tr("โหลดใบผลิตไม่ครบ")}: ${r.error}` : r.truncated ? 'ใบผลิตเยอะเกินเพดาน — ยอดจริงอาจไม่ครบ' : null);
         }
       } else if (alive()) { setOrders([]); setOrdersErr(null); }
     }
@@ -347,7 +348,7 @@ export default function ProdLotPlanner({
     setDirty(true);
   };
   const cancelLot = (l) => {
-    const why = window.prompt(`ยกเลิกล็อต ${l.mat_no} (${l.qty_plan} ชิ้น) เพราะอะไร?\n(เก็บไว้เป็นประวัติ ไม่ได้ลบทิ้ง)`);
+    const why = window.prompt(`${tr("ยกเลิกล็อต")} ${l.mat_no} (${l.qty_plan} ${tr("ชิ้น) เพราะอะไร?\\n(เก็บไว้เป็นประวัติ ไม่ได้ลบทิ้ง")})`);
     if (!why) return;
     patch(l.id, { status: 'cancelled', cancel_reason: why });
   };
@@ -397,11 +398,11 @@ export default function ProdLotPlanner({
       if (!checkWrite(res, 'อัพเดทล็อต')) ok = false;
       else if (!res.data?.length) { zeroRows++; ok = false; }
     }
-    if (zeroRows) toast.error(`อัพเดทไม่ติด ${zeroRows} ล็อต (ไม่พบแถวในฐาน — ถูกลบ/ไม่มีสิทธิ์) — โหลดแผนล่าสุดแล้วตรวจอีกครั้ง`);
+    if (zeroRows) toast.error(`${tr("อัพเดทไม่ติด")} ${zeroRows} ${tr("ล็อต (ไม่พบแถวในฐาน — ถูกลบ/ไม่มีสิทธิ์) — โหลดแผนล่าสุดแล้วตรวจอีกครั้ง")}`);
     setSaving(false);
     if (ok) {
       const shifts = new Set(rows.map(r => `${r.work_date}|${r.shift}`)).size;
-      toast.success(`บันทึกแผน ${rows.length} ล็อต · ${shifts} กะ ✓`);
+      toast.success(`${tr("บันทึกแผน")} ${rows.length} ${tr("ล็อต")} · ${shifts} ${tr("กะ")} ✓`);
       await load();
     } else if (insertedNew || zeroRows) {
       /* 🔴 QC 05/10 — ล็อตใหม่ลงฐานแล้ว แต่ในจอยังเป็น `_new` ไม่มี id ⇒ กดบันทึกซ้ำ = insert ล็อตซ้ำ
@@ -422,7 +423,7 @@ export default function ProdLotPlanner({
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {/* 🔗 ไม่ใช่ "ดูกะไหน" อีกต่อไป — คิวไหลข้ามกะเอง ช่องนี้แค่บอกว่า**เริ่มวาง**ที่กะไหน */}
         <Segmented value={shift} onChange={setShift} label={tr('เริ่มที่')} options={[
-          { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' },
+          { value: 'day', label: tr("กะเช้า") }, { value: 'night', label: tr("กะดึก") },
         ]} />
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
           title={tr('คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)')}>
@@ -460,14 +461,14 @@ export default function ProdLotPlanner({
         )}
       </FilterBar>
       {ordersErr && (
-        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)' }}>
-          ⚠️ {ordersErr} — ยอดที่ผลิตจริงของล็อตด้านล่างอาจต่ำกว่าจริง (ไม่ใช่ "ยังไม่เริ่ม")
+        <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)' }}>
+          ⚠️ {ordersErr} — {tr("ยอดที่ผลิตจริงของล็อตด้านล่างอาจต่ำกว่าจริง (ไม่ใช่ \"ยังไม่เริ่ม")}")
         </div>
       )}
 
       {!mayWrite && (
         <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12.5, color: 'var(--text2)' }}>
-          👁️ <b>{tr('โหมดดูอย่างเดียว')}</b> {tr('— role ของคุณยังไม่มีสิทธิ์')} <code>production_plan:write</code> (ปรับได้ที่หน้า /permissions)
+          👁️ <b>{tr('โหมดดูอย่างเดียว')}</b> {tr('— role ของคุณยังไม่มีสิทธิ์')} <code>production_plan:write</code> ({tr("ปรับได้ที่หน้า")} /permissions)
         </div>
       )}
 
@@ -479,76 +480,79 @@ export default function ProdLotPlanner({
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr('⏱️ เวลาผลิต')} <b>{fmtMin(summary.runMin)}</b></span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}
           title={summary.setupNoDie ? tr('ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย — ประเมินเวลาเปลี่ยนรุ่นไม่ได้ (ไม่ใช่ "ไม่ต้องเปลี่ยน")') : ''}>
-          เปลี่ยนรุ่น <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
-          <span style={{ color: 'var(--muted)' }}> ({summary.setupNoDie ? 'ยังไม่ระบุแม่พิมพ์' : `${summary.changeCount} ครั้ง`})</span>
+          {tr("เปลี่ยนรุ่น")} <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
+          <span style={{ color: 'var(--muted)' }}> ({summary.setupNoDie ? tr("ยังไม่ระบุแม่พิมพ์") : `${summary.changeCount} ${tr("ครั้ง")}`})</span>
         </span>
         <span style={{ fontSize: 13, fontWeight: 800, color: overflowCount > 0 ? '#ef4444' : 'var(--text)' }}>
-          คาดจบ <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
-          {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> {tr('· กิน')} {hz.shiftsUsed} กะ
-            {hz.lastSegment && ` (ยาวถึง ${SHIFT_LABEL[hz.lastSegment.shift]} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
+          {tr("คาดจบ")} <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
+          {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> {tr('· กิน')} {hz.shiftsUsed} {tr("กะ")}
+            {hz.lastSegment && ` (${tr("ยาวถึง")} ${tr(SHIFT_LABEL[hz.lastSegment.shift])} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
         </span>
         {summary.trialCount > 0 && (
           <span style={{ fontSize: 12.5, color: '#22d3ee', fontWeight: 700 }}
             title={tr('งาน new model ที่จองเครื่องมาทดลอง — กินเวลาเครื่องจริง แต่ไม่ใช่ยอดส่งลูกค้า')}>
-            ทดลอง {summary.trialCount} {tr('ใบ ·')} {fmtMin(summary.trialMin)}
+            {tr("ทดลอง")} {summary.trialCount} {tr('ใบ ·')} {fmtMin(summary.trialMin)}
           </span>
         )}
         {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('เวลาทำงานสุทธิ')} {netMin} {tr('นาที/กะ')}</span>}
         {summary.started > 0 && <span style={{ fontSize: 12, color: 'var(--accent)' }}>{tr('▶ เริ่มแล้ว')} {summary.started} {tr('· ปิดแล้ว')} {summary.closed}</span>}
       </div>
 
-      {/* 🔴 งานที่ยังหาที่ลงไม่ได้ / ยังจัดกะให้ไม่ได้ — 2 เรื่องคนละสาเหตุ ห้ามยุบรวม ห้ามซ่อน */}
-      {(overflowCount > 0 || unsureCount > 0) && (
-        <div style={{ ...card, borderColor: overflowCount > 0 ? '#ef444466' : '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
-          {overflowCount > 0 && (
-            <div>🚨 <b style={{ color: '#ef4444' }}>{overflowCount} {tr('ล็อตล้นเลยขอบเขต')} {horizon.segments.length} {tr('กะ')}</b> —
-              งานยังไม่มีที่ลงจริง · ยืด "ไหลต่อได้" ให้ยาวขึ้น หรือลดงาน/เพิ่มกำลังผลิต
-              <b> {tr('ระบบไม่ยัดลงกะสุดท้ายให้')}</b></div>
-          )}
-          {/* 18/11 · user "ข้อความสีเทาแบบนั้นอยากให้เป็น tooltip มากกว่าโชว์มาเยอะๆ"
-              🔴 หัวคำเตือน + ผลที่ตามมา อยู่บนจอ · **เหตุผล**ย้ายไป title (ขาดไปก็ยังลงมือถูก) */}
-          {unsureCount > 0 && (
-            <div title={tr('เวลาเชื่อไม่ได้ เพราะไม่มี cycle time หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า')}>
-              ⚠️ <b>{unsureCount} {tr('ล็อตยังจัดกะให้ไม่ได้')}</b> · <b>{tr('คงกะเดิมตอนบันทึก ไม่ถูกย้าย')}</b>{' '}
-              <MoreMark text={tr('เวลาเชื่อไม่ได้ เพราะไม่มี cycle time หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า')} /></div>
-          )}
-        </div>
+      {/* 🔴 งานที่ยังหาที่ลงไม่ได้ / ยังจัดกะให้ไม่ได้ — 2 เรื่องคนละสาเหตุ ห้ามยุบรวม ห้ามซ่อน
+          UI §6.35 ข้อ 2 (23/11): หนึ่งเรื่อง = หนึ่ง <NoticeBar> บรรทัดเดียว — เดิมเป็นการ์ดขอบ hex ดิบ
+          ซึ่งเป็นภาษาภาพคนละชุดกับแถบของหน้าแม่ (และผิดกฎ token สี) */}
+      {overflowCount > 0 && (
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+          <b>{overflowCount} {tr('ล็อตล้นเลยขอบเขต')} {horizon.segments.length} {tr('กะ')}</b> — {tr('งานยังไม่มีที่ลงจริง')} ·
+          <b> {tr('ระบบไม่ยัดลงกะสุดท้ายให้')}</b>
+          <MoreMark text={tr('ยืด "ไหลต่อได้" ให้ยาวขึ้น หรือลดงาน/เพิ่มกำลังผลิต')} />
+        </NoticeBar>
+      )}
+      {/* 18/11 · user "ข้อความสีเทาแบบนั้นอยากให้เป็น tooltip มากกว่าโชว์มาเยอะๆ"
+          🔴 หัวคำเตือน + ผลที่ตามมา อยู่บนจอ · **เหตุผล**ย้ายไป tooltip (ขาดไปก็ยังลงมือถูก) */}
+      {unsureCount > 0 && (
+        <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+          <b>{unsureCount} {tr('ล็อตยังจัดกะให้ไม่ได้')}</b> · <b>{tr('คงกะเดิมตอนบันทึก ไม่ถูกย้าย')}</b>
+          <MoreMark text={tr('เวลาเชื่อไม่ได้ เพราะไม่มี cycle time หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า')} />
+        </NoticeBar>
       )}
 
-      {/* 🔴 ความซื่อสัตย์: อะไรที่ประเมินไม่ได้ ต้องเขียนบนจอ ห้ามปล่อยให้ตัวเลขดูสวย */}
-      {(summary.noCtMats.length > 0 || summary.setupUnknown || noHeight > 0 || summary.noTimeLots > 0) && (
-        <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
-          {summary.noTimeLots > 0 && (
-            <div>🧪 <b>{summary.noTimeLots} {tr('ใบทดลองยังไม่ได้ระบุเวลาที่ขอ')}</b> — วางบนไทม์ไลน์ไม่ได้
-              และทำให้เวลาของใบที่อยู่หลังจากนั้น<b>{tr('เชื่อไม่ได้ทั้งหมด')}</b> · แก้ที่ช่อง "ขอใช้เครื่อง"</div>
-          )}
-          {/* รายชื่อ MAT ไป title — บนจอเหลือ "กี่ตัว + กระทบอะไร" ซึ่งพอให้ตัดสินใจได้แล้ว */}
-          {summary.noCtMats.length > 0 && (
-            <div title={`${tr('พาร์ทที่ยังไม่มี cycle time')}: ${summary.noCtMats.join(' · ')}`}>
-              ⚠️ <b>{summary.noCtMats.length} {tr('พาร์ทยังไม่มี cycle time')}</b>{' '}
-              <MoreMark text={`${tr('พาร์ทที่ยังไม่มี cycle time')}: ${summary.noCtMats.join(' · ')}`} />
-              — เวลาผลิตข้างบน<b>{tr('ต่ำกว่าจริง')}</b> {tr('· ไปกรอกที่ Product Master')}</div>
-          )}
-          {summary.setupUnknown && (
-            <div>⚠️ <b>{tr('ยังตอบเวลาเปลี่ยนรุ่นรวมไม่ได้')}</b> — {
-              summary.setupNoDie ? 'ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย (ช่อง "แม่พิมพ์" ในตารางด้านล่าง)'
-                : rule ? 'ยังไม่ได้กรอกเวลาฐานยก-ลงแม่พิมพ์' : 'ยังไม่มีกฎเวลาเปลี่ยนรุ่นของไลน์นี้'}
-              {' '}{tr('(ตั้งที่')} <code>/equipment?tab=die</code>) · <b>"—" แปลว่าไม่รู้ ไม่ใช่ 0</b></div>
-          )}
-          {noHeight > 0 && (
-            <div>📏 <b>{tr('แม่พิมพ์')} {noHeight} {tr('ตัวยังไม่ได้กรอกความสูง')}</b> — ระบบจึงเรียงลำดับให้ประหยัดเวลาเปลี่ยนรุ่นไม่ได้
-              (ตัวที่ไม่รู้ความสูงถูกต่อท้ายลำดับ <b>{tr('ไม่ได้ตัดทิ้ง')}</b>)</div>
-          )}
-        </div>
+      {/* 🔴 ความซื่อสัตย์: อะไรที่ประเมินไม่ได้ ต้องเขียนบนจอ ห้ามปล่อยให้ตัวเลขดูสวย
+          ⇒ **ตัวเลข + ผลที่ตามมา อยู่บนแถบเสมอ ห้ามพับ** · เหตุผล/รายชื่อ → tooltip (UI §6.10) */}
+      {summary.noTimeLots > 0 && (
+        <NoticeBar tone="warn" icon="🧪" style={{ marginBottom: 0 }}>
+          <b>{summary.noTimeLots} {tr('ใบทดลองยังไม่ได้ระบุเวลาที่ขอ')}</b> — {tr('วางบนไทม์ไลน์ไม่ได้ · เวลาของใบหลังจากนั้น')}<b>{tr('เชื่อไม่ได้ทั้งหมด')}</b>
+          <MoreMark text={tr('แก้ที่ช่อง "ขอใช้เครื่อง"')} />
+        </NoticeBar>
+      )}
+      {/* รายชื่อ MAT ไป tooltip — บนจอเหลือ "กี่ตัว + กระทบอะไร" ซึ่งพอให้ตัดสินใจได้แล้ว */}
+      {summary.noCtMats.length > 0 && (
+        <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+          <b>{summary.noCtMats.length} {tr('พาร์ทยังไม่มี cycle time')}</b> — {tr("เวลาผลิตข้างบน")}<b>{tr('ต่ำกว่าจริง')}</b>
+          <MoreMark text={`${tr('ไปกรอกที่ Product Master')} · ${tr('พาร์ทที่ยังไม่มี cycle time')}: ${summary.noCtMats.join(' · ')}`} />
+        </NoticeBar>
+      )}
+      {summary.setupUnknown && (
+        <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+          <b>{tr('ยังตอบเวลาเปลี่ยนรุ่นรวมไม่ได้')}</b> · <b>{tr('"—" แปลว่าไม่รู้ ไม่ใช่ 0')}</b>
+          <MoreMark text={`${summary.setupNoDie ? tr('ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย (ช่อง "แม่พิมพ์" ในตารางด้านล่าง)')
+            : rule ? tr('ยังไม่ได้กรอกเวลาฐานยก-ลงแม่พิมพ์') : tr('ยังไม่มีกฎเวลาเปลี่ยนรุ่นของไลน์นี้')} · ${tr('ตั้งที่')} /equipment?tab=die`} />
+        </NoticeBar>
+      )}
+      {noHeight > 0 && (
+        <NoticeBar tone="warn" icon="📏" style={{ marginBottom: 0 }}>
+          <b>{tr('แม่พิมพ์')} {noHeight} {tr('ตัวยังไม่ได้กรอกความสูง')}</b> — {tr('เรียงลำดับให้ประหยัดเวลาเปลี่ยนรุ่นไม่ได้')}
+          <MoreMark text={tr('ตัวที่ไม่รู้ความสูงถูกต่อท้ายลำดับ ไม่ได้ตัดทิ้ง')} />
+        </NoticeBar>
       )}
 
       {/* ── 🧲 ไทม์ไลน์จัดแผน (ลากสลับก่อนหลัง) ── */}
       {rec.rows.length > 0 && frame.startMs && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-            ไทม์ไลน์ — 1 บรรทัด = 1 กะ <span
+            {tr("ไทม์ไลน์ — 1 บรรทัด = 1 กะ")} <span
               title={tr('ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลลงบรรทัดถัดไปเอง · ดูทั้งสัปดาห์ = ตั้ง "ไหลต่อได้" เป็น 7 วัน')}
-              style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ลากเพื่อสลับลำดับ){' '}
+              style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>({tr("ลากเพื่อสลับลำดับ")}){' '}
               <MoreMark text={tr('ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลลงบรรทัดถัดไปเอง · ดูทั้งสัปดาห์ = ตั้ง "ไหลต่อได้" เป็น 7 วัน')} /></span>
           </div>
           <PlanTimeline
@@ -560,8 +564,8 @@ export default function ProdLotPlanner({
           />
           {/* 🔴 ปฏิทินยังไม่โหลด = ยังไม่ได้เช็ควันหยุด ต้องเขียนบนจอ ห้ามเงียบ */}
           {horizon.calendarUnknown && (
-            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 5 }}>
-              ⚠️ ยังไม่ได้เช็คปฏิทินบริษัท — ขอบเขตนี้ใช้กติกา จ-ศ ไปก่อน <b>{tr('วันหยุดพิเศษอาจยังไม่ถูกข้าม')}</b>
+            <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 5 }}>
+              ⚠️ {tr("ยังไม่ได้เช็คปฏิทินบริษัท — ขอบเขตนี้ใช้กติกา จ-ศ ไปก่อน")} <b>{tr('วันหยุดพิเศษอาจยังไม่ถูกข้าม')}</b>
             </div>
           )}
         </div>
@@ -571,7 +575,7 @@ export default function ProdLotPlanner({
       <div style={{ ...card, overflowX: 'auto' }}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
           {/* คำอธิบายคอลัมน์ล้วน — ไม่มีตัวเลข ไม่มีคำเตือน ⇒ พับได้ทั้งก้อน · user 18/11 */}
-          คิวงาน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+          {tr("คิวงาน")} <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
             <MoreMark text={tr('คอลัมน์ "ลงกะ" = กะที่ระบบคำนวณว่างานใบนี้ตกไปอยู่ — บันทึกแล้วหน้างานกะนั้นจะเห็น')} /></span>
         </div>
         {loading ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>{tr('กำลังโหลด…')}</div>
@@ -605,7 +609,7 @@ export default function ProdLotPlanner({
                           <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
                           {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                            {[l.trial_customer, l.trial_reason, l.requested_by && `ขอโดย ${l.requested_by}`].filter(Boolean).join(' · ') || 'ยังไม่ระบุที่มา'}
+                            {[l.trial_customer, l.trial_reason, l.requested_by && `ขอโดย ${l.requested_by}`].filter(Boolean).join(' · ') || tr("ยังไม่ระบุที่มา")}
                           </div>
                         </>
                       ) : (
@@ -624,8 +628,8 @@ export default function ProdLotPlanner({
                       {/* 🧩 ยอดจริงมาจาก **ผลรวมใบคัมบังของพาร์ทนั้น** ไม่ใช่ใบเดียว (ดู planLots.js) */}
                       {r.state !== 'pending' && r.state !== 'trial' && (
                         <div style={{ fontSize: 11, color: r.state === 'done' ? 'var(--accent)' : '#f59e0b' }}>
-                          ทำได้ {qtyText(r.donePcs)}{r.pct != null ? ` · ${r.pct}%` : ''}
-                          {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> {tr('(จาก')} {r.fromOrders} ใบ)</span>}
+                          {tr("ทำได้")} {qtyText(r.donePcs)}{r.pct != null ? ` · ${r.pct}%` : ''}
+                          {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> {tr('(จาก')} {r.fromOrders} {tr("ใบ")})</span>}
                         </div>
                       )}
                     </td>
@@ -639,13 +643,13 @@ export default function ProdLotPlanner({
                     {/* 🔗 กะที่งานใบนี้ตกไปอยู่ — "—" = ยังตอบไม่ได้ **ไม่ใช่กะแรก** */}
                     <td style={td}>{(() => {
                       const at = landingOf[l.id];
-                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title={tr('งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง')}>{tr('ล้นขอบเขต')}</span>;
-                      if (!at.sure) return <span style={{ color: '#f59e0b' }} title={tr('เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้')}>{tr('⚠ ยังจัดไม่ได้')}</span>;
+                      if (!at || at.overflow) return <span style={{ color: 'var(--red)' }} title={tr('งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง')}>{tr('ล้นขอบเขต')}</span>;
+                      if (!at.sure) return <span style={{ color: 'var(--amber)' }} title={tr('เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้')}>{tr('⚠ ยังจัดไม่ได้')}</span>;
                       const same = at.workDate === l.work_date && at.shift === l.shift;
                       return (
                         <span style={{ color: same ? 'var(--text2)' : 'var(--accent)' }}
-                          title={same ? 'ตรงกับที่บันทึกไว้' : `จะถูกย้ายจาก ${l.shift === 'night' ? 'กะดึก' : 'กะเช้า'} ${l.work_date} ตอนกดบันทึก`}>
-                          {SHIFT_LABEL[at.shift]} {at.workDate.slice(8)}/{at.workDate.slice(5, 7)}{same ? '' : ' ✧'}
+                          title={same ? tr("ตรงกับที่บันทึกไว้") : `${tr("จะถูกย้ายจาก")} ${l.shift === 'night' ? tr('กะดึก') : tr('กะเช้า')} ${l.work_date} ${tr("ตอนกดบันทึก")}`}>
+                          {tr(SHIFT_LABEL[at.shift])} {at.workDate.slice(8)}/{at.workDate.slice(5, 7)}{same ? '' : ' ✧'}
                         </span>
                       );
                     })()}</td>
@@ -663,13 +667,13 @@ export default function ProdLotPlanner({
                           <select value={l.die_no || ''} onChange={e => patch(l.id, { die_no: e.target.value || null })} style={{ fontSize: 12, maxWidth: 170 }}>
                             <option value="">{tr('— ไม่ระบุ —')}</option>
                             {opt.linked.length > 0 && (
-                              <optgroup label={`ทะเบียนบอกว่าทำพาร์ทนี้ (${opt.linked.length})`}>
+                              <optgroup label={`${tr("ทะเบียนบอกว่าทำพาร์ทนี้")} (${opt.linked.length})`}>
                                 {opt.linked.map(d => <option key={d.id} value={d.set_code}>{tr(d.set_code)}</option>)}
                               </optgroup>
                             )}
                             {/* 🔴 "ยังไม่ผูก MAT" = ยังไม่รู้ **ไม่ใช่ "ไม่ใช่ตัวนี้"** — ซ่อนกองนี้ = คนที่รู้ก็เลือกไม่ได้ */}
                             {opt.unlinked.length > 0 && (
-                              <optgroup label={`ยังไม่ผูก MAT — ระบบไม่ได้ยืนยัน (${opt.unlinked.length})`}>
+                              <optgroup label={`${tr("ยังไม่ผูก MAT — ระบบไม่ได้ยืนยัน")} (${opt.unlinked.length})`}>
                                 {opt.unlinked.map(d => (
                                   <option key={d.id} value={d.set_code}>{d.set_code}{d.part_name ? ` · ${d.part_name}` : ''}</option>
                                 ))}
@@ -679,15 +683,15 @@ export default function ProdLotPlanner({
                         );
                       })() : (l.die_no || <span style={{ color: 'var(--muted)' }}>—</span>)}
                       {die && <div style={{ fontSize: 11, color: die.die_height_mm == null ? '#f59e0b' : 'var(--muted)' }}>
-                        {die.die_height_mm == null ? '⚠ ไม่รู้ความสูง' : `สูง ${die.die_height_mm} มม.`}</div>}
+                        {die.die_height_mm == null ? tr("⚠ ไม่รู้ความสูง") : `${tr("สูง")} ${die.die_height_mm} ${tr("มม.")}`}</div>}
                       <DieMatLinkNote lot={l} dies={dies} role={role} mayWrite={mayWrite} onDone={load} />
                     </td>
                     <td style={td}>
-                      {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>{tr('✕ ยกเลิก')}</span>
+                      {l.status === 'cancelled' ? <span style={{ color: 'var(--red)' }}>{tr('✕ ยกเลิก')}</span>
                         /* 🧪 ไม่มีพาร์ทให้จับคู่ยอดจริง ⇒ บอกตรงๆ ว่า "จองเครื่องไว้" ห้ามขึ้น "รอคิว" ค้างตลอดกาล */
                         : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>{tr('จองเครื่องไว้')}</span>
                         : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>{tr('✓ ครบตามกรอบ')}</span>
-                        : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>{tr('▶ กำลังทำ')}</span>
+                        : r.state === 'partial' ? <span style={{ color: 'var(--blue)' }}>{tr('▶ กำลังทำ')}</span>
                         : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่เริ่ม')}</span>}
                       {l.cancel_reason && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.cancel_reason}</div>}
                     </td>
@@ -713,15 +717,15 @@ export default function ProdLotPlanner({
       {/* ── ของจริงที่อยู่นอกกรอบแผน — ต้องเห็น ห้ามกลืน (Layer 2 ไม่ได้ผิด แค่ต่างจากกรอบ) ── */}
       {(rec.offPlan.length > 0 || rec.over.length > 0) && (
         <div style={{ ...card, borderColor: '#f59e0b66' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 5 }}>
-            ⚠️ ของจริงที่อยู่นอกกรอบแผน
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', marginBottom: 5 }}>
+            ⚠️ {tr("ของจริงที่อยู่นอกกรอบแผน")}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontSize: 12 }}>
             {[...rec.over.map(o => ({ ...o, kind: 'over' })), ...rec.offPlan.map(o => ({ ...o, kind: 'off' }))].slice(0, 15).map(o => (
               <span key={`${o.kind}-${o.mat_no}`} style={{ color: 'var(--text2)' }}>
                 {o.kind === 'over' ? '➕' : '🆕'} <MatLabel mat={o.mat_no} size={11.5} />{' '}
                 <span style={{ color: 'var(--muted)' }}>
-                  {qtyText(o.pcs)} {tr('ชิ้น ·')} {o.orders} {tr('ใบ')}{o.kind === 'over' ? ' (เกินกรอบ)' : ' (ไม่มีในแผน)'}
+                  {qtyText(o.pcs)} {tr('ชิ้น ·')} {o.orders} {tr('ใบ')}{o.kind === 'over' ? tr(" (เกินกรอบ)") : tr(" (ไม่มีในแผน)")}
                 </span>
               </span>
             ))}
@@ -747,7 +751,7 @@ export default function ProdLotPlanner({
       {/* ── ความต้องการที่ยังไม่ได้วางแผน ── */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-          ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>{tr('(ค้างส่ง + ถึงกำหนดภายใน')} {lastDate})</span>
+          {tr("ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน")} <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>{tr('(ค้างส่ง + ถึงกำหนดภายใน')} {lastDate})</span>
         </div>
         {unplanned.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tr('— วางแผนครบทุกพาร์ทที่มีความต้องการแล้ว —')}</div>
@@ -769,7 +773,7 @@ export default function ProdLotPlanner({
         {otherParts.length > 0 && (
           <details style={{ marginTop: 10 }}>
             <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
-              พาร์ทอื่นที่ไลน์นี้ผลิต ({otherParts.length}) — ยังไม่มีความต้องการในช่วงนี้ แต่เลือกเข้าแผนเองได้
+              {tr("พาร์ทอื่นที่ไลน์นี้ผลิต")} ({otherParts.length}) — {tr("ยังไม่มีความต้องการในช่วงนี้ แต่เลือกเข้าแผนเองได้")}
             </summary>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {otherParts.map(p => (
@@ -781,7 +785,7 @@ export default function ProdLotPlanner({
               ))}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-              จำนวนตั้งต้น 1 ชิ้น — แก้ยอดในแถวแผนหลังกดเข้าแผน
+              {tr("จำนวนตั้งต้น 1 ชิ้น — แก้ยอดในแถวแผนหลังกดเข้าแผน")}
             </div>
           </details>
         )}

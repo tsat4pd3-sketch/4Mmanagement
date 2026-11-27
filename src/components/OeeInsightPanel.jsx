@@ -12,7 +12,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
-import { tr as trI18n } from '../utils/i18n';
+import { tr as trI18n, getLang } from '../utils/i18n';
 /* ── 🧠 OEE Insight Engine — วิเคราะห์ภาพรวมอัตโนมัติ (rule-based + สถิติ) ──
    ตอบ 2 คำถามหลักของ user (2026-07-14):
    1. "ทำไมยอดงานไม่ได้ตามเป้า" → แตกเป้าที่หายไปเป็นชิ้น: Downtime นอกแผน / NG / ความเร็วต่ำกว่า CT
@@ -31,6 +31,8 @@ const todayWorkDate = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัส', 'ศุกร์', 'เสาร์'];
+const DOW_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const dowName = (i) => (getLang() === 'th' ? DOW_TH : DOW_EN)[i];
 const avg = (a) => (a.length ? a.reduce((s, v) => s + v, 0) / a.length : 0);
 // เฉลี่ย OEE/A/P ข้ามกะ ต้องถ่วงด้วยเวลารับภาระ (กฎ OEE · util กลาง oeeAvg.js) — เดิม avg() ธรรมดา
 // ทำให้ insight อ้างตัวเลข "เฉลี่ยกะเช้า vs ดึก" ไม่ตรงกับ KPI ในหน้าเดียวกัน (แก้ 2026-08-05)
@@ -192,8 +194,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         ].filter(([v]) => v > 0).sort((a, b) => b[1] === a[1] ? 0 : b[0] - a[0]);
         out.push({
           sev: dtPieces / Math.max(1, shortfall) > 0.5 ? 'high' : 'med', icon: '🎯',
-          title: `เป้าหายรวม ${Math.round(shortfall).toLocaleString()} ชิ้น จาก ${nMiss} กะที่พลาดเป้า`,
-          detail: parts.map(([v, l]) => `≈ ${v.toLocaleString()} ชิ้นจาก ${l}`).join(' · '),
+          title: `${trI18n("เป้าหายรวม")} ${Math.round(shortfall).toLocaleString()} ${trI18n("ชิ้น จาก")} ${nMiss} ${trI18n("กะที่พลาดเป้า")}`,
+          detail: parts.map(([v, l]) => `≈ ${v.toLocaleString()} ${trI18n("ชิ้นจาก")} ${l}`).join(' · '),
           impact: Math.round(shortfall),
         });
       }
@@ -202,7 +204,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       const chron = new Map();
       (dts || []).forEach(d => {
         if (d.dr_downtime_types?.category === 'planned') return;
-        const key = `${d.dr_downtime_types?.name_th || 'ไม่ระบุ'}::${d.machine_no || '-'}`;
+        const key = `${d.dr_downtime_types?.name_th || trI18n('ไม่ระบุ')}::${d.machine_no || '-'}`;
         const c = chron.get(key) || { name: d.dr_downtime_types?.name_th || 'ไม่ระบุ', machine: d.machine_no || '', min: 0, cnt: 0, sids: new Set(), lines: new Set() };
         c.min += Number(d.duration_min) || 0; c.cnt += 1; c.sids.add(d.session_id);
         c.lines.add(sessById[d.session_id]?.line_name);
@@ -211,8 +213,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       [...chron.values()].filter(c => c.sids.size >= 3).sort((a, b) => b.min - a.min).slice(0, 3).forEach(c => {
         out.push({
           sev: c.min >= 120 ? 'high' : 'med', icon: '🔁',
-          title: `Downtime เรื้อรัง: "${c.name}"${c.machine ? ` ที่ ⚙️${c.machine}` : ''}`,
-          detail: `เกิดซ้ำใน ${c.sids.size} กะ (${c.cnt} ครั้ง · รวม ${Math.round(c.min)} นาที) ${[...c.lines].filter(Boolean).join(', ')} — ปัญหาซ้ำแบบนี้คุ้มที่จะเปิดโปรเจคใน Improvements แก้ที่ราก`,
+          title: `Downtime ${trI18n("เรื้อรัง")}: "${c.name}"${c.machine ? ` ${trI18n("ที่")} ⚙️${c.machine}` : ''}`,
+          detail: `${trI18n("เกิดซ้ำใน")} ${c.sids.size} ${trI18n("กะ")} (${c.cnt} ${trI18n("ครั้ง · รวม")} ${Math.round(c.min)} ${trI18n("นาที")}) ${[...c.lines].filter(Boolean).join(', ')} — ${trI18n("ปัญหาซ้ำแบบนี้คุ้มที่จะเปิดโปรเจคใน Improvements แก้ที่ราก")}`,
           impact: c.min,
         });
       });
@@ -229,11 +231,11 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
           const wSess = sess.filter(s => s.shift === worse);
           const dA = avgW(daySess, s => s.oee_a, plannedMinOf) - avgW(nightSess, s => s.oee_a, plannedMinOf);
           const dP = avgW(daySess, s => s.oee_p, plannedMinOf) - avgW(nightSess, s => s.oee_p, plannedMinOf);
-          const cause = Math.abs(dA) > Math.abs(dP) ? `Availability ต่างกัน ${Math.abs(dA).toFixed(1)} จุด (Downtime มากกว่า)` : `Performance ต่างกัน ${Math.abs(dP).toFixed(1)} จุด (ความเร็ว/จังหวะงาน)`;
+          const cause = Math.abs(dA) > Math.abs(dP) ? `Availability ${trI18n("ต่างกัน")} ${Math.abs(dA).toFixed(1)} ${trI18n("จุด (Downtime มากกว่า")})` : `Performance ${trI18n("ต่างกัน")} ${Math.abs(dP).toFixed(1)} ${trI18n("จุด (ความเร็ว/จังหวะงาน")})`;
           out.push({
             sev: Math.abs(gap) >= 10 ? 'high' : 'med', icon: worse === 'night' ? '🌙' : '☀️',
-            title: `กะ${worse === 'night' ? 'ดึก' : 'เช้า'} OEE ต่ำกว่าอีกกะเฉลี่ย ${Math.abs(gap).toFixed(1)} จุด`,
-            detail: `เฉลี่ยกะเช้า ${avg(dayO).toFixed(1)} vs กะดึก ${avg(nightO).toFixed(1)} (${dayO.length}/${nightO.length} กะ) — ตัวต่างหลักคือ ${cause} · ลองดูกำลังคน/การส่งมอบงานข้ามกะของกะ${worse === 'night' ? 'ดึก' : 'เช้า'} (${wSess.length} กะ)`,
+            title: `${trI18n("กะ")}${worse === 'night' ? trI18n('ดึก') : trI18n('เช้า')} OEE ${trI18n("ต่ำกว่าอีกกะเฉลี่ย")} ${Math.abs(gap).toFixed(1)} ${trI18n("จุด")}`,
+            detail: `${trI18n("เฉลี่ยกะเช้า")} ${avg(dayO).toFixed(1)} vs ${trI18n("กะดึก")} ${avg(nightO).toFixed(1)} (${dayO.length}/${nightO.length} ${trI18n("กะ) — ตัวต่างหลักคือ")} ${cause} · ${trI18n("ลองดูกำลังคน/การส่งมอบงานข้ามกะของกะ")}${worse === 'night' ? trI18n('ดึก') : trI18n('เช้า')} (${wSess.length} ${trI18n("กะ")})`,
             impact: Math.abs(gap) * 10,
           });
         }
@@ -257,8 +259,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         if (med > 0 && worst.perDay > med * 1.6) {
           out.push({
             sev: 'med', icon: '📅',
-            title: `วัน${DOW_TH[worst.dow]} Downtime นอกแผนสูงผิดปกติ`,
-            detail: `เฉลี่ย ${Math.round(worst.perDay)} นาที/วัน (จาก ${worst.n} วัน) เทียบค่ากลางวันอื่น ${Math.round(med)} นาที — เช็คกิจกรรมประจำวันนั้น (เริ่มสัปดาห์/สลับแผน/วัตถุดิบเข้า ฯลฯ)`,
+            title: `${trI18n("วัน")}${dowName(worst.dow)} Downtime ${trI18n("นอกแผนสูงผิดปกติ")}`,
+            detail: `${trI18n("เฉลี่ย")} ${Math.round(worst.perDay)} ${trI18n("นาที/วัน (จาก")} ${worst.n} ${trI18n("วัน) เทียบค่ากลางวันอื่น")} ${Math.round(med)} ${trI18n("นาที — เช็คกิจกรรมประจำวันนั้น (เริ่มสัปดาห์/สลับแผน/วัตถุดิบเข้า ฯลฯ")})`,
             impact: worst.perDay,
           });
         }
@@ -278,8 +280,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         if (gap >= 5) {
           out.push({
             sev: gap >= 10 ? 'high' : 'med', icon: '👥',
-            title: `วันที่มีคนขาด OEE ต่ำกว่าปกติเฉลี่ย ${gap.toFixed(1)} จุด`,
-            detail: `วันมีคนขาด ${withAbs.length} กะ เฉลี่ย OEE ${avgW(withAbsS, s => s.oee, plannedMinOf).toFixed(1)} vs วันคนครบ ${noAbs.length} กะ เฉลี่ย ${avgW(noAbsS, s => s.oee, plannedMinOf).toFixed(1)} — กำลังคนคือคอขวด ลองดูแผนคน backup/multi-skill`,
+            title: `${trI18n("วันที่มีคนขาด OEE ต่ำกว่าปกติเฉลี่ย")} ${gap.toFixed(1)} ${trI18n("จุด")}`,
+            detail: `${trI18n("วันมีคนขาด")} ${withAbs.length} ${trI18n("กะ เฉลี่ย")} OEE ${avgW(withAbsS, s => s.oee, plannedMinOf).toFixed(1)} vs ${trI18n("วันคนครบ")} ${noAbs.length} ${trI18n("กะ เฉลี่ย")} ${avgW(noAbsS, s => s.oee, plannedMinOf).toFixed(1)} — ${trI18n("กำลังคนคือคอขวด ลองดูแผนคน")} backup/multi-skill`,
             impact: gap * 8,
           });
         }
@@ -303,8 +305,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       [...slowByProd.entries()].filter(([, c]) => c.n >= 3).sort((a, b) => b[1].n - a[1].n).slice(0, 2).forEach(([pn, c]) => {
         out.push({
           sev: 'med', icon: '🐢',
-          title: `"${pn}" วิ่งช้ากว่า CT มาตรฐานซ้ำๆ`,
-          detail: `P ต่ำกว่า 75% ถึง ${c.n} กะ (เฉลี่ย P ${avg(c.ps).toFixed(1)}) — ถ้าหน้างานเร็วสุดได้เท่านี้จริง CT ใน Product Master อาจตั้งไว้เร็วเกิน หรือมี micro-stop ที่ไม่ได้บันทึก`,
+          title: `"${pn}" ${trI18n("วิ่งช้ากว่า CT มาตรฐานซ้ำๆ")}`,
+          detail: `P ${trI18n("ต่ำกว่า 75% ถึง")} ${c.n} ${trI18n("กะ (เฉลี่ย")} P ${avg(c.ps).toFixed(1)}) — ${trI18n("ถ้าหน้างานเร็วสุดได้เท่านี้จริง CT ใน Product Master อาจตั้งไว้เร็วเกิน หรือมี micro-stop ที่ไม่ได้บันทึก")}`,
           impact: c.n * 20,
         });
       });
@@ -323,8 +325,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         if (topC.qty / ngTotal >= 0.5) {
           out.push({
             sev: 'med', icon: '🔴',
-            title: `NG กว่าครึ่งมาจากประเภทเดียว: "${topName}"`,
-            detail: `${topC.qty.toLocaleString()} จาก ${ngTotal.toLocaleString()} ชิ้น (${Math.round((topC.qty / ngTotal) * 100)}%) ใน ${topC.sids.size} กะ — โฟกัสแก้ประเภทนี้ตัวเดียวได้ผลเกินครึ่ง`,
+            title: `NG ${trI18n("กว่าครึ่งมาจากประเภทเดียว")}: "${topName}"`,
+            detail: `${topC.qty.toLocaleString()} ${trI18n("จาก")} ${ngTotal.toLocaleString()} ${trI18n("ชิ้น")} (${Math.round((topC.qty / ngTotal) * 100)}%) ${trI18n("ใน")} ${topC.sids.size} ${trI18n("กะ — โฟกัสแก้ประเภทนี้ตัวเดียวได้ผลเกินครึ่ง")}`,
             impact: topC.qty,
           });
         }
@@ -367,7 +369,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ */}
         {sectionHint && (
           <span title={trI18n('ขอบเขตที่เจาะมา — เปลี่ยนได้ที่ตัวกรองส่วนงานในแท็บ ⚡ ภาพรวมวันนี้')}
-            style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+            style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', background: 'var(--bg3-surf)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
             {sectionHint}
           </span>
         )}
@@ -379,7 +381,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
         {meta?.loadErr && (
           <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>
-            ⚠ ข้อมูลโหลดไม่ครบ — ผลวิเคราะห์อาจตกหล่น ({meta.loadErr})
+            ⚠ {trI18n("ข้อมูลโหลดไม่ครบ — ผลวิเคราะห์อาจตกหล่น")} ({meta.loadErr})
           </span>
         )}
       </div>
@@ -401,7 +403,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         const baht = (min) => (perHr == null ? null : (min / 60) * perHr);
         const fmtB = (v) => Math.round(v).toLocaleString('en-US');
         return (
-          <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{trI18n('วิเคราะห์ความสูญเปล่าแบบ Lean')}</div>
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
@@ -414,16 +416,16 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
               </div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-              เวลาสูญเสียรวม {totalMin.toLocaleString()} นาที (นับทั้งในแผน/นอกแผน · ของเสียแปลงเป็นนาทีด้วย CT)
+              {trI18n("เวลาสูญเสียรวม")} {totalMin.toLocaleString()} {trI18n("นาที (นับทั้งในแผน/นอกแผน · ของเสียแปลงเป็นนาทีด้วย")} CT)
               {perHr != null && <> · <b style={{ color: '#fbbf24' }}>≈ {fmtB(baht(totalMin))} {trI18n('บาท')}</b> <span style={{ opacity: 0.85 }}>(rate {Math.round(perHr).toLocaleString()} {trI18n('บาท/ชม. · CC')} {leanCc})</span></>}
-              {unclassified ? ` · ⚠️ ยังไม่จัดหมวด ${unclassified.min.toLocaleString()} นาที — จัดได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime` : ''}
+              {unclassified ? ` · ⚠️ ${trI18n("ยังไม่จัดหมวด")} ${unclassified.min.toLocaleString()} ${trI18n("นาที — จัดได้ที่ Daily Report → ⚙️ ตั้งค่า → ประเภท")} Downtime` : ''}
             </div>
             {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
             {perHr == null && (
               <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
-                ยังตีเป็นเงินไม่ได้ — {!selLine
-                  ? 'เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)'
-                  : `ไลน์ ${selLine} ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate`}
+                {trI18n("ยังตีเป็นเงินไม่ได้")} — {!selLine
+                  ? trI18n("เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)")
+                  : `${trI18n("ไลน์")} ${selLine} ${trI18n("ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร")} → 💰 Activity Rate`}
               </div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -433,11 +435,11 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                   <div key={i}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12.5 }}>
                       <span style={{ fontWeight: 700, color: r.meta ? 'var(--text)' : 'var(--muted)' }}>
-                        {r.meta ? `${r.meta.icon} ${r.meta.label}` : '❔ ยังไม่จัดหมวด'}
+                        {r.meta ? `${r.meta.icon} ${r.meta.label}` : trI18n("❔ ยังไม่จัดหมวด")}
                       </span>
                       {r.meta?.oee && <span style={{ fontSize: 11, fontWeight: 800, color: c }}>{trI18n('กระทบ')} {r.meta.oee}</span>}
                       <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums', color: 'var(--text2)' }}>
-                        {r.min.toLocaleString()} {trI18n('น. ·')} {r.count} {trI18n('ครั้ง')}{r.qty ? ` · NG ${r.qty.toLocaleString()} ชิ้น` : ''}
+                        {r.min.toLocaleString()} {trI18n('น. ·')} {r.count} {trI18n('ครั้ง')}{r.qty ? ` · NG ${r.qty.toLocaleString()} ${trI18n("ชิ้น")}` : ''}
                         {perHr != null && <b style={{ color: '#fbbf24', marginLeft: 6 }}>{fmtB(baht(r.min))} {trI18n('บาท')}</b>}
                         {totalMin > 0 ? <span style={{ color: 'var(--muted)' }}> ({Math.round(r.min / totalMin * 100)}%)</span> : null}
                       </span>
@@ -446,8 +448,8 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                       <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.${perHr != null ? ` (${fmtB(baht(t.min))}฿)` : ''}`).join(' · ')}
-                      {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
+                      {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}${trI18n("น.")}${perHr != null ? ` (${fmtB(baht(t.min))}${trI18n("฿")})` : ''}`).join(' · ')}
+                      {r.types.length > 3 ? ` +${r.types.length - 3} ${trI18n("ประเภท")}` : ''}
                       {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>{r.meta.fix}</div> : null}
                     </div>
                   </div>
@@ -464,7 +466,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         <div style={{ textAlign: 'center', padding: 30, color: '#ef4444', fontSize: 12 }}>{trI18n('วิเคราะห์ไม่สำเร็จ:')} {meta.error}</div>
       ) : !insights?.length ? (
         <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)', fontSize: 13 }}>
-          {meta && meta.nSess < 3 ? `ข้อมูลยังไม่พอวิเคราะห์ (มี ${meta?.nSess ?? 0} กะในช่วงนี้ — ต้องอย่างน้อย 3 กะ)` : 'ไม่พบ pattern ผิดปกติในช่วงนี้ 🎉 (เป้าครบ/ไม่มีปัญหาซ้ำ)'}
+          {meta && meta.nSess < 3 ? `${trI18n("ข้อมูลยังไม่พอวิเคราะห์ (มี")} ${meta?.nSess ?? 0} ${trI18n("กะในช่วงนี้ — ต้องอย่างน้อย 3 กะ")})` : trI18n("ไม่พบ pattern ผิดปกติในช่วงนี้ 🎉 (เป้าครบ/ไม่มีปัญหาซ้ำ)")}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -484,7 +486,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             );
           })}
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-            เจอปัญหาซ้ำที่คุ้มค่าแก้ → เปิดโปรเจคในหน้า Improvements (พาเรโต้จะ prefill เป้าให้) แล้วระบบติดตามผลก่อน/หลังให้อัตโนมัติ
+            {trI18n("เจอปัญหาซ้ำที่คุ้มค่าแก้ → เปิดโปรเจคในหน้า Improvements (พาเรโต้จะ prefill เป้าให้) แล้วระบบติดตามผลก่อน/หลังให้อัตโนมัติ")}
           </div>
         </div>
       )}

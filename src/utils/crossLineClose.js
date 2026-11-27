@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* ═══ 📤 ปิดใบผลิตข้ามไลน์ — "สแกนจากจอไหนก็ปิดได้" (2026-10-30 · คำสั่ง user) ═════════
  *
  * ที่มา: *"ตอนสแกนปิดออเดอร์ปัจจุบัน เราต้องปิดผ่านไลน์ใครไลน์มัน … เป็นไปได้ไหมว่า
@@ -78,7 +79,7 @@ export function crossLineWhen(row) {
   if (!s) return '';
   const d = String(s.work_date || '').slice(0, 10);
   const th = d ? d.split('-').reverse().map((x, i) => (i === 2 ? x.slice(2) : x)).join('/') : '';
-  const sh = s.shift === 'night' ? '🌙 กะดึก' : s.shift === 'day' ? '☀️ กะเช้า' : '';
+  const sh = s.shift === 'night' ? '🌙 กะดึก' : s.shift === 'day' ? tr("☀️ กะเช้า") : '';
   return [sh, th].filter(Boolean).join(' ');
 }
 

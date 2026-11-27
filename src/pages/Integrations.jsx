@@ -14,6 +14,7 @@ import PageHeader from '../components/PageHeader';
 import NoticeBar from '../components/NoticeBar';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
 import MachineFactsPanel from '../components/MachineFactsPanel';
+import IntegrationGuide from '../components/IntegrationGuide';
 import { toast } from '../components/Toast';
 import { supabase, supabaseDR, DR_BASE_URL } from '../supabaseClient';
 import useTabParam from '../utils/useTabParam';
@@ -25,7 +26,7 @@ import { energyPointOptions, energyZonesFrom } from '../utils/energy';
 import { INTEGRATION_KINDS, kindOf, kindLabel, sourceStatus, healthBars, SOURCE_STALE_MIN } from '../utils/integrationKinds';
 import { buildNodeRedFlow, envVarName } from '../utils/nodeRedFlow';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 const COLS = 'id, code, name, note, kinds, key_hint, legacy_secret, is_paused, last_seen_at, last_ok_at, last_error, last_result, updated_at, updated_by';
 const INGEST_URL = `${DR_BASE_URL}/functions/v1/ingest-energy`;
@@ -37,7 +38,7 @@ const STATUS = {
   never: { label: 'ยังไม่เคยได้รับ', color: 'var(--muted)' },
   paused: { label: 'พักการรับ', color: 'var(--red)' },
 };
-const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
 
 /** เรียก edge integration-admin — ตรวจ token ล็อกอินของ Main + has_perm('integration:manage') ฝั่ง server */
 async function callAdmin(action, payload = {}) {
@@ -60,7 +61,7 @@ export default function Integrations() {
   const { role } = useContext(UserContext);
   const canManage = can('integration', 'manage', role);
   const canMap = can('energy', 'record', role);
-  const [tab, setTab] = useTabParam(['sources', 'kinds'], 'sources');
+  const [tab, setTab] = useTabParam(['sources', 'kinds', 'guide'], 'sources');
   const [params, setParams] = useSearchParams();
   const srcCode = params.get('src') || '';
   const [sources, setSources] = useState(null);       // null = ยังไม่โหลด/อ่านไม่ได้
@@ -82,7 +83,7 @@ export default function Integrations() {
     const e = s.error || h.error;
     if (e) {
       const missing = e.code === '42P01' || e.code === 'PGRST205';
-      setErr(missing ? 'ยังไม่ได้ apply migration 20261111_integration_hub_dr (DR) — แจ้ง admin' : `โหลดทะเบียนต้นทางไม่สำเร็จ: ${e.message}`);
+      setErr(missing ? 'ยังไม่ได้ apply migration 20261111_integration_hub_dr (DR) — แจ้ง admin' : `${tr("โหลดทะเบียนต้นทางไม่สำเร็จ")}: ${e.message}`);
       return;                                          // คงข้อมูลรอบก่อน ห้ามทับด้วยลิสต์ว่าง
     }
     setErr('');
@@ -102,7 +103,7 @@ export default function Integrations() {
   const header = (
     <PageHeader icon="🔌" title={tr('การเชื่อมต่อ Node-RED / เครื่องจักร')}
       sub={tr('ที่เดียวสำหรับทุกระบบที่ส่งข้อมูลเข้า ESM · ต้นทางส่งข้อเท็จจริง สูตรและการตัดสินอยู่ที่ ESM')}
-      tabs={[{ key: 'sources', label: 'แหล่งต้นทาง' }, { key: 'kinds', label: 'ชนิดข้อมูล' }]}
+      tabs={[{ key: 'sources', label: tr("แหล่งต้นทาง") }, { key: 'kinds', label: tr("ชนิดข้อมูล") }, { key: 'guide', label: tr("คู่มือ (WI)") }]}
       tab={tab} onTab={(k) => { openSrc(null); setTab(k); }}
       actions={canManage && !srcCode && tab === 'sources'
         ? <button type="button" className="pg-btn primary" onClick={() => setCreating(true)}>{tr('+ เพิ่มการเชื่อมต่อ')}</button> : null} />
@@ -111,9 +112,10 @@ export default function Integrations() {
   return (
     <Page>
       {header}
-      {err && <NoticeBar tone="bad">{err}{sources ? ' — ตัวเลขบนจอเป็นของรอบก่อนหน้า' : ''}</NoticeBar>}
+      {err && <NoticeBar tone="bad">{err}{sources ? tr(" — ตัวเลขบนจอเป็นของรอบก่อนหน้า") : ''}</NoticeBar>}
       {!sources && !err && <div style={{ color: 'var(--muted)', padding: 20 }}>{tr('กำลังโหลด…')}</div>}
 
+      {tab === 'guide' && <IntegrationGuide />}
       {sources && tab === 'kinds' && <KindsTab sources={sources} />}
 
       {sources && tab === 'sources' && (srcCode ? (
@@ -145,14 +147,14 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, alignContent: 'start' }}>
-        <Kpi label={tr('แหล่งต้นทาง')} value={sources.length} unit="ระบบ"
-          sub={`ออนไลน์ ${st.filter(x => x === 'online').length} · ขาด ${st.filter(x => x === 'stale').length} · ยังไม่เคยได้รับ ${st.filter(x => x === 'never').length} · พัก ${st.filter(x => x === 'paused').length}`} />
-        <Kpi label={tr('ชนิดข้อมูลที่ใช้อยู่')} value={kindsUsed.size} unit={`/ ${INTEGRATION_KINDS.length} ชนิด`}
-          sub={`ESM รับได้แล้ว ${INTEGRATION_KINDS.filter(k => k.status === 'live').length} ชนิด`} />
-        <Kpi label={tr('รับสำเร็จ 24 ชม.')} value={okToday.toLocaleString()} unit="ครั้ง" sub={tr('นับทุกต้นทางรวมกัน')} />
+        <Kpi label={tr('แหล่งต้นทาง')} value={sources.length} unit={tr("ระบบ")}
+          sub={`${tr("ออนไลน์")} ${st.filter(x => x === 'online').length} · ${tr("ขาด")} ${st.filter(x => x === 'stale').length} · ${tr("ยังไม่เคยได้รับ")} ${st.filter(x => x === 'never').length} · ${tr("พัก")} ${st.filter(x => x === 'paused').length}`} />
+        <Kpi label={tr('ชนิดข้อมูลที่ใช้อยู่')} value={kindsUsed.size} unit={`/ ${INTEGRATION_KINDS.length} ${tr("ชนิด")}`}
+          sub={`ESM ${tr("รับได้แล้ว")} ${INTEGRATION_KINDS.filter(k => k.status === 'live').length} ${tr("ชนิด")}`} />
+        <Kpi label={tr('รับสำเร็จ 24 ชม.')} value={okToday.toLocaleString()} unit={tr("ครั้ง")} sub={tr('นับทุกต้นทางรวมกัน')} />
       </div>
       {!sources.length ? (
-        <div style={{ ...card, color: 'var(--muted)' }}>{tr('ยังไม่มีต้นทางในทะเบียน')}{canManage ? ' — กด "+ เพิ่มการเชื่อมต่อ"' : ''}</div>
+        <div style={{ ...card, color: 'var(--muted)' }}>{tr('ยังไม่มีต้นทางในทะเบียน')}{canManage ? tr(" — กด \"+ เพิ่มการเชื่อมต่อ\"") : ''}</div>
       ) : sources.map((s, i) => {
         const m = STATUS[st[i]];
         return (
@@ -184,6 +186,9 @@ function SourceList({ sources, hourly, nowMs, onOpen, canManage }) {
 /* ── ② หน้าต้นทาง ── */
 function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged, onKey }) {
   const [busy, setBusy] = useState('');
+  /* ✏️ แก้ชื่อ/หมายเหตุ (23/11 · คำสั่ง user) — edge integration-admin action 'update' · 🔴 รหัส (code) แก้ไม่ได้
+     เพราะอยู่ในชื่อ topic ของมิเตอร์ (`<code>/<ตู้>/kw`) + Node-RED ตัวเดิมส่ง x-source = code ⇒ เปลี่ยน = ข้อมูลหลุด */
+  const [edit, setEdit] = useState(null);           // null = ไม่ได้แก้ · { name, note }
   const [points, setPoints] = useState(null);
   const hasEnergy = (src.kinds || []).includes('energy_readings');
   const hasMachine = (src.kinds || []).some(k => k === 'machine_state' || k === 'piece_count');
@@ -216,7 +221,20 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
       if (r.key) onKey({ code: src.code, key: r.key });
       toast.success(label);
       onChanged();
-    } catch (e) { toast.error(`${label}ไม่สำเร็จ: ${e.message}`); }
+    } catch (e) { toast.error(`${label}${tr("ไม่สำเร็จ")}: ${e.message}`); }
+    finally { setBusy(''); }
+  };
+
+  const saveEdit = async () => {
+    const name = (edit?.name || '').trim();
+    if (!name) { toast.error(tr('ต้องมีชื่อต้นทาง')); return; }
+    setBusy('update');
+    try {
+      await callAdmin('update', { id: src.id, name, note: (edit.note || '').trim() || null });
+      toast.success(tr('บันทึกชื่อ/หมายเหตุแล้ว'));
+      setEdit(null);
+      onChanged();
+    } catch (e) { toast.error(`${tr('บันทึกไม่สำเร็จ')}: ${e.message}`); }
     finally { setBusy(''); }
   };
 
@@ -239,12 +257,32 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <button type="button" className="pg-btn" onClick={onBack}>{tr('← การเชื่อมต่อทั้งหมด')}</button>
+        {edit ? (
+          <div style={{ display: 'grid', gap: 6, minWidth: 0, flex: '1 1 420px' }}>
+            <label style={{ display: 'grid', gap: 2, fontSize: 12, color: 'var(--muted)' }}>{tr('ชื่อต้นทาง')}
+              <input value={edit.name} maxLength={120} autoFocus onChange={e => setEdit(v => ({ ...v, name: e.target.value }))} />
+            </label>
+            <label style={{ display: 'grid', gap: 2, fontSize: 12, color: 'var(--muted)' }}>{tr('หมายเหตุ (เช่น IP · PLC · ฐานข้อมูล)')}
+              <input value={edit.note} maxLength={300} onChange={e => setEdit(v => ({ ...v, note: e.target.value }))} />
+            </label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button type="button" className="pg-btn primary" disabled={busy === 'update'} onClick={saveEdit}>{tr('บันทึก')}</button>
+              <button type="button" className="pg-btn" disabled={busy === 'update'} onClick={() => setEdit(null)}>{tr('ยกเลิก')}</button>
+              <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('รหัส')} <code>{src.code}</code> {tr('แก้ไม่ได้ — อยู่ในชื่อ topic ของมิเตอร์ เปลี่ยนแล้วข้อมูลจะหลุด')}</span>
+            </div>
+          </div>
+        ) : (
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{src.name}
             <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {tr(m.label)}</span>
+            {canManage && (
+              <button type="button" className="pg-btn" style={{ marginLeft: 8, verticalAlign: 'middle' }} disabled={!!busy}
+                onClick={() => setEdit({ name: src.name || '', note: src.note || '' })}>✏️ {tr('แก้ชื่อ / หมายเหตุ')}</button>
+            )}
           </div>
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{src.code}{src.note ? ` · ${src.note}` : ''} {tr('· ไม่มีค่าใหม่เกิน')} {SOURCE_STALE_MIN} นาที = ขาดการติดต่อ</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{src.code}{src.note ? ` · ${src.note}` : ''} {tr('· ไม่มีค่าใหม่เกิน')} {SOURCE_STALE_MIN} {tr("นาที = ขาดการติดต่อ")}</div>
         </div>
+        )}
       </div>
 
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
@@ -255,7 +293,7 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
             onClick={() => act('rotate', 'ออกรหัสใหม่', src.key_hint
               ? 'ออกรหัสใหม่แล้ว รหัสเดิมจะใช้ไม่ได้ทันที — Node-RED ที่ใช้รหัสเดิมจะส่งไม่เข้าจนกว่าจะเปลี่ยน ยืนยัน?'
               : 'ออกรหัสของต้นทางนี้ (secret กลางเดิมยังใช้ได้จนกว่าจะกด "เลิกใช้รหัสกลาง") ยืนยัน?')}>
-            🔑 {src.key_hint ? 'เปลี่ยนรหัสลับ' : 'ออกรหัสของต้นทางนี้'}</button>
+            🔑 {src.key_hint ? tr("เปลี่ยนรหัสลับ") : tr("ออกรหัสของต้นทางนี้")}</button>
           {src.legacy_secret && src.key_hint && (
             <button type="button" className="pg-btn" disabled={!!busy}
               onClick={() => act('legacy_off', 'เลิกใช้รหัสกลาง', 'ยืนยันว่า Node-RED เปลี่ยนไปใช้ ESM_SOURCE_KEY แล้ว? หลังกด รหัสกลางเดิมจะส่งเข้าต้นทางนี้ไม่ได้')}>
@@ -267,8 +305,8 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
             {src.is_paused ? tr('▶ เปิดรับต่อ') : tr('⏸ พักการรับ')}</button>
         </>}
         <span style={{ fontSize: 12, color: noAuth ? 'var(--red)' : 'var(--muted)' }}>
-          {noAuth ? '⚠ ยังไม่ได้ออกรหัส — ต้นทางนี้ส่งข้อมูลเข้าไม่ได้จนกว่าจะออกรหัส'
-            : <>{tr('ยืนยันตัวตนด้วย:')} {usesLegacy ? 'รหัสกลาง (INGEST_SECRET)' : `รหัสของต้นทาง …${src.key_hint}`}{src.legacy_secret && src.key_hint ? ' · ยังรับรหัสกลางอยู่' : ''}</>}
+          {noAuth ? tr("⚠ ยังไม่ได้ออกรหัส — ต้นทางนี้ส่งข้อมูลเข้าไม่ได้จนกว่าจะออกรหัส")
+            : <>{tr('ยืนยันตัวตนด้วย:')} {usesLegacy ? tr("รหัสกลาง (INGEST_SECRET)") : `${tr("รหัสของต้นทาง")} …${src.key_hint}`}{src.legacy_secret && src.key_hint ? tr(" · ยังรับรหัสกลางอยู่") : ''}</>}
         </span>
       </div>
 
@@ -280,23 +318,23 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
         <div style={{ ...card, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('สุขภาพการส่ง · 24 ชม.')}</div>
           <div style={{ display: 'flex', gap: 2, height: 40, alignItems: 'flex-end', marginTop: 10 }} role="img"
-            aria-label={`24 ชั่วโมงล่าสุด รับสำเร็จ ${okSum} ครั้ง ล้ม ${failSum} ครั้ง`}>
+            aria-label={`24 ${tr("ชั่วโมงล่าสุด รับสำเร็จ")} ${okSum} ${tr("ครั้ง ล้ม")} ${failSum} ${tr("ครั้ง")}`}>
             {bars.map(b => (
-              <div key={b.hourMs} title={`${new Date(b.hourMs).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })} · สำเร็จ ${b.ok}/${b.expect}${b.fail ? ` · ล้ม ${b.fail}` : ''}`}
+              <div key={b.hourMs} title={`${new Date(b.hourMs).toLocaleTimeString(dateLocale(), { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' })} · ${tr("สำเร็จ")} ${b.ok}/${b.expect}${b.fail ? ` · ${tr("ล้ม")} ${b.fail}` : ''}`}
                 style={{ flex: 1, height: `${Math.max(6, b.ratio * 100)}%`, borderRadius: 2,
                   background: b.fail ? 'var(--red)' : b.ratio >= 0.95 ? 'var(--green)' : b.ok ? 'var(--amber)' : 'var(--border)' }} />
             ))}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-            1 แท่ง = 1 ชั่วโมง · เต็ม = ได้ครบทุกนาที · ส้ม = ขาดบางนาที · แดง = มีครั้งที่ล้ม · เทา = ไม่ได้รับเลย
+            1 {tr("แท่ง = 1 ชั่วโมง · เต็ม = ได้ครบทุกนาที · ส้ม = ขาดบางนาที · แดง = มีครั้งที่ล้ม · เทา = ไม่ได้รับเลย")}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 8 }}>
-            สำเร็จ <b>{okSum.toLocaleString()}</b> {tr('· ล้ม')} <b style={{ color: failSum ? 'var(--red)' : 'inherit' }}>{failSum}</b> {tr('ครั้ง · รับสำเร็จล่าสุด')} {fmtTime(src.last_ok_at)}
+            {tr("สำเร็จ")} <b>{okSum.toLocaleString()}</b> {tr('· ล้ม')} <b style={{ color: failSum ? 'var(--red)' : 'inherit' }}>{failSum}</b> {tr('ครั้ง · รับสำเร็จล่าสุด')} {fmtTime(src.last_ok_at)}
           </div>
           {src.last_error && <div style={{ fontSize: 12.5, color: 'var(--red)', marginTop: 4 }}>{tr('ล้มล่าสุด:')} {src.last_error}</div>}
           {src.last_result && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6, fontFamily: 'ui-monospace, monospace', overflowWrap: 'anywhere' }}>
-              คำตอบล่าสุด: {JSON.stringify(src.last_result)}
+              {tr("คำตอบล่าสุด")}: {JSON.stringify(src.last_result)}
             </div>
           )}
         </div>
@@ -319,7 +357,7 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
             })}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-            ไฟล์ flow ตั้ง env ของ Node-RED ชื่อ <code>{envVarName(src)}</code>
+            {tr("ไฟล์ flow ตั้ง env ของ Node-RED ชื่อ")} <code>{envVarName(src)}</code>
             {hasEnergy && ' · แม่แบบค่าไฟ = schema TSS Smart Energy'}{hasMachine && ' · แม่แบบเครื่องจักร = Node-RED OEE PD2 (oee_stop / oee_piece)'}
           </div>
         </div>
@@ -351,9 +389,9 @@ function KindsTab({ sources }) {
           <div key={k.key} style={{ ...card, display: 'grid', gap: 4, alignContent: 'start' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{k.icon} {tr(k.label)}</div>
             <div style={{ fontSize: 12, fontWeight: 700, color: k.status === 'live' ? 'var(--green)' : 'var(--amber)' }}>
-              {k.status === 'live' ? '● ESM รับได้แล้ว' : '○ ออกแบบไว้ — ยังไม่มีปลายทางรับ'}
+              {k.status === 'live' ? tr("● ESM รับได้แล้ว") : tr("○ ออกแบบไว้ — ยังไม่มีปลายทางรับ")}
             </div>
-            <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>{k.help}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr(k.help)}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ปลายทาง:')} {k.dest}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ต้นทางที่ส่ง:')} {users.length ? users.map(s => s.name).join(', ') : '—'}</div>
           </div>
@@ -387,7 +425,7 @@ function CreateModal({ onClose, onCreated }) {
     try {
       const r = await callAdmin('create', { code, name, note, kinds });
       onCreated(r.source, r.key);
-    } catch (e) { toast.error(`เพิ่มต้นทางไม่สำเร็จ: ${e.message}`); }
+    } catch (e) { toast.error(`${tr("เพิ่มต้นทางไม่สำเร็จ")}: ${e.message}`); }
     finally { setBusy(false); }
   };
   return (
@@ -436,12 +474,12 @@ function KeyModal({ info, onClose }) {
     <div className="overlay">{/* ไม่ปิดจาก backdrop — รหัสแสดงครั้งเดียว */}
       <div className="modal" style={{ width: 'min(560px, 96vw)', display: 'grid', gap: 10 }} onClick={e => e.stopPropagation()}>
         <b style={{ fontSize: 17 }}>{tr('🔑 รหัสลับของต้นทาง')} {info.code}</b>
-        <NoticeBar tone="warn">{tr('แสดง')}<b>{tr('ครั้งเดียว')}</b> — ESM เก็บไว้แค่ค่าที่ย้อนกลับไม่ได้ ปิดหน้าต่างนี้แล้วดูอีกไม่ได้ (ลืม = ออกรหัสใหม่)</NoticeBar>
-        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, overflowWrap: 'anywhere', userSelect: 'all' }}>
+        <NoticeBar tone="warn">{tr('แสดง')}<b>{tr('ครั้งเดียว')}</b> — ESM {tr("เก็บไว้แค่ค่าที่ย้อนกลับไม่ได้ ปิดหน้าต่างนี้แล้วดูอีกไม่ได้ (ลืม = ออกรหัสใหม่")})</NoticeBar>
+        <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 14, background: 'var(--bg2-surf)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, overflowWrap: 'anywhere', userSelect: 'all' }}>
           {info.key}
         </div>
         <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: 'grid', gap: 4, color: 'var(--text2)' }}>
-          <li>{tr('Node-RED › เมนู ☰ › Settings › Environment (หรือไฟล์ settings.js) เพิ่มตัวแปร')} <code>ESM_SOURCE_KEY</code> = รหัสนี้</li>
+          <li>{tr('Node-RED › เมนู ☰ › Settings › Environment (หรือไฟล์ settings.js) เพิ่มตัวแปร')} <code>ESM_SOURCE_KEY</code> = {tr("รหัสนี้")}</li>
           <li>{tr('ดาวน์โหลด flow จากหน้าต้นทาง แล้ว Import · เลือก DB ในโหนด mysql')}</li>
           <li>{tr('Deploy แล้วดูแถบสุขภาพการส่ง — ภายใน 1 นาทีควรเป็นสีเขียว')}</li>
         </ol>

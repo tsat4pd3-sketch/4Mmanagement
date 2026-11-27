@@ -38,7 +38,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       const r = await recompressLayouts({ supabase, supabaseDR, scanOnly: true });
       if (alive()) setScan({ total: r.total, byGroup: r.byGroup || {}, checkedSkip: r.checkedSkip || 0 });
     } catch (e) {
-      if (alive()) { setScan(null); toast.error('สำรวจรูปไม่สำเร็จ: ' + (e?.message || e)); }
+      if (alive()) { setScan(null); toast.error((tr('สำรวจรูปไม่สำเร็จ') + ': ') + (e?.message || e)); }
     } finally { if (alive()) setScanning(false); }
   }, []);
 
@@ -55,7 +55,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       + 'ครอบคลุม: ผังไลน์ · ผังโรงงาน · ผังเครื่องจักร · รูปจุดตรวจ PM · รูปซ่อม MO · รูปพนักงาน\n'
       + 'ความละเอียดเท่าเดิม (ไม่เบลอ) แต่ไฟล์เล็กลงมาก — แปลงเป็น WebP\n\n'
       + 'ระบบจะทยอยทำเองจนจบ (อาจใช้เวลาหลายนาที) · ระหว่างนี้อย่าปิดหน้านี้\n'
-      + 'ถ้าหลุดกลางคัน กดซ้ำได้ ของที่ทำไปแล้วจะถูกข้ามโดยไม่เสียค่าเน็ต'
+      + tr('ถ้าหลุดกลางคัน กดซ้ำได้ ของที่ทำไปแล้วจะถูกข้ามโดยไม่เสียค่าเน็ต')
     )) return;
     setBusy('กำลังเริ่ม…');
     setResult(null);
@@ -78,13 +78,13 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       const remaining = r.remaining;
       const mb = (all.savedBytes / 1048576).toFixed(1);
       setResult({ ...all, remaining, stalled: false, mb });
-      const left = remaining ? ` · เหลือ ${remaining} ใบ` : '';
-      if (all.error) toast.error(`บีบเสร็จ ${all.done} ใบ (ประหยัด ${mb} MB) · ไม่สำเร็จ ${all.error}: ${all.errors[0]}${left}`);
-      else if (remaining) toast.info(`บีบเสร็จ ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip}${left} — กดซ้ำได้`);
-      else toast.success(`บีบรูปเสร็จครบแล้ว ${all.done} ใบ — ประหยัด ${mb} MB · ข้าม ${all.skip} ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว)`);
+      const left = remaining ? ` · ${tr("เหลือ")} ${remaining} ${tr("ใบ")}` : '';
+      if (all.error) toast.error(`${tr("บีบเสร็จ")} ${all.done} ${tr("ใบ (ประหยัด")} ${mb} MB) · ${tr("ไม่สำเร็จ")} ${all.error}: ${all.errors[0]}${left}`);
+      else if (remaining) toast.info(`${tr("บีบเสร็จ")} ${all.done} ${tr("ใบ — ประหยัด")} ${mb} MB · ${tr("ข้าม")} ${all.skip}${left} — ${tr("กดซ้ำได้")}`);
+      else toast.success(`${tr("บีบรูปเสร็จครบแล้ว")} ${all.done} ${tr("ใบ — ประหยัด")} ${mb} MB · ${tr("ข้าม")} ${all.skip} ${tr("ใบ (เล็กอยู่แล้ว/เป็น WebP แล้ว")})`);
       await onDone?.();
     } catch (err) {
-      toast.error('บีบรูปไม่สำเร็จ: ' + (err?.message || err));
+      toast.error((tr('บีบรูปไม่สำเร็จ') + ': ') + (err?.message || err));
     } finally {
       setBusy('');
       doScan();          // ตัวเลข "เหลือ" ต้องตรงกับของจริงหลังทำเสร็จ
@@ -99,11 +99,10 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, minWidth: 220, flex: 1 }}>
             <b style={{ color: 'var(--text)', fontSize: 14 }}>{tr('บีบรูปที่อัปไว้แล้วให้เล็กลง')}</b><br />
-            แปลงเป็น <b>WebP</b> — <b>{tr('ความละเอียดเท่าเดิม ไม่เบลอ')}</b> แต่ไฟล์เล็กลงราวครึ่งหนึ่ง
+            {tr("แปลงเป็น")} <b>WebP</b> — <b>{tr('ความละเอียดเท่าเดิม ไม่เบลอ')}</b> {tr("แต่ไฟล์เล็กลงราวครึ่งหนึ่ง")}
             <br />
             <InfoMore label={tr('แผงนี้มีไว้ทำไม')} id="squeeze-why" size={12}>
-              รูปที่อัปใหม่หลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว — แผงนี้มีไว้ตามเก็บ “รูปเก่า”
-              · กดซ้ำได้เรื่อยๆ ใบที่ทำแล้วถูกข้ามก่อนโหลด (ไม่เสียค่าเน็ตซ้ำ)
+              {tr("รูปที่อัปใหม่หลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว — แผงนี้มีไว้ตามเก็บ “รูปเก่า” · กดซ้ำได้เรื่อยๆ ใบที่ทำแล้วถูกข้ามก่อนโหลด (ไม่เสียค่าเน็ตซ้ำ")})
             </InfoMore>
           </div>
           <button
@@ -118,12 +117,12 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
               cursor: (!canRun || busy || scanning || scan?.total === 0) ? 'default' : 'pointer',
               maxWidth: '100%', whiteSpace: 'normal', textAlign: 'center',
             }}>
-            {busy || (scanning ? 'กำลังสำรวจ…' : scan?.total === 0 ? '✅ ไม่มีรูปค้างแล้ว' : `🗜️ เริ่มบีบ ${scan?.total ?? ''} ใบ`)}
+            {busy || (scanning ? tr("กำลังสำรวจ…") : scan?.total === 0 ? tr("✅ ไม่มีรูปค้างแล้ว") : `🗜️ ${tr("เริ่มบีบ")} ${scan?.total ?? ''} ${tr("ใบ")}`)}
           </button>
         </div>
         {!canRun && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--accent2)' }}>
-            คุณดูได้แต่กดไม่ได้ — ปุ่มนี้ต้องมีสิทธิ์ <code>storage_maintain:run</code> (ตั้งที่ /permissions)
+            {tr("คุณดูได้แต่กดไม่ได้ — ปุ่มนี้ต้องมีสิทธิ์")} <code>storage_maintain:run</code> ({tr("ตั้งที่")} /permissions)
           </div>
         )}
       </div>
@@ -131,24 +130,24 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       {/* 📋 เหลือให้ทำกี่ใบ แยกตามกลุ่ม — กฎความซื่อสัตย์ของจอ: ยังไม่รู้ ต้องเขียนว่ายังไม่รู้ ห้ามโชว์ 0 */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
-          รูปที่ยังไม่ได้ตรวจ
+          {tr("รูปที่ยังไม่ได้ตรวจ")}
           <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)', marginLeft: 8 }}>
-            (นับจากแถวในฐานข้อมูล ไม่ได้โหลดรูป — ไม่มีค่าเน็ต)
+            ({tr("นับจากแถวในฐานข้อมูล ไม่ได้โหลดรูป — ไม่มีค่าเน็ต")})
           </span>
         </div>
         {scanning ? (
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังสำรวจ…')}</div>
         ) : !scan ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent2)' }}>
-            สำรวจไม่สำเร็จ — ยังไม่รู้ว่าเหลือกี่ใบ{' '}
+            {tr("สำรวจไม่สำเร็จ — ยังไม่รู้ว่าเหลือกี่ใบ")}{' '}
             <button onClick={() => doScan()} style={linkBtn}>{tr('ลองใหม่')}</button>
           </div>
         ) : scan.total === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>
-            ✅ ไม่มีรูปค้าง — ตรวจครบทุกใบแล้ว
+            ✅ {tr("ไม่มีรูปค้าง — ตรวจครบทุกใบแล้ว")}
             {scan.checkedSkip > 0 && (
               <span style={{ color: 'var(--muted)' }}>
-                {' '}({scan.checkedSkip.toLocaleString()} ใบตรวจแล้วไม่ต้องบีบ)
+                {' '}({scan.checkedSkip.toLocaleString()} {tr("ใบตรวจแล้วไม่ต้องบีบ")})
               </span>
             )}
           </div>
@@ -171,8 +170,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
                 "ยังไม่ได้บีบ" ⇒ เลขไม่ลดสักที ทั้งที่งานเสร็จแล้ว (user ทัก 13/10) */}
             {scan.checkedSkip > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', paddingTop: 2 }}>
-                อีก {scan.checkedSkip.toLocaleString()} {tr('ใบ')} <b>{tr('ตรวจแล้วไม่ต้องบีบ')}</b> (เล็กอยู่แล้ว / บีบแล้วไม่เล็กลงพอ)
-                — ไม่นับรวมและไม่โหลดซ้ำอีก
+                {tr("อีก")} {scan.checkedSkip.toLocaleString()} {tr('ใบ')} <b>{tr('ตรวจแล้วไม่ต้องบีบ')}</b> ({tr("เล็กอยู่แล้ว / บีบแล้วไม่เล็กลงพอ) — ไม่นับรวมและไม่โหลดซ้ำอีก")}
               </div>
             )}
             <button onClick={() => doScan()} disabled={!!busy} style={{ ...linkBtn, justifySelf: 'start', marginTop: 2 }}>
@@ -186,16 +184,16 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
         <div style={{ ...card, borderColor: result.error ? '#ef4444' : 'var(--accent)' }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{tr('ผลรอบล่าสุด')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.7 }}>
-            บีบสำเร็จ <b style={{ color: 'var(--accent)' }}>{result.done.toLocaleString()} {tr('ใบ')}</b>{' '}
-            · ประหยัดพื้นที่/ค่าเน็ต <b style={{ color: 'var(--accent)' }}>{result.mb} MB</b><br />
-            ข้าม {result.skip.toLocaleString()} {tr('ใบ')} <span style={{ color: 'var(--muted)' }}>{tr('(เล็กอยู่แล้ว / เป็น WebP แล้ว / บีบแล้วไม่เล็กลงพอ)')}</span>
+            {tr("บีบสำเร็จ")} <b style={{ color: 'var(--accent)' }}>{result.done.toLocaleString()} {tr('ใบ')}</b>{' '}
+            · {tr("ประหยัดพื้นที่/ค่าเน็ต")} <b style={{ color: 'var(--accent)' }}>{result.mb} MB</b><br />
+            {tr("ข้าม")} {result.skip.toLocaleString()} {tr('ใบ')} <span style={{ color: 'var(--muted)' }}>{tr('(เล็กอยู่แล้ว / เป็น WebP แล้ว / บีบแล้วไม่เล็กลงพอ)')}</span>
             {result.marked > 0 && (<><br /><span style={{ color: 'var(--muted)' }}>
-              จดไว้ว่า “ตรวจแล้วไม่ต้องบีบ” {result.marked.toLocaleString()} ใบ — รอบหน้าจะไม่ถูกหยิบมาโหลดซ้ำ
+              {tr("จดไว้ว่า “ตรวจแล้วไม่ต้องบีบ")}” {result.marked.toLocaleString()} {tr("ใบ — รอบหน้าจะไม่ถูกหยิบมาโหลดซ้ำ")}
             </span></>)}
-            {result.markError && (<><br /><span style={{ color: '#ef4444' }}>
-              จดทะเบียน “ตรวจแล้ว” ไม่สำเร็จ ({result.markError}) — เลขที่เหลือจะยังไม่ลด
+            {result.markError && (<><br /><span style={{ color: 'var(--red)' }}>
+              {tr("จดทะเบียน “ตรวจแล้ว” ไม่สำเร็จ")} ({result.markError}) — {tr("เลขที่เหลือจะยังไม่ลด")}
             </span></>)}
-            {result.error > 0 && (<><br /><span style={{ color: '#ef4444' }}>{tr('ไม่สำเร็จ')} {result.error} {tr('ใบ')}</span></>)}
+            {result.error > 0 && (<><br /><span style={{ color: 'var(--red)' }}>{tr('ไม่สำเร็จ')} {result.error} {tr('ใบ')}</span></>)}
             {result.remaining > 0 && (<><br />{tr('เหลืออีก')} <b>{result.remaining.toLocaleString()} {tr('ใบ')}</b>{result.stalled ? tr(' — หยุดไว้เพราะรอบล่าสุดไม่คืบหน้า (มีไฟล์เสีย)') : tr(' — กดซ้ำได้')}</>)}
           </div>
           {result.errors.length > 0 && (

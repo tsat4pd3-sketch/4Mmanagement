@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ ⛔ หน้าตาแถบ "เครื่องหยุด" บนบอร์ด Heijunka — ที่เดียวของทั้งระบบ (2026-11-04) ════
  *
  * เหตุผล/ตัวเลขที่ทำให้ต้องมี → `src/utils/downtimeBands.js` (หัวไฟล์)
@@ -33,7 +34,7 @@ export default function DowntimeBand({ band, label, pxWidth = 0, fontSize = 11 }
     ? { ink: 'var(--muted)', stripe: 'var(--border)' }
     : { ink: 'var(--red)',   stripe: 'var(--red-line)' };
   const fs = Math.max(11, fontSize);                 // ④ ห้ามต่ำกว่า 11 (จอ TV)
-  const text = `⛔ ${w.name || 'เครื่องหยุด'}${w.min ? ` ${w.min}น.` : ''}`;
+  const text = `⛔ ${w.name || tr('เครื่องหยุด')}${w.min ? ` ${w.min}${tr("น.")}` : ''}`;
   return (
     <div title={label} style={{
       position: 'absolute', top: 0, bottom: 0,

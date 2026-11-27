@@ -11,7 +11,7 @@ import { tvPages } from '../utils/tvPager';
 import { NAV_ITEMS, UserContext } from '../App';
 import { getCurrentShift, getWorkDate } from '../utils/workDate';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 /* ══ 📺 DisplayRotator — จอวนหน้าเอง ตามแผนของบัญชีที่ login ══════════════════════════
    2026-10-09 · คำสั่ง user: "ตั้งว่าจอ user นี้จะเปิดอะไรวนบ้าง" · ตั้งค่าที่ /display-rotation
@@ -326,7 +326,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
   useEffect(() => { setChangedAt(Date.now()); }, [pathKey]);
 
   const pausedLeft = Math.max(0, Math.ceil((pausedUntil - now) / 1000));
-  const skipTitle = skipped.map(s => `${s.path || '(ว่าง)'} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
+  const skipTitle = skipped.map(s => `${s.path || tr('(ว่าง)')} — ${SKIP_REASON_LABEL[s.reason]}`).join('\n');
   // ปุ่มไม่นับเป็น "มีคนใช้จอ" — ตัวฟัง (capture ที่ window) ตั้งหยุดชั่วคราวไปก่อน แล้ว onClick ล้างทิ้ง
   const btn = (label, onClick, title, st = btnStyle) => (
     <button type="button" title={title}
@@ -360,10 +360,10 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
   }
   if (!active || !cur) return null;
 
-  const status = held ? '⏸ หยุดอยู่'
-    : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
-      : subWait ? `รอหน้าย่อย ${subWait.page}/${subWait.count}`
-        : `ถัดไปใน ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
+  const status = held ? tr("⏸ หยุดอยู่")
+    : pausedLeft > 0 ? `⏸ ${tr("มีคนใช้จอ · วนต่อใน")} ${fmtSec(pausedLeft)}`
+      : subWait ? `${tr("รอหน้าย่อย")} ${subWait.page}/${subWait.count}`
+        : `${tr("ถัดไปใน")} ${fmtSec(Math.max(0, cur.sec - elapsed))}`;
 
   const compact = !held && pausedLeft === 0 && skipped.length === 0 && now - changedAt > 6000;
   if (compact) {
@@ -381,7 +381,7 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
       <span style={{ color: 'var(--muted)' }}>{status}</span>
       {skipped.length > 0 && (
         <span title={skipTitle} style={{ color: 'var(--amber)', fontWeight: 700 }}>
-          ⚠ ข้าม {skipped.length} หน้า
+          ⚠ {tr("ข้าม")} {skipped.length} {tr("หน้า")}
         </span>
       )}
       {btn('◀', () => goTo(stepIndex(idx, n, -1)), 'หน้าก่อนหน้า')}
@@ -404,14 +404,14 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
     : NAV_ITEMS.find(x => x.to === pathname) || { icon: '🖥️', label: pathname };
   const chips = barChips(`${pathname}${search || ''}`);
   const d = new Date(now);
-  const shift = getCurrentShift(d) === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก';
-  const hhmm = d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
+  const shift = getCurrentShift(d) === 'day' ? tr("☀️ กะเช้า") : tr("🌙 กะดึก");
+  const hhmm = d.toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Bangkok' });
   const wd = getWorkDate(d);
   const status = !active ? null
-    : held ? '⏸ หยุดค้าง'
-      : pausedLeft > 0 ? `⏸ มีคนใช้จอ · วนต่อใน ${fmtSec(pausedLeft)}`
-        : subWait ? `รอหน้าย่อย ${subWait.page}/${subWait.count}`
-          : `ถัดไปใน ${fmtSec(Math.max(0, sec - elapsed))}`;
+    : held ? tr("⏸ หยุดค้าง")
+      : pausedLeft > 0 ? `⏸ ${tr("มีคนใช้จอ · วนต่อใน")} ${fmtSec(pausedLeft)}`
+        : subWait ? `${tr("รอหน้าย่อย")} ${subWait.page}/${subWait.count}`
+          : `${tr("ถัดไปใน")} ${fmtSec(Math.max(0, sec - elapsed))}`;
   return (
     <div role="banner" style={barStyle}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1, overflow: 'hidden' }}>
@@ -423,7 +423,7 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
         {/* 📐 หน้ายาวเกินจอ ⇒ แบ่งส่วนหมุน (fit) — data-tv-subpage ให้ตัววนรอจนครบทุกส่วน */}
         {fitPage && (
           <span {...{ [SUBPAGE_ATTR]: `${fitPage.page}/${fitPage.count}` }} style={{ ...barChip, color: 'var(--accent)', borderColor: 'var(--accent)' }}>
-            ส่วน {fitPage.page}/{fitPage.count}
+            {tr("ส่วน")} {fitPage.page}/{fitPage.count}
           </span>
         )}
       </div>

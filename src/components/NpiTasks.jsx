@@ -44,17 +44,17 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
     if (m.id) res = await supabase.from('npi_tasks').update(row).eq('id', m.id).select().single();
     else res = await supabase.from('npi_tasks').insert({ ...row, project_id: project.id, created_by_name: fullName || null }).select().single();
     setSaving(false);
-    if (res.error) return toast.error(`บันทึกไม่สำเร็จ: ${res.error.message}`);
+    if (res.error) return toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${res.error.message}`);
     // แจ้งผู้รับมอบหมาย (เฉพาะ user ระบบ + เปลี่ยนคน) — best-effort
     if (row.assignee_uid && row.assignee_uid !== m._orig_uid) {
       const { data: { user } } = await supabase.auth.getUser();
       if (row.assignee_uid !== user?.id) {
         const p = parts.find(x => x.id === row.part_id);
         supabase.from('notifications').insert({ user_id: row.assignee_uid, type: 'info',
-          title: `✅ ${fullName || 'เพื่อนร่วมงาน'} มอบหมายงาน NPI: ${row.title}`,
+          title: `✅ ${fullName || tr('เพื่อนร่วมงาน')} ${tr("มอบหมายงาน")} NPI: ${row.title}`,
           body: [project.name, p ? `พาร์ท ${p.part_no}` : '', row.due_date ? `กำหนด ${fmtDate(row.due_date)}` : ''].filter(Boolean).join(' · '),
           ref_table: 'npi_tasks', ref_id: res.data?.id || null,
-        }).then(({ error }) => { if (error) toast.info(`บันทึกงานแล้ว แต่ส่งแจ้งเตือนไม่สำเร็จ: ${error.message}`); });
+        }).then(({ error }) => { if (error) toast.info(`${tr("บันทึกงานแล้ว แต่ส่งแจ้งเตือนไม่สำเร็จ")}: ${error.message}`); });
       }
     }
     toast.success('บันทึกงานแล้ว'); setModal(null); onChanged();
@@ -67,7 +67,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
   };
   const del = async (t) => {
     if (rowBlocked(t)) return;
-    if (!await askConfirm(`ลบงาน "${t.title}"?`)) return;
+    if (!await askConfirm(`${tr("ลบงาน")} "${t.title}"?`)) return;
     const { error } = await supabase.from('npi_tasks').delete().eq('id', t.id);
     if (error) return toast.error(error.message);
     onChanged();
@@ -79,7 +79,7 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('✅ งานในโปรเจค (')}{rows.length}{hidden ? ` · ซ่อน ${hidden}` : ''})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('✅ งานในโปรเจค (')}{rows.length}{hidden ? ` · ${tr("ซ่อน")} ${hidden}` : ''})</div>
           <label style={{ fontSize: 12 }}><input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} /> {tr('แสดงที่เสร็จ/ยกเลิก')}</label>
           <label style={{ fontSize: 12 }}><input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} /> {tr('เฉพาะของฉัน')}</label>
         </div>
@@ -97,9 +97,9 @@ export default function NpiTasks({ project, parts, tplPhases, delivs, tasks, use
                 return (
                   <tr key={t.id}>
                     <td style={tdSt}><LightDot light={lt} /></td>
-                    <td style={{ ...tdSt, minWidth: 220 }}><div style={{ fontWeight: 700, color: 'var(--text)' }}>{t.title}</div>{t.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{t.detail}</div>}{dv && <div style={{ fontSize: 11, color: '#4d9fff' }}>{tr(dv.label)}</div>}</td>
+                    <td style={{ ...tdSt, minWidth: 220 }}><div style={{ fontWeight: 700, color: 'var(--text)' }}>{t.title}</div>{t.detail && <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{t.detail}</div>}{dv && <div style={{ fontSize: 11, color: 'var(--blue)' }}>{tr(dv.label)}</div>}</td>
                     <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>{tr('ทั้งโปรเจค')}</span>}{t.phase_code && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tplPhases.find(x => x.code === t.phase_code)?.label || t.phase_code}</div>}</td>
-                    <td style={tdSt}>{t.assignee_name || <span style={{ color: '#f59e0b' }}>{tr('ยังไม่มอบหมาย')}</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน')}</div>}</td>
+                    <td style={tdSt}>{t.assignee_name || <span style={{ color: 'var(--amber)' }}>{tr('ยังไม่มอบหมาย')}</span>}{t.assignee_name && !t.assignee_uid && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่ใช่ user ระบบ — ไม่มีแจ้งเตือน')}</div>}</td>
                     <td style={{ ...tdSt, color: lt === 'red' ? '#ef4444' : undefined, fontWeight: lt === 'red' ? 800 : 400 }}>{t.due_date ? fmtDate(t.due_date) : '—'}</td>
                     <td style={tdSt}><Pill label={tr(TASK_STATUS[t.status]?.label)} color={TASK_STATUS[t.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>

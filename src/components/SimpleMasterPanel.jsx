@@ -80,17 +80,17 @@ export default function SimpleMasterPanel({
     const payload = {};
     for (const f of fields) {
       const v = fromInput(f, adding?.[f.key]);
-      if (f.required && (v == null || v === '' || (Array.isArray(v) && !v.length))) { toast.error(`กรอก "${f.label}" ก่อน`); return; }
+      if (f.required && (v == null || v === '' || (Array.isArray(v) && !v.length))) { toast.error(`${tr("กรอก")} "${f.label}" ${tr("ก่อน")}`); return; }
       payload[f.key] = v;
     }
     const key = String(keyFrom ? keyFrom(payload) : (adding?.[keyCol] || '')).trim();
-    if (!key) { toast.error(`กรอก "${keyCol}" ก่อน`); return; }
-    if (rows.some(r => String(r[keyCol]).toUpperCase() === key.toUpperCase())) { toast.error(`มี ${key} ในทะเบียนแล้ว`); return; }
+    if (!key) { toast.error(`${tr("กรอก")} "${keyCol}" ${tr("ก่อน")}`); return; }
+    if (rows.some(r => String(r[keyCol]).toUpperCase() === key.toUpperCase())) { toast.error(`${tr("มี")} ${key} ${tr("ในทะเบียนแล้ว")}`); return; }
     setBusy(true);
-    const ok = checkWrite(await client.from(table).insert([{ [keyCol]: key, ...payload, sort_order: Math.max(100, ...rows.map(r => r.sort_order || 0)) + 1, ...stamp }]), `เพิ่ม ${key}`);
+    const ok = checkWrite(await client.from(table).insert([{ [keyCol]: key, ...payload, sort_order: Math.max(100, ...rows.map(r => r.sort_order || 0)) + 1, ...stamp }]), `${tr("เพิ่ม")} ${key}`);
     setBusy(false);
     if (!ok) return;
-    toast.success(`เพิ่ม ${key} แล้ว`); setAdding(null); done();
+    toast.success(`${tr("เพิ่ม")} ${key} ${tr("แล้ว")}`); setAdding(null); done();
   };
 
   const saveRow = async (r) => {
@@ -100,13 +100,13 @@ export default function SimpleMasterPanel({
     setBusy(true);
     const res = await client.from(table).update({ ...payload, ...stamp }).eq(keyCol, r[keyCol]).select(keyCol);
     setBusy(false);
-    if (!checkWrite(res, `บันทึก ${r[keyCol]}`)) return;
+    if (!checkWrite(res, `${tr("บันทึก")} ${r[keyCol]}`)) return;
     if (!res.data?.length) { toast.error('บันทึกไม่ติด (0 แถว) — อาจไม่มีสิทธิ์แก้ทะเบียนนี้'); return; }
     toast.success('บันทึกแล้ว'); setDraft(x => { const n = { ...x }; delete n[r[keyCol]]; return n; }); done();
   };
 
   const toggle = async (r) => {
-    if (r.is_active !== false && !await askConfirm(`ปิดใช้ "${r[keyCol]}" ?\n\n${offNote}\n(เปิดกลับได้ภายหลัง)`)) return;
+    if (r.is_active !== false && !await askConfirm(`${tr("ปิดใช้")} "${r[keyCol]}" ?\n\n${offNote}\n(${tr("เปิดกลับได้ภายหลัง")})`)) return;
     const res = await client.from(table).update({ is_active: r.is_active === false, ...stamp }).eq(keyCol, r[keyCol]).select(keyCol);
     if (!checkWrite(res, 'เปลี่ยนสถานะ')) return;
     if (!res.data?.length) { toast.error('เปลี่ยนสถานะไม่ติด (0 แถว) — อาจไม่มีสิทธิ์'); return; }
@@ -124,9 +124,9 @@ export default function SimpleMasterPanel({
       setBusy(false);
       if (msg) { toast.error(msg); return; }
     }
-    if (!await askConfirm(`ลบ "${r[keyCol]}" ออกจากทะเบียน?\n\nข้อมูลเก่าที่บันทึกด้วยชื่อ/รหัสนี้ยังอ่านออก (ไม่ผูก FK) — ถ้าแค่เลิกใช้ แนะนำกด "ปิดใช้" แทน`)) return;
+    if (!await askConfirm(`${tr("ลบ")} "${r[keyCol]}" ${tr("ออกจากทะเบียน?\\n\\nข้อมูลเก่าที่บันทึกด้วยชื่อ/รหัสนี้ยังอ่านออก (ไม่ผูก FK) — ถ้าแค่เลิกใช้ แนะนำกด \"ปิดใช้\" แทน")}`)) return;
     const res = await client.from(table).delete().eq(keyCol, r[keyCol]).select(keyCol);
-    if (!checkWrite(res, `ลบ ${r[keyCol]}`)) return;
+    if (!checkWrite(res, `${tr("ลบ")} ${r[keyCol]}`)) return;
     if (!res.data?.length) { toast.error('ลบไม่ติด (0 แถว) — อาจไม่มีสิทธิ์'); return; }
     done();
   };
@@ -143,7 +143,7 @@ export default function SimpleMasterPanel({
       {title && <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{title} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({rows.length})</span></div>}
       {help && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{help}</div>}
       {missing ? (
-        <div style={{ fontSize: 12, color: '#f59e0b' }}>{tr('⚠ ยังไม่ได้ apply migration ของตาราง')} {table} {tr('(แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน')}</div>
+        <div style={{ fontSize: 12, color: 'var(--amber)' }}>{tr('⚠ ยังไม่ได้ apply migration ของตาราง')} {table} {tr('(แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน')}</div>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
@@ -154,7 +154,7 @@ export default function SimpleMasterPanel({
           </div>
 
           {adding && (
-            <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 'var(--r-md)', background: 'var(--bg2-surf)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
               {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
               {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.label)}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>

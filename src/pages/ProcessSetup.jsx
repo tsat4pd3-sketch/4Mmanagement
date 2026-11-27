@@ -18,8 +18,7 @@ export default function ProcessSetup() {
     <Page width="form">
       <PageHeader title={tr('กระบวนการผลิต (Process Types)')} icon="🏭" />
       <InfoMore label={tr('ใช้ที่ไหนบ้าง')} size={11.5} style={{ margin: '0 0 18px' }}>
-        master กลาง — เพิ่ม/แก้กระบวนการ (เช่น Laser, Bending) แล้วทุกจุดที่ tag เครื่องจักร (ฐานข้อมูลเครื่องจักร) ·
-        สินค้า (Product Master) · ประเภท Downtime/งานเสีย ใช้ตามทันที · แก้ได้ที่นี่หรือใน Daily Report ⚙️ ก็ได้ (ที่เดียวกัน)
+        master {tr("กลาง — เพิ่ม/แก้กระบวนการ (เช่น Laser, Bending) แล้วทุกจุดที่ tag เครื่องจักร (ฐานข้อมูลเครื่องจักร) · สินค้า (Product Master) · ประเภท Downtime/งานเสีย ใช้ตามทันที · แก้ได้ที่นี่หรือใน Daily Report ⚙️ ก็ได้ (ที่เดียวกัน")})
       </InfoMore>
       <ProcessTypeSetup role={role} />
     </Page>

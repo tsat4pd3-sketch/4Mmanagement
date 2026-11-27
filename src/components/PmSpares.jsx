@@ -21,13 +21,13 @@ import SearchSelect from './SearchSelect'
 import { planReadiness, SPARE_HORIZON_DAYS } from '../utils/pmSpares'
 import { loadSpareParts, loadPmSpareDemand } from '../lib/pmSpareData'
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
-const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }))
+const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString(dateLocale(), { maximumFractionDigits: 2 }))
 const fmtYmd = (ymd) => {
   if (!ymd) return '—'
   const [y, m, d] = ymd.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('th-TH', { timeZone: 'UTC', day: 'numeric', month: 'short' })
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(dateLocale(), { timeZone: 'UTC', day: 'numeric', month: 'short' })
 }
 const inp = { padding: '7px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' }
 const btn = (c, solid) => ({ padding: '7px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer', border: solid ? 'none' : `1px solid ${c}55`, background: solid ? c : `${c}14`, color: solid ? '#fff' : c })
@@ -39,7 +39,7 @@ function Shell({ title, sub, onClose, children, width = 680 }) {
   return (
     // ฟอร์มมีข้อมูลที่กรอก — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · modal-scroll = เลื่อนถึงปุ่มล่างได้
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
@@ -81,7 +81,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
     ])
     if (my !== reqRef.current) return    // มีคำขอใหม่กว่าแล้ว — ทิ้งผลนี้ ห้าม setState
     const errs = [ls.error && 'รายการอะไหล่', ps.error && 'ทะเบียนอะไหล่', hs.error && 'ประวัติเบิก'].filter(Boolean)
-    if (errs.length) setLoadErr(`โหลดไม่สำเร็จ: ${errs.join(' · ')}`)
+    if (errs.length) setLoadErr(`${tr("โหลดไม่สำเร็จ")}: ${errs.join(' · ')}`)
     setLines(ls.data || []); setParts(ps.data || []); setHistory(hs.data || [])
     setLoading(false)
   }, [clId])
@@ -93,7 +93,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
     .filter(p => p.is_active !== false && !lines.some(l => l.part_id === p.id))
     .map(p => ({
       id: p.id, label: p.name, lead: p.code || undefined, title: p.name,
-      sub: `คงเหลือ ${fmtN(p.stock_qty)} ${p.unit || ''}${p.shelf ? ` · ชั้น ${p.shelf}` : ''}`,
+      sub: `${tr("คงเหลือ")} ${fmtN(p.stock_qty)} ${p.unit || ''}${p.shelf ? ` · ${tr("ชั้น")} ${p.shelf}` : ''}`,
       keywords: [p.code, p.shelf, p.category].filter(Boolean).join(' '),
     })), [parts, lines])
 
@@ -106,7 +106,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
     const { data, error } = await supabaseDR.from('pm_plan_spares')
       .insert({ checklist_id: clId, part_id: pick.id, qty_per_pm: q, ...audit }).select('id')
     setBusy(false)
-    if (error) return toast.error(`เพิ่มอะไหล่ไม่สำเร็จ: ${error.message}`)
+    if (error) return toast.error(`${tr("เพิ่มอะไหล่ไม่สำเร็จ")}: ${error.message}`)
     if (!data?.length) return toast.error('เพิ่มอะไหล่ไม่สำเร็จ (บันทึกได้ 0 แถว)')
     setPick({ id: '', text: '' }); setPickQty('1'); await load(); onChanged?.()
   }
@@ -114,45 +114,45 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
     const q = Number(v)
     if (!(q > 0) || q === Number(l.qty_per_pm)) return
     const { data, error } = await supabaseDR.from('pm_plan_spares').update({ qty_per_pm: q, ...audit }).eq('id', l.id).select('id')
-    if (error || !data?.length) { toast.error(`แก้จำนวนไม่สำเร็จ${error ? `: ${error.message}` : ' (0 แถว)'}`); return load() }
+    if (error || !data?.length) { toast.error(`${tr("แก้จำนวนไม่สำเร็จ")}${error ? `: ${error.message}` : tr(' (0 แถว)')}`); return load() }
     await load(); onChanged?.()
   }
   const delLine = async (l) => {
     const p = partById.get(l.part_id)
-    if (!await askConfirm(`เอา "${p?.name || 'อะไหล่'}" ออกจากแผน PM นี้?`)) return
+    if (!await askConfirm(`${tr("เอา")} "${p?.name || tr('อะไหล่')}" ${tr("ออกจากแผน PM นี้")}?`)) return
     const { data, error } = await supabaseDR.from('pm_plan_spares').delete().eq('id', l.id).select('id')
-    if (error || !data?.length) return toast.error(`ลบไม่สำเร็จ${error ? `: ${error.message}` : ' (0 แถว)'}`)
+    if (error || !data?.length) return toast.error(`${tr("ลบไม่สำเร็จ")}${error ? `: ${error.message}` : tr(' (0 แถว)')}`)
     await load(); onChanged?.()
   }
   const issue = async () => {
     const items = ready.items.filter(i => i.part && i.qty > 0).map(i => ({ part_id: i.part.id, qty: i.qty }))
     if (!items.length) return
     const txt = ready.items.map(i => `• ${i.part?.name || '?'} × ${fmtN(i.qty)} ${i.part?.unit || ''}`).join('\n')
-    if (!await askConfirm(`เบิกอะไหล่ตามแผน PM "${eqLabel}"\n\n${txt}\n\nตัดสต็อกทั้งชุด (ถ้าตัวใดไม่พอ จะไม่ตัดเลยสักตัว)`)) return
+    if (!await askConfirm(`${tr("เบิกอะไหล่ตามแผน")} PM "${eqLabel}"\n\n${txt}\n\n${tr("ตัดสต็อกทั้งชุด (ถ้าตัวใดไม่พอ จะไม่ตัดเลยสักตัว")})`)) return
     setBusy(true)
     const { error } = await supabaseDR.rpc('pm_issue_spares', {
-      p_checklist_id: clId, p_items: items, p_by_name: byName || null, p_note: `เบิกตามแผน PM · ${eqLabel}`.slice(0, 200),
+      p_checklist_id: clId, p_items: items, p_by_name: byName || null, p_note: `${tr("เบิกตามแผน")} PM · ${eqLabel}`.slice(0, 200),
     })
     setBusy(false)
-    if (error) return toast.error(`เบิกไม่สำเร็จ — ไม่มีการตัดสต็อก: ${error.message}`)
-    toast.success(`เบิกอะไหล่ตามแผน PM แล้ว ${items.length} รายการ`)
+    if (error) return toast.error(`${tr("เบิกไม่สำเร็จ — ไม่มีการตัดสต็อก")}: ${error.message}`)
+    toast.success(`${tr("เบิกอะไหล่ตามแผน PM แล้ว")} ${items.length} ${tr("รายการ")}`)
     await load(); onChanged?.()
   }
 
   return (
     <Shell title={tr('อะไหล่ที่ใช้ใน PM รอบหนึ่ง')} onClose={onClose}
-      sub={<>{eqLabel || '—'}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} {tr('· รอบ:')} <b>{row.cycleText || '—'}</b>{row.nextDue ? ` · PM ครั้งถัดไป ${row.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}` : ''}</>}>
+      sub={<>{eqLabel || '—'}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} {tr('· รอบ:')} <b>{row.cycleText || '—'}</b>{row.nextDue ? ` · PM ${tr("ครั้งถัดไป")} ${row.nextDue.toLocaleDateString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}` : ''}</>}>
       {loadErr && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {loadErr}</div>}
       {loading ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div> : (<>
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อะไหล่', 'ใช้ต่อรอบ', 'คงเหลือ', 'สถานะ', ''].map(h => <th key={h} style={th}>{tr(h)}</th>)}
+              {[tr("อะไหล่"), tr("ใช้ต่อรอบ"), tr("คงเหลือ"), tr("สถานะ"), ''].map(h => <th key={h} style={th}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {!ready.items.length && (
                 <tr><td colSpan={5} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 18 }}>
-                  ยังไม่ได้ผูกอะไหล่ — เพิ่มอะไหล่ที่ใช้ใน PM รอบหนึ่งด้านล่าง แล้วระบบจะรวมความต้องการล่วงหน้าให้เอง
+                  {tr("ยังไม่ได้ผูกอะไหล่ — เพิ่มอะไหล่ที่ใช้ใน PM รอบหนึ่งด้านล่าง แล้วระบบจะรวมความต้องการล่วงหน้าให้เอง")}
                 </td></tr>
               )}
               {ready.items.map(i => (
@@ -188,8 +188,8 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 14, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
           <span style={{ flex: '1 1 240px', fontSize: 12.5, color: 'var(--text2)' }}>
-            {ready.allOk == null ? 'ผูกอะไหล่ก่อน แล้วจึงเบิกตามแผนได้'
-              : ready.allOk ? '✅ อะไหล่พร้อมสำหรับ PM รอบถัดไป'
+            {ready.allOk == null ? tr("ผูกอะไหล่ก่อน แล้วจึงเบิกตามแผนได้")
+              : ready.allOk ? tr("✅ อะไหล่พร้อมสำหรับ PM รอบถัดไป")
                 : <span style={{ color: '#ef4444', fontWeight: 700 }}>{tr('⚠️ ขาด')} {ready.shortCount} {tr('รายการ — เบิกทั้งชุดไม่ได้จนกว่าจะรับของเข้า')}</span>}
           </span>
           {canIssue
@@ -203,8 +203,8 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
             <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 4 }}>{tr('ประวัติเบิกให้ PM ใบนี้')}</div>
             {history.slice(0, 8).map(h => (
               <div key={h.id} style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0', borderTop: '1px dashed var(--border)' }}>
-                {new Date(h.created_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                {' · '}{partById.get(h.part_id)?.name || 'อะไหล่'} × {fmtN(Math.abs(Number(h.qty)))}{h.by_name ? ` · ${h.by_name}` : ''}
+                {new Date(h.created_at).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {' · '}{partById.get(h.part_id)?.name || tr("อะไหล่")} × {fmtN(Math.abs(Number(h.qty)))}{h.by_name ? ` · ${h.by_name}` : ''}
               </div>
             ))}
           </div>
@@ -231,7 +231,7 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
         setState({
           loading: false,
           demand: { rows: [], noDue: [], summary: { horizonDays: 0, parts: 0, short: 0, belowMin: 0, noDuePlans: 0 } },
-          error: `คิดความต้องการอะไหล่ไม่สำเร็จ: ${e?.message || e}`,
+          error: `${tr("คิดความต้องการอะไหล่ไม่สำเร็จ")}: ${e?.message || e}`,
         })
       })
     return () => { alive = false }
@@ -251,7 +251,7 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
           {state.error ? <span style={{ color: '#ef4444' }}>— {state.error} {tr('(ตัวเลขไม่ครบ)')}</span>
             : !s.parts && !s.noDuePlans ? <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่มีแผน PM ไหนผูกอะไหล่ (กดปุ่ม 🔩 ในมุมมองตาราง)')}</span>
               : <span style={{ color: 'var(--muted)' }}>
-                  — ต้องใช้ {s.parts} รายการ
+                  — {tr("ต้องใช้")} {s.parts} {tr("รายการ")}
                   {bad && <> · <b style={{ color: '#ef4444' }}>{tr('ขาด')} {tr(s.short)}</b></>}
                   {s.orderLate > 0 && <> · <b style={{ color: '#ef4444' }}>{tr('สั่งไม่ทัน leadtime')} {s.orderLate}</b></>}
                   {s.belowMin > 0 && <> {tr('· ต่ำกว่า safety')} {s.belowMin}</>}
@@ -269,13 +269,13 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
   const [openRow, setOpenRow] = useState(null)
   const s = demand.summary
   return (
-    <Shell title={`อะไหล่ที่ PM ${s.horizonDays} วันข้างหน้าต้องใช้`} width={920} onClose={onClose}
+    <Shell title={`${tr("อะไหล่ที่")} PM ${s.horizonDays} ${tr("วันข้างหน้าต้องใช้")}`} width={920} onClose={onClose}
       sub={tr('รวมทุกครั้งที่ PM จะเกิดในช่วงนี้ (รายสัปดาห์ = หลายครั้ง) ทุกทีม เทียบสต็อกคงเหลือ · ขาด = ต้องสั่ง/รับของเข้าก่อนวันที่ระบุ')}>
       {error && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {error} {tr('— ตัวเลขด้านล่างไม่ครบ')}</div>}
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr style={{ background: 'var(--bg3)' }}>
-            {['อะไหล่', 'ต้องใช้', 'คงเหลือ', 'หลังใช้', 'ใช้ครั้งแรก', 'เริ่มขาด', 'ต้องสั่งภายใน', 'PM ที่ใช้'].map(h => <th key={h} style={th}>{tr(h)}</th>)}
+            {[tr("อะไหล่"), tr("ต้องใช้"), tr("คงเหลือ"), tr("หลังใช้"), tr("ใช้ครั้งแรก"), tr("เริ่มขาด"), tr("ต้องสั่งภายใน"), tr("PM ที่ใช้")].map(h => <th key={h} style={th}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
             {demand.rows.map(r => (
@@ -323,13 +323,11 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
       </div>
       {demand.noDue.length > 0 && (
         <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px solid #f59a3f55', background: '#f59a3f12', fontSize: 12.5, color: 'var(--text2)' }}>
-          ⚠️ <b>{demand.noDue.length} {tr('แผนผูกอะไหล่แล้ว แต่ยังไม่มีวัน PM ครั้งถัดไป')}</b> — ระบบคาดความต้องการของแผนเหล่านี้ไม่ได้
-          (ตั้งรอบ/วัน PM ที่ปุ่ม 📅): {demand.noDue.map(p => p.name).join(' · ')}
+          ⚠️ <b>{demand.noDue.length} {tr('แผนผูกอะไหล่แล้ว แต่ยังไม่มีวัน PM ครั้งถัดไป')}</b> — {tr("ระบบคาดความต้องการของแผนเหล่านี้ไม่ได้ (ตั้งรอบ/วัน PM ที่ปุ่ม")} 📅): {demand.noDue.map(p => p.name).join(' · ')}
         </div>
       )}
       <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-        * PM ที่เลยกำหนดนับเป็นวันนี้ · "ต้องสั่งภายใน" = วันที่เริ่มขาด − leadtime ของอะไหล่ (ตั้งที่ทะเบียนอะไหล่) ·
-        safety = จำนวนขั้นต่ำ (min) ตาม WI-JIG-010 · ใช้จริงจะตัดสต็อกเมื่อกด "เบิกอะไหล่ตามแผน PM" หรือเบิกในใบ MO
+        * PM {tr("ที่เลยกำหนดนับเป็นวันนี้ · \"ต้องสั่งภายใน\" = วันที่เริ่มขาด − leadtime ของอะไหล่ (ตั้งที่ทะเบียนอะไหล่) · safety = จำนวนขั้นต่ำ (min) ตาม WI-JIG-010 · ใช้จริงจะตัดสต็อกเมื่อกด \"เบิกอะไหล่ตามแผน PM\" หรือเบิกในใบ")} MO
       </div>
     </Shell>
   )

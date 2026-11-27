@@ -32,7 +32,7 @@ export function PointThumb({ url, height = 52, mobileMax = 44, ...zoomProps }) {
     <>
       <button type="button" title={tr('แตะเพื่อดูรูปซูมของจุดนี้')} aria-label={tr('ดูรูปซูมของจุดนี้')} onClick={() => setOpen(true)}
         style={{ width: Math.round(h * THUMB_RATIO), height: h, flex: '0 0 auto', alignSelf: 'center', padding: 0, borderRadius: 6,
-          border: '1px solid var(--border)', background: 'var(--bg2)', overflow: 'hidden', cursor: 'zoom-in',
+          border: '1px solid var(--border)', background: 'var(--bg2-surf)', overflow: 'hidden', cursor: 'zoom-in',
           display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <img loading="lazy" src={url} alt=""
           style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }} />

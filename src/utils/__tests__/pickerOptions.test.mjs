@@ -146,3 +146,13 @@ test('personOptions: teams = คนในทีมช่างของใบข
   assert.equal(opts[1].group, '🎯 ที่เกี่ยวข้อง');
   assert.equal(opts[2].group, '🪪 พนักงาน');
 });
+
+test('levels (24/11 · ช่องผู้ตรวจ LPA): ตำแหน่งตรงขึ้นก่อน แต่ไม่ตัดคนอื่นทิ้ง', () => {
+  const lv = { MGR: 'manager', TECH: 'technician' };
+  const out = personOptions({
+    profiles: [{ id: 1, full_name: 'ก ช่าง', position: 'TECH' }, { id: 2, full_name: 'ข ผู้จัดการ', position: 'MGR' }],
+    levels: ['manager'], levelOf: (p) => lv[p] || null,
+  });
+  assert.equal(out[0].label, 'ข ผู้จัดการ');
+  assert.equal(out.length, 2);
+});

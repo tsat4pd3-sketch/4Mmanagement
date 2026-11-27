@@ -21,11 +21,12 @@ import { layoutLots, reorderTo, UNKNOWN_BOX_MIN_PCT, lotTone, PLAN_SURFACE } fro
 import { sliceBySegments, visibleRows, rowTicks, SHIFT_LABEL } from '../utils/planHorizon';
 import { qtyText, isTrialLot, lotKeyText } from '../utils/planLots';
 
+import { MoreMark } from './InfoMore';
 import { tr } from '../utils/i18n';
 const fmtHm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 /* ข้ามวัน = บอกเวลาเปล่าๆ ไม่พอ ("22:34" ของวันไหน?) */
 const fmtDayHm = (ms) => { const d = new Date(ms); return `${d.getDate()}/${d.getMonth() + 1} ${fmtHm(ms)}`; };
-const fmtMin = (m) => m == null ? '—' : m < 60 ? `${Math.round(m)} น.` : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')} ชม.`;
+const fmtMin = (m) => m == null ? '—' : m < 60 ? `${Math.round(m)} ${tr("น.")}` : `${Math.floor(m / 60)}:${String(Math.round(m % 60)).padStart(2, '0')} ${tr("ชม.")}`;
 const dm = (d) => `${d.slice(8)}/${d.slice(5, 7)}`;
 const ROW_H = 44;
 const LABEL_W = 116;
@@ -95,7 +96,7 @@ export default function PlanTimeline({
               <div style={{ width: LABEL_W, flex: `0 0 ${LABEL_W}px`, display: 'flex', flexDirection: 'column',
                 justifyContent: 'center', paddingTop: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-                  {SHIFT_LABEL[row.seg.shift]}
+                  {tr(SHIFT_LABEL[row.seg.shift])}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {dm(row.seg.workDate)}
@@ -141,7 +142,7 @@ export default function PlanTimeline({
                     <div key={b.lot.id}>
                       {/* ช่วงเปลี่ยนรุ่น */}
                       {setup && (
-                        <div title={`เปลี่ยนรุ่นก่อนเริ่มใบนี้ ~${fmtMin(b.setupMs / 60000)}`}
+                        <div title={`${tr("เปลี่ยนรุ่นก่อนเริ่มใบนี้")} ~${fmtMin(b.setupMs / 60000)}`}
                           style={{ position: 'absolute', left: `${setup.leftPct}%`, width: `${setup.widthPct}%`,
                             top: 4, height: ROW_H, background: PLAN_SURFACE.setupHatch,
                             border: PLAN_SURFACE.setupBorder, borderRadius: 'var(--r-xs)', pointerEvents: 'none' }} />
@@ -161,9 +162,9 @@ export default function PlanTimeline({
                             if (editable && dragId) { e.preventDefault(); setOverIdx(boxIndex); setCursor({ x: e.clientX, y: e.clientY }); }
                           }}
                           onDrop={(e) => { e.preventDefault(); drop(boxIndex); }}
-                          title={`#${b.seq} ${lotKeyText(b.lot)} · ${qtyText(b.lot.qty_plan)} ชิ้น\n`
-                            + (isTrial ? `🧪 จองเครื่องทดลองงานใหม่${b.lot.trial_reason ? ` (${b.lot.trial_reason})` : ''}\n`
-                              + `⏱️ เวลานี้คือ "ที่ขอ" ไม่ใช่ที่ระบบคำนวณ — พาร์ทใหม่ยังไม่มี cycle time\n` : '')
+                          title={`#${b.seq} ${lotKeyText(b.lot)} · ${qtyText(b.lot.qty_plan)} ${tr("ชิ้น")}\n`
+                            + (isTrial ? `🧪 ${tr("จองเครื่องทดลองงานใหม่")}${b.lot.trial_reason ? ` (${b.lot.trial_reason})` : ''}\n`
+                              + `⏱️ ${tr("เวลานี้คือ \"ที่ขอ\" ไม่ใช่ที่ระบบคำนวณ — พาร์ทใหม่ยังไม่มี")} cycle time\n` : '')
                             + (isUnknown ? 'ยังไม่มี cycle time — คำนวณความยาวไม่ได้'
                               : `${spansDays ? fmtDayHm(b.startMs) : fmtHm(b.startMs)}–${spansDays ? fmtDayHm(b.endMs) : fmtHm(b.endMs)} (${fmtMin(b.runMin)})`)
                             + (run.cutLeft || run.cutRight ? '\n🔗 งานใบนี้คร่อมกะ — ทำต่อเนื่องข้ามเส้นแบ่งกะ' : '')
@@ -196,16 +197,16 @@ export default function PlanTimeline({
                                 {run.cutLeft && '↩ '}{isTrial && '🧪 '}{b.pairedWithPrev && '👯 '}#{b.seq} {lotKeyText(b.lot)}
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text2)', whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-                                {isUnknown ? '⚠ ไม่มี CT'
+                                {isUnknown ? tr("⚠ ไม่มี CT")
                                   /* ยังไม่จบในกะนี้ — ในโหมดกะเดียวไม่มี "กะถัดไป" ให้ไหลไป จึงบอกเวลาตามเดิม */
-                                  : run.cutRight ? (multi ? `${qtyText(b.lot.qty_plan)} ชิ้น · ทำต่อกะถัดไป ↪`
-                                                          : `${qtyText(b.lot.qty_plan)} ชิ้น · ${fmtMin(b.runMin)}`)
+                                  : run.cutRight ? (multi ? `${qtyText(b.lot.qty_plan)} ${tr("ชิ้น · ทำต่อกะถัดไป")} ↪`
+                                                          : `${qtyText(b.lot.qty_plan)} ${tr("ชิ้น")} · ${fmtMin(b.runMin)}`)
                                   /* ท่อนต่อท่อนสุดท้าย — สิ่งที่คนกะนี้อยากรู้คือ "ของที่รับช่วงมาจบกี่โมง"
                                      ไม่ใช่ความยาวรวมของล็อต (ซึ่งเกิดไปแล้วครึ่งนึงตั้งแต่กะก่อน) */
-                                  : run.cutLeft ? `ต่อจากกะก่อน · จบ ${fmtHm(b.endMs)}`
+                                  : run.cutLeft ? `${tr("ต่อจากกะก่อน · จบ")} ${fmtHm(b.endMs)}`
                                   /* 🔴 ต้องขึ้นคำว่า "ขอ" — เวลาของงานทดลองคนกรอก ไม่ใช่ระบบคำนวณ */
-                                  : isTrial ? `ทดลอง ${qtyText(b.lot.qty_plan)} ชิ้น · ขอ ${fmtMin(b.runMin)}`
-                                  : `${qtyText(b.lot.qty_plan)} ชิ้น · ${fmtMin(b.runMin)}`}
+                                  : isTrial ? `${tr("ทดลอง")} ${qtyText(b.lot.qty_plan)} ${tr("ชิ้น · ขอ")} ${fmtMin(b.runMin)}`
+                                  : `${qtyText(b.lot.qty_plan)} ${tr("ชิ้น")} · ${fmtMin(b.runMin)}`}
                               </div>
                             </>
                           )}
@@ -236,7 +237,7 @@ export default function PlanTimeline({
       {preview?.box && cursor && (
         <div style={{
           position: 'fixed', left: cursor.x + 16, top: cursor.y + 16, zIndex: 60, pointerEvents: 'none',
-          background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)',
+          background: 'var(--card-surf)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)',
           boxShadow: 'var(--shadow-float)', padding: '6px 9px', maxWidth: 280,
         }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -273,22 +274,24 @@ export default function PlanTimeline({
       {skipped.length > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: multi ? LABEL_W + 8 : 0 }}
           title={tr('โรงงานไม่เดินเครื่องวันนี้ — คิวหยุดนับเวลาแล้วไปต่อวันเปิดถัดไป')}>
-          ⏸ ข้ามวันหยุด {skipped.slice(0, 3).map(d => `${dm(d.workDate)} (${d.reason})`).join(' · ')}
-          {skipped.length > 3 ? ` …อีก ${skipped.length - 3} วัน` : ''}
+          ⏸ {tr("ข้ามวันหยุด")} {skipped.slice(0, 3).map(d => `${dm(d.workDate)} (${d.reason})`).join(' · ')}
+          {skipped.length > 3 ? ` …${tr("อีก")} ${skipped.length - 3} ${tr("วัน")}` : ''}
         </div>
       )}
 
       {/* ── บรรทัดความจริงใต้ราง ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 11.5, marginLeft: multi ? LABEL_W + 8 : 0 }}>
         <span style={{ color: 'var(--text2)' }}>
-          คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
+          {tr("คิวจบ")} <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
             {lay.unknownCount > 0 ? '—' : (spansDays || multi ? fmtDayHm(lay.endMs) : fmtHm(lay.endMs))}</b>
           {/* 🔴 "ล้น" ที่นี่ = ล้นเลย**ขอบเขตทั้งหมด** ไม่ใช่ล้นกะ — งานที่ล้นกะไหลไปกะถัดไปแล้ว */}
           {lay.overflowMin > 0 && <b style={{ color: '#ef4444' }}> {tr('· ล้นเลยขอบเขต')} {fmtMin(lay.overflowMin)}</b>}
         </span>
         {lay.unknownCount > 0 && (
           <span style={{ color: '#f59e0b', fontWeight: 700 }}>
-            ⚠️ {lay.unknownCount} ล็อตไม่มี CT — คำนวณความยาวไม่ได้ (กล่องลายทแยง) · เวลาหลังจากนั้นเชื่อไม่ได้
+            {/* 🔴 จำนวน + ผลที่ตามมา อยู่บนจอ · ส่วนที่เป็น "คำอธิบายภาพ" → tooltip (UI §6.10 · textsweep 23/11) */}
+            ⚠️ {lay.unknownCount} {tr("ล็อตไม่มี CT — เวลาหลังจากนั้นเชื่อไม่ได้")}
+            <MoreMark text={tr('กล่องลายทแยง = ล็อตที่คำนวณความยาวไม่ได้ เพราะยังไม่มี cycle time')} />
           </span>
         )}
         {lay.setupUnknownCount > 0 && (

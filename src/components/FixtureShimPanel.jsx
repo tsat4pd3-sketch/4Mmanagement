@@ -7,7 +7,7 @@ import {
   toolLifeStatus, learnedToolLife, suggestMaxShim,
 } from '../utils/fixturePoints';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import { askConfirm } from '../utils/askConfirm';
 /* ═══════════════════════════════════════════════════════════════
    🔧 บันทึกการใส่/ถอดชิม — หัวใจของโมดูล
@@ -45,7 +45,7 @@ function Field({ label, hint, children }) {
 }
 
 const fmt = (v, unit = ' mm') => (v == null ? '—' : `${v}${unit}`);
-const dt = (s) => (s ? new Date(s).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+const dt = (s) => (s ? new Date(s).toLocaleString(dateLocale(), { dateStyle: 'short', timeStyle: 'short' }) : '—');
 
 export default function FixtureShimPanel({
   points, pointId, onPickPoint, canRecord, canApprove, canManage,
@@ -110,7 +110,7 @@ export default function FixtureShimPanel({
     if (preview.after < 0)     { toast.error('ค่ารวมติดลบไม่ได้'); return; }
     if (f.reason === 'other' && !f.note.trim()) { toast.error('เหตุผล "อื่นๆ" ต้องระบุรายละเอียด'); return; }
     if (afterStack?.level === 'over' &&
-        !await askConfirm(`หลังบันทึกจะเป็น ${preview.after} mm ซึ่ง **เกินเพดาน ${point.max_shim_mm} mm**\n\nชิมชดเชยต่อไปไม่ไหวแล้ว — ควรเปิดใบซ่อมเพื่อเปลี่ยนชิ้นส่วนจริง\n\nยืนยันบันทึกต่อ?`)) return;
+        !await askConfirm(`${tr("หลังบันทึกจะเป็น")} ${preview.after} mm ${tr("ซึ่ง **เกินเพดาน")} ${point.max_shim_mm} mm**\n\n${tr("ชิมชดเชยต่อไปไม่ไหวแล้ว — ควรเปิดใบซ่อมเพื่อเปลี่ยนชิ้นส่วนจริง\\n\\nยืนยันบันทึกต่อ")}?`)) return;
 
     setSaving(true);
     try {
@@ -122,12 +122,12 @@ export default function FixtureShimPanel({
       });
       if (!res.ok) throw new Error(res.error || 'บันทึกไม่สำเร็จ');
       if (res.warn) toast.error(res.warn);
-      else toast.success(`บันทึกแล้ว · ค่ารวมใหม่ ${preview.after} mm`);
+      else toast.success(`${tr("บันทึกแล้ว · ค่ารวมใหม่")} ${preview.after} mm`);
       setF(p => ({ ...p, delta: '', total: '', plates_text: '', measure_before: '', measure_after: '', note: '' }));
       await load();
       onSaved?.();
     } catch (e) {
-      toast.error(`บันทึกไม่สำเร็จ: ${e.message}`);
+      toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${e.message}`);
     } finally { setSaving(false); }
   };
 
@@ -135,7 +135,7 @@ export default function FixtureShimPanel({
     const { data, error } = await supabaseDR.from('fixture_shim_events')
       .update({ approved_by: fullName || tr('ไม่ระบุ'), approved_at: new Date().toISOString() })
       .eq('id', ev.id).select('id');
-    if (error) return toast.error(`อนุมัติไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("อนุมัติไม่สำเร็จ")}: ${error.message}`);
     if (!data?.length) return toast.error('อนุมัติไม่สำเร็จ — ไม่มีแถวถูกเขียน');
     toast.success('อนุมัติแล้ว');
     load();
@@ -143,7 +143,7 @@ export default function FixtureShimPanel({
 
   if (!points.length) {
     return <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-      ยังไม่มีจุดในทะเบียนของฟิกเจอร์ตัวนี้ — ไปที่แท็บ <b>{tr('ทะเบียนจุด')}</b> เพื่อลงจุดก่อน
+      {tr("ยังไม่มีจุดในทะเบียนของฟิกเจอร์ตัวนี้ — ไปที่แท็บ")} <b>{tr('ทะเบียนจุด')}</b> {tr("เพื่อลงจุดก่อน")}
     </div>;
   }
 
@@ -157,7 +157,7 @@ export default function FixtureShimPanel({
             const s = shimStack(p);
             const mark = s.level === 'over' ? '🔴 ' : s.level === 'warn' ? '🟠 ' : '';
             return <option key={p.id} value={p.id}>
-              {mark}{p.point_no}{p.name ? ` · ${p.name}` : ''} — {s.current == null ? 'ยังไม่บันทึก' : `${s.current} mm`}
+              {mark}{p.point_no}{p.name ? ` · ${p.name}` : ''} — {s.current == null ? tr("ยังไม่บันทึก") : `${s.current} mm`}
             </option>;
           })}
         </select>
@@ -175,41 +175,41 @@ export default function FixtureShimPanel({
               ['ห่างจาก baseline', st.added == null ? '—' : `${st.added > 0 ? '+' : ''}${st.added} mm`, '#94a3b8'],
               ['เพดาน', fmt(n0(point.max_shim_mm)), LV[st.level].c],
             ].map(([k, v, c]) => (
-              <div key={k} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+              <div key={k} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                                     padding: '8px 14px', minWidth: 128 }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k}</div>
                 <div style={{ fontSize: 17, fontWeight: 800, color: c }}>{v}</div>
               </div>
             ))}
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
+            <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                           padding: '8px 14px', minWidth: 150 }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('อายุชิ้นส่วน (tool life)')}</div>
               <div style={{ fontSize: 17, fontWeight: 800,
                             color: life.level === 'over' ? '#ef4444' : life.level === 'warn' ? '#f59e0b'
                                  : life.level === 'unknown' ? '#94a3b8' : '#22c55e' }}>
-                {life.pct == null ? 'ประเมินไม่ได้' : `${Math.round(life.pct)}%`}
+                {life.pct == null ? tr("ประเมินไม่ได้") : `${Math.round(life.pct)}%`}
               </div>
               {life.pct == null && (
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                  {point.expected_life_cycles == null ? 'ยังไม่ตั้งอายุชิ้นส่วน' : 'ยังนับ shot ไม่ได้'}
+                  {point.expected_life_cycles == null ? tr("ยังไม่ตั้งอายุชิ้นส่วน") : tr("ยังนับ shot ไม่ได้")}
                 </div>
               )}
             </div>
           </div>
 
           <div style={{ fontSize: 12, color: LV[st.level].c, fontWeight: 600 }}>
-            {st.level === 'over' ? '🔴 ' : st.level === 'warn' ? '🟠 ' : ''}{LV[st.level].t}
+            {st.level === 'over' ? '🔴 ' : st.level === 'warn' ? '🟠 ' : ''}{tr(LV[st.level].t)}
           </div>
 
           {shotAssumed && (
-            <div style={{ fontSize: 11.5, color: '#f59e0b' }}>
-              ⚠️ shot สะสมเป็นค่าประมาณจากยอดผลิต (ยังไม่ตั้ง “ชิ้นต่อ 1 ครั้ง” ของฟิกเจอร์นี้ — ระบบถือว่า 1:1)
+            <div style={{ fontSize: 11.5, color: 'var(--amber)' }}>
+              ⚠️ shot {tr("สะสมเป็นค่าประมาณจากยอดผลิต (ยังไม่ตั้ง “ชิ้นต่อ 1 ครั้ง” ของฟิกเจอร์นี้ — ระบบถือว่า")} 1:1)
             </div>
           )}
 
           {/* ── ฟอร์มบันทึก ── */}
           {canRecord ? (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14,
+            <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14,
                           display: 'grid', gap: 10 }}>
               <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))' }}>
                 <Field label={tr('สิ่งที่ทำ')}>
@@ -267,14 +267,14 @@ export default function FixtureShimPanel({
                   <span style={{ color: 'var(--muted)' }}>{tr('กรอกค่าชิมเพื่อดูผลลัพธ์')}</span>
                 ) : (
                   <>
-                    จะบันทึกเป็น <b style={{ fontSize: 15 }}>{preview.after} mm</b>
+                    {tr("จะบันทึกเป็น")} <b style={{ fontSize: 15 }}>{preview.after} mm</b>
                     <span style={{ color: 'var(--muted)' }}>
-                      {' '}({before == null ? 'ยังไม่เคยบันทึกค่าเดิม' : `จากเดิม ${before} mm`}
+                      {' '}({before == null ? tr("ยังไม่เคยบันทึกค่าเดิม") : `${tr("จากเดิม")} ${before} mm`}
                       {preview.delta != null && `, ${preview.delta > 0 ? '+' : ''}${preview.delta} mm`})
                     </span>
                     {afterStack?.level === 'over' && (
-                      <div style={{ color: '#ef4444', fontWeight: 700, marginTop: 4 }}>
-                        🔴 เกินเพดาน {point.max_shim_mm} mm — ชิมชดเชยต่อไม่ไหว ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วนจริง
+                      <div style={{ color: 'var(--red)', fontWeight: 700, marginTop: 4 }}>
+                        🔴 {tr("เกินเพดาน")} {point.max_shim_mm} mm — {tr("ชิมชดเชยต่อไม่ไหว ควรเปิดใบซ่อมเปลี่ยนชิ้นส่วนจริง")}
                       </div>
                     )}
                   </>
@@ -297,12 +297,12 @@ export default function FixtureShimPanel({
           {canManage && (learned.suggested != null || (maxSug.suggested != null && point.max_shim_mm == null)) && (
             <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.35)',
                           borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
-              <b>{tr('ข้อเสนอจากประวัติจริงของจุดนี้')}</b> — ระบบไม่ตั้งให้เอง ไปกดยืนยันที่แท็บทะเบียนจุด
+              <b>{tr('ข้อเสนอจากประวัติจริงของจุดนี้')}</b> — {tr("ระบบไม่ตั้งให้เอง ไปกดยืนยันที่แท็บทะเบียนจุด")}
               {learned.suggested != null && (
-                <div>{tr('• อายุชิ้นส่วนจริงเฉลี่ย')} <b>{learned.suggested.toLocaleString()} shot</b> {tr('(จาก')} {learned.samples} ช่วงการเปลี่ยน)</div>
+                <div>{tr('• อายุชิ้นส่วนจริงเฉลี่ย')} <b>{learned.suggested.toLocaleString()} shot</b> {tr('(จาก')} {learned.samples} {tr("ช่วงการเปลี่ยน")})</div>
               )}
               {maxSug.suggested != null && point.max_shim_mm == null && (
-                <div>{tr('• เพดานชิมที่เหมาะ ~')}<b>{maxSug.suggested} mm</b> {tr('(จากค่าที่เคยใช้จริง')} {maxSug.samples} ครั้ง)</div>
+                <div>{tr('• เพดานชิมที่เหมาะ ~')}<b>{maxSug.suggested} mm</b> {tr('(จากค่าที่เคยใช้จริง')} {maxSug.samples} {tr("ครั้ง")})</div>
               )}
             </div>
           )}
@@ -310,14 +310,14 @@ export default function FixtureShimPanel({
           {/* ── ประวัติ ── */}
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>
-              ประวัติของจุดนี้ {loading && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{tr('· กำลังโหลด…')}</span>}
+              {tr("ประวัติของจุดนี้")} {loading && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{tr('· กำลังโหลด…')}</span>}
             </div>
             {loadErr ? (
               <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
                             borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12.5 }}>
-                ⚠️ โหลดประวัติไม่สำเร็จ: {loadErr} — <b>{tr('ไม่ใช่ว่าไม่มีประวัติ')}</b>
+                ⚠️ {tr("โหลดประวัติไม่สำเร็จ")}: {loadErr} — <b>{tr('ไม่ใช่ว่าไม่มีประวัติ')}</b>
                 <button onClick={load} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
-                        background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                        background: 'var(--bg2-surf)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
                   {tr('ลองใหม่')}
                 </button>
               </div>
@@ -328,7 +328,7 @@ export default function FixtureShimPanel({
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead style={{ position: 'sticky', top: 0, background: 'var(--bg2)' }}>
                     <tr style={{ textAlign: 'left' }}>
-                      {['เมื่อ', 'ทำอะไร', 'ก่อน → หลัง', 'เหตุผล', 'ผู้ทำ', 'อนุมัติ'].map(h => (
+                      {[tr("เมื่อ"), tr("ทำอะไร"), tr("ก่อน → หลัง"), tr("เหตุผล"), tr("ผู้ทำ"), tr("อนุมัติ")].map(h => (
                         <th key={h} style={{ padding: '7px 10px' }}>{tr(h)}</th>
                       ))}
                     </tr>
@@ -338,26 +338,26 @@ export default function FixtureShimPanel({
                       <tr key={ev.id} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{dt(ev.event_at)}</td>
                         <td style={{ padding: '6px 10px' }}>
-                          {SHIM_ACTIONS.find(a => a.key === ev.action)?.label || ev.action}
+                          {tr(SHIM_ACTIONS.find(a => a.key === ev.action)?.label) || ev.action}
                         </td>
                         <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                           {fmt(n0(ev.shim_before_mm))} → <b>{fmt(n0(ev.shim_after_mm))}</b>
                           {ev.plates_text && <span style={{ color: 'var(--muted)' }}> ({ev.plates_text})</span>}
                         </td>
                         <td style={{ padding: '6px 10px' }}>
-                          {SHIM_REASONS.find(r => r.key === ev.reason)?.label || ev.reason || '—'}
+                          {tr(SHIM_REASONS.find(r => r.key === ev.reason)?.label) || ev.reason || '—'}
                           {ev.note && <div style={{ color: 'var(--muted)', fontSize: 11 }}>{ev.note}</div>}
                         </td>
                         <td style={{ padding: '6px 10px' }}>{ev.by_name || '—'}</td>
                         <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
                           {ev.approved_by ? (
-                            <span style={{ color: '#22c55e' }}>✓ {ev.approved_by}</span>
+                            <span style={{ color: 'var(--green)' }}>✓ {ev.approved_by}</span>
                           ) : canApprove ? (
                             <button onClick={() => approve(ev)}
                                     style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
                                              background: '#16a34a', color: '#fff', border: 'none' }}>{tr('อนุมัติ')}</button>
                           ) : (
-                            <span style={{ color: '#f59e0b' }}>{tr('รออนุมัติ')}</span>
+                            <span style={{ color: 'var(--amber)' }}>{tr('รออนุมัติ')}</span>
                           )}
                         </td>
                       </tr>

@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -501,6 +501,20 @@
+@@ -523,6 +523,20 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -21,7 +21,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -606,7 +620,7 @@
+@@ -628,7 +642,7 @@
       ถ้าไม่มีแถวนี้ harness จะไม่เคยเรนเดอร์สาขานั้นเลย */
    production_sessions: (r, i) => ({
      ...r,
@@ -30,3 +30,19 @@
      ...(i === 15 ? { status: 'void', void_reason: 'เปิดกะผิดแล้วปิดทิ้ง (mock)',
                       voided_at: '2026-08-05T09:00:00+07:00', voided_by_name: 'ผู้ทดสอบ',
                       actual_qty: 0, qty_ok: 0, qty_ng: 0 } : {}),
+@@ -729,6 +743,15 @@
+ }
+ 
+ const TABLE_FIXED = {
++  /* WI ps: คิว "ไลน์ใช้ของแล้ว แต่สโตร์ยังไม่ลงจ่าย" — 3 แถว (เกิน 1 กะ 1 แถว) ไม่งั้นแถวกลางดันตู้งานตกจอ */
++  v_line_issue_gaps: [
++    { line_name: FAM_LINE, mat_no: '20057101', part_name: 'BRKT REINF RH', gap: 40, store_qty: 320, movable: 40,
++      since: new Date(Date.now() - 11 * 3600e3).toISOString(), overdue: true },
++    { line_name: FAM_LINE, mat_no: '30047102', part_name: 'NUT WELD M8', gap: 200, store_qty: 1500, movable: 200,
++      since: new Date(Date.now() - 3 * 3600e3).toISOString(), overdue: false },
++    { line_name: FAM_LINE, mat_no: '20057103', part_name: 'PANEL INNER LH', gap: 24, store_qty: 60, movable: 24,
++      since: new Date(Date.now() - 2 * 3600e3).toISOString(), overdue: false },
++  ],
+   /* ☕ ทะเบียนเวลาพัก — **ห้ามถอด** (2026-10-20)
+      เดิมตารางนี้ตกไปใช้ ROWS กลาง ⇒ ได้แถวขยะ (ไม่มีชื่อ · process "undefined" · เริ่ม 08:00 ทุกแถว)
+      ⇒ จอ "☕ นโยบายหยุดพัก" ไม่เคยถูกสวีปด้วยข้อมูลทรงจริงเลย และที่สำคัญกว่า:

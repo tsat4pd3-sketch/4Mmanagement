@@ -19,7 +19,7 @@ export default function PointJumpBar({ points, labels, onJump, flashKey, compact
     <div style={{ display: 'flex', flexDirection: compact ? 'row' : 'column', gap: 6, marginTop: 8, alignItems: compact ? 'center' : 'stretch' }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flex: compact ? '0 0 150px' : undefined }}>
         <SearchInput value={q} onChange={setQ} placeholder={compact ? tr('ไปที่จุด…') : tr('ไปที่จุด — พิมพ์เลข (1.3) / ชื่อ / กลุ่ม แล้วกด Enter')}
-          ariaLabel="ไปที่จุดตรวจ"
+          ariaLabel={tr("ไปที่จุดตรวจ")}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (hits[0]) onJump(hits[0]._key) } }} />
         {!compact && (
           <>
@@ -36,7 +36,7 @@ export default function PointJumpBar({ points, labels, onJump, flashKey, compact
           const blank = !String(c.name ?? '').trim()
           return (
             <button key={c._key} type="button" onClick={() => onJump(c._key)}
-              title={`${labels[c._key]} · ${blank ? '(ยังไม่ตั้งชื่อ)' : c.name}${c.group_name ? ` — ${c.group_name}` : ''}`}
+              title={`${labels[c._key]} · ${blank ? tr('(ยังไม่ตั้งชื่อ)') : c.name}${c.group_name ? ` — ${c.group_name}` : ''}`}
               style={{ flex: '0 0 auto', padding: '3px 8px', borderRadius: 12, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                 maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                 border: `1px ${blank ? 'dashed' : 'solid'} ${blank ? 'var(--red)' : flashKey === c._key ? 'var(--accent)' : 'var(--border2)'}`,
@@ -46,7 +46,7 @@ export default function PointJumpBar({ points, labels, onJump, flashKey, compact
             </button>
           )
         })}
-        {hits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>ไม่พบจุดที่ตรงกับ "{q}"</span>}
+        {hits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>{tr("ไม่พบจุดที่ตรงกับ")} "{q}"</span>}
       </div>
     </div>
   )

@@ -62,3 +62,17 @@ export function groupSameProductKeys(rows = []) {
   return out;
 }
 
+
+/** 🔩 กลุ่ม "FG ต่างลูกค้าของพาร์ทเดียวกัน" สำหรับชั้น OP (20/11 · คำสั่ง user · คู่กับ SQL `fn_op_family_key` ฝั่ง DR — ตรรกะต้องตรงกัน)
+ *  = แกนจาก `partCoreOf` **แต่เข้มกว่า**: token ท้ายต้องเป็นตัวอักษรล้วน ≤3 ตัว (= เรฟ เช่น BA/BC) ไม่งั้นคืนเลขเต็ม
+ *  เหตุ: 'N1WB-17E850R-PIA02' กับ '-PIA04' = คนละพาร์ท · 'R1WB-17K824/825-AAW - STEP 2' = คนละแม่ —
+ *  `partCoreOf` รวมให้ (ใช้กับ OEE ได้เพราะแค่ union กลุ่ม) แต่ชั้น OP เอาไปตัดสต็อก ⇒ ห้ามรวมมั่ว */
+export function opFamilyKey(pNo) {
+  const toks = String(pNo || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  if (!toks.length) return '';
+  if (toks.length >= 3) {
+    const mid = toks.slice(1, -1).join('');
+    if (mid.length >= 3 && /\d/.test(mid) && /^[A-Z]{1,3}$/.test(toks[toks.length - 1])) return mid;
+  }
+  return toks.join('');
+}

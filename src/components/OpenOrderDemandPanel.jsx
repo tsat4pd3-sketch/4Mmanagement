@@ -35,8 +35,8 @@ export default function OpenOrderDemandPanel({ q = '' }) {
         .eq('status', 'open').in('production_sessions.status', SESSION_STATUSES_LIVE)),
       loadProductsMaster().catch(() => null),
     ]);
-    if (ordRes.error || ordRes.truncated) errs.push('ใบผลิตที่เปิดอยู่');
-    if (!prods) errs.push('ทะเบียนสินค้า');
+    if (ordRes.error || ordRes.truncated) errs.push(tr("ใบผลิตที่เปิดอยู่"));
+    if (!prods) errs.push(tr("ทะเบียนสินค้า"));
     const orders = (ordRes.rows || []).map(o => ({ ...o, line_name: o.production_sessions?.line_name || '' }));
     const products = prods || [];
     const fgMats = new Set(orders.map(o => String(o.mat_no || '').trim()));
@@ -51,7 +51,7 @@ export default function OpenOrderDemandPanel({ q = '' }) {
       ? await fetchByIds(childMats, ms => supabaseDR.from('line_stock_summary')
           .select('line_name, mat_no, qty_on_hand').in('mat_no', ms), { orderBy: 'mat_no' })
       : { rows: [] };
-    if (stkRes.error || stkRes.truncated) errs.push('ยอดสต็อก');
+    if (stkRes.error || stkRes.truncated) errs.push(tr("ยอดสต็อก"));
     if (my !== reqRef.current) return;
     const stock = new Map();
     for (const s of stkRes.rows || []) stock.set(`${s.line_name}\u0001${s.mat_no}`, Number(s.qty_on_hand));
@@ -85,18 +85,17 @@ export default function OpenOrderDemandPanel({ q = '' }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.65, flex: '1 1 420px' }}>
-          📋 <b style={{ color: 'var(--text)' }}>{tr('ไลน์เปิดใบผลิตแล้ว → ชิ้นส่วนที่ต้องเตรียมส่ง')}</b> (คิดจาก BOM ชั้นแรกของใบ · ยอดใบ × จำนวนต่อชิ้น)
-          <br />“ต้องส่งเพิ่ม” = ความต้องการ − ยอดคงเหลือหน้าไลน์ · <b>{tr('จอนี้แจ้งล่วงหน้าอย่างเดียว')}</b> ไม่ออกใบเบิก/ใบขอซื้อ —
-          ตอนไลน์ปิดใบ ระบบตัดสต็อกและออกใบตามเดิม
+          📋 <b style={{ color: 'var(--text)' }}>{tr('ไลน์เปิดใบผลิตแล้ว → ชิ้นส่วนที่ต้องเตรียมส่ง')}</b> ({tr("คิดจาก BOM ชั้นแรกของใบ · ยอดใบ × จำนวนต่อชิ้น")})
+          <br />“{tr("ต้องส่งเพิ่ม” = ความต้องการ − ยอดคงเหลือหน้าไลน์")} · <b>{tr('จอนี้แจ้งล่วงหน้าอย่างเดียว')}</b> {tr("ไม่ออกใบเบิก/ใบขอซื้อ — ตอนไลน์ปิดใบ ระบบตัดสต็อกและออกใบตามเดิม")}
         </div>
-        <button onClick={load} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'wait' : 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+        <button onClick={load} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'wait' : 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', background: 'var(--bg2-surf)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
           {busy ? tr('⏳ กำลังโหลด…') : tr('🔄 รีเฟรช')}
         </button>
       </div>
 
       {loadErr.length > 0 && (
         <div style={{ ...card, padding: '10px 14px', borderColor: 'var(--red)', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
-          ⚠ โหลดไม่ครบ: {loadErr.join(' · ')} — ตัวเลขข้างล่างอาจไม่ครบ (กดรีเฟรช)
+          ⚠ {tr("โหลดไม่ครบ")}: {loadErr.join(' · ')} — {tr("ตัวเลขข้างล่างอาจไม่ครบ (กดรีเฟรช")})
         </div>
       )}
       {data && (data.noProduct.length > 0 || data.noBom.length > 0 || data.opOrders > 0) && (
@@ -112,13 +111,13 @@ export default function OpenOrderDemandPanel({ q = '' }) {
       ) : !data ? null : data.rows.length === 0 ? (
         <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('ตอนนี้ไม่มีใบผลิตที่เปิดอยู่ที่ต้องใช้ชิ้นส่วน')}</div>
       ) : shown === 0 ? (
-        <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีรายการที่ตรงกับคำค้น “')}{q}{tr('” (ซ่อน')} {data.rows.length} รายการ)</div>
+        <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีรายการที่ตรงกับคำค้น “')}{q}{tr('” (ซ่อน')} {data.rows.length} {tr("รายการ")})</div>
       ) : (<>
         {shown < data.rows.length && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ซ่อนอยู่ · ไม่ตรงคำค้น')} {data.rows.length - shown} {tr('รายการ')}</div>}
         {groups.map(([line, rs]) => (
           <div key={line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', fontWeight: 800, fontSize: 14 }}>
-              {line || '(ไม่ระบุไลน์)'} <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>· {rs.length} {tr('ชิ้นส่วน')}</span>
+              {line || tr("(ไม่ระบุไลน์)")} <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>· {rs.length} {tr('ชิ้นส่วน')}</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -144,7 +143,7 @@ export default function OpenOrderDemandPanel({ q = '' }) {
                         <td style={td}>{fmt(r.need)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>{r.uom}</span></td>
                         <td style={td}>{r.atLine == null ? <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่มียอด')}</span> : fmt(r.atLine)}</td>
                         <td style={{ ...td, fontWeight: 800, color: lack > 0 ? 'var(--amber)' : 'var(--green)' }}>
-                          {lack > 0 ? fmt(lack) : '✅ พอ'}
+                          {lack > 0 ? fmt(lack) : tr("✅ พอ")}
                           {r.shortAtLine == null && <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>{tr('(ไม่รู้ยอดหน้าไลน์ — แสดงเต็มจำนวน)')}</div>}
                         </td>
                         <td style={{ ...td, color: storeShort ? 'var(--red)' : 'var(--text)', fontWeight: storeShort ? 800 : 400 }}>

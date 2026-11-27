@@ -85,14 +85,14 @@ export default function QaMoPending() {
             {busy ? tr('กำลังโหลด…') : tr('โหลดใหม่')}
           </button>
           <div style={{ marginLeft: 'auto', minWidth: 190 }}>
-            <SearchInput value={q} onChange={setQ} fields="เลข MO / ไลน์ / เครื่อง / อุปกรณ์" />
+            <SearchInput value={q} onChange={setQ} fields={tr("เลข MO / ไลน์ / เครื่อง / อุปกรณ์")} />
           </div>
         </div>
 
         {/* อ่านไม่ได้ = เขียนบนจอ ห้ามปล่อยให้เข้าใจว่า "ไม่มีงาน" */}
         {fail && (
           <div style={{ fontSize: 12, color: 'var(--accent2)', marginTop: 8, lineHeight: 1.6 }}>
-            ⚠️ อ่านรายการใบซ่อมไม่สำเร็จ: {fail}<br />
+            ⚠️ {tr("อ่านรายการใบซ่อมไม่สำเร็จ")}: {fail}<br />
             <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ทราบว่ามีใบรอตรวจกี่ใบ — ไม่ใช่ว่าไม่มี')}</span>
           </div>
         )}
@@ -104,14 +104,14 @@ export default function QaMoPending() {
               <span style={{ color: 'var(--accent)' }}>{tr('✅ ไม่มีใบซ่อมรอ QA ตรวจ')}</span>
             ) : (
               <>
-                <b style={{ fontSize: 15 }}>{rows.length.toLocaleString()} {tr('ใบ')}</b> รอตรวจ
+                <b style={{ fontSize: 15 }}>{rows.length.toLocaleString()} {tr('ใบ')}</b> {tr("รอตรวจ")}
                 {capped && <span style={{ color: 'var(--accent2)' }}> {tr('(อย่างน้อย — ชนเพดานคิวรี นับได้ไม่ครบ)')}</span>}
                 {view.oldest != null && <> {tr('· เก่าสุด')} <b style={{ color: view.oldest >= OLD_DAYS ? 'var(--accent2)' : 'inherit' }}>{view.oldest} {tr('วัน')}</b></>}
                 {view.over > 0 && <> {tr('· ค้างเกิน')} {OLD_DAYS} {tr('วัน')} <b style={{ color: 'var(--accent2)' }}>{view.over} {tr('ใบ')}</b></>}
                 {q.trim() && <> {tr('· ตรงคำค้น')} {view.list.length.toLocaleString()} {tr('ใบ')}</>}
                 {view.noSection > 0 && (
                   <div style={{ color: 'var(--accent2)', fontSize: 11.5 }}>
-                    ⚠️ ในนั้น <b>{view.noSection}</b> ใบไม่ระบุส่วนงาน — ไม่เข้าคิวของหน่วยงานไหนเลย
+                    ⚠️ {tr("ในนั้น")} <b>{view.noSection}</b> {tr("ใบไม่ระบุส่วนงาน — ไม่เข้าคิวของหน่วยงานไหนเลย")}
                   </div>
                 )}
               </>
@@ -125,7 +125,7 @@ export default function QaMoPending() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--bg2)', textAlign: 'left' }}>
-                {['เลข MO', 'วันที่แจ้ง', 'ค้าง', 'ส่วนงาน', 'ไลน์ / เครื่อง', 'อุปกรณ์', 'อาการ'].map(h => (
+                {[tr("เลข MO"), tr("วันที่แจ้ง"), tr("ค้าง"), tr("ส่วนงาน"), tr("ไลน์ / เครื่อง"), tr("อุปกรณ์"), tr("อาการ")].map(h => (
                   <th key={h} style={{ padding: '7px 9px', fontWeight: 800, whiteSpace: 'nowrap',
                                        borderBottom: '1px solid var(--border)' }}>{tr(h)}</th>
                 ))}
@@ -137,14 +137,14 @@ export default function QaMoPending() {
                   <td style={{ padding: '6px 9px', whiteSpace: 'nowrap' }}>
                     <Link to={`/mtn-repair?mo=${encodeURIComponent(r.id)}`}
                       style={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'none' }}>
-                      {r.mo_no || '(ยังไม่มีเลข)'}
+                      {r.mo_no || tr("(ยังไม่มีเลข)")}
                     </Link>
                   </td>
                   <td style={{ padding: '6px 9px', whiteSpace: 'nowrap' }}>{r.work_date || '—'}</td>
                   <td style={{ padding: '6px 9px', whiteSpace: 'nowrap',
                                color: (r.age ?? 0) >= OLD_DAYS ? 'var(--accent2)' : 'inherit',
                                fontWeight: (r.age ?? 0) >= OLD_DAYS ? 800 : 400 }}>
-                    {r.age == null ? '—' : `${r.age} วัน`}
+                    {r.age == null ? '—' : `${r.age} ${tr("วัน")}`}
                   </td>
                   <td style={{ padding: '6px 9px', whiteSpace: 'nowrap' }}>
                     {String(r.dept_section || '').trim() || <span style={{ color: 'var(--accent2)' }}>{tr('ไม่ระบุ')}</span>}

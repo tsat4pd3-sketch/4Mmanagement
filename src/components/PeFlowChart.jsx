@@ -15,14 +15,14 @@ import { tr } from '../utils/i18n';
 
 /** สัญลักษณ์ต่อชนิดขั้นงาน (ตรงกับ check constraint ของ pe_processes.kind) */
 export const SYMBOLS = {
-  process: { label: 'ขั้นงาน (Operation)', shape: 'rect', color: '#2563eb' },
+  process: { label: 'ขั้นงาน (Operation)', shape: 'rect', color: 'var(--blue)' },
   incoming_insp: { label: 'ตรวจรับเข้า (Incoming Insp.)', shape: 'diamond', color: '#7c3aed' },
   inspection: { label: 'ตรวจสอบ (Inspection)', shape: 'diamond', color: '#0891b2' },
   storage: { label: 'จัดเก็บ (Storage)', shape: 'tri', color: '#ca8a04' },
   transport: { label: 'เคลื่อนย้าย (Transport)', shape: 'arrow', color: '#65a30d' },
-  rework: { label: 'งานแก้ไข (Rework)', shape: 'rectDash', color: '#dc2626' },
+  rework: { label: 'งานแก้ไข (Rework)', shape: 'rectDash', color: 'var(--red)' },
   warehouse: { label: 'คลังสินค้า (Warehouse)', shape: 'tri', color: '#ca8a04' },
-  delivery: { label: 'ส่งมอบ (Delivery)', shape: 'arrow', color: '#16a34a' },
+  delivery: { label: 'ส่งมอบ (Delivery)', shape: 'arrow', color: 'var(--green)' },
 };
 const symOf = (kind) => SYMBOLS[kind] || SYMBOLS.process;
 

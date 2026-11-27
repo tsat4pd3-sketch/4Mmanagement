@@ -23,17 +23,17 @@ import { tr } from '../utils/i18n';
  * labels   — (16/11) ป้ายแทนต่อฝั่ง { inbound?, outbound? } — หน้าที่ต้องบอก "นับเลข MAT กลุ่มไหน" ชัดกว่าชื่อฝ่าย
  *            (Stock Management: "ของป้อนไลน์ (2xx·3xx·5xx)" / "FG รอส่ง (1xx)") · ไม่ส่ง = ป้ายเดิมจาก logisticSide.js
  */
-export default function SideFilterChips({ value, onChange, counts = {}, total, unit = 'รายการ', labels = null }) {
+export default function SideFilterChips({ value, onChange, counts = {}, total, unit = tr("รายการ"), labels = null }) {
   const n = { inbound: 0, outbound: 0, unknown: 0, ...counts };
   const all = total ?? (n.inbound + n.outbound + n.unknown);
   // ฝั่งที่ถือของจริง (control = Sales/Planner/Billing ไม่ได้ถือของ จึงไม่มีในตัวกรองพาร์ท)
   const matSides = SIDES;   // เหลือเฉพาะฝั่งที่ถือของ (control ถูกยุบออกแล้ว 30/09)
   const chips = [
-    { key: '', icon: '📋', short: 'ทั้งหมด', color: 'var(--text2)', count: all, desc: `ทุกฝั่งรวมกัน ${all} ${unit}` },
-    ...matSides.map(s => ({ key: s.key, icon: s.icon, short: labels?.[s.key] || s.short, color: s.color, count: n[s.key], desc: `${s.owner} — ${s.desc}` })),
+    { key: '', icon: '📋', short: 'ทั้งหมด', color: 'var(--text2)', count: all, desc: `${tr("ทุกฝั่งรวมกัน")} ${all} ${unit}` },
+    ...matSides.map(s => ({ key: s.key, icon: s.icon, short: labels?.[s.key] || tr(s.short), color: s.color, count: n[s.key], desc: `${s.owner} — ${tr(s.desc)}` })),
     // โชว์เฉพาะเมื่อมีของค้างจริง (ปกติควรเป็น 0)
     ...(n.unknown > 0
-      ? [{ key: 'unknown', icon: UNKNOWN_SIDE.icon, short: UNKNOWN_SIDE.short, color: UNKNOWN_SIDE.color, count: n.unknown, desc: UNKNOWN_SIDE.desc }]
+      ? [{ key: 'unknown', icon: UNKNOWN_SIDE.icon, short: tr(UNKNOWN_SIDE.short), color: UNKNOWN_SIDE.color, count: n.unknown, desc: tr(UNKNOWN_SIDE.desc) }]
       : []),
   ];
 

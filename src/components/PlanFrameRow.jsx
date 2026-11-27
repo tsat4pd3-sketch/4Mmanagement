@@ -24,12 +24,17 @@ import MatLabel, { useMatIndex } from './MatLabel';
 import { matText } from '../utils/matLabel';
 
 import { tr } from '../utils/i18n';
-const FRAME = '#a78bfa';
+/* 🎨 25/11 — เดิมเป็นสีดิบ (#22c55e/#4d9fff/#f59e0b/#a78bfa) ⇒ เขียว/ฟ้าคนละเฉดกับทั้งแอป
+   และธีมสว่างไม่เปลี่ยนตาม ⇒ ใช้ token พาเลต 5 สีเท่านั้น (UI §6.17)
+   🔴 **ห้ามเอา `var(--x)` ไปต่อ alpha-hex** (`${c}14`) — `var(--green)14` parse ไม่ได้ =
+      เบราว์เซอร์ **ทิ้งทั้งบรรทัด declaration** (พื้น/ขอบหายเงียบ · CLAUDE.md §เพดานเบราว์เซอร์)
+      ⇒ โทนจางต้องใช้ token ที่เป็น rgba อยู่แล้ว: `--x-dim` (พื้น 12%) · `--x-line` (เส้น 40%) */
+const FRAME = { c: 'var(--muted)', dim: 'var(--bg2-surf)', line: 'var(--border2)' };   // กรอบแผน = เส้นอ้างอิง ไม่ใช่สถานะ
 const ST = {
-  done:    { c: '#22c55e', mark: '✓',  label: 'ครบตามกรอบแล้ว' },
-  partial: { c: '#4d9fff', mark: '▶',  label: 'เปิดใบแล้วบางส่วน' },
-  pending: { c: '#f59e0b', mark: '🔲', label: 'ยังไม่มีใบคัมบังเลย' },
-  trial:   { c: '#8aa0b4', mark: '🧪', label: 'ใบจองเครื่องทดลอง — ไม่มี MAT ให้จับคู่' },
+  done:    { c: 'var(--green)', dim: 'var(--green-dim)', line: 'var(--green-line)', mark: '✓',  label: 'ครบตามกรอบแล้ว' },
+  partial: { c: 'var(--blue)',  dim: 'var(--blue-dim)',  line: 'var(--blue-line)',  mark: '▶',  label: 'เปิดใบแล้วบางส่วน' },
+  pending: { c: 'var(--amber)', dim: 'var(--amber-dim)', line: 'var(--amber-line)', mark: '🔲', label: 'ยังไม่มีใบคัมบังเลย' },
+  trial:   { c: 'var(--muted)', dim: 'var(--bg3)',       line: 'var(--border2)',    mark: '🧪', label: 'ใบจองเครื่องทดลอง — ไม่มี MAT ให้จับคู่' },
 };
 
 /** @param lotsByShift  { day: [...], night: [...] }
@@ -72,7 +77,7 @@ export default function PlanFrameRow({
         onDrop={canDrag ? (e) => { e.preventDefault(); drop(shiftKey, boxes.length); } : undefined}
         style={{
           position: 'relative', height: 30, borderTop: '1px dashed var(--border2)',
-          background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}0a, ${FRAME}0a)`,
+          background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME.dim}, ${FRAME.dim})`,
         }}>
         {boxes.map((b, boxIndex) => {
           const st = ST[stateOf(b.lot.id) || 'pending'] || ST.pending;
@@ -101,14 +106,14 @@ export default function PlanFrameRow({
               style={{
               position: 'absolute', top: 4, bottom: 4, left: `${left}%`, width: `${Math.min(w, 100 - left)}%`,
               boxSizing: 'border-box', borderRadius: 'var(--r-xs)', overflow: 'hidden',
-              border: `1.5px dashed ${st.c}cc`,
+              border: `1.5px dashed ${st.line}`,
               background: 'var(--card)', backgroundImage: b.noCt
-                ? `repeating-linear-gradient(45deg, ${st.c}26 0 5px, transparent 5px 10px)`
-                : `linear-gradient(${st.c}14, ${st.c}14)`,
+                ? `repeating-linear-gradient(45deg, ${st.dim} 0 5px, transparent 5px 10px)`
+                : `linear-gradient(${st.dim}, ${st.dim})`,
               display: 'flex', alignItems: 'center', gap: 3, padding: '0 4px',
               opacity: (b.afterUnknown ? 0.75 : 1) * (drag?.id === b.lot.id ? 0.45 : 1),
               cursor: canDrag ? 'grab' : 'default',
-              ...(dropHere ? { boxShadow: `inset 3px 0 0 0 ${FRAME}` } : null),
+              ...(dropHere ? { boxShadow: `inset 3px 0 0 0 ${FRAME.c}` } : null),
             }}>
               <span style={{ fontSize: 11, fontWeight: 800, color: st.c, flexShrink: 0 }}>{st.mark}</span>
               {b.lot.mat_no
@@ -124,7 +129,7 @@ export default function PlanFrameRow({
         })}
         {/* 🔴 บอกบนจอว่ากี่ล็อตที่ตำแหน่งเชื่อไม่ได้ — ห้ามปล่อยให้ดูเหมือนเวลาจริงทั้งแถว */}
         {unknownCount > 0 && (
-          <span style={{ position: 'absolute', right: 4, top: 7, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}
+          <span style={{ position: 'absolute', right: 4, top: 7, fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}
             title={tr('ล็อตที่ยังไม่รู้ CT — วางตามลำดับ ไม่ใช่เวลาจริง')}>⚠ {unknownCount} {tr('ล็อตไม่รู้ CT')}</span>
         )}
       </div>
@@ -132,16 +137,16 @@ export default function PlanFrameRow({
   };
 
   return (
-    <div style={{ display: 'flex', borderTop: `1px solid ${FRAME}55`, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', borderTop: `1px solid ${FRAME.line}`, overflow: 'hidden' }}>
       <div style={{
         width: leftW, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)',
         display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, overflow: 'hidden',
-        background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}14, ${FRAME}14)`,
+        background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME.dim}, ${FRAME.dim})`,
         ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3 } : null),
       }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME, lineHeight: 1.25 }}>{tr('กรอบแผน')}</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME.c, lineHeight: 1.25 }}>{tr('กรอบแผน')}</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
-          แพลนนิ่งตีไว้ {totalLots} ล็อต
+          {tr("แพลนนิ่งตีไว้")} {totalLots} {tr("ล็อต")}
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
           {canDrag ? tr('🧲 ลากสลับลำดับได้') : tr('ยังไม่ใช่ใบผลิต')}

@@ -95,11 +95,11 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           type: kindMeta.severity >= 2 ? 'error' : 'info',
           ref_table: 'safety_events', ref_id: data?.id,
           lines: [
-            `📅 ${payload.event_date}${payload.shift ? ` · ${payload.shift === 'night' ? 'กะดึก' : 'กะเช้า'}` : ''}`,
-            `🏭 ${payload.section || 'ไม่ระบุส่วนงาน'}${payload.line_name ? ` · ${payload.line_name}` : ''}`,
+            `📅 ${payload.event_date}${payload.shift ? ` · ${payload.shift === 'night' ? tr('กะดึก') : tr('กะเช้า')}` : ''}`,
+            `🏭 ${payload.section || tr('ไม่ระบุส่วนงาน')}${payload.line_name ? ` · ${payload.line_name}` : ''}`,
             `📝 ${payload.description}`,
             payload.employee_name ? `👤 ${payload.employee_name}${payload.body_part ? ` · ${payload.body_part}` : ''}` : '',
-            payload.lost_days > 0 ? `🚑 หยุดงาน ${payload.lost_days} วัน` : '',
+            payload.lost_days > 0 ? `🚑 ${tr("หยุดงาน")} ${payload.lost_days} ${tr("วัน")}` : '',
             kindMeta.resetsStreak ? '🔴 ตัวนับ "วันปลอดอุบัติเหตุ" ของส่วนงานนี้ถูกรีเซ็ต' : '',
           ],
         });
@@ -110,7 +110,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
       toast.error(
         e?.code === '42P01' ? 'ยังไม่ได้ apply migration safety_events (Main) — แจ้ง admin'
           : e?.code === '42501' ? 'ไม่มีสิทธิ์บันทึก (ต้องมี safety:record)'
-            : 'บันทึกไม่สำเร็จ: ' + (e?.message || e));
+            : (tr('บันทึกไม่สำเร็จ') + ': ') + (e?.message || e));
     } finally { setBusy(false); }
   };
 
@@ -120,7 +120,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
     const { data, error } = await supabase.from('safety_events')
       .update({ is_active: false }).eq('id', init.id).select('id');
     setBusy(false);
-    if (error || !data?.length) { toast.error('ทำไม่สำเร็จ' + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
+    if (error || !data?.length) { toast.error(tr('ทำไม่สำเร็จ') + (error ? ': ' + error.message : ' (ไม่มีสิทธิ์)')); return; }
     toast.success('ซ่อนออกจากบอร์ดแล้ว');
     onSaved?.();
   };
@@ -131,10 +131,10 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
   return (
     /* ⚠️ ไม่มี onClick ที่ backdrop โดยตั้งใจ — ฟอร์มกรอกข้อมูลห้ามปิดจากการเผลอแตะ */
     <div style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <b style={{ fontSize: 15, color: 'var(--text)' }}>
-            {editing ? '✏️ แก้ไขเหตุการณ์ความปลอดภัย' : '🛡️ บันทึกเหตุการณ์ความปลอดภัย'}
+            {editing ? tr("✏️ แก้ไขเหตุการณ์ความปลอดภัย") : tr("🛡️ บันทึกเหตุการณ์ความปลอดภัย")}
           </b>
           <button onClick={close} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 17, cursor: 'pointer' }}>✕</button>
         </div>
@@ -160,8 +160,8 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
             </select>
             <div style={{ fontSize: 11, color: kindMeta.resetsStreak ? '#ef4444' : 'var(--muted)', marginTop: 3 }}>
               {kindMeta.resetsStreak
-                ? '🔴 ระดับนี้จะ "รีเซ็ตตัวนับวันปลอดอุบัติเหตุ" ของส่วนงานนี้'
-                : 'ระดับนี้ไม่รีเซ็ตตัวนับวันปลอดอุบัติเหตุ (นับเฉพาะถึงขั้นหยุดงาน)'}
+                ? tr("🔴 ระดับนี้จะ \"รีเซ็ตตัวนับวันปลอดอุบัติเหตุ\" ของส่วนงานนี้")
+                : tr("ระดับนี้ไม่รีเซ็ตตัวนับวันปลอดอุบัติเหตุ (นับเฉพาะถึงขั้นหยุดงาน)")}
             </div>
           </div>
 
@@ -227,7 +227,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
         <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
           {editing && (
             <button onClick={remove} disabled={busy}
-              style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
+              style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid #ef4444', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontSize: 12.5 }}>
               {tr('ซ่อนออกจากบอร์ด')}
             </button>
           )}

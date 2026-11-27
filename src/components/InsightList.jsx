@@ -47,7 +47,7 @@ export default function InsightList({ k = 1, items = [], max = INSIGHT_SHOWN, li
     <div style={{ display: 'grid', gap: Math.max(2, Math.round(3 * k)), alignContent: 'start', minWidth: 0 }}>
       {label && (
         <div style={{ fontSize: fs(10.5), fontWeight: 800, color: 'var(--muted)', letterSpacing: .2 }}>
-          {label} {items.length > max && <span style={{ fontWeight: 700 }}>({open ? items.length : `${max}/${items.length}`})</span>}
+          {label} {items.length > max && <span style={{ fontWeight: 700 }}>({open || max === 0 ? items.length : `${max}/${items.length}`})</span>}
         </div>
       )}
       <div ref={boxRef} style={{ display: 'grid', gap: Math.max(2, Math.round(3 * k)), alignContent: 'start', minWidth: 0 }}>
@@ -71,7 +71,7 @@ export default function InsightList({ k = 1, items = [], max = INSIGHT_SHOWN, li
           title={open ? tr('ย่อให้เหลือข้อสำคัญ') : tr('กางดูรายละเอียดทั้งหมด (เลื่อนในกล่องนี้)')}
           style={{
             justifySelf: 'start', fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
-            background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
+            background: 'var(--bg3-surf)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
           }}>
           {open ? `▴ ${tr('ย่อ')}` : `▾ ${rest > 0 ? `${tr('อีก')} ${rest} ${tr('ข้อ')}` : tr('ข้อความเต็ม')}${rest > 0 && clipped ? ` + ${tr('ข้อความเต็ม')}` : ''}`}
         </button>

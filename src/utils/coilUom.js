@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* 🧲 เหล็ก coil = จ่ายเป็น "kg" ไม่ใช่ "ชิ้น" (2026-11-05 · คำสั่ง user)
    user: *"สโตร์จะจ่ายงานเหล็ก coil เป็น kgs. ไม่ใช่ชิ้น เพราะฉะนั้นตอนเบิกพาร์ท ต้องแตกผ่านบอม"* ·
          *"ต้องเบิกผ่านพาร์ท"* · เลือกวิธีจ่าย = **"จ่ายเป็นม้วน"** (ระบบบอกว่าต้องใช้กี่ kg ·
@@ -9,7 +10,7 @@
 export const isCoilUom = (uom) => String(uom ?? '').trim().toUpperCase() === 'KG';
 
 /** ป้ายหน่วยบนจอ — ใบเก่าไม่มี uom = ชิ้น */
-export const qtyUnit = (uom) => (isCoilUom(uom) ? 'kg' : 'ชิ้น');
+export const qtyUnit = (uom) => (isCoilUom(uom) ? 'kg' : tr("ชิ้น"));
 
 /** ปัด kg ขึ้นที่ 3 ตำแหน่ง (กรัม) — ห้ามขาด */
 export const ceilKg = (v) => {

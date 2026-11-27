@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { tr } from '../utils/i18n';
 
 /* ═══ GestureCam — ควบคุม UI ด้วยท่ามือผ่านกล้อง (MediaPipe Tasks Vision) ═══
    ใช้ในโหมดประชุมแถวเช้า: ปัดมือเปลี่ยนวาระ / กำมือค้างออกจากโหมด
@@ -195,16 +196,16 @@ export default function GestureCam({ onGesture, onError }) {
       {/* จุดแดง = กล้องกำลังทำงาน (ต้องเห็นชัดเสมอ — privacy) */}
       <div style={{ position: 'absolute', top: 6, left: 8, display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 2px #000' }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px #ef4444', display: 'inline-block' }} />
-        กล้องทำงาน (ในเครื่อง)
+        {tr("กล้องทำงาน (ในเครื่อง")})
       </div>
       {lastAction && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 900, color: '#4ade80', textAlign: 'center', padding: 6 }}>
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)', fontSize: 13, fontWeight: 900, color: 'var(--green)', textAlign: 'center', padding: 6 }}>
           {lastAction}
         </div>
       )}
       <div style={{ padding: '5px 8px', fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', lineHeight: 1.5 }}>
         {status === 'loading' && '⏳ กำลังโหลดโมเดล…'}
-        {status === 'running' && <>☝️ ชี้ ◀▶ = เปลี่ยนวาระ · ชี้ ▲▼ = เลื่อน · ✊ ค้าง = ออก</>}
+        {status === 'running' && <>☝️ {tr("ชี้ ◀▶ = เปลี่ยนวาระ · ชี้ ▲▼ = เลื่อน · ✊ ค้าง = ออก")}</>}
         {status === 'error' && '⚠️ เปิดกล้องไม่สำเร็จ — เช็คสิทธิ์กล้องของเบราว์เซอร์'}
       </div>
     </div>

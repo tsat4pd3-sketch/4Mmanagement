@@ -660,9 +660,11 @@ test('yearForecast fallback: ตัวสะสม (max) เพิ่มต่�
 test('neededRunRate: average/sum/reach · ไม่มีเป้า/ครบปี/rate = null', () => {
   const def = (mode) => ({ kpi_catalog: { summary_mode: mode } });
   const a = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, null, null];   // Σ 10 · 10 เดือน
-  assert.deepEqual(neededRunRate({ actual: a, target: 1.2, def: def('average') }), { kind: 'avg', perMonth: (1.2 * 12 - 10) / 2, remaining: 2 });
-  assert.deepEqual(neededRunRate({ actual: a, target: 16, def: def('sum') }), { kind: 'sum', perMonth: 3, remaining: 2 });
-  assert.deepEqual(neededRunRate({ actual: a, target: 5, def: def('max') }), { kind: 'reach', perMonth: 5, remaining: 2, add: 4 });
+  /* ทะเบียนไม่มีขอบ = feasible เสมอ · trivial เท็จ (20/11 เพิ่ม feasible/trivial/limit/bounds) */
+  const open = { feasible: true, trivial: false, limit: null, bounds: { min: null, max: null }, bestCase: null };
+  assert.deepEqual(neededRunRate({ actual: a, target: 1.2, def: def('average') }), { kind: 'avg', perMonth: (1.2 * 12 - 10) / 2, remaining: 2, ...open });
+  assert.deepEqual(neededRunRate({ actual: a, target: 16, def: def('sum') }), { kind: 'sum', perMonth: 3, remaining: 2, ...open });
+  assert.deepEqual(neededRunRate({ actual: a, target: 5, def: def('max') }), { kind: 'reach', perMonth: 5, remaining: 2, add: 4, ...open });
   assert.equal(neededRunRate({ actual: a, target: null, def: def('average') }), null);
   assert.equal(neededRunRate({ actual: Array(12).fill(1), target: 2, def: def('average') }), null);
   assert.equal(neededRunRate({ actual: a, target: 2, def: def('rate') }), null);

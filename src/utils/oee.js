@@ -32,6 +32,7 @@
 
 // งานคู่ gang die / RH-LH — ยุบเป็น "1 shot" ก่อนคิดเวลามาตรฐานของ %P (ดูกติกา ชิ้น≠shot ในไฟล์นั้น)
 import { collapsePairShots } from './pairTotals.js';
+import { tr } from './i18n.js';
 // §8 computeSessionOee ต้องรู้โหมดไลน์/จำนวนสถานีขนาน (source of truth = lineTypes.js · ไม่มี import วนกลับ)
 import { parallelUnitsOf, flowModeOf } from './lineTypes.js';
 /* 🏷️ คีย์เลขเครื่อง — `machine_no` เป็นข้อความอิสระ (SW10 vs SW-10 = เครื่องเดียวกัน)
@@ -756,7 +757,7 @@ export function busyMinutes(orders = [], startMs, endMs) {
      ไม่ส่ง = ไม่หักพัก → กลับไปต่างจากค่าที่ stamp อีก (util คืน `noBreakPolicy: true` ให้จอรู้ตัว)
    ⚠️ netAvail ≤ 0 (เพิ่งเปิดกะแล้วยังอยู่ในประชุมแถว/พัก) = **ประเมินไม่ได้ → คืน null**
      ห้ามคืน A = 0 (กฎเดียวกับ noOutput/noCt — 0 แปลว่า "แย่มาก" ไม่ใช่ "ยังไม่รู้") */
-export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, lineRules = null, affectsLanes = null }) {
+export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {}, ngQty = null, workDate, nowMs = Date.now(), parallelN = 1, parallelCap = 1, breakPolicies = [], processType = null, pairMap = null, ngForP = null, qRows = null, lineRules = null, affectsLanes = null }) {
   if (!session?.start_time) return null;
   const wd = workDate || session.work_date;
   if (!wd) return null;
@@ -886,7 +887,15 @@ export function computeLiveOee({ session, orders = [], downtimes = [], ctMap = {
       stdMin: 0, denomMin: Math.round(runMin), produced: 0, ngQty: ng, noOutput: true, ...baseInfo };
   }
 
-  const Q = produced / (produced + ng);
+  /* %Q = งานดี ÷ **ยอดผลิต** (§7.2.2 · สูตรกลาง `qRatio`) — ไม่ใช่ ยอดสแกน ÷ (ยอดสแกน + ของเสีย)
+     🔴 ฐานของ %Q ต้องมาจาก **แถว `defect_logs`** (`qRows`) ไม่ใช่ `ngForP`:
+        `ngForP` เป็นขา %P ที่ **นับงานทดลองด้วย** ⇒ เอามาเป็นฐาน %Q = งานทดลองดันค่า Q ขึ้นลอยๆ
+        (เคสจริงในเทส vsmLive: ทดลอง 99 ชิ้น ดัน Q จาก 95.2 → 97.3) · กฎ "งานทดลองออกทั้งคู่"
+     🔴 `Math.max` คือด่าน back-compat: ไม่ส่ง `qRows` = ฐานถอยไปเป็น `produced + ng`
+        ⇒ `qRatio` คืนค่า **เท่าสูตรเดิมเป๊ะ** · และฐานไม่ต่ำกว่าสูตรเดิมได้เลย (ของเสียที่หัก
+        ต้องอยู่ในฐานเสมอ ไม่งั้น %Q ติดลบ) */
+  const qBase = Math.max(qTotalCount(produced, qRows || []), produced + ng);
+  const Q = qRatio(qBase, ng);
 
   /* ผลิตแล้วแต่ "ไม่มีชิ้นงานไหนตั้ง CT ไว้เลย" → stdMin = 0 → P = 0 → OEE = 0%
      ⚠️ นั่นคือคำกล่าวอ้างเท็จว่า "ไลน์เดินได้แย่มาก" ทั้งที่ความจริงคือ **ไม่รู้มาตรฐาน**
@@ -1070,7 +1079,7 @@ export function groupLean({ axis = 'six_big_loss', downtimes = [], defects = [],
   downtimes.forEach(d => {
     const ty = d.dr_downtime_types || {};
     if (!includePlanned && ty.category === 'planned') return;
-    put(ty[axis], ty.name_th || 'ไม่ระบุประเภท', { min: Number(d.duration_min) || 0, count: 1 });
+    put(ty[axis], ty.name_th || tr("ไม่ระบุประเภท"), { min: Number(d.duration_min) || 0, count: 1 });
   });
   defects.forEach(d => {
     const ty = d.dr_defect_types || {};
@@ -1193,7 +1202,8 @@ export const isSuspectPending = (d) => suspectState(d) === 'pending';
    🔴 ใช้เฉพาะแถวที่ "ใบเหลืองครอบ NG" — ผลรวม `qty` ของใบเหลือง ≥ NG + สงสัย **และ** ไม่มีใบแดงตรง
       (`from_yellow_id` ว่าง = NG ถูกส่งลงแดงตรงจากโมดัลลงถังแบบเก่า) ไม่ครอบ = **พฤติกรรมเดิมเป๊ะ**
       (NG นับเสมอ + ของสงสัยตาม §7.1) ⇒ แถวก่อน 05/11 / ตั้งแท็กไม่สำเร็จ / ไม่ได้ถาม embed — เลขเท่าเดิม
-   ⚠️ %P ไม่ขยับ (ใช้ `defectQtyAll`) · ชิ้นที่ซ่อมกลับมาดี "ไม่ถูกหัก" แต่ยังไม่ถูกบวกเข้ายอดผลิต */
+   ⚠️ %P ไม่ขยับตอน QA ตัดสิน (ตัวเศษ %P ใช้ `defectQtyForP` = นับทุกชิ้นที่เครื่องทำออกมาตั้งแต่แรก §7.2.1)
+      · ชิ้นที่ซ่อมกลับมาดี "ไม่ถูกหัก %Q" แต่**ยังไม่ถูกบวกเข้ายอดสแกน** (การ์ดถูกสแกนไปแล้วตอนผลิต) */
 const binRows = (d) => {
   const b = d?.quality_bin_records;
   if (b === undefined || b === null) return null;
@@ -1207,12 +1217,24 @@ const binRows = (d) => {
 export function binCoveredSplit(d) {
   const ng = Number(d?.qty_ng) || 0;
   const sus = Number(d?.qty_suspect) || 0;
-  if (!(ng > 0)) return null;                          // ไม่มี NG = §7.1 เดิมตอบครบแล้ว
+  /* 🔧 25/11 (คำสั่ง user) — ชิ้นที่ "ส่งซ่อม" เข้าถังเหลืองแล้ว (`binPiecesOf` ใน qualityBin.js)
+     ⇒ ต้องอยู่ในการแบ่งก้อนนี้ด้วย ไม่งั้นผลซ่อมไม่มีทางไหลกลับมาแก้ %Q ของกะต้นทาง
+     · ซ่อมแล้วดี (`return_date`/`good`/`use_as_is`) → `cleared` = ไม่หัก %Q (เหมือนเดิม)
+     · ซ่อมแล้วเสีย (`scrap`/ลงถังแดง)             → `scrap`   = หัก %Q ของ**กะที่ทำมันออกมา**
+     · ยังไม่ตัดสิน                                  → `pending` = จอเขียน "รอพิจารณา" (ไม่หัก) */
+  const rep = Number(d?.qty_repair) || 0;
+  /* 🔴 25/11 (คำสั่ง user) — เดิมด่านนี้ตัดแถว "สงสัยล้วน" ออก (ให้ §7.1 `suspectState()` ตอบ)
+     แต่ `suspectState()` ตอบได้แค่ **ทั้งแถว** (scrap/cleared/pending) ⇒ เคสที่ user ยกมา
+     *"สงสัย 5 ซ่อมได้ 3 ไม่ได้ 2 ต้องทิ้ง"* **เขียนลงระบบไม่ได้เลย** (ใบแดง 2 ชิ้น = เสียทั้ง 5)
+     ⇒ ให้ตัวแบ่งตามสัดส่วนนี้รับแถวสงสัยล้วนด้วย · ตรวจฐานจริง 25/11: ใบเหลือง 80 ใบ
+       สงสัยล้วน 6 ใบ และ **ไม่มีใบไหนที่ใบแดงครอบไม่เต็ม** ⇒ ผลลัพธ์ของข้อมูลเดิมเท่าเดิมทุกใบ
+       (คำตัดสินแบบ "ทั้งใบ" ให้ผลเดียวกันทั้ง 2 ราง — มีเทสตรึงความเท่ากันไว้) */
+  if (!(ng > 0) && !(rep > 0) && !(sus > 0)) return null;   // แถวเปล่า = ไม่มีอะไรให้แบ่ง
   const rows = binRows(d);
   if (!rows) return null;                              // ไม่ได้ถาม = พฤติกรรมเดิม
   if (rows.some(r => r.bin === 'red' && r.from_yellow_id == null)) return null;   // NG ลงแดงตรง
   const yellows = rows.filter(r => r.bin === 'yellow');
-  const total = ng + sus;
+  const total = ng + sus + rep;
   const yQty = yellows.reduce((a, y) => a + (Number(y.qty) || 0), 0);
   if (!yellows.length || yQty < total) return null;    // ใบเหลืองไม่ครอบ NG
   let scrap = 0, cleared = 0, pending = 0;
@@ -1259,6 +1281,117 @@ export const defectQty = (d) => {
  */
 export const defectQtyAll = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
 
+/* ═══ 7.2.1) 🔴 งานซ่อม (`qty_repair`) — เครื่องทำออกมาแล้ว แต่ "ยังไม่ใช่ของดี" (2026-11-25 · คำสั่ง user) ═══
+
+   user: *"ผลิตออกมา 210 ชิ้น มีต้องสงสัย 7 ชิ้นรอ rework … ปิดกะส่งยอด ระบบจะมองเหลือ 203
+           แล้วไปคิด %P ทำให้ OEE ตก"* — ถูกต้องตามที่ทัก **และเป็นบั๊ก**
+
+   กติกาที่มีอยู่แล้ว (`handleCloseSession` · 2026-08-02): **"การ์ดที่สแกน = ของดีล้วน ·
+   NG/สงสัย/ซ่อม คือของที่ผลิตเพิ่มต่างหาก ไม่หักซ้ำ"** ⇒ ชิ้นที่รอซ่อม **ไม่เคยอยู่ในยอดสแกน**
+   แต่ `defectQtyAll` (ตัวเติมตัวเศษ %P) นับแค่ `qty_ng + qty_suspect` ⇒ **ชิ้นที่รอซ่อมหายจาก %P**
+   ทั้งที่เครื่องเดินทำมันออกมาจริง (วัดจริง Assy GOR 24/11 กะเช้า: ตัวเศษ 203 แทนที่จะเป็น 210
+   ⇒ %P 83.05 แทน 85.91 · OEE 39.88 แทน 41.25 = **หาย 1.4 จุด**)
+
+   🔴 %P ถามว่า *"เครื่องเดินไปกี่รอบ"* ไม่ใช่ *"ของดีกี่ชิ้น"* ⇒ **ซ่อมต้องอยู่ในตัวเศษ %P**
+      (หลักเดียวกับของเสีย/ของสงสัย/งานทดลอง §7 — ไม่งั้นถูกหัก 2 ครั้งทั้ง %P และ %Q)
+   🔴 **%Q ไม่เปลี่ยน** — `defectQty` ไม่นับซ่อมเหมือนเดิม ⇒ ชิ้นรอซ่อมอยู่นอกทั้งตัวเศษและตัวหารของ %Q
+      = ท่า "รอพิจารณา" เดียวกับของสงสัย (§7.1) ⇒ **จอต้องเขียนว่ารอซ่อมกี่ชิ้น** (`reworkPendingQty`)
+      ห้ามปล่อยให้ %Q โชว์ 100% เฉยๆ เหมือนไม่มีอะไรค้าง (กฎจอซื่อสัตย์)
+   🔴 **ห้ามเอา `qty_repair` ไปใส่ `defectQtyAll`** — ตัวนั้นเป็นชุดของ **พาเรโต/มูลค่าของเสีย**
+      (ชิ้นที่ซ่อมได้ไม่ใช่ของเสียที่ต้องคิดมูลค่าทิ้ง) · 2 ตัวนี้คนละคำถาม ห้ามยุบรวม          */
+
+/** ชิ้นที่ **เครื่องทำออกมา** ของแถวนี้ — NG + สงสัย + ซ่อม ⇒ ตัวเติม "ตัวเศษ %P" (ค่า default ของ `ngByMatFrom`) */
+export const defectQtyForP = (d) => defectQtyAll(d) + (Number(d?.qty_repair) || 0);
+
+/** ชิ้นที่รอซ่อม/รอยืนยันหลังซ่อมของแถวนี้ — ไม่ใช่ของดี ไม่ใช่ของเสีย ⇒ **จอต้องเขียนบอก** */
+export const reworkPendingQty = (d) => {
+  /* 🔧 มีใบถังครอบแล้ว = `suspectPendingQty()` รายงาน "รอพิจารณา" ให้ครบอยู่แล้ว (รวมชิ้นรอซ่อม)
+     ⇒ ที่นี่คืน 0 ไม่งั้นจอนับซ้ำ 2 ที่ · ไม่มีใบถัง (แถวเก่า/ตั้งแท็กไม่สำเร็จ) = ยังต้องเขียนบอก */
+  if (binCoveredSplit(d)) return 0;
+  return Number(d?.qty_repair) || 0;
+};
+
+/** รวมชิ้นรอซ่อมทั้งชุด — จอเอาไปเขียน "รอซ่อม N ชิ้น · ยังไม่นับเป็นของดี" */
+export const sumReworkPending = (rows) =>
+  (rows || []).reduce((s, d) => s + reworkPendingQty(d), 0);
+
+/* ═══ 7.2.2) 🔴🔴 "ยอดผลิต" = ทุกชิ้นที่เครื่องทำออกมา · %Q = งานดี ÷ ยอดผลิต (2026-11-25 · คำสั่ง user) ═══
+
+   user: *"ยอดผลิตไม่ใช่ `qty_ok` นะ ยอดผลิต = งานดี + งานต้องสงสัย"* และขยายด้วยตัวอย่าง:
+     *"ผลิตได้งาน 100 มีต้องสงสัย 5 งานดีเหลือ 95 · หลังจากนั้นงานต้องสงสัยถูกซ่อมได้ 3 ไม่ได้ 2
+       ต้องทิ้ง · งานดีที่จะได้จากกะนี้จริงๆ ก็จะเป็น 98 งานเสีย 2 **แต่ยอดผลิตที่ออกจากกะนี้ก็ยัง
+       ควรนับว่าผลิตได้ 100 ชิ้น** แต่ดี 98 เสีย 2"*
+
+   ⇒ กติกา 3 ข้อที่ได้ (ตรงกับสูตรสากล Nakajima/SEMI E79 เป๊ะ — ดูหัวไฟล์ §1):
+     ① **ยอดผลิต = ยอดสแกน + NG + สงสัย + ซ่อม** = `Total Count` ตัวเดียวกับตัวเศษ %P
+        (ของเสียที่ตัดสินแล้ว **ยังอยู่ใน** ยอดผลิต — ทิ้งแล้วก็ยังนับว่าเครื่องทำมันออกมา)
+     ② **%Q = งานดี ÷ ยอดผลิต** (98 ÷ 100) **ไม่ใช่** ยอดสแกน ÷ (ยอดสแกน + ของเสีย) (95 ÷ 97)
+     ③ **ยอดผลิตนิ่ง · งานดี/งานเสียขยับ** เมื่อ QA ตัดสินของสงสัย/ผลซ่อม
+
+   🔴 ข้อ ② คือตัวที่ทำให้ *"ยอดดีของชิ้นที่ซ่อมเสร็จกลับไปที่กะต้นทาง"* เป็นจริง —
+      ชิ้นที่ซ่อมได้อยู่ใน "ยอดผลิต" มาตั้งแต่ต้น ตอน QA เคลียร์ มันจึงเลื่อนไปเป็น **งานดี**
+      ของกะต้นทางเองโดยไม่ต้องมีใบงานซ่อม/ยอดเด้งกลับ (สูตรเดิมไม่มีมันในตัวหาร = ไม่มีทางได้คืน)
+
+   🔴 **งานทดลองออกทั้งคู่** — ฐานของ %Q ตัดงานทดลองออก (`qTotalCount`) ให้เข้าคู่กับ
+      `sumDefectQty(…, 'line')` ที่ตัดงานทดลองอยู่แล้ว · ส่วน "ยอดผลิต" ที่โชว์บนจอ
+      (`producedTotalCount`) **นับงานทดลองด้วย** เพราะเครื่องทำมันออกมาจริง
+      ⇒ 2 ตัวนี้คนละคำถาม **ห้ามสลับ** (หลักเดียวกับ `defectQty`/`defectQtyAll`/`defectQtyForP`)   */
+
+/** ชิ้นที่เครื่องทำออกมาแต่ไม่ใช่ของดี — รวมจาก "แถว defect_logs" */
+export const sumDefectForP = (rows) => (rows || []).reduce((s, d) => s + defectQtyForP(d), 0);
+
+/** …หรือจากผลของ `ngByMatFrom()` (จอสดส่ง `ngForP` มาแล้ว ไม่มีแถวดิบในมือ)
+ *  🔴 ต้องบวก `noMat` ด้วย — ของเสียที่ชี้ MAT ไม่ได้ก็เป็นชิ้นที่เครื่องทำออกมา
+ *     (เข้า %P ไม่ได้เพราะไม่รู้ CT แต่ "ยอดผลิต" ไม่ต้องใช้ CT) */
+export const sumNgForP = (ngForP) =>
+  Object.values(ngForP?.byMat || {}).reduce((s, v) => s + (Number(v) || 0), 0)
+  + (Number(ngForP?.noMat) || 0);
+
+/**
+ * 🔴 **"ยอดผลิต" ของกะ/ใบ — ทุกชิ้นที่เครื่องทำออกมา** (§7.2.2 ข้อ ①)
+ * @param {number} scannedOk  ยอดสแกน (`sessionProducedQty()` / `orderProducedQty()`)
+ * @param {Array|Object} extra แถว `defect_logs` (array) **หรือ** ผลของ `ngByMatFrom()` (`{byMat,noMat}`)
+ * @returns {number} เป็น **"ชิ้น"** — 🔴 ห้ามส่ง `scannedOk` ที่ยุบคู่ RH/LH มาปนกับของเสียรายชิ้น
+ *          (จอที่โชว์หน่วย "คู่/shot" ต้องยุบของเสียด้วย `collapsePairShots` ให้เข้าหน่วยกันก่อน)
+ */
+export const producedTotalCount = (scannedOk, extra) =>
+  (Number(scannedOk) || 0) + (Array.isArray(extra) ? sumDefectForP(extra) : sumNgForP(extra));
+
+/** ฐาน (ตัวหาร) ของ **%Q** — เหมือน `producedTotalCount` แต่ **ตัดงานทดลองออก**
+ *  ให้เข้าคู่กับ `sumDefectQty(rows,'line')` ที่เป็นตัวหักของ %Q (§7.2.2 ย่อหน้าสุดท้าย) */
+export const defectQtyForQBase = (d) => (isTrialDefect(d) ? 0 : defectQtyForP(d));
+
+export const qTotalCount = (scannedOk, rows = []) =>
+  (Number(scannedOk) || 0) + (rows || []).reduce((s, d) => s + defectQtyForQBase(d), 0);
+
+/**
+ * 🔴🔴 **%Q = งานดี ÷ ยอดผลิต — สูตรเดียวทั้งระบบ**
+ * ห้ามเขียน `produced / (produced + ng)` ที่ไหนอีก (เคยมี 3 สำเนา: `computeLiveOee` ·
+ * `computeSessionOee` · `restampQPatch` ⇒ QA ตัดสินแล้วบางจอขยับบางจอไม่ขยับ · ด่าน `q-ratio-single-entry`)
+ * @param {number} totalCount ยอดผลิต (`qTotalCount()`)
+ * @param {number} scrapQty   ของเสียที่ตัดสินแล้ว (`sumDefectQty(rows,'line')`) — ของสงสัยที่รอ QA **ไม่เข้า**
+ * @returns {number|null} 0..1 · `null` = ยอดผลิต 0 ⇒ **ตอบไม่ได้ ห้ามคืน 0** (กฎจอซื่อสัตย์)
+ */
+/**
+ * 🔴 "ยอดผลิต" ของกะ **จากคอลัมน์ rollup ที่ stamp ไว้ตอนปิดกะ** — ใช้เมื่อ**ไม่มีแถว `defect_logs` ในมือ**
+ * (รายงาน/ไฟล์ export ที่วนหลายร้อยกะ — ดึงแถวของเสียมาด้วยทุกกะ = egress บาน §11)
+ *
+ * ✅ ใช้ได้กับ "ยอดผลิต" เพราะ **ยอดผลิตไม่ขยับตอน QA ตัดสิน** (§7.2.2 ข้อ ③) ⇒ ค่าที่ stamp
+ *    ตอนปิดกะยังจริงเสมอ · 🔴 **ห้ามเอาไปคิด %Q** — ตัวหักของ %Q ขยับตามผลพิจารณา
+ *    ต้องยึด `defect_logs` เหมือนเดิม (กฎเดิม §7.1/§7.2)
+ * 🔴 มีแถว `defect_logs` อยู่แล้ว = ใช้ `producedTotalCount(scanned, rows)` แม่นกว่า (rollup อาจ
+ *    ไม่ได้ stamp ในกะที่ยังไม่ปิด)
+ */
+export const sessionTotalCount = (s) =>
+  (Number(s?.actual_qty) || 0) + (Number(s?.qty_ng) || 0)
+  + (Number(s?.qty_suspect) || 0) + (Number(s?.qty_repair) || 0);
+
+export function qRatio(totalCount, scrapQty) {
+  const tc = Number(totalCount) || 0;
+  if (!(tc > 0)) return null;
+  return Math.max(0, Math.min(1, (tc - (Number(scrapQty) || 0)) / tc));
+}
+
 /**
  * 🔴 **จำนวนชิ้นที่เครื่องทำออกมาจริง แยกตาม MAT — ไว้บวกเข้า "ตัวเศษ" ของ %P**
  * (2026-10-04 · คำสั่ง user: *"ต้องเข้าหมดเพราะใช้เครื่องลองผลิต"*)
@@ -1267,23 +1400,26 @@ export const defectQtyAll = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_sus
  * ⇒ ต้องอยู่ในตัวเศษ ไม่งั้นของเสีย 1 ชิ้นถูกหัก 2 ครั้ง (ทั้ง %P และ %Q) = OEE ต่ำกว่าจริง
  * — ตรงกับสูตรสากล (Nakajima/SEMI E79): `P = CT × Total Count ÷ Run Time` · `Q = Good ÷ Total Count`
  *
- * ใช้ `defectQtyAll` (NG + ของสงสัยทุกใบ **ไม่สน** `is_trial`/`excl_from_q`/ผล QA) เพราะคำถามของ %P คือ
+ * ใช้ `defectQtyForP` (NG + สงสัย + ซ่อม ทุกใบ **ไม่สน** `is_trial`/`excl_from_q`/ผล QA) เพราะคำถามของ %P คือ
  * *"เครื่องเดินไปกี่รอบ"* ไม่ใช่ *"ใครผิด"* — ผลพลอยได้: **%P นิ่ง ไม่ขยับตอน QA ตัดสินของสงสัย**
  * (ต่างจาก %Q ที่ต้องขยับ — นั่นคือ `defectQty` · 🔴 ห้ามสลับ 2 ตัวนี้)
  *
  * @param {Array} defects  แถว defect_logs (ต้องมี `prod_order_id` หรือ embed `prod_orders(mat_no)`)
  * @param {Array} orders   ใบในกะ (ใช้ map `id → mat_no`)
+ * @param {function} [qtyOf] วิธีนับต่อแถว — default `defectQtyForP` = NG + สงสัย + **ซ่อม** (ขา %P · §7.2.1)
+ *                   ส่ง `defectQty` เมื่อต้องการขา **%Q** (ของสงสัยที่ QA ยังไม่ตัดสินไม่นับ)
+ *                   🔴 มีตัวแยกราย MAT **ชุดเดียว** — ห้ามเขียนลูปแยกของเสียราย MAT ที่อื่นอีก
  * @returns {{ byMat: Object<string,number>, noMat: number }}
  *          `noMat` = ของเสียที่**ชี้ MAT ไม่ได้** (ไม่ผูกใบ) ⇒ ไม่รู้ CT ⇒ บวกเข้า %P ไม่ได้
  *          🔴 ห้ามเกลี่ยมั่วลง MAT อื่น — คืนตัวเลขออกไปให้จอเขียนบอกแทน
  */
-export function ngByMatFrom(defects = [], orders = []) {
+export function ngByMatFrom(defects = [], orders = [], qtyOf = defectQtyForP) {
   const matOf = new Map();
   (orders || []).forEach(o => { if (o?.id != null) matOf.set(o.id, o.mat_no ?? null); });
   const byMat = {};
   let noMat = 0;
   (defects || []).forEach(d => {
-    const q = defectQtyAll(d);
+    const q = qtyOf(d);
     if (!(q > 0)) return;
     const mat = d?.prod_orders?.mat_no ?? (d?.prod_order_id != null ? matOf.get(d.prod_order_id) : null);
     if (mat == null) { noMat += q; return; }          // ชี้ MAT ไม่ได้ = ไม่รู้ CT (ห้ามเดา)
@@ -1775,7 +1911,7 @@ export function computeSessionOee({
     return { startMs: s, endMs: e };
   };
   let totalNetAvailByMat = 0, totalRunMinByMat = 0;
-  const matRunMinMap = {};
+  const matRunMinMap = {}, matNetAvailMap = {};
   const matWins = [];
   Array.from(new Set(orders.map(o => o.mat_no))).forEach(matNo => {
     const ords = orders.filter(o => o.mat_no === matNo);
@@ -1804,6 +1940,7 @@ export function computeSessionOee({
     totalNetAvailByMat += matNetAvail;
     totalRunMinByMat += matRunMin;
     matRunMinMap[matNo] = matRunMin;
+    matNetAvailMap[matNo] = matNetAvail;           // 👈 ใช้ต่อใน §OEE รายพาร์ท
     matWins.push([matStartMs, matEndMs]);
   });
   const untimed = dtl.filter(d => !d.started_at);
@@ -1869,7 +2006,14 @@ export function computeSessionOee({
   const prodGroupMap = {};
   matPData.forEach(d => {
     const k = groupKeyByMat[d.matNo] || `MAT:${d.matNo}`;
-    const g = (prodGroupMap[k] ||= { stdSec: 0, runMin: 0, ws: null, we: null });
+    const g = (prodGroupMap[k] ||= { key: k, stdSec: 0, runMin: 0, ws: null, we: null,
+      netAvailMin: 0, qtyAll: 0, matNos: [], name: null, pNo: null });
+    const info = prodInfoOf(d.matNo);
+    if (!g.matNos.includes(d.matNo)) g.matNos.push(d.matNo);
+    if (!g.name && info?.name) g.name = info.name;
+    if (!g.pNo && info?.p_no) g.pNo = info.p_no;
+    g.netAvailMin += matNetAvailMap[d.matNo] ?? 0;
+    g.qtyAll += d.qty;
     g.stdSec += d.qty * d.ctSec;
     g.runMin += matRunMinMap[d.matNo] ?? 0;
     if (d.winStart != null) g.ws = g.ws == null ? d.winStart : Math.min(g.ws, d.winStart);
@@ -1904,9 +2048,64 @@ export function computeSessionOee({
     }
   }
 
-  const Q = totalProduced > 0 ? totalProduced / (totalProduced + ngQty)
-    : (ngQty > 0 ? 0 : null);
+  /* %Q = งานดี ÷ **ยอดผลิต** (§7.2.2 · สูตรกลาง `qRatio`) — ฐานตัดงานทดลองออกให้เข้าคู่กับ
+     `ngQty` ที่มาจาก `sumDefectQty(…, 'line')` · ชิ้นที่ซ่อมเสร็จ/ของสงสัยที่ QA เคลียร์
+     กลับมาเป็น "งานดี" ของกะนี้เองโดยไม่ต้องเด้งยอด (นั่นคือเหตุผลที่ต้องเปลี่ยนตัวหาร) */
+  /* 🔴 `Math.max` = ด่าน back-compat — ผู้เรียกที่ส่ง `ngQty` มาเองโดยไม่ส่งแถว `defects`
+     (เทส/จอเก่า) จะได้ฐานเดิม `totalProduced + ngQty` = ผลลัพธ์เท่าสูตรก่อน 25/11 เป๊ะ
+     · กรณีปกติ (มีแถว) `qTotalCount` ใหญ่กว่าเสมอ เพราะ `defectQtyForP ≥ defectQty` ทุกแถว */
+  const qBaseQty = Math.max(qTotalCount(totalProduced, defects), totalProduced + ngQty);
+  const Q = qRatio(qBaseQty, ngQty);
   const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
+
+  /* ── 📦 OEE รายพาร์ท (2026-11-20 · คำสั่ง user "oee by part/product ต้องการให้มีนะ") ──────
+     🔴 **ไม่มีสูตรใหม่** — ใช้ของที่คิดไปแล้วข้างบนทั้งหมด:
+        %A = `matRunMinMap` ÷ `matNetAvailMap` (ช่วงเวลาที่พาร์ทนั้นเปิดใบอยู่)
+        %P = `stdSec` ÷ `runMin` ของกลุ่ม (จับกลุ่มด้วย `groupSameProductKeys` ตัวเดิม)
+        %Q = ยอดดี ÷ (ยอดดี + ของเสีย) ราย MAT ผ่าน `ngByMatFrom(..., defectQty)` ตัวเดิม
+     🔴 **ชิ้น ≠ shot** — %A/%P อยู่บน shot (ยุบคู่ RH/LH แล้ว) · %Q อยู่บน **ชิ้น** ⇒ ใช้ยอดดิบ
+        ก่อนยุบคู่ (`matPDataRaw`) เป็นตัวหาร ห้ามใช้ `qtyAll` ที่ยุบแล้ว
+     🔴 **`overlap: true` = ห้ามเอาไปบวกเป็นภาพรวมไลน์** — ไลน์เดินหลายพาร์ทพร้อมกัน
+        นาทีที่เครื่องหยุด 1 นาทีถูกคิดให้ทุกพาร์ทที่ช่วงเวลาคาบกัน ⇒ ผลรวมจะเกินความจริง
+        จอที่โชว์ต้องเขียนบอก (UI §6.43) — เทียบพาร์ทต่อพาร์ทได้ บวกรวมไม่ได้
+     🔴 พาร์ทที่ **ไม่รู้ CT** ไม่อยู่ในลิสต์นี้เลย (ไม่เข้า `matPData` ตั้งแต่ต้น)
+        ⇒ จอต้องเขียนว่าชี้ไม่ได้กี่ชิ้นจาก `unknownQty` (กฎจอซื่อสัตย์) */
+  const rawQtyByMat = {};
+  matPDataRaw.forEach(d => { rawQtyByMat[d.matNo] = (rawQtyByMat[d.matNo] || 0) + d.qty; });
+  const { byMat: ngQByMat } = ngByMatFrom(defects, orders, defectQty);
+  /* ฐานของ %Q รายพาร์ท = ยอดสแกน + ชิ้นที่ไม่ใช่ของดี (ตัดงานทดลอง) — §7.2.2 เหมือนระดับกะ
+     🔴 ใช้ `ngByMatFrom` ตัวเดิมแค่เปลี่ยนวิธีนับต่อแถว ห้ามเขียนลูปราย MAT ชุดใหม่ */
+  const { byMat: ngQBaseByMat } = ngByMatFrom(defects, orders, defectQtyForQBase);
+  const groupList = Object.values(prodGroupMap);
+  const byProduct = groupList.map(g => {
+    /* คู่ RH/LH ถูกยุบไปแล้วในขา %P ⇒ ขา %Q ต้องตามไปเก็บ MAT ฝั่งคู่ด้วย ไม่งั้นของเสียหาย */
+    const mats = new Set(g.matNos);
+    g.matNos.forEach(m => { const pm = pairOf(m); if (pm) mats.add(pm); });
+    let pcsAll = 0, ngAll = 0, ngForQ = 0, ngQBase = 0;
+    mats.forEach(m => {
+      pcsAll  += Number(rawQtyByMat[m]) || 0;
+      ngAll   += Number(ngPByMat[m]) || 0;
+      ngForQ  += Number(ngQByMat[m]) || 0;
+      ngQBase += Number(ngQBaseByMat[m]) || 0;
+    });
+    const good = Math.max(0, pcsAll - ngAll);        // ยอดสแกนของกลุ่มนี้ (pcsAll นับของเสียไว้แล้ว)
+    /* ฐาน %Q = ยอดสแกน + ชิ้นที่ไม่ใช่ของดีที่ไม่ใช่งานทดลอง · `Math.max` = ด่านเดียวกับระดับกะ */
+    const qBasePcs = Math.max(good + ngQBase, good + ngForQ);
+    const gA = g.netAvailMin > 0 ? Math.min(1, g.runMin / g.netAvailMin) : null;
+    const gP = g.runMin > 0 ? Math.min(1, (g.stdSec / 60) / g.runMin) : null;
+    const gQ = qRatio(qBasePcs, ngForQ);
+    const overlap = g.ws != null && g.we != null && groupList.some(o =>
+      o !== g && o.ws != null && o.we != null && overlapOf(g, o) > 15);
+    return {
+      key: g.key, matNos: g.matNos.slice(), name: g.name, pNo: g.pNo,
+      netAvailMin: Math.round(g.netAvailMin), runMin: Math.round(g.runMin),
+      stdMin: Math.round(g.stdSec / 60), shots: g.qtyAll,
+      pcs: pcsAll, good, ngQty: ngForQ, qBasePcs,
+      winStart: g.ws, winEnd: g.we, overlap,
+      A: gA, P: gP, Q: gQ,
+      oee: (gA != null && gP != null && gQ != null) ? gA * gP * gQ : null,
+    };
+  }).sort((a, b) => (b.runMin - a.runMin) || (b.pcs - a.pcs));
   const ctUsed = {};
   matPData.forEach(d => { ctUsed[d.matNo] = d.ctSec; });
   /* 📸 "คิดรอบนี้ด้วยอะไร" — ให้จอ stamp กลับลงกะได้ตรงๆ (§snapshot)
@@ -1918,6 +2117,7 @@ export function computeSessionOee({
     A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, plannedDT, breakSnapshot,
     totalProduced, ngQty, knownQty, unknownQty, ctUsed, ngInP, ngNoMatP, stdMin,
     loggedPlannedDT, loggedUnplannedDT, dtBreakOverlapMin, plannedOverMin,
+    byProduct, byProductOverlap: byProduct.some(g => g.overlap),
     pOver: pRawRatio != null && pRawRatio > 1.001,
     pRawPct: pRawRatio == null ? null : Math.round(pRawRatio * 1000) / 10,
     dtOverstateMin, loggedDtMin: Math.round(loggedPlannedDT + loggedUnplannedDT),

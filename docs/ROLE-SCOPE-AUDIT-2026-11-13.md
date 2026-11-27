@@ -149,3 +149,8 @@ user รัน SQL ใน Main เอง · ผลเช็ค 16 คีย์ `
 4. **§4** ✅ ตัด 16 คีย์แล้ว 13/11 · เหลือคีย์ "รอเคาะ" + สร้าง bucket ใหม่จาก allow-list (§4.3)
 5. **§3** ยุบคีย์ที่ชื่อฝังขอบเขต · ปลด role `dept_scope` · แก้ป้าย `roleMeta.js` + `role-system.md`
 6. เพิ่มด่าน `regressionGuards`: ห้าม `role === 'manager'` ในตัวตัดสินขอบเขต · ห้ามคีย์ที่ชื่อฝังขอบเขตใหม่
+
+
+---
+## ✅ สถานะ 13/11 (session exciting-faraday) — P1 ทั้งหมด + P2 dept_scope + บั๊ก 3 ตัว ทำแล้วบน branch `claude/exciting-faraday-g7gu9v`
+รายละเอียด/ผลพิสูจน์กับทะเบียนจริง/สิ่งที่ยังเหลือ → `docs/modules/permission-scope-audit.md` §16 · migration `supabase/migrations/20261113_role_scope_p1_main.sql` (**ยังไม่ apply — ต้อง apply พร้อม deploy** · user เคาะก่อน merge)

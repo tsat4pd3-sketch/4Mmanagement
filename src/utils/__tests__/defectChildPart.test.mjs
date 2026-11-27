@@ -169,7 +169,9 @@ test('🔴 %P: ngByMatFrom ยังผูกของเสียกับ "MAT
   const orders = [{ id: 'o1', mat_no: '10100817' }];
   assert.deepEqual(ngByMatFrom([defectRow(CHILD)], orders),
     ngByMatFrom([defectRow()], orders));
-  assert.deepEqual(ngByMatFrom([defectRow(CHILD)], orders), { byMat: { 10100817: 5 }, noMat: 0 });
+  /* 5 → 6 (25/11): ตัวเศษ %P รวม `qty_repair` ด้วยแล้ว (oee.js §7.2.1 — ชิ้นรอซ่อมเครื่องก็เดินทำออกมา)
+     fixture นี้คือ NG 3 + สงสัย 2 + ซ่อม 1 · **ประเด็นของเทสไม่เปลี่ยน**: เลือกพาร์ทลูกแล้วต้องได้เท่าเดิม */
+  assert.deepEqual(ngByMatFrom([defectRow(CHILD)], orders), { byMat: { 10100817: 6 }, noMat: 0 });
 });
 
 test('🔴 ห้ามมีช่อง child โผล่ในสูตร: อัตรา BOM 2 ชิ้น/FG ก็ไม่คูณยอดของเสีย', () => {

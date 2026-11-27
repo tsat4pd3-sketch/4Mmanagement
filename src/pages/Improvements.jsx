@@ -89,7 +89,7 @@ const removeImpImage = (url) => {
 const sameMc = (a, b) => normCode(a) === normCode(b);
 
 /** ช่วงที่พาเรโต้ในโมดัลนับอยู่ — ต้องเขียนกำกับใน optgroup ไม่งั้นคนอ่านไม่รู้ว่า "เคยเกิด" นับจากกี่วัน */
-const modalDaysLabel = (m) => `ย้อนหลัง ${Number(m?.baseline_days) || 30} วัน`;
+const modalDaysLabel = (m) => `${tr("ย้อนหลัง")} ${Number(m?.baseline_days) || 30} ${tr("วัน")}`;
 
 /**
  * ดัชนี "ปัญหา → เครื่อง/สินค้าที่เคยเกิดจริง" จากผลรวมพาเรโต้
@@ -182,7 +182,7 @@ export default function Improvements() {
     const ranked = classifyAbc(rows, r => r.value || 0);
     const a = ranked.filter(r => r._cls === 'A');
     if (!a.length || a.length === ranked.length) return '';
-    return `แก้ ${a.length} อันแรก = ${Math.round(a[a.length - 1]._cum)}% ของทั้งหมด`;
+    return `${tr("แก้")} ${a.length} ${tr("อันแรก")} = ${Math.round(a[a.length - 1]._cum)}% ${tr("ของทั้งหมด")}`;
   }, [pareto.rows]);
   const [closeModal, setCloseModal] = useState(null);  // { imp, note, peImpact } ตอนกดปิดจ๊อบ
   const [doModal,    setDoModal]    = useState(null);  // { imp, action, date } จังหวะ "เริ่มลงมือแก้จริง" (ขั้น Do)
@@ -347,7 +347,7 @@ export default function Improvements() {
     reloadMilestones(m.improvement_id);
   };
   const deleteMilestone = async (m) => {
-    if (!await askConfirm(`ลบขั้นงาน "${m.title}"?`)) return;
+    if (!await askConfirm(`${tr("ลบขั้นงาน")} "${m.title}"?`)) return;
     const { error } = await supabaseDR.from('improvement_milestones').delete().eq('id', m.id);
     if (error) { toast.error(error.message); return; }
     reloadMilestones(m.improvement_id);
@@ -413,11 +413,11 @@ export default function Improvements() {
     const sessions = sessPage.rows;
     const sessErr = sessPage.error ? { message: sessPage.error } : null;
     /* ⚠️ คิวรีล้ม ≠ ไม่มีข้อมูล — จอต้องเขียนต่างกัน (QC 05/10 · กฎความซื่อสัตย์ของจอ) */
-    if (sessErr) return { noData: true, error: `โหลดกะผลิตไม่สำเร็จ: ${sessErr.message}` };
+    if (sessErr) return { noData: true, error: `${tr("โหลดกะผลิตไม่สำเร็จ")}: ${sessErr.message}` };
     if (!sessions?.length) return { noData: true };
     /* fetchByIds คืน error/truncated — ห้ามกลืน: ผลก่อน/หลังจากข้อมูลไม่ครบ = % หลอกตา
        เก็บไว้ใน `partial` ให้การ์ดเขียนว่า "ข้อมูลไม่ครบ" */
-    const partialOf = (res, what) => (res.error || res.truncated ? `${what}${res.error ? `: ${res.error}` : ' โหลดไม่ครบ'}` : null);
+    const partialOf = (res, what) => (res.error || res.truncated ? `${what}${res.error ? `: ${res.error}` : tr(' โหลดไม่ครบ')}` : null);
 
     const beforeIds = [], afterIds = [], beforeDays = new Set(), afterDays = new Set();
     sessions.forEach(s => {
@@ -546,14 +546,14 @@ export default function Improvements() {
     const cc = lineCostCenter(lines, imp.line_name);
     const rate = cc ? rateFor(ccRates, cc, imp.start_date) : null;
     const missing = [];
-    if (!cc) missing.push('ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)');
-    else if (!rate) missing.push(`ยังไม่ตั้ง activity rate ของ cost center ${cc} — ตั้งที่ผังองค์กร → แผง 💰 Activity Rate`);
+    if (!cc) missing.push(tr("ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)"));
+    else if (!rate) missing.push(`${tr("ยังไม่ตั้ง activity rate ของ")} cost center ${cc} — ${tr("ตั้งที่ผังองค์กร → แผง")} 💰 Activity Rate`);
     /* ไม่มี rate ที่มีผลก่อนวันเริ่มโปรเจค → rateFor ถอยไปใช้ rate เก่าสุดที่มี — ต้องบอกว่าเป็น rate ของวันไหน (QC 05/10) */
-    else if (rateIsFallback(rate, imp.start_date)) missing.push(`ไม่มี activity rate ของ ${cc} ที่มีผลก่อนวันเริ่ม ${imp.start_date} — ใช้ rate ที่เริ่ม ${rate.effective_from} แทน (เงินอาจคลาดจากจริง)`);
+    else if (rateIsFallback(rate, imp.start_date)) missing.push(`${tr("ไม่มี activity rate ของ")} ${cc} ${tr("ที่มีผลก่อนวันเริ่ม")} ${imp.start_date} — ${tr("ใช้ rate ที่เริ่ม")} ${rate.effective_from} ${tr("แทน (เงินอาจคลาดจากจริง")})`);
     // ไม่มีกะปิดแล้วก่อนวันเริ่ม = ไม่มีฐานเทียบ — เดิม beforePerDay=0 ทำให้ขึ้น
     // "ต้นทุนเพิ่ม X บาท/วัน" ทั้งที่แค่ยังไม่มีข้อมูล (QC audit 2026-08-20 · T2-7)
     if (!r.beforeDays) {
-      missing.push('ไม่มีกะที่ปิดแล้วในช่วงก่อนวันเริ่มแก้ (baseline) — เทียบก่อน/หลังไม่ได้ · ขยายหน้าต่างเทียบ (baseline_days) หรือตรวจวันเริ่มโปรเจค');
+      missing.push(tr("ไม่มีกะที่ปิดแล้วในช่วงก่อนวันเริ่มแก้ (baseline) — เทียบก่อน/หลังไม่ได้ · ขยายหน้าต่างเทียบ (baseline_days) หรือตรวจวันเริ่มโปรเจค"));
       return { cc, rate, missing, comp: Object.fromEntries(RATE_COMPONENTS.map(c => [c.key, 0])), matPerDay: 0, repairPerDay: 0, defectParts: [], defectNoCost: [], totalPerDay: null, totalPerMonth: null, payback: null, invest: Number(imp.invest_cost) || 0, computable: false };
     }
 
@@ -595,7 +595,7 @@ export default function Improvements() {
         }
       });
       if (!defectParts.length) computable = false;
-      if (defectNoCost.size) missing.push(`พาร์ทยังไม่ตั้งต้นทุน/ชิ้น (${[...defectNoCost].join(', ')}) — กรอก standard/material cost ที่ Product Master → 🗂 Parts Master`);
+      if (defectNoCost.size) missing.push(`${tr("พาร์ทยังไม่ตั้งต้นทุน/ชิ้น")} (${[...defectNoCost].join(', ')}) — ${tr("กรอก standard/material cost ที่")} Product Master → 🗂 Material Master`);
     }
 
     // ค่าซ่อมจริงเข้ายอดรวมเฉพาะเมื่อ toggle 'repair' เปิด (อาจทับซ้อนกับ IDP ของ SAP — ให้ผู้ใช้เลือกตามนโยบายบัญชี)
@@ -644,7 +644,7 @@ export default function Improvements() {
     (async () => {
       for (const imp of visibleItems) {
         if (results[imp.id]) continue;
-        const r = await computeResult(imp).catch(e => ({ noData: true, error: `คำนวณผลไม่สำเร็จ: ${e?.message || e}` }));
+        const r = await computeResult(imp).catch(e => ({ noData: true, error: `${tr("คำนวณผลไม่สำเร็จ")}: ${e?.message || e}` }));
         if (cancelled) return;
         setResults(prev => ({ ...prev, [imp.id]: r }));
       }
@@ -811,10 +811,10 @@ export default function Improvements() {
           event: 'improvement_opened', type: 'info', ref_table: 'improvements', ref_id: row.id,
           line_name: row.line_name || null, actor: fullName,
           lines: [
-            `💡 ${row.title || '(ไม่ระบุชื่อโปรเจค)'}`,
-            `🏭 ไลน์: ${row.line_name || '—'}`,
-            row.problem_label ? `🎯 เป้า: ${row.problem_label}` : '',
-            row.start_date ? `📅 เริ่ม ${row.start_date} · เทียบผล ${row.baseline_days || 30} วัน` : '',
+            `💡 ${row.title || tr('(ไม่ระบุชื่อโปรเจค)')}`,
+            `🏭 ${tr("ไลน์")}: ${row.line_name || '—'}`,
+            row.problem_label ? `🎯 ${tr("เป้า")}: ${row.problem_label}` : '',
+            row.start_date ? `📅 ${tr("เริ่ม")} ${row.start_date} · ${tr("เทียบผล")} ${row.baseline_days || 30} ${tr("วัน")}` : '',
           ],
         });
       }
@@ -828,7 +828,7 @@ export default function Improvements() {
   };
 
   const handleDelete = async (imp) => {
-    if (!await askConfirm(`ลบโปรเจค "${imp.title}"?`)) return;
+    if (!await askConfirm(`${tr("ลบโปรเจค")} "${imp.title}"?`)) return;
     const { error } = await supabaseDR.from('improvements').delete().eq('id', imp.id);
     if (error) { toast.error(error.message); return; }
     // ลบรูปหลัง DB สำเร็จ (กติกา CLAUDE.md — กันไฟล์กำพร้า)
@@ -906,7 +906,7 @@ export default function Improvements() {
         workDaysMonth, today: todayStr(), issuedBy: fullName,
         section: lines.find(l => l.name === imp.line_name)?.section || null,
       });
-    } catch (e) { toast.error(`พิมพ์ไม่สำเร็จ: ${e.message}`); return; }
+    } catch (e) { toast.error(`${tr("พิมพ์ไม่สำเร็จ")}: ${e.message}`); return; }
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up ของเว็บนี้แล้วกดใหม่');
   };
 
@@ -931,7 +931,7 @@ export default function Improvements() {
   const paretoHits = pareto.byKey?.[
     modal?.problem_source === 'mtn' ? (modal?.problem_label || '') : (modal?.problem_type_id || '')
   ] || [];
-  const hitUnit = modal?.problem_source === 'defect' ? 'ชิ้น' : modal?.problem_source === 'mtn' ? 'ใบ' : 'นาที';
+  const hitUnit = modal?.problem_source === 'defect' ? tr("ชิ้น") : modal?.problem_source === 'mtn' ? tr("ใบ") : tr("นาที");
   const hitMc = new Map();    // normCode → แถวพาเรโต้ (เครื่องที่เคยเกิดปัญหานี้)
   const hitMat = new Map();   // mat_no   → แถวพาเรโต้ (สินค้าที่เคยเสียด้วยปัญหานี้)
   paretoHits.forEach(h => {
@@ -962,7 +962,7 @@ export default function Improvements() {
 
   return (
     <Page>
-      <ReadOnlyNote show={!canManage} role={role} what="เปิด/แก้โปรเจคปรับปรุง"
+      <ReadOnlyNote show={!canManage} role={role} what={tr("เปิด/แก้โปรเจคปรับปรุง")}
         permKey="improvements:manage" hint={tr('ยังดูโปรเจค พาเรโต้ และผลก่อน/หลังได้ตามปกติ')} />
       {/* header — UI-STANDARD 2026-09-24: ปุ่มหลักอยู่ใน actions · ตัวกรองสถานะ (4 ตัวเลือก) = Segmented */}
       <PageHeader title={tr('Improvements — โปรเจคปรับปรุง')} icon="💡"
@@ -975,9 +975,9 @@ export default function Improvements() {
       <FilterBar style={{ marginBottom: 8 }}>
         <Segmented value={statusFilter} onChange={setStatusFilter} label={tr('สถานะ')} options={[
           { value: 'all', label: ALL.status },
-          { value: 'monitoring', label: 'กำลังติดตามผล' },
-          { value: 'done', label: 'สำเร็จ' },
-          { value: 'cancelled', label: 'ยกเลิก' },
+          { value: 'monitoring', label: tr("กำลังติดตามผล") },
+          { value: 'done', label: tr("สำเร็จ") },
+          { value: 'cancelled', label: tr("ยกเลิก") },
         ]} />
       </FilterBar>
 
@@ -1018,14 +1018,14 @@ export default function Improvements() {
         if (!computed && !earlyCnt && !planCnt) return null;
         const col = (v) => (v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)');
         return (
-          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{tr('Cost Saving รวม (บาท/เดือน)')}</span>
               {computed > 0 && <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>}
               <InfoMore label={tr('ที่มาของตัวเลข')} id="imp-sum-src" size={11}>
-                {computed > 0 ? `จาก ${computed} โปรเจคที่ผลจริงยืนยันแล้ว (ลงมือแก้แล้ว · หลังแก้ ≥${MIN_AFTER_DAYS} วันผลิต · ไม่รวมที่ยกเลิก)` : 'ยังไม่มีโปรเจคที่ผลจริงยืนยันแล้ว'}
-                {earlyCnt > 0 ? ` · ⏳ อีก ${earlyCnt} โปรเจครอผลหลังแก้ (เพดานประหยัดถ้าแก้หายหมด ~${fmtBaht(earlyCap)}/เดือน — ยังไม่นับรวม)` : ''}
-                {pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
+                {computed > 0 ? `${tr("จาก")} ${computed} ${tr("โปรเจคที่ผลจริงยืนยันแล้ว (ลงมือแก้แล้ว · หลังแก้")} ≥${MIN_AFTER_DAYS} ${tr("วันผลิต · ไม่รวมที่ยกเลิก")})` : tr("ยังไม่มีโปรเจคที่ผลจริงยืนยันแล้ว")}
+                {earlyCnt > 0 ? ` · ⏳ ${tr("อีก")} ${earlyCnt} ${tr("โปรเจครอผลหลังแก้ (เพดานประหยัดถ้าแก้หายหมด")} ~${fmtBaht(earlyCap)}/${tr("เดือน — ยังไม่นับรวม")})` : ''}
+                {pending > 0 ? ` · ${tr("อีก")} ${pending} ${tr("โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด")}` : ''} · {tr("รวมขึ้นจากระดับกลุ่มตามผังองค์กร")}
               </InfoMore>
             </div>
             {/* เป้าหมายของโปรเจคที่ยังไม่ลงมือ — แยกบรรทัดให้ขาด ห้ามเอาไปปนกับยอดประหยัดจริง */}
@@ -1033,7 +1033,7 @@ export default function Improvements() {
               <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 5, lineHeight: 1.6 }}>
                 🎯 <b>{tr('เป้าหมายที่ตั้งไว้')}</b> {tr('(ยังไม่ลงมือแก้ ·')} <b>{tr('ไม่นับรวมข้างบน')}</b>):{' '}
                 {planTarget > 0 ? <b style={{ color: 'var(--amber)' }}>~{fmtBaht(planTarget)}{tr('/เดือน')}</b> : <span style={{ color: 'var(--muted)' }}>{tr('ยังตีเป็นเงินไม่ได้')}</span>}
-                {' '}{tr('จาก')} {planCnt} โปรเจค
+                {' '}{tr('จาก')} {planCnt} {tr("โปรเจค")}
                 {planNoTarget > 0 && <span style={{ color: 'var(--amber)' }}> · ⚠ {planNoTarget} {tr('โปรเจคยังไม่ได้ตั้งเป้า (แก้ไขโปรเจคแล้วกรอกช่อง “เป้าหมาย”)')}</span>}
               </div>
             )}
@@ -1053,7 +1053,7 @@ export default function Improvements() {
 
       {visibleItems.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)', fontSize: 13 }}>
-          ยังไม่มีโปรเจคปรับปรุง{canManage ? ' — กด "➕ เพิ่มโปรเจคปรับปรุง" เลือกปัญหาจากพาเรโต้ได้เลย' : ''}
+          {tr("ยังไม่มีโปรเจคปรับปรุง")}{canManage ? tr(" — กด \"➕ เพิ่มโปรเจคปรับปรุง\" เลือกปัญหาจากพาเรโต้ได้เลย") : ''}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))', gap: 14, marginTop: 14, alignItems: 'stretch' }}>
@@ -1069,7 +1069,7 @@ export default function Improvements() {
             const started = doStarted(imp);
             const tgt = started ? null : targetSavingOf(imp, r);
             return (
-              <div key={imp.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, height: '100%' }}>
+              <div key={imp.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, height: '100%' }}>
                 {/* title + status */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{imp.title}</div>
@@ -1122,16 +1122,16 @@ export default function Improvements() {
                   </div>
                 )}
                 {/* ผลลัพธ์จากข้อมูลจริง */}
-                <div style={{ marginTop: 10, padding: 10, background: 'var(--bg3)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
+                <div style={{ marginTop: 10, padding: 10, background: 'var(--bg3-surf)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                       {started
-                        ? <>{tr('📈 ผลจากข้อมูลจริง')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('(เริ่มแก้')} {fmtDate(imp.start_date)} {tr('· เทียบ')} {imp.baseline_days} วัน)</span></>
-                        : <>{tr('📊 ระดับปัจจุบัน (ก่อนแก้)')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('(ย้อนหลัง')} {imp.baseline_days} วัน)</span></>}
+                        ? <>{tr('📈 ผลจากข้อมูลจริง')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('(เริ่มแก้')} {fmtDate(imp.start_date)} {tr('· เทียบ')} {imp.baseline_days} {tr("วัน")})</span></>
+                        : <>{tr('📊 ระดับปัจจุบัน (ก่อนแก้)')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('(ย้อนหลัง')} {imp.baseline_days} {tr("วัน")})</span></>}
                     </span>
                     {started && pct != null && ((r?.afterDays || 0) < MIN_AFTER_DAYS
                       /* หลังแก้ยังไม่ถึงเกณฑ์ — % จากตัวอย่างเล็กหลอกตา (1 วัน 0 นาที = ▼100%) ห้ามโชว์เหมือนยืนยันแล้ว */
-                      ? <span title={`หลังแก้มีข้อมูลแค่ ${r?.afterDays || 0} วันผลิต (ต้อง ≥${MIN_AFTER_DAYS}) — ยังสรุป % ไม่ได้`}
+                      ? <span title={`${tr("หลังแก้มีข้อมูลแค่")} ${r?.afterDays || 0} ${tr("วันผลิต (ต้อง")} ≥${MIN_AFTER_DAYS}) — ${tr("ยังสรุป % ไม่ได้")}`}
                           style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber)' }}>{tr('⏳ รอผล')} {r?.afterDays || 0}/{MIN_AFTER_DAYS} {tr('วัน')}</span>
                       : <span style={{ fontSize: 14, fontWeight: 800, color: improved ? 'var(--green)' : 'var(--red)' }}>
                           {improved ? '▼' : '▲'} {Math.abs(pct)}%
@@ -1142,15 +1142,15 @@ export default function Improvements() {
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{tr('กำลังคำนวณ...')}</div>
                   ) : r.noData ? (
                     r.error
-                      ? <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700, marginTop: 6 }}>⚠️ {r.error} — ยังสรุปผลไม่ได้ (ไม่ใช่ "ไม่มีข้อมูล")</div>
+                      ? <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700, marginTop: 6 }}>⚠️ {r.error} — {tr("ยังสรุปผลไม่ได้ (ไม่ใช่ \"ไม่มีข้อมูล")}")</div>
                       : <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>{tr('ยังไม่มีข้อมูลการผลิตในช่วงเทียบ')}</div>
                   ) : (
                     <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {r.partial && (
-                        <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>{tr('⚠️ ข้อมูลไม่ครบ (')}{r.partial}) — ตัวเลขก่อน/หลังด้านล่างอาจต่ำกว่าจริง</div>
+                        <div style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>{tr('⚠️ ข้อมูลไม่ครบ (')}{r.partial}) — {tr("ตัวเลขก่อน/หลังด้านล่างอาจต่ำกว่าจริง")}</div>
                       )}
                       {/* ยังไม่ลงมือแก้ = ไม่มีแถบ "หลังแก้" ให้ดู (ช่วงนั้นคือช่วงที่ยังไม่ได้แก้อะไรเลย) */}
-                      {[[started ? 'ก่อนแก้' : 'ปัจจุบัน', r.beforePerDay, r.beforeTotal, r.beforeCount, r.beforeDays, 'var(--red)'],
+                      {[[started ? tr('ก่อนแก้') : tr('ปัจจุบัน'), r.beforePerDay, r.beforeTotal, r.beforeCount, r.beforeDays, 'var(--red)'],
                         ...(started ? [['หลังแก้', r.afterPerDay, r.afterTotal, r.afterCount, r.afterDays, improved || r.afterPerDay === 0 ? 'var(--green)' : 'var(--amber)']] : [])
                       ].map(([label, perDay, total, count, days, color]) => (
                         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1159,13 +1159,13 @@ export default function Improvements() {
                             <div style={{ width: `${Math.min(100, (perDay / maxPerDay) * 100)}%`, height: '100%', background: color, borderRadius: 'var(--r-xs)', transition: 'width 0.4s' }} />
                           </div>
                           <span style={{ fontSize: 11, fontWeight: 800, color, width: 150, flexShrink: 0, textAlign: 'right' }}>
-                            {perDay.toFixed(1)} {r.unit}{tr('/วัน')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({total.toFixed(0)} / {days}วัน)</span>
+                            {perDay.toFixed(1)} {tr(r.unit)}{tr('/วัน')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({total.toFixed(0)} / {days}{tr("วัน")})</span>
                           </span>
                         </div>
                       ))}
                       {r.source === 'mtn' && (
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          ⏱ เครื่องหยุดจริง (จาก downtime ที่ผูกใบ): <b style={{ color: 'var(--red)' }}>{r.beforeMin}</b> → <b style={{ color: 'var(--green)' }}>{r.afterMin}</b> นาที
+                          ⏱ {tr("เครื่องหยุดจริง (จาก downtime ที่ผูกใบ")}): <b style={{ color: 'var(--red)' }}>{r.beforeMin}</b> → <b style={{ color: 'var(--green)' }}>{r.afterMin}</b> {tr("นาที")}
                           {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0) > 0 && (
                             <span style={{ color: 'var(--amber)' }}> · ⚠ {(r.beforeMinUnlinked || 0) + (r.afterMinUnlinked || 0)} {tr('ใบไม่มี downtime ผูก — นาทีส่วนนั้นไม่ถูกนับ (เปิดใบซ่อมจากแถว Downtime ใน Daily Report จะผูกให้เอง)')}</span>
                           )}
@@ -1184,17 +1184,17 @@ export default function Improvements() {
                             ? <>{tr('ลดลง')} <b>{Number(imp.target_value).toLocaleString()} {r?.unit || ''}{tr('/วัน')}</b></>
                             : <>{tr('ลด')} <b>{Number(imp.target_value)}%</b></>}
                           {r && !r.noData && r.beforePerDay > 0 && tgt && (
-                            <> {tr('(จาก')} {r.beforePerDay.toFixed(1)} → {(r.beforePerDay * (1 - tgt.frac)).toFixed(1)} {r.unit}/วัน)</>
+                            <> {tr('(จาก')} {r.beforePerDay.toFixed(1)} → {(r.beforePerDay * (1 - tgt.frac)).toFixed(1)} {tr(r.unit)}/{tr("วัน")})</>
                           )}
                           {tgt?.perMonth != null && (
                             <> {tr('· คาดว่าจะประหยัด')} <b style={{ color: 'var(--amber)' }}>~{fmtBaht(tgt.perMonth)}{tr('/เดือน')}</b></>
                           )}
                         </div>
                       ) : (
-                        <Why what="ยังไม่ได้ตั้งเป้าหมาย" how="กด แก้ไข แล้วกรอกช่อง “เป้าหมาย” เพื่อให้ระบบคำนวณเงินที่คาดว่าจะประหยัดได้" size={11.5} />
+                        <Why what={tr("ยังไม่ได้ตั้งเป้าหมาย")} how={tr("กด แก้ไข แล้วกรอกช่อง “เป้าหมาย” เพื่อให้ระบบคำนวณเงินที่คาดว่าจะประหยัดได้")} size={11.5} />
                       )}
-                      <Why what="ยังอยู่ช่วงวางแผน — ยังไม่นับผลจริง" tone="muted" size={11.5} style={{ marginTop: 3 }}
-                        how="กดยืนยัน “เริ่มลงมือแก้จริง” เมื่อไหร่ ระบบจะเริ่มนับก่อน/หลังจากวันนั้น แล้วคำนวณผลจริงให้" />
+                      <Why what={tr("ยังอยู่ช่วงวางแผน — ยังไม่นับผลจริง")} tone="muted" size={11.5} style={{ marginTop: 3 }}
+                        how={tr("กดยืนยัน “เริ่มลงมือแก้จริง” เมื่อไหร่ ระบบจะเริ่มนับก่อน/หลังจากวันนั้น แล้วคำนวณผลจริงให้")} />
                     </div>
                   )}
                   {imp.result_note && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6 }}><b style={{ color: 'var(--muted)' }}>{tr('สรุปผล:')}</b> {imp.result_note}</div>}
@@ -1216,8 +1216,8 @@ export default function Improvements() {
                     <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: good ? 'var(--green-dim)' : 'var(--bg3)', border: `1px solid ${good ? 'var(--green-line)' : tooEarly ? 'var(--amber-line)' : 'var(--border)'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
-                          {tooEarly ? '💰 มูลค่าปัญหานี้ (ก่อนแก้)' : '💰 Cost Saving'}{' '}
-                          <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? 'จาก baseline ที่วัดแล้ว' : 'ประมาณการจากผลจริง'}{cs.cc ? ` · CC ${cs.cc}` : ''}{cs.rate?.effective_from ? ` · rate เริ่ม ${cs.rate.effective_from}` : ''})</span>
+                          {tooEarly ? tr("💰 มูลค่าปัญหานี้ (ก่อนแก้)") : '💰 Cost Saving'}{' '}
+                          <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({tooEarly ? tr("จาก baseline ที่วัดแล้ว") : tr("ประมาณการจากผลจริง")}{cs.cc ? ` · CC ${cs.cc}` : ''}{cs.rate?.effective_from ? ` · rate ${tr("เริ่ม")} ${cs.rate.effective_from}` : ''})</span>
                         </span>
                         {/* เลือกก้อน rate ที่นับเป็น saving — นโยบายบัญชีบางที่ไม่นับ DP (sunk cost) · มีผลทุกการ์ด */}
                         <span style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -1229,7 +1229,7 @@ export default function Improvements() {
                               : [])].map(c => {
                             const on = costComps.includes(c.key);
                             return (
-                              <button key={c.key} onClick={() => toggleComp(c.key)} title={`${c.full} — ${on ? 'นับในยอดรวม (กดเพื่อไม่นับ)' : 'ไม่นับในยอดรวม (กดเพื่อนับ)'}`}
+                              <button key={c.key} onClick={() => toggleComp(c.key)} title={`${tr(c.full)} — ${on ? tr('นับในยอดรวม (กดเพื่อไม่นับ)') : tr('ไม่นับในยอดรวม (กดเพื่อนับ)')}`}
                                 style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                   border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                                   background: on ? 'var(--accent-dim)' : 'transparent',
@@ -1242,20 +1242,20 @@ export default function Improvements() {
                       </div>
                       {cs.missing.map((m, i) => <Why key={i} msg={m} style={{ marginTop: 5 }} />)}
                       {cs.totalPerDay == null ? (
-                        <Why what="ยังคำนวณเป็นบาทไม่ได้" how="เติมข้อมูลตามรายการด้านบนก่อน ระบบจะคำนวณให้อัตโนมัติ" tone="muted" style={{ marginTop: 5 }} />
+                        <Why what={tr("ยังคำนวณเป็นบาทไม่ได้")} how={tr("เติมข้อมูลตามรายการด้านบนก่อน ระบบจะคำนวณให้อัตโนมัติ")} tone="muted" style={{ marginTop: 5 }} />
                       ) : (
                         <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ fontSize: 14, fontWeight: 800, color: good ? 'var(--green)' : bad ? 'var(--red)' : 'var(--muted)' }}>
-                            {tooEarly ? 'มูลค่าความสูญเสีย' : good ? 'ประหยัด' : bad ? 'ต้นทุนเพิ่มขึ้น' : '±0'} ~{fmtBaht(Math.abs(cs.totalPerDay))} บาท/วัน
-                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}> · ~{fmtBaht(Math.abs(cs.totalPerMonth))} {tr('บาท/เดือน')}{tooEarly ? ' = เพดานประหยัดถ้าแก้หายหมด' : ''}</span>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> ({workDaysMonth} วันทำงาน/เดือน)</span>
+                            {tooEarly ? tr("มูลค่าความสูญเสีย") : good ? tr("ประหยัด") : bad ? tr("ต้นทุนเพิ่มขึ้น") : '±0'} ~{fmtBaht(Math.abs(cs.totalPerDay))} {tr("บาท/วัน")}
+                            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}> · ~{fmtBaht(Math.abs(cs.totalPerMonth))} {tr('บาท/เดือน')}{tooEarly ? tr(" = เพดานประหยัดถ้าแก้หายหมด") : ''}</span>
+                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> ({workDaysMonth} {tr("วันทำงาน/เดือน")})</span>
                           </div>
                           {tooEarly && (
                             !started
-                              ? <Why what="ยังไม่ได้ลงมือแก้ — ตัวเลขนี้คือมูลค่าปัญหาก่อนแก้" tone="warn"
-                                  how="โปรเจคอยู่ช่วงวิเคราะห์/วางแผน · ตัวเลขคือความสูญเสียต่อวันจาก baseline = เพดานที่จะประหยัดได้ถ้าแก้หายหมด" />
-                              : <Why what={`ผลจริงหลังแก้ยังสรุปไม่ได้ (${r.afterDays || 0}/${MIN_AFTER_DAYS} วันผลิต)`} tone="warn"
-                                  how={`ต้องมีข้อมูลหลังแก้อย่างน้อย ${MIN_AFTER_DAYS} วันผลิต · ระหว่างนี้ตัวเลขคือมูลค่าปัญหาก่อนแก้ ไม่ใช่ยอดประหยัดจริง`} />
+                              ? <Why what={tr("ยังไม่ได้ลงมือแก้ — ตัวเลขนี้คือมูลค่าปัญหาก่อนแก้")} tone="warn"
+                                  how={tr("โปรเจคอยู่ช่วงวิเคราะห์/วางแผน · ตัวเลขคือความสูญเสียต่อวันจาก baseline = เพดานที่จะประหยัดได้ถ้าแก้หายหมด")} />
+                              : <Why what={`${tr("ผลจริงหลังแก้ยังสรุปไม่ได้")} (${r.afterDays || 0}/${MIN_AFTER_DAYS} ${tr("วันผลิต")})`} tone="warn"
+                                  how={`${tr("ต้องมีข้อมูลหลังแก้อย่างน้อย")} ${MIN_AFTER_DAYS} ${tr("วันผลิต · ระหว่างนี้ตัวเลขคือมูลค่าปัญหาก่อนแก้ ไม่ใช่ยอดประหยัดจริง")}`} />
                           )}
                           {/* breakdown DL/OH/DP โชว์ครบ 3 ก้อนเสมอ (ตกลง user 2026-08-11) — ก้อนที่ไม่เลือกขีดฆ่า ไม่เข้ายอดรวม */}
                           <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1268,28 +1268,28 @@ export default function Improvements() {
                             {imp.problem_source === 'mtn' && (
                               <span style={{ textDecoration: costComps.includes('repair') ? 'none' : 'line-through', opacity: costComps.includes('repair') ? 1 : 0.5 }}
                                 title={tr('ค่าซ่อมจริงจากใบ MO — คนละแหล่งกับ IDP (SAP) ซึ่งรวมค่าซ่อมไว้ในค่าเสื่อมทางอ้อม เปิดทั้งคู่อาจทับซ้อนบางส่วน')}>
-                                ค่าซ่อมจริง {fmtBaht(cs.repairPerDay)}
+                                {tr("ค่าซ่อมจริง")} {fmtBaht(cs.repairPerDay)}
                               </span>
                             )}
                             <span style={{ color: 'var(--muted)' }}>{tr('(บาท/วัน)')}</span>
                           </div>
                           {imp.problem_source === 'mtn' && costComps.includes('repair') && costComps.includes('idp') && (
-                            <Why what="นับทั้ง IDP และค่าซ่อมจริง — อาจซ้ำซ้อน" tone="muted"
-                              how="IDP (SAP — ค่าเสื่อมทางอ้อม ‘รวมค่าซ่อม’) กับค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล นับพร้อมกันจะซ้ำซ้อนได้ — เลือกนับก้อนใดก้อนหนึ่งตามนโยบายบัญชี" />
+                            <Why what={tr("นับทั้ง IDP และค่าซ่อมจริง — อาจซ้ำซ้อน")} tone="muted"
+                              how={tr("IDP (SAP — ค่าเสื่อมทางอ้อม ‘รวมค่าซ่อม’) กับค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล นับพร้อมกันจะซ้ำซ้อนได้ — เลือกนับก้อนใดก้อนหนึ่งตามนโยบายบัญชี")} />
                           )}
                           {imp.problem_source === 'defect' && cs.defectParts.length > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               {cs.defectParts.map(p => (
                                 <div key={p.mat || 'x'}>
-                                  {p.mat} {tr('· ลด')} {p.dQtyPerDay.toFixed(1)} {tr('ชิ้น/วัน ×')} {fmtBaht(p.unit)} บาท/ชิ้น
-                                  <span style={{ opacity: 0.8 }}> ({p.source === 'standard' ? 'standard cost' : 'วัสดุ+conversion'}{p.convMissing ? ' · ⚠ ไม่มี CT/rate — ยังไม่รวม conversion' : ''})</span>
+                                  {p.mat} {tr('· ลด')} {p.dQtyPerDay.toFixed(1)} {tr('ชิ้น/วัน ×')} {fmtBaht(p.unit)} {tr("บาท/ชิ้น")}
+                                  <span style={{ opacity: 0.8 }}> ({p.source === 'standard' ? 'standard cost' : tr("วัสดุ+conversion")}{p.convMissing ? tr(" · ⚠ ไม่มี CT/rate — ยังไม่รวม conversion") : ''})</span>
                                 </div>
                               ))}
                             </div>
                           )}
                           {cs.invest > 0 && (
                             <div style={{ fontSize: 11, fontWeight: 700, color: cs.payback ? 'var(--accent)' : 'var(--muted)' }}>
-                              ลงทุน {fmtBaht(cs.invest)} {tr('บาท')}{cs.payback ? ` → คืนทุน${tooEarly ? 'เร็วสุด (ถ้าแก้หายหมด)' : ''} ~${cs.payback < 10 ? cs.payback.toFixed(1) : Math.round(cs.payback)} เดือน` : ' — ยังไม่มี saving ให้คืนทุน'}
+                              {tr("ลงทุน")} {fmtBaht(cs.invest)} {tr('บาท')}{cs.payback ? ` → ${tr("คืนทุน")}${tooEarly ? tr('เร็วสุด (ถ้าแก้หายหมด)') : ''} ~${cs.payback < 10 ? cs.payback.toFixed(1) : Math.round(cs.payback)} ${tr("เดือน")}` : tr(" — ยังไม่มี saving ให้คืนทุน")}
                             </div>
                           )}
                         </div>
@@ -1312,11 +1312,11 @@ export default function Improvements() {
                   const pctOf = (d) => Math.max(0, Math.min(100, ((new Date(`${d}T00:00:00`) - new Date(`${gStart}T00:00:00`)) / spanMs) * 100));
                   const stMeta = { todo: { c: '#8b8b96', l: 'รอเริ่ม' }, doing: { c: '#4d9fff', l: 'กำลังทำ' }, done: { c: '#22c55e', l: 'เสร็จ' } };
                   return (
-                    <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
+                    <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)' }}>
                       <div onClick={() => setGanttOpen(p => ({ ...p, [imp.id]: !isOpen }))}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', userSelect: 'none' }}>
                         <span style={{ fontSize: 11, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--muted)' }}>▶</span>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{tr('แผนงาน')} {ms.length ? `${doneCnt}/${ms.length} ขั้น` : '(ยังไม่วางแผน)'}</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>{tr('แผนงาน')} {ms.length ? `${doneCnt}/${ms.length} ${tr("ขั้น")}` : tr("(ยังไม่วางแผน)")}</span>
                         {/* legend PDCA — บอกว่าแผนอิงหลักอะไร + ตัวอักษรสีตรงกับป้ายหน้าแต่ละขั้น */}
                         <span title={Object.values(PHASES).map(p => `${p.s} = ${p.label}`).join('\n')}
                           style={{ display: 'inline-flex', gap: 2, fontSize: 11, fontWeight: 900, flexShrink: 0 }}>
@@ -1362,11 +1362,11 @@ export default function Improvements() {
                                       ห้ามวาด playhead เองด้วย inline boxShadow (UI-CONVENTIONS §6 · QC audit 2026-08-03) */}
                                   <div className="now-line" style={{ left: `${pctOf(today)}%` }} />
                                   {(m.planned_start || m.planned_end) && (
-                                    <div title={`${m.title}\nแผน ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\nเสร็จจริง ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\nผู้รับผิดชอบ: ${m.assignee}` : ''}`}
+                                    <div title={`${m.title}\n${tr("แผน")} ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\n${tr("เสร็จจริง")} ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\n${tr("ผู้รับผิดชอบ")}: ${m.assignee}` : ''}`}
                                       style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 'var(--r-xs)', background: `${overdue ? 'var(--red)' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? 'var(--red)' : meta.c}` }} />
                                   )}
                                   {m.done_at && (
-                                    <div title={`เสร็จจริง ${fmtDate(m.done_at)}`} style={{ position: 'absolute', top: 1, left: `calc(${pctOf(m.done_at)}% - 4px)`, fontSize: 11, lineHeight: 1, zIndex: 3 }}>✅</div>
+                                    <div title={`${tr("เสร็จจริง")} ${fmtDate(m.done_at)}`} style={{ position: 'absolute', top: 1, left: `calc(${pctOf(m.done_at)}% - 4px)`, fontSize: 11, lineHeight: 1, zIndex: 3 }}>✅</div>
                                   )}
                                 </div>
                                 <span style={{ width: 64, flexShrink: 0, fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : meta.c, textAlign: 'right' }}>{overdue ? tr('⚠ เลยแผน') : meta.l}</span>
@@ -1478,7 +1478,7 @@ export default function Improvements() {
                     </select>
                   </label>
                 ) : (
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ปัญหาที่แก้ (จาก master')} {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ปัญหาที่แก้ (จาก master')} {modal.problem_source === 'defect' ? tr("ของเสีย") : 'Downtime'})
                     <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
                       <option value="">{tr(ALL.type)}</option>
                       {typeOpts.map(t => <option key={t.id} value={t.id}>{tr(t.name_th)}</option>)}
@@ -1487,23 +1487,23 @@ export default function Improvements() {
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('เครื่องจักร/จุดงาน')}
-                    <SearchSelect value={modal.machine_no || ''} placeholder={`${ALL.machine} — พิมพ์ค้นหาเครื่อง`} style={{ marginTop: 4 }}
+                    <SearchSelect value={modal.machine_no || ''} placeholder={`${ALL.machine} — ${tr("พิมพ์ค้นหาเครื่อง")}`} style={{ marginTop: 4 }}
                       options={[
                         /* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน ต้องยังแสดงได้ — ไม่งั้นช่องโชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ */
                         ...(modal.machine_no && !mcListed(modal.machine_no) ? [{ id: modal.machine_no, label: `⚠ ${modal.machine_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนเครื่องของไลน์นี้)' }] : []),
                         /* เครื่องที่ "เคยเกิดปัญหาที่เลือก" ขึ้นก่อน พร้อมตัวเลขจากพาเรโต้ */
-                        ...mcHit.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, badge: `${Math.round(mcOfHit(m).value).toLocaleString()} ${hitUnit} · ${mcOfHit(m).count} ครั้ง`, badgeColor: 'var(--amber)', group: `⭐ เคยเกิดปัญหานี้ (${modalDaysLabel(modal)})`, keywords: m.machine_name || '' })),
-                        ...mcUnreg.map(h => ({ id: h.machine_no, label: h.machine_no, badge: `${Math.round(h.value).toLocaleString()} ${hitUnit} · ${h.count} ครั้ง`, badgeColor: 'var(--amber)', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง' })),
+                        ...mcHit.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, badge: `${Math.round(mcOfHit(m).value).toLocaleString()} ${hitUnit} · ${mcOfHit(m).count} ${tr("ครั้ง")}`, badgeColor: 'var(--amber)', group: `⭐ ${tr("เคยเกิดปัญหานี้")} (${modalDaysLabel(modal)})`, keywords: m.machine_name || '' })),
+                        ...mcUnreg.map(h => ({ id: h.machine_no, label: h.machine_no, badge: `${Math.round(h.value).toLocaleString()} ${hitUnit} · ${h.count} ${tr("ครั้ง")}`, badgeColor: 'var(--amber)', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนเครื่อง' })),
                         ...mcRest.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: mcHit.length ? 'เครื่องอื่นในไลน์' : 'เครื่องจักร/จุดงานในไลน์', keywords: m.machine_name || '' })),
                         ...mcDie.map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`, group: '🔨 แม่พิมพ์', keywords: m.machine_name || '' })),
                       ]}
                       onChange={({ id }) => setModal({ ...modal, machine_no: id })} />
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('สินค้า')}
-                    <SearchSelect value={modal.mat_no || ''} placeholder={`${ALL.product} — พิมพ์ค้นหา MAT / ชื่อ`} style={{ marginTop: 4 }}
+                    <SearchSelect value={modal.mat_no || ''} placeholder={`${ALL.product} — ${tr("พิมพ์ค้นหา MAT / ชื่อ")}`} style={{ marginTop: 4 }}
                       options={[
                         ...(modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) ? [{ id: modal.mat_no, label: `⚠ ${modal.mat_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)' }] : []),
-                        ...prodHit.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, badge: `${Math.round(matOfHit(p).value).toLocaleString()} ${hitUnit}`, badgeColor: 'var(--amber)', group: `⭐ เคยเสียด้วยปัญหานี้ (${modalDaysLabel(modal)})`, keywords: p.name || '' })),
+                        ...prodHit.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, badge: `${Math.round(matOfHit(p).value).toLocaleString()} ${hitUnit}`, badgeColor: 'var(--amber)', group: `⭐ ${tr("เคยเสียด้วยปัญหานี้")} (${modalDaysLabel(modal)})`, keywords: p.name || '' })),
                         ...prodUnreg.map(mat => ({ id: mat, label: mat, badge: `${Math.round(hitMat.get(mat).value).toLocaleString()} ${hitUnit}`, badgeColor: 'var(--amber)', group: '⚠ มีในบันทึก แต่ไม่มีในทะเบียนสินค้าของไลน์นี้' })),
                         ...prodRest.map(p => ({ id: p.mat_no, label: `${p.mat_no} · ${p.name}`, group: prodHit.length ? 'สินค้าอื่นในไลน์' : 'สินค้าในไลน์', keywords: p.name || '' })),
                       ]}
@@ -1530,12 +1530,12 @@ export default function Improvements() {
                     </div>
                   </label>
                   <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, flex: 1, minWidth: 200, paddingBottom: 4 }}>
-                    เว้นว่างได้ แต่ไม่ตั้งเป้า = ระบบตอบไม่ได้ว่าโปรเจคนี้ควรได้เงินกลับมาเท่าไหร่<br />
-                    ผลจริงเริ่มนับหลังกดยืนยัน <b>{tr('“เริ่มลงมือแก้จริง”')}</b> (ขั้น Do) — ก่อนหน้านั้นการ์ดโชว์เป้าหมาย ไม่ใช่ผลลัพธ์
+                    {tr("เว้นว่างได้ แต่ไม่ตั้งเป้า = ระบบตอบไม่ได้ว่าโปรเจคนี้ควรได้เงินกลับมาเท่าไหร่")}<br />
+                    {tr("ผลจริงเริ่มนับหลังกดยืนยัน")} <b>{tr('“เริ่มลงมือแก้จริง”')}</b> ({tr("ขั้น Do) — ก่อนหน้านั้นการ์ดโชว์เป้าหมาย ไม่ใช่ผลลัพธ์")}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title={tr('จุดตัดเทียบก่อน/หลัง — ถ้ายังไม่ได้ลงมือจริง ระบบจะเลื่อนให้ตอนกดเริ่มขั้น Do')}>{tr('วันเริ่มแก้ไข *')} <span style={{ fontWeight: 600, fontSize: 11 }}>(= จุดตัดเทียบก่อน/หลัง)</span>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title={tr('จุดตัดเทียบก่อน/หลัง — ถ้ายังไม่ได้ลงมือจริง ระบบจะเลื่อนให้ตอนกดเริ่มขั้น Do')}>{tr('วันเริ่มแก้ไข *')} <span style={{ fontWeight: 600, fontSize: 11 }}>(= {tr("จุดตัดเทียบก่อน/หลัง")})</span>
                     {/* width กัน index.css input{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
                     <input type="date" value={modal.start_date} onChange={e => setModal({ ...modal, start_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
                   </label>
@@ -1575,16 +1575,16 @@ export default function Improvements() {
                 </div>
               </div>
               {/* ขวา: Pareto ปัญหา Top — คลิกเลือกเป็นเป้า */}
-              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, alignSelf: 'start' }}>
+              <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, alignSelf: 'start' }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
-                  ปัญหาที่กระทบมากสุด · {modal.problem_source === 'defect' ? 'ของเสีย' : modal.problem_source === 'mtn' ? 'ใบซ่อม MTN' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
+                  {tr("ปัญหาที่กระทบมากสุด")} · {modal.problem_source === 'defect' ? tr("ของเสีย") : modal.problem_source === 'mtn' ? tr("ใบซ่อม MTN") : 'Downtime'} · {modal.line_name || tr("เลือกไลน์ก่อน")}
                 </div>
                 {/* ⚠️ เดิมหัวข้อเขียนว่า "พาเรโต้" แต่ของจริงเป็น **ลิสต์ตัวเลือก** (กดเพื่อตั้งเป็นเป้าโปรเจค)
                     ไม่มีเส้นสะสม/เส้น 80% จึงไม่ใช่ Pareto chart — เรียกให้ตรงกับสิ่งที่มันเป็น แล้วเติม
                     "แก้ N อันแรก = กี่ %" ซึ่งเป็นสิ่งที่คนอยากได้จาก Pareto จริงๆ ตอนเลือกเป้า (2026-09-15)
                     กราฟพาเรโตเต็มรูปแบบอยู่ที่ /oee-analytics · /dept-dashboard · /mtn-analysis (ParetoAbcChart) */}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-                  ย้อนหลัง {modal.baseline_days} วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค
+                  {tr("ย้อนหลัง")} {modal.baseline_days} {tr("วัน — คลิกปัญหาเพื่อตั้งเป็นเป้าโปรเจค")}
                   {paretoLead && <> · <b style={{ color: 'var(--accent)' }}>{paretoLead}</b></>}
                 </div>
                 {pareto.loading ? (
@@ -1596,7 +1596,7 @@ export default function Improvements() {
                     {pareto.rows.map((row, i) => {
                       const max = Math.max(...pareto.rows.map(r => r.value)) || 1;
                       const isMtn = modal.problem_source === 'mtn';
-                      const tn = isMtn ? row.label : (typeOpts.find(t => t.id === row.type_id)?.name_th || 'ไม่ระบุประเภท');
+                      const tn = isMtn ? row.label : (typeOpts.find(t => t.id === row.type_id)?.name_th || tr("ไม่ระบุประเภท"));
                       const selected = isMtn
                         ? (modal.problem_label || '') === (row.label === 'ทุกอาการ' ? '' : row.label) && sameMc(modal.machine_no, row.machine_no)
                         : modal.problem_type_id === (row.type_id || '') && (modal.problem_source === 'downtime' ? sameMc(modal.machine_no, row.machine_no) : (modal.mat_no || '') === row.mat_no);
@@ -1611,7 +1611,7 @@ export default function Improvements() {
                             ...(isMtn
                               ? { problem_label: row.label === 'ทุกอาการ' ? '' : row.label, problem_type_id: '', machine_no: mc }
                               : { problem_type_id: row.type_id || '', problem_label: tn, ...(modal.problem_source === 'downtime' ? { machine_no: mc } : { mat_no: row.mat_no || '' }) }),
-                            title: modal.title || (isMtn ? `ลดใบซ่อม ${tn} ${mc}`.trim() : `ลด${modal.problem_source === 'defect' ? 'ของเสีย' : 'ดาวไทม์'} ${tn} ${(modal.problem_source === 'downtime' ? mc : row.mat_no) || ''}`.trim()),
+                            title: modal.title || (isMtn ? `${tr("ลดใบซ่อม")} ${tn} ${mc}`.trim() : `${tr("ลด")}${modal.problem_source === 'defect' ? tr('ของเสีย') : tr('ดาวไทม์')} ${tn} ${(modal.problem_source === 'downtime' ? mc : row.mat_no) || ''}`.trim()),
                           });
                         }} style={{
                           textAlign: 'left', padding: '6px 8px', borderRadius: 7, cursor: 'pointer',
@@ -1624,7 +1624,7 @@ export default function Improvements() {
                               {i + 1}. {tn}{row.machine_no ? ` · ⚙️${row.machine_no}` : ''}{row.mat_no ? ` · 📦${row.mat_no}` : ''}
                               {row.planned && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'rgba(148,163,184,0.15)', borderRadius: 'var(--r-xs)', padding: '0 5px' }}>{tr('ในแผน')}</span>}
                             </span>
-                            <span style={{ color: barColor, flexShrink: 0 }}>{modal.problem_source === 'mtn' ? `${row.value} ใบ · ${row.mins} นาที` : `${row.value.toFixed(0)} ${modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · ${row.count} ครั้ง`}</span>
+                            <span style={{ color: barColor, flexShrink: 0 }}>{modal.problem_source === 'mtn' ? `${row.value} ${tr("ใบ")} · ${row.mins} ${tr("นาที")}` : `${row.value.toFixed(0)} ${modal.problem_source === 'defect' ? tr('ชิ้น') : tr('นาที')} · ${row.count} ${tr("ครั้ง")}`}</span>
                           </div>
                           <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', marginTop: 3, overflow: 'hidden' }}>
                             <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: barColor, borderRadius: 'var(--r-xs)' }} />
@@ -1661,10 +1661,9 @@ export default function Improvements() {
       {doModal && (
         <div className="overlay">
           <div className="modal">
-            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>เริ่มลงมือแก้ — "{doModal.imp.title}"</h3>
+            <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{tr("เริ่มลงมือแก้")} — "{doModal.imp.title}"</h3>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.55 }}>
-              วันเริ่มแก้คือ<b>{tr('จุดตัดเทียบก่อน/หลัง')}</b> — ตั้งเป็นวันที่ลงมือจริง ตัวเลข % ลด/Cost Saving ถึงจะแม่น
-              (ปล่อยเป็นวันเปิดโปรเจคทั้งที่ยังวิเคราะห์อยู่ = ช่วง "หลังแก้" ปนวันที่ยังไม่ได้แก้)
+              {tr("วันเริ่มแก้คือ")}<b>{tr('จุดตัดเทียบก่อน/หลัง')}</b> — {tr("ตั้งเป็นวันที่ลงมือจริง ตัวเลข % ลด/Cost Saving ถึงจะแม่น (ปล่อยเป็นวันเปิดโปรเจคทั้งที่ยังวิเคราะห์อยู่ = ช่วง \"หลังแก้\" ปนวันที่ยังไม่ได้แก้")})
             </div>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('การแก้ไขที่ลงมือทำ (Action) *')}
               <textarea value={doModal.action} onChange={e => setDoModal({ ...doModal, action: e.target.value })} rows={3}
@@ -1689,7 +1688,7 @@ export default function Improvements() {
         <div className="overlay" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
           <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720, maxHeight: '86vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>เอกสาร PE — "{peModal.title}"</h3>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{tr("เอกสาร")} PE — "{peModal.title}"</h3>
               <button onClick={() => setPeModal(null)} style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
             </div>
             <PeChangeRequests
@@ -1721,7 +1720,7 @@ export default function Improvements() {
         const MODE_NOTE = {
           nodata:   { c: 'var(--muted)', t: 'ยังไม่มีกะที่ปิดแล้วในช่วงเทียบ — ช่องผลลัพธ์ในใบจะเขียนว่า "วัดไม่ได้" ไม่ใช่เลข 0' },
           baseline: { c: 'var(--amber)', t: 'ยังไม่ยืนยัน "เริ่มลงมือแก้จริง" — ใบจะออกเป็น A3 ช่วงวางแผน (ระดับปัจจุบัน + เป้าหมาย) ยังไม่มีคำว่าประหยัดแล้ว' },
-          waiting:  { c: 'var(--amber)', t: `หลังแก้มีข้อมูล ${r?.afterDays || 0}/${MIN_AFTER_DAYS} วันผลิต — ใบจะเขียนว่ารอผล และตัวเงินเป็น "มูลค่าปัญหาก่อนแก้"` },
+          waiting:  { c: 'var(--amber)', t: `${tr("หลังแก้มีข้อมูล")} ${r?.afterDays || 0}/${MIN_AFTER_DAYS} ${tr("วันผลิต — ใบจะเขียนว่ารอผล และตัวเงินเป็น \"มูลค่าปัญหาก่อนแก้")}"` },
           confirmed:{ c: 'var(--green)', t: 'ผลจริงยืนยันแล้ว — ใบจะออก % ที่ลดได้ + เงินที่ประหยัดจริง' },
         }[mode];
         const field = (key, label, ph, rows = 3) => (
@@ -1735,10 +1734,10 @@ export default function Improvements() {
           <div className="overlay">
             <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(900px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>ใบ A3 Report — "{a3Modal.imp.title}"</h3>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{tr("ใบ")} A3 Report — "{a3Modal.imp.title}"</h3>
                 <button onClick={() => setA3Modal(null)} style={{ border: 'none', background: 'transparent', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
               </div>
-              <ReadOnlyNote show={!canManage} role={role} what="แก้เนื้อหาใบ A3" permKey="improvements:manage" compact
+              <ReadOnlyNote show={!canManage} role={role} what={tr("แก้เนื้อหาใบ A3")} permKey="improvements:manage" compact
                 hint={tr('ดูและพิมพ์ใบได้ตามปกติ')} />
 
 
@@ -1754,34 +1753,34 @@ export default function Improvements() {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
-                ใบพิมพ์ 8 ช่อง (A3 แนวนอน จบใน 1 หน้า): {secs.map(s => (
+                {tr("ใบพิมพ์ 8 ช่อง (A3 แนวนอน จบใน 1 หน้า")}): {secs.map(s => (
                   <span key={s.key} style={{ marginRight: 6, whiteSpace: 'nowrap' }}>
                     <b style={{ color: s.meta.color }}>{s.no}. {s.title}</b> <span style={{ opacity: 0.7 }}>({s.meta.label})</span>
                   </span>
                 ))}
-                <br />{tr('ช่อง')} {secs.find(s => s.key === 'current').no} · {secs.find(s => s.key === 'target').no} · {secs.find(s => s.key === 'plan').no} · {secs.find(s => s.key === 'result').no} ระบบเติมจากข้อมูลจริงให้เอง — ด้านล่างกรอกเฉพาะส่วนที่ระบบไม่รู้
-                {' '}· แผนงานเก็บเป็น PDCA เสมอ โหมด DMAIC เป็นการแสดงเทียบ (ขั้น Plan = Define–Measure–Analyze)
+                <br />{tr('ช่อง')} {secs.find(s => s.key === 'current').no} · {secs.find(s => s.key === 'target').no} · {secs.find(s => s.key === 'plan').no} · {secs.find(s => s.key === 'result').no} {tr("ระบบเติมจากข้อมูลจริงให้เอง — ด้านล่างกรอกเฉพาะส่วนที่ระบบไม่รู้")}
+                {' '}· {tr("แผนงานเก็บเป็น PDCA เสมอ โหมด DMAIC เป็นการแสดงเทียบ (ขั้น")} Plan = Define–Measure–Analyze)
               </div>
 
               {/* ใบนี้จะพูดได้แค่ไหน — บอกก่อนพิมพ์ ไม่ใช่ให้ไปเซอร์ไพรส์บนกระดาษ */}
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: MODE_NOTE.c, background: 'var(--bg3)', border: `1px solid ${tint(MODE_NOTE.c, 'line')}`, borderRadius: 'var(--r-md)', padding: '7px 10px', marginBottom: 12, lineHeight: 1.55 }}>
-                {r ? `สถานะข้อมูลของใบนี้: ${MODE_NOTE.t}` : 'กำลังคำนวณผลก่อน/หลังของโปรเจคนี้ — รอสักครู่ก่อนกดพิมพ์'}
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: MODE_NOTE.c, background: 'var(--bg3-surf)', border: `1px solid ${tint(MODE_NOTE.c, 'line')}`, borderRadius: 'var(--r-md)', padding: '7px 10px', marginBottom: 12, lineHeight: 1.55 }}>
+                {r ? `${tr("สถานะข้อมูลของใบนี้")}: ${MODE_NOTE.t}` : tr("กำลังคำนวณผลก่อน/หลังของโปรเจคนี้ — รอสักครู่ก่อนกดพิมพ์")}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 12, alignContent: 'start' }}>
                 <div style={{ gridColumn: '1 / -1' }}>
-                  {field('background', `${secs.find(s => s.key === 'background').no}. ความเป็นมา / ทำไมต้องทำเรื่องนี้`, 'กระทบใคร · เกี่ยวกับนโยบาย/เป้าฝ่ายอะไร · ที่ผ่านมาเคยแก้อะไรไปแล้วบ้าง')}
+                  {field('background', `${secs.find(s => s.key === 'background').no}. ${tr("ความเป็นมา / ทำไมต้องทำเรื่องนี้")}`, 'กระทบใคร · เกี่ยวกับนโยบาย/เป้าฝ่ายอะไร · ที่ผ่านมาเคยแก้อะไรไปแล้วบ้าง')}
                 </div>
-                {field('root_cause', `${secs.find(s => s.key === 'rootCause').no}. วิเคราะห์สาเหตุราก (5 Why / ก้างปลา)`, 'ทำไม → ทำไม → ทำไม … (ระบบไม่เดาสาเหตุให้ — รู้แค่ว่าเกิดอะไร ไม่รู้ว่าทำไม)', 4)}
-                {field('countermeasures', `${secs.find(s => s.key === 'countermeasure').no}. รายละเอียดมาตรการแก้ไข (เพิ่มจากช่อง "การแก้ไข")`, 'แก้ที่จุดไหน ด้วยวิธีอะไร ใครทำ ใช้อะไรบ้าง', 4)}
-                {field('standardize', `${secs.find(s => s.key === 'standardize').no}. มาตรฐาน & ขยายผล (Yokoten)`, 'แก้ WI/OPL ตัวไหน · อบรมใคร · ขยายไปไลน์/เครื่อง/พาร์ทไหนบ้าง (ไม่ทำเป็นมาตรฐาน = มีโอกาสกลับมาเกิดซ้ำ)', 3)}
+                {field('root_cause', `${secs.find(s => s.key === 'rootCause').no}. ${tr("วิเคราะห์สาเหตุราก (5 Why / ก้างปลา")})`, 'ทำไม → ทำไม → ทำไม … (ระบบไม่เดาสาเหตุให้ — รู้แค่ว่าเกิดอะไร ไม่รู้ว่าทำไม)', 4)}
+                {field('countermeasures', `${secs.find(s => s.key === 'countermeasure').no}. ${tr("รายละเอียดมาตรการแก้ไข (เพิ่มจากช่อง \"การแก้ไข")}")`, 'แก้ที่จุดไหน ด้วยวิธีอะไร ใครทำ ใช้อะไรบ้าง', 4)}
+                {field('standardize', `${secs.find(s => s.key === 'standardize').no}. ${tr("มาตรฐาน & ขยายผล")} (Yokoten)`, 'แก้ WI/OPL ตัวไหน · อบรมใคร · ขยายไปไลน์/เครื่อง/พาร์ทไหนบ้าง (ไม่ทำเป็นมาตรฐาน = มีโอกาสกลับมาเกิดซ้ำ)', 3)}
                 {field('team', 'ทีมงาน (แสดงหัวใบ)', 'ชื่อทีม/สมาชิกที่ร่วมโปรเจค', 2)}
               </div>
 
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
-                {a3Modal.loadingPe ? 'กำลังดึงคำขอแก้เอกสาร PE ของโปรเจคนี้…'
-                  : a3Modal.peErr ? `⚠ ดึงคำขอแก้เอกสาร PE ไม่ได้ (${a3Modal.peErr}) — ใบจะพิมพ์ได้แต่ช่องมาตรฐานจะไม่มีรายการ PE`
-                  : `📐 คำขอแก้เอกสาร PE ที่จะพิมพ์ลงใบ: ${a3Modal.peReqs.length} รายการ`}
+                {a3Modal.loadingPe ? tr("กำลังดึงคำขอแก้เอกสาร PE ของโปรเจคนี้…")
+                  : a3Modal.peErr ? `⚠ ${tr("ดึงคำขอแก้เอกสาร PE ไม่ได้")} (${a3Modal.peErr}) — ${tr("ใบจะพิมพ์ได้แต่ช่องมาตรฐานจะไม่มีรายการ")} PE`
+                  : `📐 ${tr("คำขอแก้เอกสาร PE ที่จะพิมพ์ลงใบ")}: ${a3Modal.peReqs.length} ${tr("รายการ")}`}
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
@@ -1803,14 +1802,14 @@ export default function Improvements() {
       {closeModal && (
         <div className="overlay">
           <div className="modal">
-            <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>✅ ปิดโปรเจค "{closeModal.imp.title}"</h3>
+            <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>✅ {tr("ปิดโปรเจค")} "{closeModal.imp.title}"</h3>
             <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('สรุปผลการปรับปรุง')}
               <textarea value={closeModal.note} onChange={e => setCloseModal({ ...closeModal, note: e.target.value })} rows={3} placeholder={tr('เช่น ดาวไทม์ลดลง 70% หลังเปลี่ยน jig ใหม่')} style={{ marginTop: 4 }} />
             </label>
             {/* ── soft gate ขั้น Act (2026-08-19): การแก้วิธีการ/จิ๊ก/พารามิเตอร์ = process change ที่ IATF
                 ต้องทบทวน PFMEA/Control Plan — บังคับให้ "ตอบ" ก่อนปิด แต่ไม่บังคับให้แก้เอกสารเสร็จ
                 (หลักเดียวกับด่านปิด D8 — แข็งเกินไปคนจะเลี่ยงด้วยการไม่เปิดโปรเจคเลย ซึ่งแย่กว่า) ── */}
-            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3-surf)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tr('การแก้ไขนี้กระทบเอกสาร PE (PFMEA / Control Plan) ไหม?')}</div>
               <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
                 {[['yes', 'กระทบ — เสนอคำขอแก้เข้ากล่อง PE'], ['no', 'ไม่กระทบ']].map(([v, l]) => (

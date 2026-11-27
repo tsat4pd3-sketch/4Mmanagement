@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* ══ 🗣 statusLine — "ประโยคสรุปสถานะ" ใต้ชื่อหน้า dashboard (2026-11-18 · user: ก๊อปจาก ERP ที่เห็น) ══════
    ต้นแบบ: "Good afternoon, Noor. 5 operations on the floor, 2 shipments on the road … 1 work order needs a look."
    = เล่าสถานะเป็นภาษาคน แล้วชี้ **สิ่งเดียวที่ต้องดูก่อน** — ไม่ใช่คำอธิบายหน้า
@@ -19,7 +20,7 @@ export function greetingWord(now) {
   const dt = now instanceof Date ? now : new Date(now);
   if (Number.isNaN(dt.getTime())) return 'สวัสดี';
   const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: 'numeric', hour12: false }).format(dt)) % 24;
-  if (h >= 5 && h < 12) return 'สวัสดีตอนเช้า';
+  if (h >= 5 && h < 12) return tr("สวัสดีตอนเช้า");
   if (h >= 12 && h < 17) return 'สวัสดีตอนบ่าย';
   if (h >= 17 && h < 21) return 'สวัสดีตอนเย็น';
   return 'สวัสดี';

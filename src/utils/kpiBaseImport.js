@@ -8,6 +8,7 @@
    · ตัวเลขใน PL Summary เป็น "ล้านบาท" โดยไม่เขียนหน่วย ⇒ `magnitudeWarning()` เตือนเมื่อตัวเงินเล็กผิดสังเกต (เตือน ไม่เดาแทน)
    · 1.Sale (เดือนเป็นแถว · ตัวเลขไม่ตรง PL) และ 8.Inventory Balance (รายคลัง P4xx · ต้องผูกคลัง→หน่วย) ยังไม่อ่าน — รอไฟล์จริง */
 import { KPI_BASE_VARS } from './kpiSetup.js';
+import { dateLocale } from './i18n.js';
 
 /* คำที่บัญชีมักใช้เรียกแต่ละตัวแปร (ไทย/อังกฤษ · ตัวพิมพ์ไม่สน · เว้นวรรค/ขีดไม่สน) — ลำดับสำคัญ: ตัวที่เจาะจงกว่าอยู่ก่อน */
 export const VAR_SYNONYMS = {
@@ -187,7 +188,7 @@ export function magnitudeWarning(values = {}, multiplier = 1) {
   }
   if (maxV == null || maxV >= 100_000) return '';
   const label = KPI_BASE_VARS.find(v => v.key === key)?.label || key;
-  return `⚠ ${label} สูงสุดแค่ ${maxV.toLocaleString('th-TH')} บาท — ไฟล์บัญชีมักเป็น "ล้านบาท" โดยไม่เขียนหน่วย เช็คช่อง "หน่วยเงินในไฟล์" ก่อนนำเข้า`;
+  return `⚠ ${label} สูงสุดแค่ ${maxV.toLocaleString(dateLocale())} บาท — ไฟล์บัญชีมักเป็น "ล้านบาท" โดยไม่เขียนหน่วย เช็คช่อง "หน่วยเงินในไฟล์" ก่อนนำเข้า`;
 }
 
 /** ป้ายของแถว = เซลล์ข้อความแรกที่ไม่ว่าง (ก่อนถึงคอลัมน์ตัวเลข) */

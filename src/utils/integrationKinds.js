@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* 🔌 ศูนย์เชื่อมต่อ — ทะเบียน "ชนิดข้อมูล" ที่ต้นทาง (Node-RED ฯลฯ) ส่งเข้า ESM ได้ (2026-11-11)
    📄 docs/modules/integration-hub.md
 
@@ -36,7 +37,7 @@ export const kindOf = (key) => INTEGRATION_KINDS.find(k => k.key === key) || nul
 /** ชนิดที่ไม่รู้จัก ไม่ทิ้งเงียบ — คืนป้าย "ไม่รู้จัก" ให้จอเขียน */
 export function kindLabel(key) {
   const k = kindOf(key);
-  return k ? `${k.icon} ${k.label}` : `❓ ${key} (ไม่รู้จัก)`;
+  return k ? `${k.icon} ${tr(k.label)}` : `❓ ${key} ${tr('(ไม่รู้จัก)')}`;
 }
 
 /** สถานะต้นทางจากเวลารับล่าสุด — 'paused' | 'never' | 'online' | 'stale'

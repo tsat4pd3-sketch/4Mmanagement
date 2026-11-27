@@ -16,7 +16,7 @@ import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🗄️ โครงสร้างฐานข้อมูล (Data Map) — /schema ═══════════════════════════════════════
@@ -55,7 +55,7 @@ const PKEYS = ['main', 'dr'];
 
 const fmtRows = (n) => {
   const v = Number(n) || 0;
-  if (v >= 1_000_000) return `~${(v / 1_000_000).toFixed(1)} ล้าน`;
+  if (v >= 1_000_000) return `~${(v / 1_000_000).toFixed(1)} ${tr("ล้าน")}`;
   if (v >= 1000) return `~${Math.round(v / 1000)},000`;
   return `~${v}`;
 };
@@ -246,28 +246,27 @@ export default function SchemaMap() {
     <Page>
       <PageHeader
         title={tr('โครงสร้างฐานข้อมูล')} icon="🗄️"
-        sub={loading ? 'กำลังอ่านโครงสร้างจากฐานข้อมูล…'
-          : `${total} ตาราง/วิว · ${totalFk} เส้นความสัมพันธ์ (FK) · ${USAGE.pages?.length || 0} หน้าในระบบ`}
+        sub={loading ? tr("กำลังอ่านโครงสร้างจากฐานข้อมูล…")
+          : `${total} ${tr("ตาราง/วิว")} · ${totalFk} ${tr("เส้นความสัมพันธ์")} (FK) · ${USAGE.pages?.length || 0} ${tr("หน้าในระบบ")}`}
         actions={<button type="button" className="pg-btn" onClick={reload}>{tr('อ่านใหม่')}</button>}
         tabs={[
-          { key: 'tables', label: 'ตาราง / คีย์ / ความสัมพันธ์' },
-          { key: 'pages', label: 'หน้าไหนใช้ตารางไหน' },
-          { key: 'audit', label: 'ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
+          { key: 'tables', label: tr("ตาราง / คีย์ / ความสัมพันธ์") },
+          { key: 'pages', label: tr("หน้าไหนใช้ตารางไหน") },
+          { key: 'audit', label: tr("ตรวจสุขภาพโครงสร้าง"), badge: auditBadge || undefined },
         ]}
         tab={tab} onTab={setTab}
       />
 
       <div style={{ ...card(), marginBottom: 12, fontSize: 12.5, lineHeight: 1.65 }}>
         <InfoMore id="schema_intro" lead={<>
-          🐛 <b>{tr('เจอบัคแล้วอยากแจ้งให้ตรงจุด')}</b> — หาตารางที่เกี่ยว กดดูรายละเอียด แล้วกดปุ่ม
-          <b> {tr('“🐛 แจ้งบัคเรื่องตารางนี้”')}</b> ระบบจะใส่ชื่อตาราง · ฐานข้อมูล · PK · FK · หน้าที่ใช้ ไปให้เอง
+          🐛 <b>{tr('เจอบัคแล้วอยากแจ้งให้ตรงจุด')}</b> — {tr("หาตารางที่เกี่ยว กดดูรายละเอียด แล้วกดปุ่ม")}
+          <b> {tr('“🐛 แจ้งบัคเรื่องตารางนี้”')}</b> {tr("ระบบจะใส่ชื่อตาราง · ฐานข้อมูล · PK · FK · หน้าที่ใช้ ไปให้เอง")}
         </>}>
           <div style={{ marginTop: 6, color: 'var(--text2)' }}>
             • <b>{tr('ระบบนี้มีฐานข้อมูล 2 ตัวแยกกัน')}</b> — {tr(PROJ.main.label)} {tr('(จอ Supabase เขียนว่า “')}{PROJ.main.screen}”)
-            และ {PROJ.dr.label} (“{PROJ.dr.screen}”) · ชื่อตารางคล้ายกันหลายตัว เวลาแจ้งให้บอกฝั่งด้วยเสมอ
-            <br />• ตัวเลขแถว = <b>{tr('ค่าประมาณจากสถิติของฐาน')}</b> (ไม่ได้นับจริงทุกครั้ง) ใช้ดูขนาดคร่าวๆ เท่านั้น
-            <br />{tr('• “หน้าไหนใช้ตารางไหน” มาจาก')}<b>{tr('การสแกนซอร์สตอน build')}</b> — จับเฉพาะที่โค้ดเขียนชื่อตารางตรงๆ
-            ถ้าหน้าไหนเรียกผ่านฟังก์ชันกลางที่ส่งชื่อตารางเป็นตัวแปร จะไม่ขึ้นในลิสต์นี้
+            {tr("และ")} {tr(PROJ.dr.label)} (“{PROJ.dr.screen}”) · {tr("ชื่อตารางคล้ายกันหลายตัว เวลาแจ้งให้บอกฝั่งด้วยเสมอ")}
+            <br />• {tr("ตัวเลขแถว")} = <b>{tr('ค่าประมาณจากสถิติของฐาน')}</b> ({tr("ไม่ได้นับจริงทุกครั้ง) ใช้ดูขนาดคร่าวๆ เท่านั้น")}
+            <br />{tr('• “หน้าไหนใช้ตารางไหน” มาจาก')}<b>{tr('การสแกนซอร์สตอน build')}</b> — {tr("จับเฉพาะที่โค้ดเขียนชื่อตารางตรงๆ ถ้าหน้าไหนเรียกผ่านฟังก์ชันกลางที่ส่งชื่อตารางเป็นตัวแปร จะไม่ขึ้นในลิสต์นี้")}
             <br />{tr('• ข้อมูลโครงสร้าง cache ไว้ 12 ชม. — เพิ่ง apply migration ให้กด')} <b>{tr('อ่านใหม่')}</b>
           </div>
         </InfoMore>
@@ -275,10 +274,9 @@ export default function SchemaMap() {
 
       {!!failed.length && (
         <div style={{ ...card(), marginBottom: 12, borderColor: 'var(--red-line)', background: 'var(--red-dim)', fontSize: 12.5, lineHeight: 1.6 }}>
-          ⚠️ <b>{tr('อ่านโครงสร้างของ')} {failed.map(k => PROJ[k].label).join(' และ ')} {tr('ไม่ได้')}</b> —
-          ส่วนใหญ่แปลว่ายังไม่ได้ apply migration <code>20260922_schema_catalog_rpc_{failed[0]}.sql</code>
-          (ฟังก์ชัน <code>esm_schema_overview()</code>) หรือสิทธิ์ execute ยังไม่ถูก grant ·
-          ตารางฝั่งที่เหลือยังดูได้ตามปกติ
+          ⚠️ <b>{tr('อ่านโครงสร้างของ')} {failed.map(k => tr(PROJ[k].label)).join(' และ ')} {tr('ไม่ได้')}</b> —
+          {tr("ส่วนใหญ่แปลว่ายังไม่ได้")} apply migration <code>20260922_schema_catalog_rpc_{failed[0]}.sql</code>
+          ({tr("ฟังก์ชัน")} <code>esm_schema_overview()</code>) {tr("หรือสิทธิ์ execute ยังไม่ถูก grant · ตารางฝั่งที่เหลือยังดูได้ตามปกติ")}
         </div>
       )}
 
@@ -287,14 +285,14 @@ export default function SchemaMap() {
           {/* ── ลิสต์ตาราง ─────────────────────────────────────────────── */}
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
-              <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
+              <SearchInput value={q} onChange={setQ} fields={tr("ชื่อตาราง (เช่น downtime, employee)")} />
               <TabBar size="sm" value={side} onChange={setSide}
-                tabs={[{ key: 'all', label: allOf('ฐานข้อมูล') }, ...PKEYS.map(k => ({ key: k, label: PROJ[k].label, badge: over[k]?.tables?.length || 0 }))]} />
+                tabs={[{ key: 'all', label: allOf('ฐานข้อมูล') }, ...PKEYS.map(k => ({ key: k, label: tr(PROJ[k].label), badge: over[k]?.tables?.length || 0 }))]} />
 
               {loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}
               {!loading && !rows.length && (
                 <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>
-                  ไม่พบตารางที่ตรงกับ “{q}” — ลองคำสั้นลง หรือดูแท็บ 🧭 หน้าไหนใช้ตารางไหน
+                  {tr("ไม่พบตารางที่ตรงกับ")} “{q}” — {tr("ลองคำสั้นลง หรือดูแท็บ 🧭 หน้าไหนใช้ตารางไหน")}
                 </div>
               )}
 
@@ -325,7 +323,7 @@ export default function SchemaMap() {
                                 {r.t}{(r.k === 'v' || r.k === 'm') && <span style={{ color: 'var(--muted)' }}> {tr('(วิว)')}</span>}
                               </span>
                               <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--muted)' }}>
-                                {r.cols} {tr('คอลัมน์')}{used ? ` · ${used} หน้า` : ''}
+                                {r.cols} {tr('คอลัมน์')}{used ? ` · ${used} ${tr("หน้า")}` : ''}
                               </span>
                             </button>
                           );
@@ -343,7 +341,7 @@ export default function SchemaMap() {
             <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
               {!sel && (
                 <div style={{ ...card(), fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  เลือกตารางทางซ้ายเพื่อดู <b>{tr('คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger')}</b>
+                  {tr("เลือกตารางทางซ้ายเพื่อดู")} <b>{tr('คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger')}</b>
                   <div style={{ marginTop: 8 }}>
                     {PKEYS.map(k => (
                       <div key={k} style={{ marginTop: 6 }}>
@@ -415,17 +413,17 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
             <button onClick={() => onCopy(summary(), 'คัดลอกข้อมูลตารางแล้ว — วางในแชท/ใบแจ้งได้เลย')} style={btn()}>{tr('คัดลอกข้อมูลตาราง')}</button>
             <button onClick={() => onCopy(url, 'คัดลอกลิงก์แล้ว')} style={btn()}>{tr('คัดลอกลิงก์')}</button>
             <button onClick={() => openFeedback(bugReportText({
-              table: sel.table, projectLabel: `${P.label} (${P.screen})`, projectId: P.id,
+              table: sel.table, projectLabel: `${tr(P.label)} (${P.screen})`, projectId: P.id,
               detail: d, pages, url,
-            }) + (userName ? `ผู้แจ้ง: ${userName}\n` : ''))} style={{ ...btn(), background: 'var(--red-dim)', borderColor: 'var(--red-line)' }}>
-              แจ้งบัคเรื่องตารางนี้
+            }) + (userName ? `${tr("ผู้แจ้ง")}: ${userName}\n` : ''))} style={{ ...btn(), background: 'var(--red-dim)', borderColor: 'var(--red-line)' }}>
+              {tr("แจ้งบัคเรื่องตารางนี้")}
             </button>
           </div>
         </div>
 
         {err && (
           <div style={{ fontSize: 12.5, color: '#fca5a5' }}>
-            ⚠️ {err} — ถ้าเพิ่งเพิ่มตารางใหม่ ลองกด “🔄 อ่านใหม่” ด้านบน
+            ⚠️ {err} — {tr("ถ้าเพิ่งเพิ่มตารางใหม่ ลองกด “🔄 อ่านใหม่” ด้านบน")}
           </div>
         )}
         {!detail && !err && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังโหลดรายละเอียด…')}</div>}
@@ -490,8 +488,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  — ไม่พบหน้าที่เรียกชื่อตารางนี้ตรงๆ (อาจถูกใช้ผ่าน Edge Function / trigger ฝั่งฐานข้อมูล
-                  หรือเรียกด้วยชื่อตัวแปร ซึ่งตัวสแกนไม่เห็น)
+                  — {tr("ไม่พบหน้าที่เรียกชื่อตารางนี้ตรงๆ (อาจถูกใช้ผ่าน Edge Function / trigger ฝั่งฐานข้อมูล หรือเรียกด้วยชื่อตัวแปร ซึ่งตัวสแกนไม่เห็น")})
                 </div>
               )}
             </div>
@@ -505,7 +502,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>
-                {['คอลัมน์', 'ชนิดข้อมูล', 'ว่างได้?', 'คีย์', 'ค่าเริ่มต้น / หมายเหตุ'].map((h, i) => (
+                {[tr("คอลัมน์"), tr("ชนิดข้อมูล"), tr("ว่างได้?"), tr("คีย์"), tr("ค่าเริ่มต้น / หมายเหตุ")].map((h, i) => (
                   <th key={h} style={{ textAlign: 'left', padding: '5px 7px', borderBottom: '1px solid var(--border2)', color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap', width: i === 4 ? '35%' : undefined }}>{tr(h)}</th>
                 ))}
               </tr>
@@ -543,11 +540,11 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
         <div style={{ ...card(), fontSize: 12, lineHeight: 1.7 }}>
           <InfoMore id="schema_tech" lead={<span style={subTitle()}>{tr('รายละเอียดเชิงเทคนิค (index · RLS policy · trigger)')}</span>}>
             <div style={{ marginTop: 6 }}>
-              <div style={{ color: 'var(--muted)' }}>RLS policy ({(d.policies || []).length}) — ใครทำอะไรกับตารางนี้ได้:</div>
+              <div style={{ color: 'var(--muted)' }}>RLS policy ({(d.policies || []).length}) — {tr("ใครทำอะไรกับตารางนี้ได้")}:</div>
               {(d.policies || []).length ? d.policies.map(p => (
                 <div key={p.name}>· <b>{p.cmd}</b> — {(p.roles || []).join(', ')} <span style={{ color: 'var(--muted)' }}>({p.name})</span></div>
               )) : <div style={{ color: d.rls ? 'var(--amber)' : 'var(--muted)' }}>
-                {d.rls ? '— เปิด RLS แต่ไม่มี policy เลย = อ่าน/เขียนไม่ได้ทั้งตาราง' : '— ไม่มี (RLS ปิดอยู่)'}
+                {d.rls ? tr("— เปิด RLS แต่ไม่มี policy เลย = อ่าน/เขียนไม่ได้ทั้งตาราง") : tr("— ไม่มี (RLS ปิดอยู่)")}
               </div>}
 
               <div style={{ color: 'var(--muted)', marginTop: 7 }}>Trigger ({(d.triggers || []).length}):</div>
@@ -590,10 +587,10 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
   return (
     <div style={{ display: 'grid', gap: 10 }}>
       <div style={{ ...card(), display: 'grid', gap: 8 }}>
-        <SearchInput value={q} onChange={setQ} fields="ชื่อหน้า / path / ชื่อตาราง" />
+        <SearchInput value={q} onChange={setQ} fields={tr("ชื่อหน้า / path / ชื่อตาราง")} />
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-          แสดง {pages.length} {tr('หน้า จากทั้งหมด')} {(USAGE.pages || []).length} ·
-          สแกนซอร์สเมื่อ {new Date(USAGE.builtAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} (ตอน build)
+          {tr("แสดง")} {pages.length} {tr('หน้า จากทั้งหมด')} {(USAGE.pages || []).length} ·
+          {tr("สแกนซอร์สเมื่อ")} {new Date(USAGE.builtAt).toLocaleString(dateLocale(), { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} ({tr("ตอน")} build)
           {!!ghosts.size && <> · <span style={{ color: 'var(--amber)' }}>{tr('พบชื่อตารางในโค้ด')} {ghosts.size} {tr('ตัวที่ไม่มีอยู่จริงในฐานข้อมูล (ดูท้ายหน้า)')}</span></>}
         </div>
       </div>
@@ -626,7 +623,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
                       const k = sideOf(t, guess);
                       return (
                         <button key={`${guess}-${t}`} onClick={() => k && onPick(k, t)} disabled={!k}
-                          title={k ? `${PROJ[k].label} · กดเพื่อดูโครงสร้าง` : 'ไม่พบตารางนี้ในฐานข้อมูล'}
+                          title={k ? `${tr(PROJ[k].label)} · ${tr("กดเพื่อดูโครงสร้าง")}` : tr("ไม่พบตารางนี้ในฐานข้อมูล")}
                           style={{ ...chip(false), opacity: k ? 1 : 0.55, cursor: k ? 'pointer' : 'default' }}>
                           {k === 'main' ? '🗄️' : k === 'dr' ? '🏭' : '❔'} {t}
                         </button>
@@ -649,7 +646,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
         <div style={{ ...card(), fontSize: 12, lineHeight: 1.7, borderColor: 'var(--amber-line)' }}>
           <b style={{ color: 'var(--amber)' }}>{tr('⚠️ ชื่อตารางที่โค้ดเรียกใช้ แต่ไม่มีอยู่จริงในฐานข้อมูลทั้ง 2 ฝั่ง')}</b>
           <div style={{ color: 'var(--muted)' }}>
-            (ตารางถูกลบ/เปลี่ยนชื่อไปแล้ว หรือชื่อในโค้ดพิมพ์ผิด — จุดพวกนี้จะพังเงียบตอนรันจริง ควรแจ้งให้ไปตรวจ)
+            ({tr("ตารางถูกลบ/เปลี่ยนชื่อไปแล้ว หรือชื่อในโค้ดพิมพ์ผิด — จุดพวกนี้จะพังเงียบตอนรันจริง ควรแจ้งให้ไปตรวจ")})
           </div>
           {[...ghosts.entries()].map(([t, ps]) => (
             <div key={t}>· <code>{t}</code> — {ps.map(pageLabel).join(' · ')}</div>
@@ -678,18 +675,14 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ ...card(), fontSize: 12.5, lineHeight: 1.7 }}>
         <InfoMore id="schema_audit_intro" lead={<>
-          🩺 <b>{tr('ตรวจโครงสร้างจากฐานจริงทุกครั้งที่เปิดจอนี้')}</b> — ไม่ใช่รายงานที่ทำครั้งเดียวแล้วล้าสมัย ·
-          ตัวเลขบนแท็บนับเฉพาะข้อที่เป็นปัญหาจริง (🔴/🟡)
+          🩺 <b>{tr('ตรวจโครงสร้างจากฐานจริงทุกครั้งที่เปิดจอนี้')}</b> — {tr("ไม่ใช่รายงานที่ทำครั้งเดียวแล้วล้าสมัย · ตัวเลขบนแท็บนับเฉพาะข้อที่เป็นปัญหาจริง")} (🔴/🟡)
         </>}>
           <div style={{ marginTop: 6, color: 'var(--text2)' }}>
-            <b>{tr('ทำความสะอาดรอบแรกไปแล้ว 22/09/2026:')}</b> ตารางสำรองที่ migration เก่าสร้างค้างไว้ใน public
+            <b>{tr('ทำความสะอาดรอบแรกไปแล้ว 22/09/2026:')}</b> {tr("ตารางสำรองที่ migration เก่าสร้างค้างไว้ใน")} public
             <b> {tr('37 ตัว')}</b> {tr('(ข้อมูลผลิต 33 · ระบบหลัก 4) ถูกย้ายเข้า schema')} <code>archive</code> —
-            <b>{tr('ย้ายไม่ได้ลบ')}</b> ข้อมูลอยู่ครบทุกแถว ย้อนกลับได้ด้วยคำสั่งเดียวต่อตาราง ·
-            ตารางในจอนี้จึงลดจาก 313 เหลือ 276
-            <br />{tr('ที่ต้องย้ายเพราะ 35 ใน 37 ตัวนั้น')} <b>{tr('ไม่ได้เปิด RLS')}</b> (สำเนาข้อมูลมา แต่ policy ไม่ได้ตามมาด้วย)
-            — ฝั่งข้อมูลผลิตที่ client วิ่งด้วย anon เสมอ แปลว่าใครมี anon key ก็อ่านสำเนาข้อมูลจริงได้โดยไม่ต้อง login
-            <br /><br />⚠️ <b>{tr('“ไม่มีหน้าไหนเรียกใช้” ไม่ได้แปลว่าลบได้')}</b> — ตัวสแกนเห็นเฉพาะโค้ดฝั่งหน้าเว็บ
-            ตารางอาจถูกใช้โดย trigger/function ฝั่งฐานข้อมูล หรือ Edge Function · ใช้เป็น “รายการที่ต้องไปตรวจ” เท่านั้น
+            <b>{tr('ย้ายไม่ได้ลบ')}</b> {tr("ข้อมูลอยู่ครบทุกแถว ย้อนกลับได้ด้วยคำสั่งเดียวต่อตาราง · ตารางในจอนี้จึงลดจาก 313 เหลือ")} 276
+            <br />{tr('ที่ต้องย้ายเพราะ 35 ใน 37 ตัวนั้น')} <b>{tr('ไม่ได้เปิด RLS')}</b> ({tr("สำเนาข้อมูลมา แต่ policy ไม่ได้ตามมาด้วย) — ฝั่งข้อมูลผลิตที่ client วิ่งด้วย anon เสมอ แปลว่าใครมี anon key ก็อ่านสำเนาข้อมูลจริงได้โดยไม่ต้อง")} login
+            <br /><br />⚠️ <b>{tr('“ไม่มีหน้าไหนเรียกใช้” ไม่ได้แปลว่าลบได้')}</b> — {tr("ตัวสแกนเห็นเฉพาะโค้ดฝั่งหน้าเว็บ ตารางอาจถูกใช้โดย trigger/function ฝั่งฐานข้อมูล หรือ Edge Function · ใช้เป็น “รายการที่ต้องไปตรวจ” เท่านั้น")}
           </div>
         </InfoMore>
       </div>
@@ -705,7 +698,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
               <div style={{ minWidth: 0, fontSize: 14, fontWeight: 800, color: P.color }}>
                 {tr(P.label)} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} {tr('ตาราง/วิว')}</span>
               </div>
-              <button onClick={() => onCopy(auditText(result, `${P.label} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
+              <button onClick={() => onCopy(auditText(result, `${tr(P.label)} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
                 {tr('คัดลอกผลตรวจ')}
               </button>
             </div>
@@ -724,7 +717,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
                     <span style={{ flexShrink: 0 }}>{c.rows.length ? lv.icon : '✅'}</span>
                     <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 13, fontWeight: 700 }}>{c.title}</span>
                     <span style={{ flexShrink: 0, fontSize: 12, color: c.rows.length ? lv.color : 'var(--muted)', fontWeight: 700 }}>
-                      {c.rows.length ? `${c.rows.length} รายการ` : 'ไม่พบ'}
+                      {c.rows.length ? `${c.rows.length} ${tr("รายการ")}` : tr("ไม่พบ")}
                     </span>
                     <span style={{ flexShrink: 0, fontSize: 11.5, color: 'var(--muted)' }}>{on ? '▾' : '▸'}</span>
                   </button>

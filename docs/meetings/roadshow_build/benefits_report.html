@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<title>ESM Benefits Report</title>
+<!-- รายงานประโยชน์ ESM หลังทดลองใช้ทั้งโรงงาน (1 ต.ค.–22 พ.ย. 2026) · A4 แนวตั้ง 4–5 หน้า · สี TSG R01
+     ตัวเลขวัดจริงมาจาก TSAT_ESM_Trial_Week1_Metrics_2026-11-23.xlsx (ดึง DR+Main 23/11) · ตัวเลขประมาณการแยกป้ายชัด -->
+<style>
+  @page { size: A4 portrait; margin: 13mm 14mm 14mm; }
+  :root { --g:#068734; --gd:#0D3D14; --o:#D95323; --gr:#555; --bd:#D9D9D9; --tint:#F2F2F2; --amb:#8a5f00; --ambbg:#FFF7E3; --blue:#2f4f90; --bluebg:#EEF2FA; }
+  * { box-sizing:border-box; }
+  body { font-family:'Tahoma','Loma',sans-serif; color:#222; font-size:10pt; line-height:1.5; margin:0; }
+  h1 { color:var(--g); font-size:20pt; margin:0 0 1mm; line-height:1.2; }
+  h2 { color:#fff; background:var(--gd); font-size:13pt; padding:1.6mm 3.5mm; margin:5mm 0 2.5mm; border-radius:1.5mm; break-after:avoid; }
+  h2 .no { background:var(--o); border-radius:1mm; padding:0 2mm; margin-right:2mm; }
+  h3 { color:var(--g); font-size:11pt; margin:3.5mm 0 1.2mm; break-after:avoid; }
+  p { margin:0 0 2mm; }
+  .sub { color:var(--o); font-weight:700; font-size:11pt; }
+  .meta { color:var(--gr); font-size:8.8pt; border-bottom:2.5px solid var(--g); padding-bottom:2mm; margin-bottom:3mm; display:flex; justify-content:space-between; }
+  .brand { color:var(--g); font-weight:700; }
+  table { width:100%; border-collapse:collapse; margin:1.5mm 0 2.5mm; font-size:9.2pt; break-inside:avoid; }
+  th { background:var(--g); color:#fff; text-align:left; padding:1.3mm 2mm; font-weight:700; }
+  td { border-bottom:1px solid var(--bd); padding:1.2mm 2mm; vertical-align:top; }
+  tr:nth-child(even) td { background:#FAFAFA; }
+  table.tight { font-size:8.6pt; margin:1mm 0 1.5mm; } table.tight td { padding:.7mm 1.6mm; } table.tight td:nth-child(2) { white-space:nowrap; }
+  td.num, th.num { text-align:right; white-space:nowrap; }
+  .tag { display:inline-block; font-size:7.6pt; font-weight:700; border-radius:1mm; padding:0 1.5mm; margin-left:1mm; vertical-align:1px; }
+  .m { background:#EAF6EE; color:var(--g); border:1px solid var(--g); }   /* วัดจริง */
+  .e { background:var(--ambbg); color:var(--amb); border:1px solid #C88A00; } /* ประมาณการ */
+  .q { background:var(--bluebg); color:var(--blue); border:1px solid #4f6fb0; } /* เชิงคุณภาพ */
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:2.5mm; margin:2mm 0 3mm; }
+  .kpi { border:1.5px solid var(--g); border-radius:2mm; padding:2mm 2.5mm; break-inside:avoid; }
+  .kpi .v { font-size:17pt; font-weight:700; color:var(--g); line-height:1.15; }
+  .kpi .v small { font-size:9pt; color:var(--gr); font-weight:400; }
+  .kpi .l { font-size:8.6pt; color:#333; }
+  .kpi.or { border-color:var(--o); } .kpi.or .v { color:var(--o); }
+  .box { border-radius:2mm; padding:2.2mm 3mm; margin:2mm 0 3mm; break-inside:avoid; }
+  .note { background:var(--tint); border-left:4px solid var(--g); }
+  .warn { background:#FDF3EE; border-left:4px solid var(--o); }
+  .flow { display:flex; align-items:center; gap:1.2mm; flex-wrap:wrap; margin:1.5mm 0 2mm; break-inside:avoid; }
+  .flow span { border:1.2px solid var(--g); border-radius:1.5mm; padding:0.8mm 2mm; font-size:8.8pt; background:#fff; }
+  .flow span.old { border-color:#999; color:#666; background:#f6f6f6; }
+  .flow i { color:var(--o); font-style:normal; font-weight:700; }
+  .lbl { font-weight:700; font-size:9pt; width:16mm; flex:none; }
+  .shots { display:grid; grid-template-columns:1fr 1fr; gap:3mm; margin:2mm 0 3mm; break-inside:avoid; }
+  .shot { border:1px solid var(--bd); border-radius:1.5mm; overflow:hidden; }
+  .shot img { width:100%; display:block; }
+  .shot div { font-size:8.4pt; padding:1mm 2mm; background:var(--g); color:#fff; font-weight:700; }
+  ul { margin:0.5mm 0 2mm; padding-left:5mm; } li { margin-bottom:0.8mm; }
+  .bar { display:flex; align-items:center; gap:2mm; font-size:8.8pt; margin:0.8mm 0; }
+  .bar .t { width:38mm; flex:none; }
+  .bar .b { height:4mm; background:var(--g); border-radius:0.8mm; }
+  .bar .b.old { background:#bbb; }
+  .pb { break-before:page; }
+  .legend { font-size:8.4pt; color:var(--gr); }
+  .foot { margin-top:4mm; border-top:1px solid var(--bd); padding-top:1.5mm; font-size:8pt; color:var(--gr); }
+</style></head>
+<body>
+
+<h1>ประโยชน์ที่ได้จาก ESM หลังทดลองใช้ทั้งโรงงาน</h1>
+<div class="sub">ไร้กระดาษ → งานเดินเร็วขึ้น → วิเคราะห์ได้ทันที → รู้ปัญหาทันที</div>
+<div class="meta"><span>ช่วงทดลอง 1 ต.ค. – 22 พ.ย. 2026 · เทียบกับ ก.ย. (ก่อนขยายทั้งโรงงาน) · ข้อมูลดึงจากระบบ 23 พ.ย. 2026</span><span class="brand">THAI SUMMIT GROUP · TSAT</span></div>
+
+<p class="legend">ป้ายกำกับตัวเลข: <span class="tag m">วัดจริง</span> ดึงจากระบบโดยตรง · <span class="tag e">ประมาณการ</span> คิดจากสมมติฐานที่เขียนไว้ ต้องยืนยันด้วยการจับเวลา · <span class="tag q">เชิงคุณภาพ</span> สิ่งที่ทำได้แล้ว แต่ยังไม่มีตัวเลขเทียบก่อน/หลัง</p>
+
+<h3>สรุปผู้บริหาร</h3>
+<div class="kpis">
+  <div class="kpi"><div class="v">~4,350 <small>แผ่น/เดือน</small></div><div class="l">กระดาษหน้างานที่ไม่ต้องพิมพ์ (ต.ค. วัดจริง ~2,650) <span class="tag e">ประมาณการ</span></div></div>
+  <div class="kpi"><div class="v">24 <small>ไลน์</small></div><div class="l">ไลน์ที่เปิดกะในระบบ (ก.ย. 14–19) <span class="tag m">วัดจริง</span></div></div>
+  <div class="kpi"><div class="v">~50 <small>คน/สัปดาห์</small></div><div class="l">คนที่บันทึกข้อมูลจริง (ก.ย. ~16) <span class="tag m">วัดจริง</span></div></div>
+  <div class="kpi or"><div class="v">16 → 8 <small>ชม.</small></div><div class="l">ปิดกะหลังเลิกกะ (มัธยฐาน) เร็วขึ้นครึ่งหนึ่ง <span class="tag m">วัดจริง</span></div></div>
+</div>
+<p>ในเกือบ 2 เดือน ESM ขยายจากไลน์นำร่องไปเกือบทุกไลน์ จุดที่เห็นผลชัดที่สุดคือ <b>เอกสารหน้างานหลักย้ายจากกระดาษเข้าระบบ</b> แล้ว และเพราะข้อมูลอยู่ในระบบตั้งแต่ต้นทาง ประโยชน์จึงต่อยอดเป็น 3 ชั้น ได้แก่ <b>งานเดินเร็วขึ้นเพราะไม่ต้องเดินส่งเอกสาร</b> · <b>ไม่ต้องคีย์กระดาษลง Excel แล้วทำกราฟเอง</b> เพราะระบบวิเคราะห์ให้ · และ <b>รู้ปัญหาทันที</b>ผ่านการแจ้งเตือนและสรุปงานอัตโนมัติ รายงานนี้เรียงตามลำดับนั้น และปิดท้ายด้วยเรื่องที่ยังต้องแก้ เพื่อให้ตัวเลขชุดถัดไปดีขึ้นจริง</p>
+
+<h2><span class="no">1</span>ไร้กระดาษ (Paperless)</h2>
+<p>นับตาม <b>"หน่วยของใบกระดาษจริง"</b> ไม่ใช่จำนวนครั้งที่ตรวจ — ใบรายเดือน (เช็คชื่อ · AM · LPA · BBS · Poka-yoke) ใช้กี่วันก็ยังเป็น <b>1 แผ่นต่อเครื่องหรือต่อไลน์ ต่อกะ ต่อเดือน</b> ส่วนใบที่ออกเป็นเรื่องๆ (MO · 4M · ใบงานประจำกะ · ใบ QA) นับใบละแผ่น</p>
+<table class="tight">
+  <tr><th>เอกสาร (เดิมเป็นกระดาษ)</th><th>หน่วยของใบกระดาษ</th><th class="num">ต.ค.<br>แผ่น/เดือน</th><th class="num">พ.ย.<br>แผ่น/เดือน</th><th class="num">พ.ย. ครั้งที่บันทึก<br>(คีย์ Excel เดิม)</th></tr>
+  <tr><td>รายงานการผลิตประจำกะ</td><td>1 แผ่น / ไลน์ / กะ</td><td class="num">783</td><td class="num">~1,030</td><td class="num">~1,030</td></tr>
+  <tr><td>ใบตรวจคุณภาพ QA</td><td>1 แผ่น / พาร์ท / กะ / รอบ</td><td class="num">139</td><td class="num">~1,000</td><td class="num">~1,000</td></tr>
+  <tr><td>ใบแจ้งซ่อม MO</td><td>1 แผ่น / เรื่อง</td><td class="num">809</td><td class="num">~1,250</td><td class="num">~1,250</td></tr>
+  <tr><td>ใบ 4M Change (เฉพาะที่คนยื่น)</td><td>1 แผ่น / เรื่อง</td><td class="num">585</td><td class="num">~440</td><td class="num">~440</td></tr>
+  <tr><td>ใบเช็คชื่อ + PPE (ใบรายเดือน)</td><td>1 แผ่น / ไลน์ / กะ / เดือน</td><td class="num">49</td><td class="num">57</td><td class="num">~1,020</td></tr>
+  <tr><td>แท็กถังเหลือง/แดง · ใบแจ้งปัญหา · เศษเหล็ก</td><td>1 แผ่น / เรื่อง</td><td class="num">51</td><td class="num">~265</td><td class="num">~265</td></tr>
+  <tr><td>ใบตรวจเครื่องจักร AM (เช็คชีทรายเดือน)</td><td>1 แผ่น / เครื่อง / กะ / เดือน</td><td class="num">53</td><td class="num">72</td><td class="num">~1,000</td></tr>
+  <tr><td>ใบ PM ช่าง (FM-JIG-003)</td><td>1 แผ่น / ครั้ง</td><td class="num">35</td><td class="num">~53</td><td class="num">~53</td></tr>
+  <tr><td>LPA (ใบแผน + ใบรายงาน FM-QMR-008)</td><td>2 แผ่น / ไลน์ / กะ / เดือน</td><td class="num">40</td><td class="num">40</td><td class="num">~620</td></tr>
+  <tr><td>BBS (ใบสังเกตความปลอดภัย)</td><td>1 แผ่น / ไลน์ / เดือน</td><td class="num">19</td><td class="num">17</td><td class="num">17</td></tr>
+  <tr><td>ใบตรวจ Poka-yoke (ใบรายเดือน)</td><td>1 แผ่น / อุปกรณ์ / กะ / เดือน</td><td class="num">16</td><td class="num">98</td><td class="num">~1,950</td></tr>
+  <tr><td>บันทึกฝึกอบรม OJT</td><td>1 แผ่น / ครั้ง</td><td class="num">53</td><td class="num">~23</td><td class="num">~23</td></tr>
+  <tr><td><b>รวม</b></td><td></td><td class="num"><b>~2,650</b> <span class="tag m">วัดจริง</span></td><td class="num"><b>~4,350</b></td><td class="num"><b>~8,700</b></td></tr>
+</table>
+<p class="legend">ต.ค. = เต็มเดือน วัดจริงจากระบบ · พ.ย. = ข้อมูล 1–22 พ.ย. คิดเต็มเดือน (×30/22) <span class="tag e">ประมาณการ</span> ยกเว้นใบรายเดือนที่นับจำนวนแผ่นจริง · ใบเช็คชื่อ: ครั้งที่บันทึก = ไลน์ × กะ × วันที่เช็ค</p>
+<div class="box note">
+  <b>อ่านตัวเลขนี้อย่างไร</b><br>
+  <b>กระดาษที่ไม่ต้องพิมพ์ ≈ 4,350 แผ่นต่อเดือน</b> (ราว 9 รีม) ยังไม่นับสำเนาและใบที่เขียนผิดแล้วทิ้ง ·
+  แต่ประโยชน์ที่ใหญ่กว่าคือคอลัมน์ขวาสุด: <b>~8,700 ครั้งต่อเดือน</b> ที่เดิมต้องมีคนอ่านจากกระดาษแล้วคีย์ลง Excel
+  (เช็คชีท AM 1 แผ่นมีผลตรวจทั้งเดือน · ใบ Poka-yoke 1 แผ่นมีผลตรวจทุกกะ) — ตอนนี้ระบบเก็บเป็นข้อมูลตั้งแต่ตอนตรวจ ดูหัวข้อ 3
+</div>
+<h3>ประโยชน์ที่มากกว่าค่ากระดาษ</h3>
+<ul>
+  <li><b>หาย้อนหลังได้ทันที</b> — ทุกใบค้นได้ตามไลน์ · วันที่ · เครื่อง · ชื่อพาร์ท ไม่ต้องเปิดแฟ้มหรือตามหาว่าเก็บไว้ที่ไหน <span class="tag q">เชิงคุณภาพ</span></li>
+  <li><b>มีชื่อคน เวลา และลายเซ็นทุกขั้น</b> — ใบตรวจ AM/QA ใช้รหัสบัตรพนักงานระบุผู้ตรวจ และพิมพ์พร้อมลายเซ็นได้เมื่อลูกค้าหรือผู้ตรวจประเมินขอ <span class="tag q">เชิงคุณภาพ</span></li>
+  <li><b>ข้อมูลไม่หาย ไม่เปียก ไม่ขาด</b> — ใบที่ยังไม่ปิดเห็นได้ทันที ใบงานที่สแกนแล้วปิดครบ <b>~99.6%</b> <span class="tag m">วัดจริง</span></li>
+  <li><b>ไม่ต้องเก็บแฟ้มเอกสาร</b> — ลดพื้นที่จัดเก็บและงานจัดแฟ้มรายเดือน <span class="tag q">เชิงคุณภาพ</span></li>
+</ul>
+
+<h2><span class="no">2</span>e-Workflow — งานเดินเร็วขึ้นเพราะไม่ต้องเดินส่งเอกสาร</h2>
+<p>เมื่อเอกสารอยู่ในระบบ ขั้นตอนอนุมัติและส่งต่องานก็เกิดบนหน้าจอทันที ไม่ต้องรอคนเดินเอากระดาษไปหาผู้อนุมัติ ไม่ต้องรอรวบรวมแล้วส่งเป็นรอบ</p>
+
+<h3>ใบแจ้งซ่อม (MO) — ตัวอย่างงานที่ส่งต่อหลายมือ</h3>
+<div class="flow"><span class="lbl">เดิม</span><span class="old">เขียนใบ</span><i>→</i><span class="old">เดินไปห้องช่าง</span><i>→</i><span class="old">รอช่างว่าง</span><i>→</i><span class="old">ซ่อม</span><i>→</i><span class="old">เดินกลับมาเซ็นรับ</span><i>→</i><span class="old">ส่งใบไปหัวหน้า</span><i>→</i><span class="old">เก็บแฟ้ม</span></div>
+<div class="flow"><span class="lbl">ESM</span><span>แจ้งจากหน้าเครื่อง + รูป</span><i>→</i><span>ช่างเห็นบนจอทันที</span><i>→</i><span>รับงาน · ซ่อม · ลงอะไหล่</span><i>→</i><span>ผู้แจ้งตรวจรับในระบบ</span><i>→</i><span>หัวหน้าเซ็นปิดบนจอ</span></div>
+<table>
+  <tr><th>ตัวชี้วัด (พ.ย.)</th><th class="num">ค่า</th><th>หมายเหตุ</th></tr>
+  <tr><td>แจ้งซ่อม → ช่างรับงาน (มัธยฐาน)</td><td class="num">8–12 นาที <span class="tag m">วัดจริง</span></td><td>ช่างเห็นใบทันทีที่แจ้ง ไม่ต้องมีคนเดินมาบอก</td></tr>
+  <tr><td>แจ้งซ่อม → ซ่อมเสร็จ (มัธยฐาน)</td><td class="num">13–18 นาที <span class="tag m">วัดจริง</span></td><td>รวมงานซ่อมเล็กหน้าเครื่อง</td></tr>
+  <tr><td>ใบซ่อมที่เปิดจากใบ downtime โดยตรง</td><td class="num">~50% <span class="tag m">วัดจริง</span></td><td>ไม่ต้องเขียนอาการซ้ำ ระบบดึงจากการลงเครื่องหยุด</td></tr>
+</table>
+
+<h3>ขั้นตอนอื่นที่ย้ายจาก "เดินส่งกระดาษ" มาเป็น "อนุมัติบนจอ"</h3>
+<table>
+  <tr><th>งาน</th><th>สายอนุมัติในระบบ</th><th>ได้อะไร</th></tr>
+  <tr><td>4M Change</td><td>หน้างาน → หัวหน้า → QA (เฉพาะเรื่องที่กระทบคุณภาพ)</td><td>ไม่มีใบค้างกลางทาง · ตีกลับต้องมีเหตุผล · ใช้คนที่ยังไม่ผ่านการฝึก ระบบเปิดใบให้เอง</td></tr>
+  <tr><td>ตรวจ AM</td><td>พนักงานตรวจ → หัวหน้ากลุ่มรับทราบรายวัน → หัวหน้าแผนกลงนามรายเดือน</td><td>เจอผิดปกติเปิดใบซ่อมต่อได้ทันทีจากผลตรวจ</td></tr>
+  <tr><td>ใบตรวจ QA</td><td>ตรวจตามแบบงาน → ไม่ผ่านลงถังแดง/ถังเหลือง → ไลน์บันทึกการแก้ไข</td><td>ไลน์กับ QA เห็นเรื่องเดียวกันพร้อมกัน</td></tr>
+  <tr><td>ปิดกะ</td><td>หัวหน้ากลุ่มขอปิดกะ → หัวหน้าส่วนอนุมัติ</td><td>ตัวเลขกะพร้อมใช้เร็วขึ้น</td></tr>
+  <tr><td>เรียกของจากสโตร์</td><td>ไลน์เรียก → สโตร์ยืนยันเตรียม → ไลน์รับ</td><td>ไม่ต้องเดินไปถาม · ตัดสต็อกให้เอง</td></tr>
+</table>
+<p><b>ผลที่วัดได้:</b> ปิดกะหลังเลิกกะเร็วขึ้น <b>16 → 8 ชม.</b> (มัธยฐาน) <span class="tag m">วัดจริง</span> · ใบงานที่ลงย้อนหลังลดจาก <b>43% → 18%</b> <span class="tag m">วัดจริง</span> · งานที่ย้ายเข้าระบบแล้วไม่มีใบต้องเดินส่งหรือเก็บแฟ้ม <span class="tag q">เชิงคุณภาพ</span></p>
+
+<h2 class="pb"><span class="no">3</span>วิเคราะห์ได้ทันที — ไม่ต้องคีย์กระดาษลง Excel แล้วทำกราฟเอง</h2>
+<p>ประโยชน์ชั้นนี้ใหญ่กว่าการลดกระดาษ เพราะตัด <b>"ทั้งขั้นตอน"</b> ออก ไม่ใช่แค่เปลี่ยนวัสดุ เดิมข้อมูลต้องเดินทาง 4 ทอดกว่าจะเป็นกราฟ ตอนนี้เหลือทอดเดียว</p>
+<div class="flow"><span class="lbl">เดิม</span><span class="old">เขียนกระดาษหน้างาน</span><i>→</i><span class="old">รวบรวมใบ</span><i>→</i><span class="old">คีย์ลง Excel</span><i>→</i><span class="old">ทำกราฟ/สรุป</span><i>→</i><span class="old">ส่งประชุม (ช้า 1 วัน–1 สัปดาห์)</span></div>
+<div class="flow"><span class="lbl">ESM</span><span>บันทึกที่หน้างาน</span><i>→</i><span>ระบบคำนวณ + วาดกราฟให้ทันที ทุกคนเห็นตัวเลขชุดเดียวกัน</span></div>
+
+<table>
+  <tr><th>การวิเคราะห์ที่ระบบทำให้</th><th>ตอบคำถาม</th><th>ใครเคยต้องทำเอง</th></tr>
+  <tr><td><b>OEE</b> แยก A / P / Q + 6 Big Losses</td><td>เครื่องเสียเวลาไปกับอะไร ไลน์ไหนฉุด</td><td>วางแผน / หัวหน้าส่วน</td></tr>
+  <tr><td><b>ของเสีย · PPM · Pareto</b></td><td>เสียเรื่องอะไรมากสุด พาร์ทไหน ไลน์ไหน</td><td>QA / วิศวกร</td></tr>
+  <tr><td><b>TPM ของ MTN</b>: MTTR · MTBF · KPI ช่าง · QC 7 Tools</td><td>เครื่องไหนเสียบ่อย ซ่อมนานแค่ไหน อะไหล่ไหนใช้มาก</td><td>ทีมซ่อมบำรุง</td></tr>
+  <tr><td><b>ไทม์ไลน์ทุกไลน์</b></td><td>ช้ากว่าแผนกี่นาที ขาดกี่ชิ้น ใบไหนเป็นต้นเหตุ</td><td>หัวหน้าส่วน (เดิมรู้ตอนจบกะ)</td></tr>
+  <tr><td><b>OBEYA · KPI รายเดือน</b></td><td>หน่วยงานไหนเขียว/เหลือง/แดง ตามเกณฑ์ของกลุ่ม</td><td>ผู้จัดการ / เลขาฯ ประชุม</td></tr>
+  <tr><td><b>ตรวจสอบต่างๆ</b> (AM · LPA · BBS · QA) รายวัน/รายเดือน</td><td>ตรวจครบไหม ขาดตรวจวันไหน เจอผิดปกติกี่ครั้ง</td><td>หัวหน้าแผนก (เดิมนับจากกระดาษ)</td></tr>
+</table>
+
+<div class="shots">
+  <div class="shot"><img src="workflow_shots/dash.jpg"><div>ไทม์ไลน์ทุกไลน์ — เห็นไลน์ที่หลุดแผนระหว่างกะ</div></div>
+  <div class="shot"><img src="workflow_shots/obeya.jpg"><div>OBEYA — KPI รายเดือนจากข้อมูลหน้างานโดยตรง</div></div>
+</div>
+<p class="legend" style="margin-top:-1mm">ภาพจำลองหน้าจอ · ข้อมูลตัวอย่าง</p>
+
+<div class="box note">
+  <b>ประมาณการเวลาที่ไม่ต้องคีย์ข้อมูลซ้ำ <span class="tag e">ประมาณการ</span></b><br>
+  การคีย์นับตาม <b>"ครั้งที่บันทึก"</b> ไม่ใช่จำนวนแผ่น (เช็คชีทรายเดือน 1 แผ่นต้องคีย์ทุกวัน) — ~8,700 ครั้งต่อเดือน × ประมาณ <b>1 นาทีต่อครั้ง</b> = <b>~145 ชั่วโมงคนต่อเดือน</b> ยังไม่รวมเวลาทำกราฟและรายงานประชุม
+  — <b>ต้องยืนยันด้วยการจับเวลาจริง</b> (แผนประเมินข้อ 3: จับเวลาตำแหน่งละ 3–5 คน) ก่อนแปลงเป็นเงิน
+</div>
+<div class="box warn">
+  <b>อ่านตัวเลขให้ถูก:</b> ชั่วโมงเครื่องหยุดที่บันทึกได้เพิ่มจาก ~350 เป็น ~850 ชั่วโมงต่อสัปดาห์ <span class="tag m">วัดจริง</span> เพราะไลน์เพิ่มและจดครบขึ้น <b>ไม่ได้แปลว่าการผลิตแย่ลง</b> นี่คือ "สิ่งที่เคยมองไม่เห็น" ที่ตอนนี้วิเคราะห์ได้ · OEE ก.ย. (~79%) มาจากไลน์นำร่องไม่กี่ไลน์ เทียบกับ พ.ย. (~80%) ตรงๆ ไม่ได้
+</div>
+
+<h2 class="pb"><span class="no">4</span>แจ้งเตือนทันที · ตามงานค้าง · สรุปงานแผนก</h2>
+<p>ชั้นนี้เปลี่ยนจาก "รอให้คนมาบอก" เป็น "ระบบบอกเอง" — ปัญหาถึงคนที่ต้องแก้ทันที และงานที่ค้างไม่หายไปเงียบๆ</p>
+<table>
+  <tr><th>ระบบแจ้งเตือน / สรุป</th><th>ทำงานอย่างไร</th><th>ตัวเลข</th></tr>
+  <tr><td><b>เครื่องหยุดค้าง</b></td><td>ใบ downtime ที่ยังเปิดอยู่นานเกินเกณฑ์ ระบบเตือนช่าง/หัวหน้า และขึ้นจอไซเรนหน้าไลน์</td><td>สแกนทุก 5 นาที</td></tr>
+  <tr><td><b>ตรวจ AM ไม่ทัน</b></td><td>เลย 1 ชั่วโมงหลังเครื่องเริ่มเดินแล้วยังไม่ตรวจ เตือนหัวหน้าเอง (ตัดสินรายเครื่องตามใบงานที่สแกน)</td><td>~130 ครั้ง/สัปดาห์ <span class="tag m">วัดจริง</span></td></tr>
+  <tr><td><b>ใบซ่อมค้าง</b></td><td>ใบที่ค้างนานขึ้นแถบแดง และขึ้นจอ TV ของทีมช่าง</td><td>จอ TV ทีมช่าง</td></tr>
+  <tr><td><b>คิวงานของฉัน + กระดิ่ง</b></td><td>แต่ละคนเห็นเฉพาะงานที่รอตัวเองอนุมัติ/ทำ ไม่ต้องไล่หาในหลายหน้า</td><td>ทุกบัญชี</td></tr>
+  <tr><td><b>แจ้งเตือนในแอป</b></td><td>ทุกการเปลี่ยนสถานะสำคัญ (4M · MO · QA · สโตร์) แจ้งผู้เกี่ยวข้องทันที</td><td>~9,000 รายการ/สัปดาห์ <span class="tag m">วัดจริง</span></td></tr>
+  <tr><td><b>สรุปงานแผนกรายวัน</b></td><td>สรุป 4M และสรุปงานซ่อมบำรุงส่งทุกเช้าอัตโนมัติ · Dashboard รายส่วนงานสำหรับจอ TV/ประชุมเช้า</td><td>ทุกวัน</td></tr>
+</table>
+<div class="shots">
+  <div class="shot"><img src="workflow_shots/mo.jpg"><div>ใบซ่อม — ใบค้างนานขึ้นแถบแดงให้เห็นทันที</div></div>
+  <div class="shot"><img src="workflow_shots/am.jpg"><div>ตรวจ AM — การ์ดรายไลน์ บอกว่าตรวจแล้วกี่เครื่อง</div></div>
+</div>
+
+<h2><span class="no">5</span>เรื่องที่ยังต้องแก้ เพื่อให้ได้ประโยชน์เต็มที่</h2>
+<table>
+  <tr><th>ประเด็น</th><th>ตัวเลข</th><th>ข้อเสนอ</th></tr>
+  <tr><td>เครื่องหยุดยังลงระบบช้า</td><td>มัธยฐาน ~90 นาที · ลงภายใน 30 นาทีแค่ ~28% <span class="tag m">วัดจริง</span></td><td>ให้ลงตอนเครื่องหยุดจริง (มีปุ่มบนจอหน้าไลน์อยู่แล้ว) · ตามรายไลน์ที่ช้าที่สุด</td></tr>
+  <tr><td>ใบซ่อมค้างขั้นเซ็นปิด</td><td>สัปดาห์ 16/11 ค้าง 201 ใบ (ก.ย. 0–4) <span class="tag m">วัดจริง</span></td><td>ไล่เคลียร์ขั้น "ตรวจรับ/เซ็นปิด" · กำหนดผู้รับผิดชอบปิดรายแผนก</td></tr>
+  <tr><td>ตรวจ AM เจอผิดปกติ แต่ยังไม่เปิดใบซ่อมในระบบ</td><td>NG ~12/สัปดาห์ · เปิด MO จากผลตรวจ 1–2 ใบ <span class="tag m">วัดจริง</span></td><td>ระบบบังคับเปิด MO หรือใส่เหตุผลแล้ว (02/11) — ติดตามว่าตัวเลขขยับไหม</td></tr>
+  <tr><td>ช่อง PPE ไม่ครบ ต่ำผิดปกติ</td><td>0–1.7% <span class="tag m">วัดจริง</span></td><td>สุ่มตรวจหน้างาน เทียบกับที่ติ๊กในระบบ</td></tr>
+  <tr><td>ยอดผลิตเทียบ SAP · เวลาคนที่ประหยัด</td><td>ยังวัดไม่ได้</td><td>ขอยอด SAP ช่วงเดียวกัน · จับเวลาก่อน/หลัง (แผนประเมินสัปดาห์ 2)</td></tr>
+</table>
+
+<div class="foot">ที่มาตัวเลข: <b>TSAT_ESM_Trial_Week1_Metrics_2026-11-23.xlsx</b> (ดึงจากฐานข้อมูล ESM ทั้ง 2 ส่วน 23/11/2026 · นับจำนวนล้วน ไม่มีชื่อคน) · ค่า "ต่อสัปดาห์" = เฉลี่ย ก.ย. 4 สัปดาห์ (31/08–27/09) และ พ.ย. 3 สัปดาห์ (02/11–22/11) · ภาพหน้าจอเป็นข้อมูลจำลอง · ฉบับร่างเพื่อหารือ</div>
+</body></html>

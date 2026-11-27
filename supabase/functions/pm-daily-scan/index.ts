@@ -15,7 +15,7 @@
 //   แก้ที่นี่แล้วต้องแก้ฝั่งบอร์ดด้วย (และกลับกัน) — ไม่งั้นส้มยิงทั้งที่บอร์ดเขียว
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 // ⚙️ B1 (05/11) — ตัดสินรายเครื่องจากใบผลิตที่สแกน · สำเนากติกาของจอ (ด่าน pmDailyScanParity)
-import { runOfOrders, amTargetsByRun } from './amRun.js';
+import { runOfOrders, amTargetsByRun, stationMateKeysFn } from './amRun.js';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -186,6 +186,28 @@ Deno.serve(async () => {
     // ใบผลิตทั้งครอบครัวไลน์ (ชุดเดียวกับ runningMachinesByLine ฝั่งจอ)
     const familyOrders = (line: string) => (famOf[line] ?? [line]).flatMap(n => ordersByLine[n] ?? []);
 
+    /* 🧩 สถานี AM (23/11) — เพื่อนร่วมสถานีมีใบผลิต = ต้องตรวจด้วย (ตรงกับจอ `stationMateKeysFn`)
+       อ่านไม่ได้ = ไม่มีกฎสถานี (พฤติกรรมเดิม: เครื่องที่ไม่อยู่บนใบผลิต = ไม่เดิน) + log */
+    let mateKeysOf: ((id: string) => string[]) | null = null;
+    {
+      const [st, mb] = await Promise.all([
+        db.from('am_stations').select('id, is_active').eq('is_active', true),
+        db.from('am_station_members').select('station_id, jig_id'),
+      ]);
+      if (st.error || mb.error) console.error('am_stations read failed', (st.error || mb.error)?.message);
+      else {
+        const ids = [...new Set((mb.data ?? []).map(m => m.jig_id))].filter(id => !jigById[id]);
+        const extra: Record<string, string | null> = {};
+        if (ids.length) {
+          const { data: ej, error: eJ } = await db.from('jigs').select('id, machine_no').in('id', ids);
+          if (eJ) console.error('am_station jigs read failed', eJ.message);
+          (ej ?? []).forEach(j => { extra[j.id] = j.machine_no; });
+        }
+        mateKeysOf = stationMateKeysFn({ stations: st.data ?? [], members: mb.data ?? [] },
+          (id: string) => jigById[id]?.machine_no ?? extra[id] ?? null);
+      }
+    }
+
     const now = Date.now();
     let sent = 0, failed = 0, skippedNotRunning = 0;
     for (const line of lines) {
@@ -195,7 +217,7 @@ Deno.serve(async () => {
       if (now - new Date(fo).getTime() <= WINDOW_MIN * 60000) continue;  // still in the grace window
       /* ⚙️ B1 — เครื่องที่ไม่มีใบผลิตสแกนกะนี้ = ไม่ต้องตรวจ (ไม่ใช่ขาดตรวจ) · นาฬิกาของแต่ละเครื่อง = ใบแรกของเครื่องนั้น */
       const tgAll = byLine[line].map(id => ({ jig_id: id, machine_no: jigById[id]?.machine_no ?? null }));
-      const split = amTargetsByRun(tgAll, runOfOrders(familyOrders(line)));
+      const split = amTargetsByRun(tgAll, runOfOrders(familyOrders(line)), { mateKeysOf });
       const required = split.required as { jig_id: string; startAt?: string }[];
       if (!required.length) { skippedNotRunning++; continue; }       // ไม่มีเครื่องในทะเบียนเดินกะนี้
       const missing = required.filter(t => !checked.has(t.jig_id));

@@ -75,7 +75,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
     if (!picked.size) return;
     const ids = [...picked];
     const label = EQUIPMENT_KINDS.find(k => k.key === kind)?.label || kind;
-    if (!await askConfirm(`ตั้ง ${ids.length} รายการเป็น "${label}" ?\n\nการเปลี่ยนชนิดมีผลกับทะเบียน/ผัง/ตัวกรองทุกหน้า`)) return;
+    if (!await askConfirm(`${tr("ตั้ง")} ${ids.length} ${tr("รายการเป็น")} "${label}" ?\n\n${tr("การเปลี่ยนชนิดมีผลกับทะเบียน/ผัง/ตัวกรองทุกหน้า")}`)) return;
 
     setSaving(true);
     try {
@@ -92,14 +92,14 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
       else invalidateTable('jigs');   // ทะเบียนเข้า cache แล้ว (13/10 · คีย์ 'jigs:am')
 
       if (okN < ids.length) {
-        toast.error(`บันทึกได้ ${okN}/${ids.length} รายการ — ที่เหลือไม่ถูกเขียน (เช็คสิทธิ์/การเชื่อมต่อ)`);
+        toast.error(`${tr("บันทึกได้")} ${okN}/${ids.length} ${tr("รายการ — ที่เหลือไม่ถูกเขียน (เช็คสิทธิ์/การเชื่อมต่อ")})`);
       } else {
-        toast.success(`ตั้งเป็น "${label}" แล้ว ${okN} รายการ${shadowWarn}`);
+        toast.success(`${tr("ตั้งเป็น")} "${label}" ${tr("แล้ว")} ${okN} ${tr("รายการ")}${shadowWarn}`);
       }
       setPicked(new Set());
       onSaved?.();
     } catch (e) {
-      toast.error(`บันทึกไม่สำเร็จ: ${e.message}`);
+      toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${e.message}`);
     } finally {
       setSaving(false);
     }
@@ -109,10 +109,9 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
     return (
       <div style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.45)',
                     borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13 }}>
-        ✅ ไม่มีเครื่องที่ระบบสงสัยว่าเป็นจิ๊ก/ฟิกเจอร์แล้ว
+        ✅ {tr("ไม่มีเครื่องที่ระบบสงสัยว่าเป็นจิ๊ก/ฟิกเจอร์แล้ว")}
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
-          ระบบดูจากเลขเครื่อง (JHYD/GPHYD/JIG) · ชื่อ (JIG/GRIPPER/CENTERING/MARKING/POKA-YOKE) และการวางบนผังไลน์
-          — ถ้ามีตัวที่ระบบไม่รู้จัก ให้เปลี่ยนชนิดรายตัวที่ <b>{tr('ฐานข้อมูลเครื่องจักร')}</b>
+          {tr("ระบบดูจากเลขเครื่อง (JHYD/GPHYD/JIG) · ชื่อ (JIG/GRIPPER/CENTERING/MARKING/POKA-YOKE) และการวางบนผังไลน์ — ถ้ามีตัวที่ระบบไม่รู้จัก ให้เปลี่ยนชนิดรายตัวที่")} <b>{tr('ฐานข้อมูลเครื่องจักร')}</b>
         </div>
       </div>
     );
@@ -123,11 +122,9 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
       <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
                     borderRadius: 'var(--r-md)', padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
         <b>{tr('⚠️ ระบบ “เสนอ” เท่านั้น — คนเป็นคนตัดสิน')}</b><br />
-        ชื่ออย่าง <code>Welding</code> / <code>Tower load</code> / <code>MAGAZINE</code> แยกไม่ออกว่าเป็นจิ๊กหรือเครื่องจักร
-        ระบบจึงไม่เปลี่ยนให้เอง · ติ๊กเฉพาะตัวที่ช่างยืนยันว่าเป็นจิ๊ก/ฟิกเจอร์จริง
+        {tr("ชื่ออย่าง")} <code>Welding</code> / <code>Tower load</code> / <code>MAGAZINE</code> {tr("แยกไม่ออกว่าเป็นจิ๊กหรือเครื่องจักร ระบบจึงไม่เปลี่ยนให้เอง · ติ๊กเฉพาะตัวที่ช่างยืนยันว่าเป็นจิ๊ก/ฟิกเจอร์จริง")}
         <div style={{ marginTop: 6, color: 'var(--muted)' }}>
-          พบ <b>{cands.length}</b> รายการที่ยังเป็น “เครื่องจักร” แต่มีลักษณะของจิ๊ก ·
-          ตั้งชนิดถูกแล้วถึงจะลงทะเบียนจุดชิมได้
+          {tr("พบ")} <b>{cands.length}</b> {tr("รายการที่ยังเป็น “เครื่องจักร” แต่มีลักษณะของจิ๊ก · ตั้งชนิดถูกแล้วถึงจะลงทะเบียนจุดชิมได้")}
         </div>
       </div>
 
@@ -135,14 +132,14 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
       <FilterBar style={{ marginBottom: 0 }}>
         {/* <LineSelect> — โชว์เฉพาะไลน์ที่มีรายการเสนอ (§5.3 ข้อ 6) · ชื่อไลน์ของเครื่องที่ไม่อยู่ในทะเบียนไลน์แยก optgroup ⚠ ไม่หายเงียบ · 2026-09-07 */}
         <LineSelect lines={lines.filter(l => lineOpts.includes(l.name))} value={lineF} onChange={setLineF} placeholder={ALL.line} includeRetired
-                    extraGroups={[{ label: '⚠ ไลน์ที่ไม่มีในทะเบียนไลน์', options: lineOpts.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n })) }]} />
-        <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ" />
+                    extraGroups={[{ label: tr("⚠ ไลน์ที่ไม่มีในทะเบียนไลน์"), options: lineOpts.filter(n => !lines.some(l => l.name === n)).map(n => ({ value: n, label: n })) }]} />
+        <SearchInput value={q} onChange={setQ} fields={tr("เลขเครื่อง / ชื่อ")} />
         <span className="spacer" />
         {hiddenCount > 0 && (
           <span className="filter-count">{tr('ซ่อนอยู่')} {hiddenCount} {tr('รายการ (ไม่ตรงตัวกรอง)')}</span>
         )}
         <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
-                background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
+                background: 'var(--bg2-surf)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           {tr('ติ๊ก/เอาออก ทั้งที่แสดง (')}{shown.length})
         </button>
       </FilterBar>
@@ -194,7 +191,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
                   style={{ background: picked.size ? '#16a34a' : 'var(--bg2)', color: picked.size ? '#fff' : 'var(--muted)',
                            border: 'none', borderRadius: 'var(--r-md)', padding: '8px 18px', fontSize: 13, fontWeight: 700,
                            cursor: picked.size && !saving ? 'pointer' : 'not-allowed' }}>
-            {saving ? 'กำลังบันทึก…' : `บันทึก ${picked.size} รายการ`}
+            {saving ? tr("กำลังบันทึก…") : `${tr("บันทึก")} ${picked.size} ${tr("รายการ")}`}
           </button>
         </div>
       )}

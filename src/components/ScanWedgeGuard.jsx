@@ -3,6 +3,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { toast } from './Toast';
 import { createBurstTracker, isNumericField, isTypingField, SCAN_EVENT } from '../utils/scanWedge';
 import { parseQrPayload } from '../utils/qrCode';
+import { tr } from '../utils/i18n';
 
 /* ══ 🔫 ScanWedgeGuard — ด่านกลางของปุ่มสแกนข้างเครื่อง handheld (2026-10-20) ══════════════════════════
    ตัดสินด้วย `utils/scanWedge.js` (pure · มีเทส) · ไม่วาดอะไรบนจอ · **มือถือเท่านั้น** (จอคอมไม่ติดตั้ง = เหมือนเดิม)
@@ -49,7 +50,7 @@ export default function ScanWedgeGuard() {
         e.preventDefault(); e.stopImmediatePropagation();
         nativeSet(tg, r.startValue);
         buzz([80, 60, 80]);
-        toast.error(`สแกน "${r.raw}" ลงช่อง${tg.tagName === 'SELECT' ? 'ตัวเลือก' : 'ตัวเลข'}ไม่ได้ — คืนค่าเดิมให้แล้ว · แตะช่องที่ต้องการสแกนก่อน แล้วยิงใหม่`);
+        toast.error(`${tr("สแกน")} "${r.raw}" ${tr("ลงช่อง")}${tg.tagName === 'SELECT' ? tr('ตัวเลือก') : tr('ตัวเลข')}${tr("ไม่ได้ — คืนค่าเดิมให้แล้ว · แตะช่องที่ต้องการสแกนก่อน แล้วยิงใหม่")}`);
         return;
       }
       if (isTypingField(tg)) return;   // ช่องข้อความ = ช่องสแกนปกติ ปล่อยให้หน้าจัดการ
@@ -60,7 +61,7 @@ export default function ScanWedgeGuard() {
       const claimed = !window.dispatchEvent(ev);
       if (!claimed) {
         buzz([80, 60, 80]);
-        toast.info(`สแกนได้ "${r.raw}" แต่จอนี้ไม่มีช่องรอรับ — แตะช่องที่จะกรอกก่อนแล้วยิงใหม่ หรือกด 📷 สแกน ที่แถบล่าง`);
+        toast.info(`${tr("สแกนได้")} "${r.raw}" ${tr("แต่จอนี้ไม่มีช่องรอรับ — แตะช่องที่จะกรอกก่อนแล้วยิงใหม่ หรือกด 📷 สแกน ที่แถบล่าง")}`);
       }
     };
 

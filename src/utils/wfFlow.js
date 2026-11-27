@@ -4,6 +4,7 @@
    ═══════════════════════════════════════════════════════════════════════════════════ */
 import { linearFlow } from './stepFlow.js';
 import { RULE_LABEL } from './wfSchema.js';
+import { tr } from './i18n.js';
 
 export const WF_STATUS = {
   in_progress: { label: 'กำลังอนุมัติ', tone: 'warn' },
@@ -11,6 +12,7 @@ export const WF_STATUS = {
   approved:    { label: 'อนุมัติครบ',  tone: 'good' },
   rejected:    { label: 'ตีกลับ',      tone: 'bad' },
   cancelled:   { label: 'ยกเลิก',      tone: 'none' },
+  revoked:     { label: 'เพิกถอนลายเซ็น', tone: 'none' },   // ใบรอบเอกสาร (โหมดผูกเอกสาร · 25/11)
 };
 
 /** @param inst แถว wf_instances · @param flow flow_schema ของเวอร์ชันที่ใบตรึงไว้ */
@@ -18,7 +20,7 @@ export function wfFlow(inst, flow) {
   const defSteps = flow?.steps || [];
   const steps = [
     { key: '_submit', label: 'ยื่นใบ', who: 'ผู้เปิดใบ', action: 'แก้แล้วส่งใหม่' },
-    ...defSteps.map(s => ({ key: s.key, label: s.label, who: RULE_LABEL[s.assignee?.rule] || null, action: s.kind === 'ack' ? 'รับทราบ' : 'อนุมัติ' })),
+    ...defSteps.map(s => ({ key: s.key, label: s.label, who: RULE_LABEL[s.assignee?.rule] || null, action: s.kind === 'ack' ? 'รับทราบ' : tr("อนุมัติ") })),
   ];
   const cur = Number.isInteger(inst?.current_step) ? inst.current_step + 1 : null;
   const at = { approved: steps.length, returned: 0 };

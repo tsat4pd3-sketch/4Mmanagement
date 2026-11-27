@@ -419,3 +419,16 @@ cum_ratio เฉลี่ย 0.58 สูงสุด 2.93 · เลยเพด�
 - ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
 > 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
 > **เหตุผล/งานวิจัย/ตารางเวลาต่อขั้น → `docs/SKILL-EXP-ALGORITHM-DESIGN.md` (อ่านก่อนปรับเกณฑ์)**
+
+## 🧹 25/11 — ลบคะแนนสกิลที่ไม่มีชื่อในทะเบียน (user สั่ง)
+- อาการ: การ์ด Manpower Board ขึ้นสกิลเป็นรหัส `skill_xxxxxxxxxx` = แถว `employee_skills` ที่ `skill_definitions` ถูกลบไปแล้ว (ไม่มีบันทึกการลบใน audit_log ⇒ กู้ชื่อไม่ได้)
+- ตรวจก่อนลบ: 22 รหัส · 96 แถว · ไม่มีจุดงาน/หลักฐาน/หัวข้อย่อยอ้าง · อัพเดทล่าสุด 23/06 (3 รหัสเคยขึ้นขั้น)
+- ลบแล้วผ่าน `supabase/migrations/20261125_delete_orphan_skill_scores.sql` · สำรอง `archive.employee_skills_orphan_20261125`
+  · ใบ `skill_level_up_requests` 15 ใบเก็บไว้เป็นประวัติ (user เลือก) · ย้อน: `insert into public.employee_skills select * from archive.employee_skills_orphan_20261125;`
+- 🛡️ **ปิดแล้ว (25/11 · user "ทำด่านกันลบสกิลที่ยังมีคะแนนด้วย"): ลบสกิลได้เฉพาะตัวที่ยังไม่มีใครมีคะแนน**
+  · ฝั่ง DB: trigger `trg_skill_def_delete_guard` (BEFORE DELETE บน `skill_definitions`) raise ถ้ายังมีแถว `employee_skills`
+    — `supabase/migrations/20261125b_skill_def_delete_guard.sql`
+  · ฝั่งจอ `/operator` `handleDeleteSkill`: นับก่อน (นับไม่ได้ = ไม่ลบ) · บอกจำนวนแถว · **เลิกลบคะแนนพ่วง** (เดิมลบคะแนนทุกคนไปด้วย)
+    · requirement ของ station ยังลบพ่วงเหมือนเดิม · ด่าน `skill-delete-keeps-scores` ใน regressionGuards
+  · วัด 25/11: นิยาม 108 ตัว · มีคะแนน 102 (ลบไม่ได้แล้ว) · ลบได้ 6 · ทดสอบบนฐานจริง (rollback): มีคะแนน = ถูกบล็อก · ไม่มีคะแนน = ลบได้
+  · ⚠️ ยังไม่กัน: แก้ `skill_definitions.name` (คีย์) ทับ — จอไม่มีช่องแก้ name แต่ฝั่ง DB ยังทำได้

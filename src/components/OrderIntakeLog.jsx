@@ -103,7 +103,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         .eq('source', 'manual').gte('created_at', lo).lt('created_at', hi)
         .order('created_at', { ascending: false }).limit(500);
       manRows = retry.data;
-      if (retry.error) e.push(`คีย์มือ: ${retry.error.message}`);
+      if (retry.error) e.push(`${trI18n("คีย์มือ")}: ${retry.error.message}`);
       else e.push('คีย์มือ: ยังไม่ได้ apply migration — ไม่รู้ว่าใครเป็นคนคีย์ (ใบใหม่จะเก็บชื่อให้เอง)');
     }
     setErrs(e);
@@ -136,7 +136,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         items.filter(e => e.kind === 'manual').length && `คีย์มือ ${items.filter(e => e.kind === 'manual').length}`,
       ].filter(Boolean).join(' · ');
       return { day, items, label: dayLabelOf(day),
-        summary: `${kinds}${up || cr ? ` · อัพเดท ${up} · สร้าง ${cr} ใบ` : ''}` };
+        summary: `${kinds}${up || cr ? ` · ${trI18n("อัพเดท")} ${up} · ${trI18n("สร้าง")} ${cr} ${trI18n("ใบ")}` : ''}` };
     });
   }, [shown, limit]);
 
@@ -153,7 +153,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
             <option key={c} value={c}>{custLabel ? custLabel(c) : c}</option>
           ))}
         </select>
-        <SearchInput value={q} onChange={setQ} fields="ชื่อไฟล์ / MAT / คนทำ" />
+        <SearchInput value={q} onChange={setQ} fields={trI18n("ชื่อไฟล์ / MAT / คนทำ")} />
       </TimeRangeBar>
       <div style={card}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -165,8 +165,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         </div>
         {sum.esmart > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>
-            ผลจาก e-SMART ในช่วงนี้ — อัพเดท <b style={{ color: '#22c55e' }}>{sum.ordersUpdated}</b> ใบ ·
-            สร้างใหม่ <b style={{ color: '#0ea5e9' }}>{sum.ordersCreated}</b> ใบ
+            {trI18n("ผลจาก e-SMART ในช่วงนี้ — อัพเดท")} <b style={{ color: '#22c55e' }}>{sum.ordersUpdated}</b> {trI18n("ใบ · สร้างใหม่")} <b style={{ color: '#0ea5e9' }}>{sum.ordersCreated}</b> {trI18n("ใบ")}
             {sum.ordersSkipped > 0 && <> · <b style={{ color: '#f59e0b' }}>{sum.ordersSkipped}</b> {trI18n('รายการที่ไม่ได้แตะ (ทำไปแล้ว/จับคู่ไม่ได้)')}</>}
           </div>
         )}
@@ -174,7 +173,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
 
       {errs.map((m, i) => (
         <div key={i} style={{ ...card, padding: '9px 12px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12 }}>
-          🔴 โหลดไม่ครบ — {m}
+          🔴 {trI18n("โหลดไม่ครบ")} — {m}
         </div>
       ))}
 
@@ -182,7 +181,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
 
       {!loading && !shown.length && (
         <div style={{ ...card, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
-          ไม่มีรายการในช่วงนี้{rows.length > 0 && ` — มี ${rows.length} รายการแต่ถูกตัวกรองซ่อนไว้`}
+          {trI18n("ไม่มีรายการในช่วงนี้")}{rows.length > 0 && ` — ${trI18n("มี")} ${rows.length} ${trI18n("รายการแต่ถูกตัวกรองซ่อนไว้")}`}
         </div>
       )}
 
@@ -242,13 +241,13 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
             return (
               <>{trI18n('🕐 ออกไฟล์')} <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
                 {Number.isFinite(lagMin) && lagMin >= 0 && (
-                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> {trI18n('(อัพหลังจากนั้น')} {lagMin} นาที)</span>
+                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> {trI18n('(อัพหลังจากนั้น')} {lagMin} {trI18n("นาที")})</span>
                 )}
                 <br />
               </>
             );
           })()}
-          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>{trI18n('ไม่ระบุผู้ทำ')}</span>}
+          📥 {trI18n("อัพเข้าระบบ")} {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>{trI18n('ไม่ระบุผู้ทำ')}</span>}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
@@ -256,7 +255,7 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         {e.detail && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{e.detail}</span>}
         {e.kind === 'esmart' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            {fmt(e.stats.rows)} {trI18n('แถว')}{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
+            {fmt(e.stats.rows)} {trI18n('แถว')}{e.stats.fresh !== e.stats.rows && ` (${trI18n("ใหม่")} ${fmt(e.stats.fresh)})`}
             {' · '}{trI18n('✏️ อัพเดท')} <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
             {' · '}{trI18n('➕ สร้าง')} <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
             {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>{trI18n('ไม่แตะ')} {fmt(e.stats.skipped)}</span></>}
@@ -297,7 +296,7 @@ function PullBatchDetail({ batchId }) {
   if (!rows.length) {
     return (
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-        ไม่มีแถวผูกกับไฟล์นี้ — ทุกแถวเคยนำเข้าจากไฟล์ก่อนหน้าแล้ว (ระบบไม่นับซ้ำ)
+        {trI18n("ไม่มีแถวผูกกับไฟล์นี้ — ทุกแถวเคยนำเข้าจากไฟล์ก่อนหน้าแล้ว (ระบบไม่นับซ้ำ")})
       </div>
     );
   }

@@ -35,17 +35,17 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
         {lateJobs > 0 && (
           <span title={tr('งานที่หลุดกรอบเวลาของตัวเองในวันงานนี้ — รวมใบที่ช้าแล้วปิดไปได้แล้ว (คนละเลขกับ \'ดีเลย์ N ใบ\' ที่บอกว่าตอนนี้ค้างกี่ใบ)')}
             style={chip('#ef4444')}>
-            วันนี้หลุดกรอบ {lateJobs} งาน
+            {tr("วันนี้หลุดกรอบ")} {lateJobs} {tr("งาน")}
             <span style={{ fontSize: size - 1, fontWeight: 600, color: 'var(--muted)' }}>
-              (ปิดช้า {lateDone} {tr('· ยังค้าง')} {stillLate})
+              ({tr("ปิดช้า")} {lateDone} {tr('· ยังค้าง')} {stillLate})
             </span>
           </span>
         )}
         {willCarry > 0 && (
           <span title={dayOver
-              ? 'ใบที่ปิดไม่ได้จนจบวันงานนั้น — ของจริงคือถูกยกยอดไปวันถัดไป'
-              : 'ใบที่คิวดันไปจบเลยกรอบวันงาน (08:00 ของวันถัดไป) — ของจริงคือต้องยกยอดไปวันถัดไป'}
-            style={chip('#f59e0b')}>↷ {dayOver ? 'ไม่จบในวันงาน' : 'ต้องยกยอด'} {willCarry} {tr('ใบ')}</span>
+              ? tr("ใบที่ปิดไม่ได้จนจบวันงานนั้น — ของจริงคือถูกยกยอดไปวันถัดไป")
+              : tr("ใบที่คิวดันไปจบเลยกรอบวันงาน (08:00 ของวันถัดไป) — ของจริงคือต้องยกยอดไปวันถัดไป")}
+            style={chip('#f59e0b')}>↷ {dayOver ? tr("ไม่จบในวันงาน") : tr("ต้องยกยอด")} {willCarry} {tr('ใบ')}</span>
         )}
         {carriedIn > 0 && (
           <span title={tr('ใบที่ยกยอดมาจากกะ/วันก่อน = หนี้เก่าที่วันนี้ต้องแบก')}
@@ -60,8 +60,8 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
               (วัดจริง 25/09: ใบ manual ที่เปิดคลุมทั้งกะกินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย
                ถ้าพาดหัวว่า "ต้นเหตุ" คนจะไปไล่เบี้ยผิดใบ) · อันดับจัดโดย pushChainOf แล้ว */}
           {c.victimCount > 0
-            ? <span style={{ fontWeight: 800, color: '#ef4444' }}>{tr('ต้นเหตุ')}</span>
-            : <span style={{ fontWeight: 800, color: '#f59e0b' }}>{tr('⏰ กินเวลาเกินกรอบ')}</span>}
+            ? <span style={{ fontWeight: 800, color: 'var(--red)' }}>{tr('ต้นเหตุ')}</span>
+            : <span style={{ fontWeight: 800, color: 'var(--amber)' }}>{tr('⏰ กินเวลาเกินกรอบ')}</span>}
           {c.root?.prod_no && (
             <span title={tr('เลขใบผลิต (บาร์โค้ดบัตรคัมบัง)')} style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>
               #{c.root.prod_no}
@@ -71,14 +71,14 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
           <span style={{ fontWeight: 800, color: c.victimCount > 0 ? '#ef4444' : '#f59e0b' }}>
             {/* 🔴 ยังไม่ปิด = เวลาที่นับได้เป็นเพียง "ถึงตอนนี้/ถึงปลายวัน" ⇒ ต้องมี ≥ กำกับ */}
             {c.victimCount > 0
-              ? `กินเวลาเกิน ${c.rootUnclosed ? '≥ ' : ''}${fmtSlipMin(c.ownLateMin)}`
+              ? `${tr("กินเวลาเกิน")} ${c.rootUnclosed ? '≥ ' : ''}${fmtSlipMin(c.ownLateMin)}`
               : `${c.rootUnclosed ? '≥ ' : ''}${fmtSlipMin(c.ownLateMin)}`}
             {c.rootUnclosed && <span style={{ fontWeight: 600, color: 'var(--muted)' }}> {tr('(ยังไม่ปิด)')}</span>}
           </span>
           {c.victimCount > 0 ? (
-            <span title={`ใบที่ถูกเลื่อนออกไปเพราะใบนี้: ${c.victims.map(v => `${v.o?.prod_no || v.key} (+${v.blameMin} น.)`).join(' · ')}`}
+            <span title={`${tr("ใบที่ถูกเลื่อนออกไปเพราะใบนี้")}: ${c.victims.map(v => `${v.o?.prod_no || v.key} (+${v.blameMin} ${tr("น.")})`).join(' · ')}`}
               style={{ fontWeight: 700, color: '#f97316' }}>
-              → พาลไป {c.victimCount} ใบ
+              → {tr("พาลไป")} {c.victimCount} {tr("ใบ")}
               <span style={{ fontWeight: 600, color: 'var(--muted)' }}>
                 {' '}{tr('(หนักสุด +')}{fmtSlipMin(Math.max(...c.victims.map(v => v.blameMin)))})
               </span>

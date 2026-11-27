@@ -51,7 +51,7 @@ export default function BoardPager({ page, count, onPage, labels = [], compact =
   const btn = (disabled) => ({
     fontSize: tv ? 22 : compact ? 14 : 16, fontWeight: 800, lineHeight: 1,
     padding: tv ? '6px 14px' : compact ? '4px 9px' : '6px 12px', borderRadius: 8, cursor: disabled ? 'default' : 'pointer',
-    background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
+    background: 'var(--bg3-surf)', color: 'var(--text)', border: '1px solid var(--border2)',
     opacity: disabled ? 0.4 : 1,
   });
 
@@ -76,8 +76,8 @@ export default function BoardPager({ page, count, onPage, labels = [], compact =
       {/* จุดบอกหน้า — กดข้ามไปหน้าไหนก็ได้ · title บอกว่าหน้านั้นมีแผ่นอะไร (จอ TV ไม่มีเมาส์ก็ยังนับจุดได้) */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 3 }}>
         {showDots && Array.from({ length: count }, (_, i) => (
-          <button key={i} type="button" onClick={() => onPage(i)} title={labels[i] || `หน้า ${i + 1}`}
-            aria-label={labels[i] || `หน้า ${i + 1}`} aria-current={i === page ? 'true' : undefined}
+          <button key={i} type="button" onClick={() => onPage(i)} title={labels[i] || `${tr("หน้า")} ${i + 1}`}
+            aria-label={labels[i] || `${tr("หน้า")} ${i + 1}`} aria-current={i === page ? 'true' : undefined}
             style={{
               width: tv ? 16 : 10, height: tv ? 16 : 10, borderRadius: '50%', border: 'none', padding: 0, cursor: 'pointer',
               background: i === page ? 'var(--accent)' : 'var(--border2)',

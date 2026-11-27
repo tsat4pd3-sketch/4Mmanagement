@@ -34,7 +34,7 @@ export default function InstrumentSelect({ scan,
   const sel = useMemo(() => optionsAll.find(o => o.key === up(value)) || null, [optionsAll, value]);
   return (
     <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} disabled={disabled}
-      scan={scan === false ? undefined : (scan || 'เครื่องมือวัด')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
+      scan={scan === false ? undefined : (scan || tr("เครื่องมือวัด"))}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
       allowFree={allowFree} freeHint={freeHint} placeholder={placeholder}
       emptyText={tr('ไม่พบเครื่องมือวัดในทะเบียน — ลงทะเบียนได้ที่ /qa แท็บ 📏 เครื่องมือวัด')} loadFail={fail}
       inputStyle={inputStyle} style={style}

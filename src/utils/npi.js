@@ -11,6 +11,7 @@
    "วันนี้" รับเป็น 'YYYY-MM-DD' (จาก todayLocal — ห้าม toISOString) เทียบเป็น string ได้เลย */
 import { addDaysStr } from './workDate.js';
 import { linearFlow } from './stepFlow.js';
+import { tr } from './i18n.js';
 
 export const DUE_SOON_DAYS = 7;   // เหลือ ≤ 7 วัน = เหลือง (1 สัปดาห์พอให้ตามงานทัน — เกณฑ์เดียวกับ PM forecast)
 
@@ -331,7 +332,7 @@ export const eciFlow = (r) => linearFlow({
   steps: [
     { label: 'รับเรื่อง ECI', who: 'IEC', action: 'ประเมินผลกระทบ (แบบ · PE doc · 4M · tooling)' },
     { label: 'ประเมินผลกระทบ', who: 'IEC', action: 'สรุปผลกระทบแล้วเสนออนุมัติ' },
-    { label: 'อนุมัติ', who: 'ผู้มีสิทธิ์ npi:approve', action: 'ผูกของจริงครบทุกขาแล้วปิด (implemented)' },
+    { label: tr("อนุมัติ"), who: 'ผู้มีสิทธิ์ npi:approve', action: 'ผูกของจริงครบทุกขาแล้วปิด (implemented)' },
     { label: 'ทำแล้ว (ปิด)' },
   ],
   at: { open: 0, evaluating: 1, approved: 2, implemented: 4 },

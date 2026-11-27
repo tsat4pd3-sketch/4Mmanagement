@@ -1,6 +1,6 @@
 /* ═══ 🔄 Engineering Change — "เลขนี้ถูกแทนด้วย rev ไหนแล้ว" (pure · มีเทส) ═══════════
    user ถาม 2026-10-05: *"part master ไม่มีระบบ ecn หรอ … หรืออยู่ที่ product"*
-   → **อยู่ที่แท็บ 3️⃣ Products** — `dr_products` มี `superseded_by` / `superseded_at` / `family_id`
+   → **อยู่ที่แท็บ Production** — `dr_products` มี `superseded_by` / `superseded_at` / `family_id`
      แต่ **ทะเบียนกลาง `parts_master` ไม่รู้เรื่องเลย** (วัดจริง 05/10: โน้ตที่พูดถึง EC = 0/370 แถว)
      ⇒ จอทะเบียนโชว์ rev เก่ากับ rev ใหม่เป็น "ใช้งาน" เท่ากัน คนหยิบผิดได้ง่าย
      (วัดจริง: เบอร์ลูกค้าที่มีหลาย revision = **23 กลุ่ม · 92 แถว · ยัง active 91**)

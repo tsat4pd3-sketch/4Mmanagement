@@ -101,7 +101,7 @@ export default function CommandPalette({ open, onClose, role }) {
         onClick={e => e.stopPropagation()}
         style={{
           width: 'min(620px, 100%)', maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-          background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
+          background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
           boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
         }}
       >
@@ -121,7 +121,7 @@ export default function CommandPalette({ open, onClose, role }) {
         <div ref={listRef} style={{ overflowY: 'auto', padding: 6 }}>
           {results.length === 0 ? (
             <div style={{ padding: '26px 14px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-              ไม่พบเมนูที่ตรงกับ “{q}”
+              {tr("ไม่พบเมนูที่ตรงกับ")} “{q}”
               <div style={{ marginTop: 6, fontSize: 12 }}>{tr('เมนูที่ไม่มีสิทธิ์เข้าจะไม่แสดงที่นี่')}</div>
             </div>
           ) : results.map((item, idx) => {

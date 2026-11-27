@@ -31,6 +31,10 @@ import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { MARKS, MARK_BY_KEY, markGlyph, markColor, daysInMonth, ppeToMark } from '../utils/bbsMarks';
 import { getWorkDate } from '../utils/workDate';
 import { printBbsSheet } from '../lib/bbsPrint';
+import WfRoundPanel from '../components/WfRoundPanel';   // ✍️ สายเซ็นรายเดือน ผู้ตรวจ→SV→Manager (e-Workflow · 25/11)
+import { loadRoundSignoff } from '../lib/wfSignoff';
+import WfGridSheet from '../components/WfGridSheet';   // 🧩 ธ.ค. 2569 เป็นต้นไป = ใบตรวจแบบตารางของ e-Workflow (26/11)
+import { BBS_GRID_KEY, isBbsGridMonth } from '../utils/checkGrid';
 import { resolveEmployeeSigner, signatureOfPerson } from '../utils/employeeSignature';   // ✍️ รหัสพนักงาน → ลายเซ็น (C1 · 03/11)
 import { checkWriteRows } from '../utils/dbWrite';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้น ③ "ใบของไลน์นี้เป็นของหน่วยงานเราไหม" (19/11)
@@ -47,7 +51,9 @@ import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
 import { tr } from '../utils/i18n';
 import { pickSignerPatch } from '../utils/selfSign';
+import { createBurstTracker, normScanCode } from '../utils/scanWedge';   // 🔫 แยก "สแกนบัตร" ออกจาก "พิมพ์รหัส" (A6 · 24/11)
 import { askConfirm } from '../utils/askConfirm';
+import { notifyEvent } from '../utils/notifyEvent';   // 🔔 25/11: พบพฤติกรรมไม่ปลอดภัย = แจ้ง (เดิมเงียบ)
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -152,7 +158,7 @@ export default function BbsCheck() {
       supabase.from('profiles').select('id, full_name, position, signature_url')
         .not('signature_url', 'is', null),
     ]);
-    if (ag.error) setLoadWarn(`โหลดข้อตกลงไม่สำเร็จ: ${ag.error.message}`);
+    if (ag.error) setLoadWarn(`${tr("โหลดข้อตกลงไม่สำเร็จ")}: ${ag.error.message}`);
     setAgreements(ag.data || []);
     setSigners(pf.data || []);
   }, []);
@@ -180,7 +186,7 @@ export default function BbsCheck() {
         .eq('is_active', true);
       q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', lineObj.id);
       const { data: empData, error: empErr } = await q.order('employee_id_code');
-      if (empErr) setLoadWarn(`โหลดรายชื่อพนักงานไม่สำเร็จ: ${empErr.message}`);
+      if (empErr) setLoadWarn(`${tr("โหลดรายชื่อพนักงานไม่สำเร็จ")}: ${empErr.message}`);
       if (sheetKeyRef.current !== myKey) return;   // เปลี่ยนไลน์/เดือน/กะ ระหว่างรอ → ทิ้งผลรอบนี้
       setEmps(empData || []);
 
@@ -190,7 +196,7 @@ export default function BbsCheck() {
       const { data: shRows, error: shErr } = await supabase.from('bbs_sheets').select('*')
         .eq('month_key', month).eq('line_name', lineObj.name)
         .order('created_at', { ascending: true }).limit(1);
-      if (shErr) setLoadWarn(`โหลดหัวใบไม่สำเร็จ: ${shErr.message}`);
+      if (shErr) setLoadWarn(`${tr("โหลดหัวใบไม่สำเร็จ")}: ${shErr.message}`);
       const sh = (shRows || [])[0] || null;
       if (sheetKeyRef.current !== myKey) return;
       setSheet(sh);
@@ -201,7 +207,7 @@ export default function BbsCheck() {
            ⇒ ดึงครบทุกหน้า + โหลดไม่ครบต้องเขียนบนจอ (กฎเขียน DB ข้อ 5) */
         const obRes = await fetchAllPages(() => supabase.from('bbs_observations')
           .select('*').eq('sheet_id', sh.id));
-        if (obRes.error) setLoadWarn(`โหลดผลสังเกตไม่สำเร็จ: ${obRes.error}`);
+        if (obRes.error) setLoadWarn(`${tr("โหลดผลสังเกตไม่สำเร็จ")}: ${obRes.error}`);
         else if (obRes.truncated) setLoadWarn('ผลสังเกตของใบนี้เยอะเกินกว่าจะโหลดครบ — ช่องที่ว่างอาจมีข้อมูลอยู่จริง');
         const map = {};
         obRes.rows.forEach(o => { map[cellKey(o.employee_id, o.day)] = o; });
@@ -233,7 +239,13 @@ export default function BbsCheck() {
     resolveEmployeeSigner(supabase, inspCode).then(r => { if (alive) setCodeSigner(r); });
     return () => { alive = false; };
   }, [inspCode]);
-  const shownSig = signatureOfPerson({ profileSig: sheet?.inspector_sig_url, employeeSig: codeSigner?.signatureUrl });
+  /* 🔴 A6 (24/11 · คำสั่ง user "ลายเซ็นต้องเป็นของเจ้าตัว"): เดิมพิมพ์รหัสคนอื่นแล้วระบบดึงลายเซ็นคนนั้นมาแปะทันที
+     ⇒ ลายเซ็นบนใบ = `inspector_sig_url` ที่บันทึกไว้เท่านั้น · ลายเซ็นจากฐานพนักงานถูกเขียนลงช่องนี้
+       **เฉพาะตอนสแกนบัตรจริง** (จังหวะเครื่องสแกน · `scanWedge`) หรือรหัสเป็นของคนที่ login เอง
+     · พิมพ์รหัสคนอื่น = โชว์ชื่อได้ แต่ช่องลายเซ็นว่าง (เซ็นมือบนกระดาษ/ให้เจ้าตัวสแกนบัตร) */
+  const shownSig = sheet?.inspector_sig_url || null;
+  const codeBurstRef = useRef(createBurstTracker());
+  const scannedCodeRef = useRef('');
 
   /* 🔐 ชั้น ③ (19/11 · ออดิท check sheet) — สิทธิ์ `bbs:record` บอกแค่ "กดบันทึกเป็นไหม"
      ไม่ได้บอกว่า "ใบของไลน์นี้เป็นของหน่วยงานเราไหม" ⇒ เดิมเลือกไลน์ส่วนงานอื่นแล้วทาช่องได้
@@ -242,13 +254,27 @@ export default function BbsCheck() {
   const lineWrite = canWriteLine(wCtx, lineObj?.name, lines);
   const lineGuard = () => {
     if (lineWrite.ok) return true;
-    toast.error(writeBlockText(lineWrite, { what: `ใบ BBS ของไลน์ ${lineObj?.name || ''}`, unit: lineObj?.section || '' }));
+    toast.error(writeBlockText(lineWrite, { what: `${tr("ใบ BBS ของไลน์")} ${lineObj?.name || ''}`, unit: lineObj?.section || '' }));
     return false;
   };
+
+  /* ✍️ 25/11 — BBS เข้า e-Workflow (ใบรายเดือน: ผู้ตรวจออกใบ → Supervisor ตรวจสอบ → Manager อนุมัติ)
+     มีคนเซ็นแล้ว = ใบเดือนนี้ล็อก (DB ตัดสิน: trigger `bbs_wf_lock` · ที่นี่แค่บอกก่อนกด) · แก้ = ให้ผู้เซ็นตีกลับ/เพิกถอน */
+  const [wfLock, setWfLock] = useState(null);
+  const [lockTick, setLockTick] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    setWfLock(null);
+    if (!lineObj?.name) return undefined;
+    supabase.rpc('wf_bound_locked', { p_kind: 'bbs', p_line: lineObj.name, p_date: `${month}-01`, p_shift: null })
+      .then(({ data, error }) => { if (alive && !error) setWfLock(typeof data === 'string' && data ? data : null); });
+    return () => { alive = false; };
+  }, [lineObj?.name, month, lockTick]);
 
   /* ── หัวใบ: สร้างตอนบันทึกจริงเท่านั้น (ห้ามสร้างตอนเปิดดู) ── */
   const ensureSheet = useCallback(async () => {
     if (!lineGuard()) return null;   // ทุกขาเขียน (ทาช่อง · หมายเหตุ · เติม PPE · ผู้ตรวจ) ผ่านตรงนี้
+    if (wfLock) { toast.error(`${tr('ใบ BBS เดือนนี้เซ็นแล้ว')} (${wfLock}) — ${tr('ให้ผู้เซ็นตีกลับ/เพิกถอนก่อนแก้')}`); return null; }
     // ⚠️ ด่านสุดท้ายของขาเขียน — เช็คแค่ `sheet` ไม่พอ ใบของเดือน/ไลน์ก่อนก็ truthy เหมือนกัน
     if (matchesKey(sheet)) return sheet;
     if (!lineObj) return null;
@@ -280,12 +306,12 @@ export default function BbsCheck() {
         ? 'ยังไม่ได้ apply migration ของ BBS — แจ้งผู้ดูแลระบบ'
         : error.code === '42P10'
           ? 'ยังไม่ได้รัน migration ยุบใบ BBS ตามกะ (20261002) — แจ้งผู้ดูแลระบบ ยังบันทึกไม่ได้'
-          : `สร้างใบไม่สำเร็จ: ${error.message}`);
+          : `${tr("สร้างใบไม่สำเร็จ")}: ${error.message}`);
       return null;
     }
     setSheet(data);
     return data;
-  }, [sheet, lineObj, month, fullName, signers, lineWrite.ok]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sheet, lineObj, month, fullName, signers, lineWrite.ok, wfLock]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── ทาช่อง ── */
   // markOverride/seqOverride: โหมดมือถือกดชิปตรงๆ ไม่ผ่านแปรง (desktop ส่ง 2 ตัวแรกเหมือนเดิม)
@@ -305,7 +331,7 @@ export default function BbsCheck() {
       // 📱 มือถือ: แตะเบิ้ลด้วยถุงมือ = ลบช่องที่เพิ่งทาไปเงียบๆ ⇒ ถามก่อน (จอคอมคลิกซ้ำล้างทันทีเหมือนเดิม · 2026-10-20)
       if (isMobile && !await askConfirm('ล้างเครื่องหมายช่องนี้?')) return;
       const { error } = await supabase.from('bbs_observations').delete().eq('id', cur.id);
-      if (error) return toast.error(`ล้างช่องไม่สำเร็จ: ${error.message}`);
+      if (error) return toast.error(`${tr("ล้างช่องไม่สำเร็จ")}: ${error.message}`);
       setCells(c => { const n = { ...c }; delete n[key]; return n; });
       return;
     }
@@ -317,8 +343,30 @@ export default function BbsCheck() {
     };
     const { data, error } = await supabase.from('bbs_observations')
       .upsert(payload, { onConflict: 'sheet_id,employee_id,day' }).select().single();
-    if (error) return toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${error.message}`);
     setCells(c => ({ ...c, [key]: data }));
+    /* 🔔 25/11 (คำสั่ง user "BBS แจ้งเตือนด้วย"): ทาช่อง "ไม่เหมาะสม" = แจ้งทันที — เฉพาะตอนเป็นของใหม่
+       (เดิมไม่ใช่ ng หรือเปลี่ยนเลขข้อ) · ทาซ้ำ/แก้ช่องเดิม = ไม่ยิงซ้ำ · ผู้รับตามทะเบียน `bbs_unsafe` */
+    if (brush === 'ng' && !(cur?.mark === 'ng' && cur?.agreement_seq === brushSeq)) {
+      notifyBbsUnsafe([{ name: emp.name, day, seq: brushSeq }]);
+    }
+  };
+
+  /** 🔔 แจ้ง `bbs_unsafe` 1 การ์ดต่อการบันทึก (ทาช่องเดียว หรือเติมอัตโนมัติหลายช่อง = รวมใบเดียว) */
+  const notifyBbsUnsafe = (items) => {
+    if (!items.length || !lineObj?.name) return;
+    const agText = (seq) => agreements.find(a => a.seq === seq)?.text || '';
+    notifyEvent({
+      event: 'bbs_unsafe', type: 'error', ref_table: 'bbs_sheets',
+      line_name: lineObj.name, actor: fullName,
+      link: `/daily-checker?tab=bbs`,
+      title: `🦺 BBS พบพฤติกรรมไม่ปลอดภัย ${items.length} ช่อง — ${lineObj.name}`,
+      lines: [
+        `🏭 ${tr("ไลน์")}: ${lineObj.name} · 📅 ${month}`,
+        ...items.slice(0, 8).map(it => `  • ${it.name || '-'} (${tr("วันที่")} ${it.day}) — ${tr("ข้อ")} ${it.seq ?? '-'} ${agText(it.seq)}`.trim()),
+        items.length > 8 ? `  • …${tr("และอีก")} ${items.length - 8} ${tr("ช่อง")}` : '',
+      ],
+    });
   };
 
   /* ── หมายเหตุท้ายแถว (คอลัมน์ "หมายเหตุ" ในใบกระดาษ) ── */
@@ -334,7 +382,7 @@ export default function BbsCheck() {
       { onConflict: 'sheet_id,employee_id' });
     if (error) {
       setRowNotes(m => ({ ...m, [empId]: cur }));   // คืนค่าเดิม ไม่ให้จอโกหกว่าบันทึกแล้ว
-      toast.error(`บันทึกหมายเหตุไม่สำเร็จ: ${error.message}`);
+      toast.error(`${tr("บันทึกหมายเหตุไม่สำเร็จ")}: ${error.message}`);
     }
   };
 
@@ -370,7 +418,7 @@ export default function BbsCheck() {
         .in('employee_id', empIds);
       /* ไม่กรองกะ — BBS ไม่แยกกะแล้ว (ดูหัวบล็อกไฟล์) เอาผลตรวจ PPE ของทั้งวัน */
       const lp = await fetchAllPages(q, { orderBy: ['work_date', 'employee_id'] });
-      if (lp.error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${lp.error}`); return; }
+      if (lp.error) { toast.error(`${tr("อ่านผลตรวจ PPE ไม่สำเร็จ")}: ${lp.error}`); return; }
       // โหลดไม่ครบ = ช่องที่ขาดจะถูกอ่านว่า "ไม่ได้ตรวจ" ⇒ ห้ามเติมต่อเงียบๆ
       if (lp.truncated) { toast.error('ผลตรวจ PPE เดือนนี้เยอะเกินกว่าจะโหลดครบ — ยังเติมอัตโนมัติไม่ได้'); return; }
       const logs = lp.rows;
@@ -388,14 +436,14 @@ export default function BbsCheck() {
 
       if (!rows.length) {
         toast.info(skipManual
-          ? `ไม่มีอะไรให้เติม — ${skipManual} ช่องเป็นของที่กรอกเอง (ระบบไม่ทับ)`
+          ? `${tr("ไม่มีอะไรให้เติม")} — ${skipManual} ${tr("ช่องเป็นของที่กรอกเอง (ระบบไม่ทับ")})`
           : 'ไม่มีข้อมูลการตรวจ PPE ของเดือน/ไลน์/กะนี้');
         return;
       }
 
       const { data, error: upErr } = await supabase.from('bbs_observations')
         .upsert(rows, { onConflict: 'sheet_id,employee_id,day' }).select();
-      if (upErr) { toast.error(`เติมไม่สำเร็จ: ${upErr.message}`); return; }
+      if (upErr) { toast.error(`${tr("เติมไม่สำเร็จ")}: ${upErr.message}`); return; }
 
       setCells(c => {
         const n = { ...c };
@@ -403,8 +451,12 @@ export default function BbsCheck() {
         return n;
       });
       const ng = rows.filter(r => r.mark === 'ng').length;
-      toast.success(`เติม ${data?.length ?? 0} ช่อง (พบไม่สวม PPE ${ng} ช่อง)`
-        + (skipManual ? ` · ข้ามของที่กรอกเอง ${skipManual} ช่อง` : ''));
+      // 🔔 25/11: ช่อง "ไม่สวม PPE" ที่เพิ่งเติม (ไม่ใช่ ng เดิมอยู่แล้ว) = แจ้งรวมใบเดียว
+      const empName = (id) => emps.find(e => e.id === id)?.name;
+      const newNg = rows.filter(r => r.mark === 'ng' && cells[cellKey(r.employee_id, r.day)]?.mark !== 'ng');
+      notifyBbsUnsafe(newNg.map(r => ({ name: empName(r.employee_id), day: r.day, seq: r.agreement_seq })));
+      toast.success(`${tr("เติม")} ${data?.length ?? 0} ${tr("ช่อง (พบไม่สวม")} PPE ${ng} ${tr("ช่อง")})`
+        + (skipManual ? ` · ${tr("ข้ามของที่กรอกเอง")} ${skipManual} ${tr("ช่อง")}` : ''));
     } finally { setBusy(false); }
   };
 
@@ -430,22 +482,38 @@ export default function BbsCheck() {
     };
     const { data, error } = await supabase.from('bbs_sheets')
       .update(patch).eq('id', sh.id).select('id');
-    if (error) return toast.error(`บันทึกผู้ตรวจไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("บันทึกผู้ตรวจไม่สำเร็จ")}: ${error.message}`);
     if (!data?.length) return toast.error('บันทึกไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์แก้ใบนี้');
     setSheet(s => ({ ...s, ...patch }));
-    toast.success(pk.self || !pk.name ? 'บันทึกผู้ตรวจสอบแล้ว' : `บันทึกผู้ตรวจสอบแล้ว — ลายเซ็นจะขึ้นเมื่อ ${pk.name} สแกนบัตร/login มาเลือกตัวเอง`);
+    toast.success(pk.self || !pk.name ? 'บันทึกผู้ตรวจสอบแล้ว' : `${tr("บันทึกผู้ตรวจสอบแล้ว — ลายเซ็นจะขึ้นเมื่อ")} ${pk.name} ${tr("สแกนบัตร/login มาเลือกตัวเอง")}`);
   };
 
   const setInspectorCode = async (code) => {
     const sh = sheet; if (!sh) return;
     if (!canRecord || !lineGuard()) return;
     if ((code || null) === (sh.inspector_code || null)) return;
+    const scanned = !!code && normScanCode(code) === scannedCodeRef.current;
+    scannedCodeRef.current = '';
+    const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const myEmp = allEmps.find(e => norm(e.name) === norm(fullName));
+    const isMine = !!code && !!myEmp?.employee_id_code && normScanCode(myEmp.employee_id_code) === normScanCode(code);
+    let sigPatch = { inspector_sig_url: null };   // รหัสเปลี่ยน = ลายเซ็นเดิมไม่ใช่ของคนนี้แล้ว
+    let note = '';
+    if (code && (scanned || isMine)) {
+      const signer = await resolveEmployeeSigner(supabase, code);
+      const sig = isMine ? signatureOfPerson({ profileSig: signers.find(p => norm(p.full_name) === norm(fullName))?.signature_url, employeeSig: signer?.signatureUrl }) : signer?.signatureUrl;
+      sigPatch = { inspector_sig_url: sig || null, ...(signer?.name ? { inspector_name: signer.name } : {}) };
+      if (!sig) note = signer?.note || tr('คนนี้ยังไม่มีลายเซ็นในระบบ — ใบจะเว้นช่องให้เซ็นมือ');
+    } else if (code) {
+      note = tr('พิมพ์รหัสเอง = ไม่ดึงลายเซ็นมาแปะ (ลายเซ็นต้องเป็นของเจ้าตัว) — ให้ผู้ตรวจสแกนบัตรเอง หรือเซ็นมือบนใบพิมพ์');
+    }
     const { data, error } = await supabase.from('bbs_sheets')
-      .update({ inspector_code: code || null, updated_by_name: fullName || null })
+      .update({ inspector_code: code || null, ...sigPatch, updated_by_name: fullName || null })
       .eq('id', sh.id).select('id');
     if (error || !data?.length) return toast.error('บันทึกรหัสพนักงานไม่สำเร็จ');
     // ต้องอัปเดต state ด้วย — ไม่งั้นลายเซ็นจากรหัสใหม่ไม่ถูกโหลด (ใบพิมพ์ใช้รหัสเก่า)
-    setSheet(s => (s && s.id === sh.id ? { ...s, inspector_code: code || null } : s));
+    setSheet(s => (s && s.id === sh.id ? { ...s, inspector_code: code || null, ...sigPatch } : s));
+    if (note) toast.info(note);
   };
 
   /* ── วันไหน "ต้องสังเกต" (19/11 · ออดิท check sheet ข้อ 5) ──────────────────────────────
@@ -513,23 +581,51 @@ export default function BbsCheck() {
     /* ✍️ ลายเซ็นผู้ตรวจ: โปรไฟล์ที่เลือก → ฐานพนักงานตามรหัส → เว้นช่องเซ็นมือ (resolve สดตอนกดพิมพ์)
        ระบุไม่ได้/ยังไม่มีลายเซ็น = บอกเหตุผลบนจอ ห้ามออกใบช่องว่างเงียบๆ */
     const signer = sheet.inspector_code ? await resolveEmployeeSigner(supabase, sheet.inspector_code) : null;
-    const sigUrl = signatureOfPerson({ profileSig: sheet.inspector_sig_url, employeeSig: signer?.signatureUrl });
+    const sigUrl = sheet.inspector_sig_url || null;   // A6: ลายเซ็นที่บันทึกไว้เท่านั้น — ไม่ resolve จากรหัสที่พิมพ์ตอนพิมพ์ใบ
     if (!sigUrl) toast.info(signer?.note || 'ยังไม่ได้ระบุผู้ตรวจ (เลือกชื่อ หรือสแกน/พิมพ์รหัสพนักงาน) — ใบจะเว้นช่องลายเซ็นไว้ให้เซ็นมือ');
+    /* ✍️ ช่องเซ็นตามสายเซ็น e-Workflow (25/11) · อ่านไม่ได้ = บอก แล้วพิมพ์ช่องเดิม (ห้ามพิมพ์ช่องว่างเหมือน "ยังไม่มีใครเซ็น") */
+    const so = lineObj ? await loadRoundSignoff(supabase, { subject: 'bbs', line: lineObj.name, date: `${month}-01` }) : null;
+    if (so?.error) toast.error(`${tr('อ่านลายเซ็นตามสายเซ็นไม่สำเร็จ — ใบจะใช้ช่องเซ็นเดิม')}: ${so.error}`);
     const ok = await printBbsSheet({
       sheet: { ...sheet, inspector_name: sheet.inspector_name || signer?.name || null, inspector_sig_url: sigUrl },
       days, employees: emps, cells, rowNotes, agreements, autoCount: autoAgreements.length,
+      signoff: so && !so.error ? so : null,
     });
     if (!ok) toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต popup ของเว็บนี้ก่อน');
   };
 
   const lbl = { fontSize: 11, color: 'var(--muted)', fontWeight: 700, display: 'block', marginBottom: 3 };
 
+  /* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน (ใช้ทั้งใบเดิมและใบตรวจแบบตาราง) */
+  const filterBar = (
+      <FilterBar style={{ marginBottom: 12 }}>
+        <span className="filter-label">{tr('พื้นที่ / ไลน์')}</span>
+        {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
+        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
+        <span className="filter-label">{tr('เดือน')}</span>
+        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
+        {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
+      </FilterBar>
+  );
+
+  /* 🧩 26/11 (คำสั่ง user "เริ่มตารางใหม่ 1 ธ.ค."): ธ.ค. 2569 เป็นต้นไป BBS = ใบตรวจแบบตารางของ e-Workflow
+     (ใบงาน `bbs_grid` · ตาราง wf_grid_* · สัญลักษณ์/หัวข้อ/สายเซ็นตั้งที่ /workflow-designer)
+     ต.ค.–พ.ย. ยังเป็นใบเดิมด้านล่าง (ตาราง bbs_*) จนกว่าจะย้ายข้อมูลย้อนหลัง */
+  if (isBbsGridMonth(month)) {
+    return (
+      <Page width="full">
+        <WfGridSheet defKey={BBS_GRID_KEY} lineObj={lineObj} lines={lines} month={month} filters={filterBar}
+          title={tr('สังเกตพฤติกรรมความปลอดภัย (BBS)')} icon="🦺" />
+      </Page>
+    );
+  }
+
   return (
     <Page width="full">
-      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกผลสังเกต BBS" permKey="bbs:record" />
+      <ReadOnlyNote show={!canRecord} role={role} what={tr("บันทึกผลสังเกต BBS")} permKey="bbs:record" />
 
       {canRecord && lineObj && !lineWrite.ok && (
-        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>🔒 {writeBlockText(lineWrite, { what: `ใบ BBS ของไลน์ ${lineObj.name}`, unit: lineObj.section || '' })}</NoticeBar>
+        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>🔒 {writeBlockText(lineWrite, { what: `${tr("ใบ BBS ของไลน์")} ${lineObj.name}`, unit: lineObj.section || '' })}</NoticeBar>
       )}
       {loadWarn && (
         <NoticeBar tone="bad" style={{ marginBottom: 12 }}>{loadWarn} {tr('— ตัวเลขบนหน้านี้อาจไม่ครบ')}</NoticeBar>
@@ -539,7 +635,7 @@ export default function BbsCheck() {
       <PageHeader title={tr('สังเกตพฤติกรรมความปลอดภัย (BBS)')} icon="🦺"
         actions={<>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [เติมจากผลตรวจ PPE] [พิมพ์/PDF] · ข้อตกลง → ⋯ */}
-          <OverflowMenu items={[{ key: 'agree', icon: '📋', label: 'ข้อตกลง', badge: agreements.length, onClick: () => setShowAgree(true) }]} />
+          <OverflowMenu items={[{ key: 'agree', icon: '📋', label: tr("ข้อตกลง"), badge: agreements.length, onClick: () => setShowAgree(true) }]} />
           {canRecord && (
             <button type="button" className="pg-btn primary" onClick={autoFill} disabled={busy || !emps.length}>
               {busy ? tr('กำลังเติม…') : tr('เติมจากผลตรวจ PPE')}
@@ -548,19 +644,20 @@ export default function BbsCheck() {
           <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>{tr('พิมพ์ / PDF')}</button>
         </>} />
 
-      {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
-      <FilterBar style={{ marginBottom: 12 }}>
-        <span className="filter-label">{tr('พื้นที่ / ไลน์')}</span>
-        {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-        <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
-        <span className="filter-label">{tr('เดือน')}</span>
-        <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
-      </FilterBar>
+      {filterBar}
+
+      {/* ✍️ สายเซ็นของใบเดือนนี้ (e-Workflow · ตั้งผู้เซ็น/ความถี่ที่ /workflow-designer) — เซ็นบนใบนี้เลย ไม่ต้องออกใบแยก */}
+      <WfRoundPanel subject="bbs" line={lineObj?.name || ''} date={`${month}-01`}
+        hasData={sheet ? Object.keys(cells).length > 0 : false} openOnlyWithData
+        summary={`${emps.length} ${tr('คน')} · ${Object.values(cells).filter(c => c.mark === 'ng').length} ${tr('ช่องไม่ปลอดภัย')}`}
+        onChanged={() => setLockTick(x => x + 1)} />
+      {wfLock && (
+        <NoticeBar tone="info" icon="🔒" style={{ marginBottom: 12 }}>{tr('ใบ BBS เดือนนี้เซ็นแล้ว')} ({wfLock}) — {tr('แก้ไม่ได้จนกว่าผู้เซ็นจะตีกลับ/เพิกถอน')}</NoticeBar>
+      )}
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
             <label style={lbl}>{tr('ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)')}</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
@@ -574,7 +671,11 @@ export default function BbsCheck() {
                 ผู้รับเหมาที่ไม่มีบัตร = พิมพ์รหัสเอง · ชื่อ/ลายเซ็นดึงจากฐานพนักงานตามรหัส (C1 · 03/11) */}
             <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+              onKeyDown={e => {
+                const r = codeBurstRef.current.feed({ key: e.key, t: e.timeStamp || performance.now(), target: e.currentTarget, value: e.currentTarget.value });
+                if (r.kind === 'scan') scannedCodeRef.current = normScanCode(e.currentTarget.value);
+                if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); }
+              }}
               placeholder={tr('เช่น 61234')}
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
             {codeSigner && codeSigner.state !== 'no_code' && (
@@ -588,9 +689,9 @@ export default function BbsCheck() {
           <div style={{ textAlign: 'center' }}>
             <label style={lbl}>{tr('ลายเซ็น')}</label>
             {shownSig
-              ? <img src={shownSig} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
+              ? <img src={shownSig} alt={tr("ลายเซ็น")} style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
               : <div style={{ fontSize: 11, color: 'var(--muted)', padding: '9px 0' }}>
-                  {signers.length ? 'ยังไม่เลือกผู้ตรวจ' : 'ยังไม่มีใครบันทึกลายเซ็นในโปรไฟล์'}
+                  {signers.length ? tr("ยังไม่เลือกผู้ตรวจ") : tr("ยังไม่มีใครบันทึกลายเซ็นในโปรไฟล์")}
                 </div>}
           </div>
         </div>
@@ -601,16 +702,15 @@ export default function BbsCheck() {
           padding: '8px 12px', fontSize: 12, lineHeight: 1.6, maxWidth: 420,
         }}>
           <b>{tr('ระบบเติมให้ได้')} {autoAgreements.length} {tr('ข้อ จากทั้งหมด')} {agreements.length} {tr('ข้อ')}</b>
-          {autoAgreements.length > 0 && <> {tr('(ข้อ')} {autoAgreements.map(a => a.seq).join(', ')} — มาจากการตรวจ PPE รายวัน)</>}
+          {autoAgreements.length > 0 && <> {tr('(ข้อ')} {autoAgreements.map(a => a.seq).join(', ')} — {tr("มาจากการตรวจ PPE รายวัน")})</>}
           <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-            ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>{tr('ไม่ทับ')}</b>ช่องที่กรอกเอง
-            และ<b>{tr('ไม่เติม')}</b>วันที่ไม่มีบันทึกเช็คชื่อ
+            {tr("ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ")}<b>{tr('ไม่ทับ')}</b>{tr("ช่องที่กรอกเอง และ")}<b>{tr('ไม่เติม')}</b>{tr("วันที่ไม่มีบันทึกเช็คชื่อ")}
           </div>
           {/* ⚠️ ข้อความ 13 ข้อในไฟล์ Excel ต้นฉบับฝังเป็น OLE object แกะไม่ได้ → ต้องให้คนกรอกเอง
               ห้ามเดาข้อความ · แต่ต้องบอกว่ายังไม่ครบ ไม่งั้นคนคิดว่าระบบมีแค่นี้ */}
           {agreements.length < 13 && (
             <div style={{ color: 'var(--amber)', marginTop: 3, fontWeight: 700 }}>
-              ยังมีข้อตกลงแค่ {agreements.length} ข้อ — ใบจริงมี 13 ข้อ กด “ข้อตกลง” เพื่อเพิ่มให้ครบ
+              {tr("ยังมีข้อตกลงแค่")} {agreements.length} {tr("ข้อ — ใบจริงมี 13 ข้อ กด “ข้อตกลง” เพื่อเพิ่มให้ครบ")}
             </div>
           )}
         </div>
@@ -640,7 +740,7 @@ export default function BbsCheck() {
                 : <option value={1}>{tr('1. (ยังไม่ได้บันทึกข้อตกลง)')}</option>}
             </select>
           )}
-          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>คลิกช่องเดิมซ้ำด้วยแปรงเดิม = ล้างช่อง</span>
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr("คลิกช่องเดิมซ้ำด้วยแปรงเดิม = ล้างช่อง")}</span>
         </div>
       )}
 
@@ -649,7 +749,7 @@ export default function BbsCheck() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !emps.length ? (
         <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-          ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง
+          {tr("ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง")}
         </div>
       ) : isMobile ? (
         /* ── มือถือ: เลือกวัน → การ์ดต่อคน → กดชิป ── */
@@ -669,7 +769,7 @@ export default function BbsCheck() {
                 <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label={tr('วันก่อนหน้า')}>◀</button>
                 <div style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: dstr === today ? 'var(--accent)' : 'var(--text)' }}>
-                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>{tr('· วันนี้')}</span>}
+                    {tr("วันที่")} {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>{tr('· วันนี้')}</span>}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ทาแล้ว')} {done}/{emps.length} {tr('คน')}</div>
                 </div>
@@ -683,7 +783,7 @@ export default function BbsCheck() {
                   const c = cells[cellKey(e.id, day)];
                   const picking = ngPick === e.id;
                   return (
-                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '10px 12px', background: 'var(--card)' }}>
+                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '10px 12px', background: 'var(--card-surf)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 18 }}>{i + 1}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -726,7 +826,7 @@ export default function BbsCheck() {
                   );
                 })}
               </div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>กดชิปเดิมซ้ำ = ล้างช่อง · หมายเหตุท้ายแถวและมุมมองทั้งเดือนดูได้บนจอใหญ่</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>{tr("กดชิปเดิมซ้ำ = ล้างช่อง · หมายเหตุท้ายแถวและมุมมองทั้งเดือนดูได้บนจอใหญ่")}</div>
             </div>
           );
         })()
@@ -754,8 +854,8 @@ export default function BbsCheck() {
                     const c = cells[cellKey(e.id, d)];
                     return (
                       <td key={d} onClick={() => paint(e, d)}
-                        title={c ? `${MARK_BY_KEY[c.mark]?.label || c.mark}${c.agreement_seq ? ` (ข้อ ${c.agreement_seq})` : ''}`
-                          + `\n${c.source === 'ppe' ? 'เติมอัตโนมัติจากผลตรวจ PPE' : 'กรอกเอง'}${c.note ? `\n${c.note}` : ''}` : ''}
+                        title={c ? `${MARK_BY_KEY[c.mark]?.label || c.mark}${c.agreement_seq ? ` (${tr("ข้อ")} ${c.agreement_seq})` : ''}`
+                          + `\n${c.source === 'ppe' ? tr('เติมอัตโนมัติจากผลตรวจ PPE') : tr('กรอกเอง')}${c.note ? `\n${c.note}` : ''}` : ''}
                         style={{
                           ...td(), cursor: canRecord ? 'pointer' : 'default',
                           color: markColor(c), fontWeight: 700,
@@ -787,14 +887,14 @@ export default function BbsCheck() {
         ))}
         <span style={{ flex: 1 }} />
         <span role="status" style={{ color: 'var(--muted)' }}>
-          เดือนนี้: ✓ {stat.ok} {tr('· ไม่เหมาะสม')} {stat.ng} {tr('· ปรับแก้')} {stat.fixed} {tr('· ไม่ได้ตรวจ')} {stat.na}
-          {' · '}{tr('เติมอัตโนมัติ')} {stat.auto} {tr('/ กรอกเอง')} {stat.manual} ช่อง
+          {tr("เดือนนี้")}: ✓ {stat.ok} {tr('· ไม่เหมาะสม')} {stat.ng} {tr('· ปรับแก้')} {stat.fixed} {tr('· ไม่ได้ตรวจ')} {stat.na}
+          {' · '}{tr('เติมอัตโนมัติ')} {stat.auto} {tr('/ กรอกเอง')} {stat.manual} {tr("ช่อง")}
           {/* 🔴 ตัวหาร — ไม่มีแล้วบรรทัดนี้ตอบไม่ได้ว่ากรอกครบแค่ไหน (ดูเหตุผลที่ stat) */}
           {stat.due > 0 && (
             <>
-              {' · '}{tr('กรอกแล้ว')} <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
+              {' · '}{tr('กรอกแล้ว')} <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} {tr("ช่อง")}
               {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>{tr('ยังไม่กรอก')} {stat.blank}</b></>}
-              {' '}{tr('(ถึงวันที่')} {stat.elapsed} · {emps.length} คน)
+              {' '}{tr('(ถึงวันที่')} {stat.elapsed} · {emps.length} {tr("คน")})
             </>
           )}
           {/* 🔴 วันที่ไม่นับเป็นตัวหาร ต้องบอกบนจอ — ไม่บอก คนอ่านจะนึกว่าตัวหารหายไปเฉยๆ */}
@@ -870,7 +970,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         // 23505 = ชนกับ unique index ของเลขข้อ (bbs_agree_seq_uniq) — แปลเป็นภาษาคน
         toast.error(error.code === '23505'
           ? 'เลขข้อซ้ำกับข้อที่มีอยู่แล้ว — เปลี่ยนเลขข้อแล้วบันทึกใหม่'
-          : `บันทึกไม่สำเร็จ: ${error.message}`);
+          : `${tr("บันทึกไม่สำเร็จ")}: ${error.message}`);
         return;
       }
 
@@ -893,15 +993,14 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{tr('ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน')}</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-          เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม ·
-          ข้อที่ผูกกับ “การตรวจ PPE” ระบบจะเติมช่องให้อัตโนมัติได้
+          {tr("เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม · ข้อที่ผูกกับ “การตรวจ PPE” ระบบจะเติมช่องให้อัตโนมัติได้")}
         </p>
 
         <ReadOnlyNote show={!canManage} role={role} compact
-          what="แก้ข้อตกลงด้านความปลอดภัย" permKey="bbs:manage" />
+          what={tr("แก้ข้อตกลงด้านความปลอดภัย")} permKey="bbs:manage" />
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead><tr>
@@ -943,7 +1042,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
         {!rows.length && (
           <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>
-            ยังไม่มีข้อตกลง — กด “＋ เพิ่มข้อ” แล้วพิมพ์ตามใบของแผนก
+            {tr("ยังไม่มีข้อตกลง — กด “＋ เพิ่มข้อ” แล้วพิมพ์ตามใบของแผนก")}
           </div>
         )}
 

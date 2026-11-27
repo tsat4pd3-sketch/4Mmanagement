@@ -81,7 +81,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
     if (error) {
       // ห้ามโยน error ดิบใส่หน้างาน — แปลเป็นภาษาคนตามเคสที่เจอจริง
       if (error.code === '42P01') return toast.error('ยังไม่ได้ apply migration 20260820_energy_mqtt_topics (แจ้ง admin)');
-      if (error.code === '23505') return toast.error(`topic นี้ผูกกับค่า "${mqttField(form.field).label}" ไปแล้ว`);
+      if (error.code === '23505') return toast.error(`topic ${tr("นี้ผูกกับค่า")} "${mqttField(form.field).label}" ${tr("ไปแล้ว")}`);
       return toast.error(error.message);
     }
     // RLS ปฏิเสธ update = คืน 0 แถวโดยไม่ error → ต้องนับแถว ห้ามขึ้นว่าสำเร็จ
@@ -91,7 +91,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
   };
 
   const del = async (r) => {
-    if (!await askConfirm(`ลบ topic "${r.topic}" (${mqttField(r.field).label})?\n\nค่าที่เคยอ่านเข้ามาแล้วยังอยู่ ไม่ถูกลบ`)) return;
+    if (!await askConfirm(`${tr("ลบ")} topic "${r.topic}" (${mqttField(r.field).label})?\n\n${tr("ค่าที่เคยอ่านเข้ามาแล้วยังอยู่ ไม่ถูกลบ")}`)) return;
     const { error } = await supabaseDR.from('energy_meter_topics').delete().eq('id', r.id);
     if (error) return toast.error(error.message);
     load();
@@ -121,22 +121,21 @@ export default function EnergyMqttTopics({ points, canEdit }) {
       {/* ⚠️ สถานะระบบ — เรื่องสำคัญที่สุดของหน้านี้ ต้องอยู่บนสุดและอ่านไม่ผิด */}
       {missing ? (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
-          ⚠️ <b>{tr('ยังไม่ได้ apply migration')} <code>20260820_energy_mqtt_topics</code></b> — ยังเพิ่ม topic ไม่ได้ (แจ้ง admin)
+          ⚠️ <b>{tr('ยังไม่ได้ apply migration')} <code>20260820_energy_mqtt_topics</code></b> — {tr("ยังเพิ่ม topic ไม่ได้ (แจ้ง")} admin)
         </div>
       ) : !bridgeAlive ? (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5, lineHeight: 1.65 }}>
           📡 <b>{tr('ยังไม่มีข้อมูลเข้ามาจากมิเตอร์')}</b>
-          {newestAge != null && <> {tr('(ล่าสุดเมื่อ')} {newestAge} {tr('นาทีที่แล้ว — เกิน')} {LIVE_STALE_MIN} นาที ถือว่าขาดการติดต่อ)</>}
+          {newestAge != null && <> {tr('(ล่าสุดเมื่อ')} {newestAge} {tr('นาทีที่แล้ว — เกิน')} {LIVE_STALE_MIN} {tr("นาที ถือว่าขาดการติดต่อ")})</>}
           <div style={{ marginTop: 4, color: 'var(--text2)' }}>
-            <b>{tr('ตั้ง topic ไว้ล่วงหน้าที่นี่ได้เลย')}</b> แต่จะยังไม่มีค่าเข้ามาจนกว่าจะมีครบ 2 อย่าง:
-            <div style={{ marginTop: 3 }}>① <b>MQTT bridge</b> — โปรแกรมเล็กๆ บนเครื่องในโรงงาน ที่ subscribe broker แล้วส่งเข้าระบบ
-              (ตัวอย่างสคริปต์: <code>docs/mqtt-bridge-example.js</code>)</div>
+            <b>{tr('ตั้ง topic ไว้ล่วงหน้าที่นี่ได้เลย')}</b> {tr("แต่จะยังไม่มีค่าเข้ามาจนกว่าจะมีครบ 2 อย่าง")}:
+            <div style={{ marginTop: 3 }}>① <b>MQTT bridge</b> — {tr("โปรแกรมเล็กๆ บนเครื่องในโรงงาน ที่ subscribe broker แล้วส่งเข้าระบบ (ตัวอย่างสคริปต์")}: <code>docs/mqtt-bridge-example.js</code>)</div>
             <div>② <b>Edge function <code>ingest-energy</code></b> {tr('— deploy แล้ว (2026-11-09) · ต้องตั้ง secret')} <code>INGEST_SECRET</code> {tr('ให้ตรงกับฝั่งตัวส่ง (แจ้ง admin)')}</div>
           </div>
         </div>
       ) : (
         <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
-          ✅ <b>{tr('ระบบกำลังรับข้อมูลอยู่')}</b> {tr('— ค่าล่าสุดเข้ามาเมื่อ')} {newestAge} นาทีที่แล้ว
+          ✅ <b>{tr('ระบบกำลังรับข้อมูลอยู่')}</b> {tr('— ค่าล่าสุดเข้ามาเมื่อ')} {newestAge} {tr("นาทีที่แล้ว")}
         </div>
       )}
 
@@ -150,7 +149,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                 placeholder="plant/utility/steel/power" style={{ ...inp, fontFamily: 'monospace' }} /></label>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 170px' }}>{tr('ค่าที่อ่าน')}<br />
               <select value={form.field} onChange={e => setForm(f => ({ ...f, field: e.target.value }))} style={inp}>
-                {MQTT_FIELDS.map(f => <option key={f.key} value={f.key}>{tr(f.label)}{f.unit ? ` (${f.unit})` : ''}</option>)}
+                {MQTT_FIELDS.map(f => <option key={f.key} value={f.key}>{tr(f.label)}{tr(f.unit) ? ` (${tr(f.unit)})` : ''}</option>)}
               </select></label>
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '2 1 220px' }}>{tr('ผูกกับจุดวัด')}<br />
               <select value={form.scope_name ? `${form.scope_kind}::${form.scope_name}` : ''}
@@ -177,12 +176,12 @@ export default function EnergyMqttTopics({ points, canEdit }) {
               {busy ? '⏳' : editId ? tr('💾 บันทึก') : tr('+ เพิ่ม')}
             </button>
             {editId && <button onClick={() => { setEditId(null); setForm(EMPTY); }}
-              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>}
+              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
-            <b>{tr('payload เป็นตัวเลขล้วน')}</b> {tr('(เช่น')} <code>26.2</code>) → เว้นช่อง JSON ว่าง ·
-            <b> {tr('payload เป็น JSON')}</b> {tr('(เช่น')} <code>{'{"data":{"activePower":26.2}}'}</code>) → ใส่ <code>$.data.activePower</code><br />
-            📌 topic เดียวส่งได้หลายค่า — เพิ่มหลายแถวโดยใช้ topic เดิมแต่เปลี่ยน "ค่าที่อ่าน" (เช่น kW กับ kWh สะสม)
+            <b>{tr('payload เป็นตัวเลขล้วน')}</b> {tr('(เช่น')} <code>26.2</code>) → {tr("เว้นช่อง JSON ว่าง")} ·
+            <b> {tr('payload เป็น JSON')}</b> {tr('(เช่น')} <code>{'{"data":{"activePower":26.2}}'}</code>) → {tr("ใส่")} <code>$.data.activePower</code><br />
+            📌 topic {tr("เดียวส่งได้หลายค่า — เพิ่มหลายแถวโดยใช้ topic เดิมแต่เปลี่ยน \"ค่าที่อ่าน\" (เช่น kW กับ kWh สะสม")})
           </div>
         </div>
       )}
@@ -192,7 +191,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
         <div style={{ ...card, borderColor: WARN }}>
           <div style={secTitle}>{tr('❓ topic ที่ระบบได้รับ แต่ยังไม่ได้ผูกกับจุดวัด (')}{unmapped.length})</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
-            ค่าจาก topic พวกนี้ <b>{tr('ยังไม่ถูกเก็บ')}</b> — กด "ผูก" เพื่อเติมลงฟอร์มด้านบน
+            {tr("ค่าจาก topic พวกนี้")} <b>{tr('ยังไม่ถูกเก็บ')}</b> — {tr("กด \"ผูก\" เพื่อเติมลงฟอร์มด้านบน")}
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr><th style={th}>topic</th><th style={th}>{tr('ตัวอย่างค่า')}</th><th style={th}>{tr('เห็นล่าสุด')}</th><th style={th} /></tr></thead>
@@ -201,10 +200,10 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                 <tr key={u.topic}>
                   <td style={{ ...td, fontFamily: 'monospace', fontSize: 11.5 }}>{u.topic}</td>
                   <td style={{ ...td, fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.sample || '—'}</td>
-                  <td style={{ ...td, color: 'var(--muted)' }}>{liveAgeMin(u.last_seen) != null ? `${liveAgeMin(u.last_seen)} นาทีก่อน` : '—'}</td>
+                  <td style={{ ...td, color: 'var(--muted)' }}>{liveAgeMin(u.last_seen) != null ? `${liveAgeMin(u.last_seen)} ${tr("นาทีก่อน")}` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>
                     {canEdit && <button onClick={() => adoptTopic(u)}
-                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer' }}>{tr('+ ผูก')}</button>}
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--accent)', cursor: 'pointer' }}>{tr('+ ผูก')}</button>}
                   </td>
                 </tr>
               ))}
@@ -218,7 +217,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
         <div style={{ ...secTitle, padding: '12px 14px 0' }}>{tr('topic ที่ตั้งไว้ (')}{rows.length})</div>
         {rows.length === 0 ? (
           <div style={{ padding: 14, fontSize: 12.5, color: 'var(--muted)' }}>
-            ยังไม่มี topic — {canEdit ? 'เพิ่มจากฟอร์มด้านบน' : 'ต้องมีสิทธิ์บันทึกถึงจะเพิ่มได้'}
+            {tr("ยังไม่มี")} topic — {canEdit ? tr("เพิ่มจากฟอร์มด้านบน") : tr("ต้องมีสิทธิ์บันทึกถึงจะเพิ่มได้")}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
@@ -255,10 +254,10 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                     {canEdit && (
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button onClick={() => toggleActive(r)} title={r.is_active ? tr('ปิดใช้ชั่วคราว (ไม่ลบ)') : tr('เปิดใช้')}
-                          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: r.is_active ? GOOD : 'var(--muted)', cursor: 'pointer' }}>
+                          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: r.is_active ? GOOD : 'var(--muted)', cursor: 'pointer' }}>
                           {r.is_active ? tr('ใช้อยู่') : tr('ปิด')}
                         </button>
-                        <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
+                        <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
                         <DeleteButton onClick={() => del(r)} title={tr('ลบ')} />
                       </td>
                     )}
@@ -271,10 +270,8 @@ export default function EnergyMqttTopics({ points, canEdit }) {
       </div>
 
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
-        <b>{tr('สิ่งที่ต้องเตรียมฝั่งโรงงาน:')}</b> MQTT broker (Mosquitto ฟรี) · เครื่องเล็กๆ 1 เครื่องรัน bridge ตลอดเวลา ·
-        มิเตอร์/gateway ที่ publish ค่าได้<br />
-        ⚠️ <b>{tr('bridge ต้องสรุปค่าเป็นช่วง 15 นาทีก่อนส่ง ห้ามส่งทุก message')}</b> — มิเตอร์ publish ทุก 1-5 วินาที
-        20 ตัว = 1.7 ล้าน message/วัน เขียนลงฐานตรงๆ พื้นที่เต็มในไม่กี่สัปดาห์ (ดู `ENERGY_MONITORING_DESIGN.md` §14.2)
+        <b>{tr('สิ่งที่ต้องเตรียมฝั่งโรงงาน:')}</b> MQTT broker (Mosquitto {tr("ฟรี) · เครื่องเล็กๆ 1 เครื่องรัน bridge ตลอดเวลา · มิเตอร์/gateway ที่ publish ค่าได้")}<br />
+        ⚠️ <b>{tr('bridge ต้องสรุปค่าเป็นช่วง 15 นาทีก่อนส่ง ห้ามส่งทุก message')}</b> — {tr("มิเตอร์ publish ทุก 1-5 วินาที 20 ตัว = 1.7 ล้าน message/วัน เขียนลงฐานตรงๆ พื้นที่เต็มในไม่กี่สัปดาห์ (ดู")} `ENERGY_MONITORING_DESIGN.md` §14.2)
       </div>
     </div>
   );

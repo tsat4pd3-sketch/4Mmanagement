@@ -121,7 +121,7 @@ export default function MaterialRequests() {
       .select('id, name, kind, move_code, requester_dept, dest_storage_location, order_no, cost_center, plant_code, storage_location, detail, line_name, items, created_by_name, updated_at')
       .eq('is_active', true).order('name').limit(500);
     setTpls(error
-      ? { rows: [], failed: error.code === '42P01' ? 'ยังไม่ได้ apply migration ของ template' : `โหลด template ไม่สำเร็จ: ${error.message}` }
+      ? { rows: [], failed: error.code === '42P01' ? 'ยังไม่ได้ apply migration ของ template' : `${tr("โหลด template ไม่สำเร็จ")}: ${error.message}` }
       : { rows: data || [], failed: '' });
   }, []);
   useEffect(() => { loadTpls(); }, [loadTpls]);
@@ -139,7 +139,7 @@ export default function MaterialRequests() {
     if (error) {
       setWarn(error.code === '42P01'
         ? 'ยังไม่ได้ apply migration ของใบเบิก — แจ้งผู้ดูแลระบบ'
-        : `โหลดไม่สำเร็จ: ${error.message}`);
+        : `${tr("โหลดไม่สำเร็จ")}: ${error.message}`);
     }
     setRows(data || []);
     setLoading(false);
@@ -193,7 +193,7 @@ export default function MaterialRequests() {
   const openEdit = async (r) => {
     const { data, error } = await supabaseDR.from('material_request_items')
       .select('*').eq('request_id', r.id).order('seq');
-    if (error) return toast.error(`โหลดรายการไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("โหลดรายการไม่สำเร็จ")}: ${error.message}`);
     setEditor({
       req: { ...r },
       items: (data || []).map(it => ({ ...it, _key: it.id })).concat(data?.length ? [] : [EMPTY_ITEM()]),
@@ -213,7 +213,7 @@ export default function MaterialRequests() {
     const real = items.filter(it => String(it.mat_no || '').trim() || String(it.description || '').trim());
     if (!real.length) return toast.error('ยังไม่มีรายการสินค้าสักรายการ');
     const noQty = real.filter(it => !(Number(it.qty) > 0));
-    if (noQty.length) return toast.error(`มี ${noQty.length} รายการที่ยังไม่ได้ใส่จำนวน`);
+    if (noQty.length) return toast.error(`${tr("มี")} ${noQty.length} ${tr("รายการที่ยังไม่ได้ใส่จำนวน")}`);
 
     const payload = { ...req, updated_by_name: fullName || null };
     delete payload.id;
@@ -231,12 +231,12 @@ export default function MaterialRequests() {
     if (id) {
       const { data, error } = await supabaseDR.from('material_requests')
         .update(payload).eq('id', id).select('id');
-      if (error) return toast.error(`บันทึกไม่สำเร็จ: ${error.message}`);
+      if (error) return toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${error.message}`);
       if (!data?.length) return toast.error('บันทึกไม่สำเร็จ — ไม่พบใบนี้แล้ว');
     } else {
       const { data, error } = await supabaseDR.from('material_requests')
         .insert(payload).select().single();
-      if (error) return toast.error(`สร้างใบไม่สำเร็จ: ${error.message}`);
+      if (error) return toast.error(`${tr("สร้างใบไม่สำเร็จ")}: ${error.message}`);
       id = data.id;
     }
 
@@ -247,7 +247,7 @@ export default function MaterialRequests() {
     let delQ = supabaseDR.from('material_request_items').delete().eq('request_id', id);
     if (keep.length) delQ = delQ.not('id', 'in', `(${keep.join(',')})`);
     const { error: eDel } = await delQ;
-    if (eDel) return toast.error(`ล้างรายการเดิมไม่สำเร็จ: ${eDel.message}`);
+    if (eDel) return toast.error(`${tr("ล้างรายการเดิมไม่สำเร็จ")}: ${eDel.message}`);
 
     const up = real.map((it, i) => ({
       ...(it.id ? { id: it.id } : {}),
@@ -262,20 +262,20 @@ export default function MaterialRequests() {
     /* 🔴 `defaultToNull:false` — ปนแถวเดิม (มี id) กับแถวใหม่ (ไม่มี id) ในก้อนเดียว postgrest ส่งคอลัมน์รวม
        แล้วเติม id = NULL ให้แถวใหม่ ⇒ 23502 ล้มทั้งก้อน หลังลบแถวเดิมไปแล้ว (audit 19/10) */
     const { error: eUp } = await supabaseDR.from('material_request_items').upsert(up, { defaultToNull: false });
-    if (eUp) return toast.error(`บันทึกรายการไม่สำเร็จ: ${eUp.message}`);
+    if (eUp) return toast.error(`${tr("บันทึกรายการไม่สำเร็จ")}: ${eUp.message}`);
 
     // แจ้งเมื่อใบถูก "ส่งขออนุมัติ" (ไม่ใช่ตอนร่าง) — คนอนุมัติต้องรู้ว่ามีใบรออยู่
     if (nextStatus && nextStatus !== 'draft') notifyEvent({
       event: 'material_request', type: 'info', ref_table: 'material_requests', ref_id: id,
       line_name: req.line_name || null, actor: fullName,
       lines: [
-        `📄 ${payload.doc_no || '(ยังไม่ออกเลขใบ)'} · ${req.kind === 'return' ? 'คืนของ' : 'เบิกของ'}${req.move_code ? ` (${req.move_code})` : ''}`,
-        `🏭 ไลน์: ${req.line_name || '—'} · หน่วยงาน: ${req.requester_dept || '—'}`,
-        `📦 ${real.length} รายการ · รวม ${real.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ชิ้น`,
+        `📄 ${payload.doc_no || tr('(ยังไม่ออกเลขใบ)')} · ${req.kind === 'return' ? tr('คืนของ') : tr('เบิกของ')}${req.move_code ? ` (${req.move_code})` : ''}`,
+        `🏭 ${tr("ไลน์")}: ${req.line_name || '—'} · ${tr("หน่วยงาน")}: ${req.requester_dept || '—'}`,
+        `📦 ${real.length} ${tr("รายการ · รวม")} ${real.reduce((s, it) => s + (Number(it.qty) || 0), 0)} ${tr("ชิ้น")}`,
         req.detail ? `📝 ${String(req.detail).slice(0, 200)}` : '',
       ],
     });
-    toast.success(nextStatus ? `บันทึกและเปลี่ยนสถานะเป็น "${statusMeta(nextStatus).label}" ✓` : 'บันทึกแล้ว ✓');
+    toast.success(nextStatus ? `${tr("บันทึกและเปลี่ยนสถานะเป็น")} "${statusMeta(nextStatus).label}" ✓` : 'บันทึกแล้ว ✓');
     setEditor(null);
     load();
   };
@@ -283,9 +283,9 @@ export default function MaterialRequests() {
   const setStatus = async (r, s) => {
     const { data, error } = await supabaseDR.from('material_requests')
       .update({ status: s, updated_by_name: fullName || null }).eq('id', r.id).select('id');
-    if (error) return toast.error(`เปลี่ยนสถานะไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("เปลี่ยนสถานะไม่สำเร็จ")}: ${error.message}`);
     if (!data?.length) return toast.error('เปลี่ยนสถานะไม่สำเร็จ');
-    toast.success(`เปลี่ยนเป็น "${statusMeta(s).label}" ✓`);
+    toast.success(`${tr("เปลี่ยนเป็น")} "${statusMeta(s).label}" ✓`);
     load();
   };
 
@@ -293,12 +293,12 @@ export default function MaterialRequests() {
     /* 🔴 ใบที่อนุมัติ/จ่ายของแล้ว = บันทึกการเคลื่อนไหวของคลังจริง (ใบ scrap ดึงไปอ้างอิงได้) ⇒ ห้ามลบจริง
        ให้ "ยกเลิก" (status cancelled) แทน — สืบย้อนได้ (QC 05/10 · หลักเดียวกับยกเลิกล็อต) */
     if (isPullable(r)) {
-      if (!await askConfirm(`ใบ ${r.doc_no || ''} ${statusMeta(r.status).label} — ลบทิ้งไม่ได้ (เป็นบันทึกการเบิกจริง)\n\nเปลี่ยนสถานะเป็น "ยกเลิก" แทน?`)) return;
+      if (!await askConfirm(`${tr("ใบ")} ${r.doc_no || ''} ${statusMeta(r.status).label} — ${tr("ลบทิ้งไม่ได้ (เป็นบันทึกการเบิกจริง)\\n\\nเปลี่ยนสถานะเป็น \"ยกเลิก\" แทน")}?`)) return;
       return setStatus(r, 'cancelled');
     }
-    if (!await askConfirm(`ลบใบ ${r.doc_no || ''} ?\nรายการในใบจะถูกลบด้วย · ใบรายงานของเสียที่ดึงจากใบนี้ไปแล้วจะยังอยู่ แต่ลิงก์สืบย้อนจะขาด`)) return;
+    if (!await askConfirm(`${tr("ลบใบ")} ${r.doc_no || ''} ?\n${tr("รายการในใบจะถูกลบด้วย · ใบรายงานของเสียที่ดึงจากใบนี้ไปแล้วจะยังอยู่ แต่ลิงก์สืบย้อนจะขาด")}`)) return;
     const { error } = await supabaseDR.from('material_requests').delete().eq('id', r.id);
-    if (error) return toast.error(`ลบไม่สำเร็จ: ${error.message}`);
+    if (error) return toast.error(`${tr("ลบไม่สำเร็จ")}: ${error.message}`);
     toast.success('ลบแล้ว'); load();
   };
 
@@ -318,7 +318,7 @@ export default function MaterialRequests() {
     return src.slice(0, 200);
   }, [parts, pq]);
 
-  /* 🗂 รายแถว = เลือกรหัสเดี่ยวจาก Parts Master (ไม่แตก BOM) · แตก BOM อยู่ที่ปุ่มหัวตาราง */
+  /* 🗂 รายแถว = เลือกรหัสเดี่ยวจาก Material Master (ไม่แตก BOM) · แตก BOM อยู่ที่ปุ่มหัวตาราง */
   const applyPart = (p) => {
     const patch = { mat_no: p.mat_no, description: p.part_name || '', unit: normUom(p.uom, uomIdx) || DEFAULT_UOM };
     if (picker?.itemKey) setItem(picker.itemKey, patch);
@@ -342,18 +342,18 @@ export default function MaterialRequests() {
     const row = templateFromEditor(editor.req, editor.items, name);
     if (!row.items.length) return toast.error('ใบนี้ยังไม่มีรายการ — ใส่รายการก่อนบันทึกเป็น template');
     const same = tpls.rows.find(t => t.name.trim().toLowerCase() === name.toLowerCase());
-    if (same && !await askConfirm(`มี template ชื่อ "${same.name}" อยู่แล้ว — บันทึกทับใช่ไหม?`)) return;
+    if (same && !await askConfirm(`${tr("มี template ชื่อ")} "${same.name}" ${tr("อยู่แล้ว — บันทึกทับใช่ไหม")}?`)) return;
     const res = same
       ? await supabaseDR.from('material_request_templates')
         .update({ ...row, updated_by_name: fullName || null, updated_at: new Date().toISOString() }).eq('id', same.id).select('id')
       : await supabaseDR.from('material_request_templates')
         .insert({ ...row, created_by_name: fullName || null, updated_by_name: fullName || null }).select('id');
     if (!checkWriteRows(res, 'บันทึก template')) return;
-    toast.success(`บันทึก template "${name}" แล้ว`);
+    toast.success(`${tr("บันทึก")} template "${name}" ${tr("แล้ว")}`);
     setTplSave(null); loadTpls();
   };
   const removeTemplate = async (t) => {
-    if (!await askConfirm(`ลบ template "${t.name}"? (ใบที่ออกไปแล้วไม่กระทบ)`)) return;
+    if (!await askConfirm(`${tr("ลบ")} template "${t.name}"? (${tr("ใบที่ออกไปแล้วไม่กระทบ")})`)) return;
     const res = await supabaseDR.from('material_request_templates')
       .update({ is_active: false, updated_by_name: fullName || null, updated_at: new Date().toISOString() }).eq('id', t.id).select('id');
     if (!checkWriteRows(res, 'ลบ template')) return;
@@ -365,7 +365,7 @@ export default function MaterialRequests() {
 
   return (
     <div style={wrap}>
-      <ReadOnlyNote show={!canRecord} role={role} what="ออกใบเบิก/คืนสินค้าคงคลัง" permKey="scrap:record" />
+      <ReadOnlyNote show={!canRecord} role={role} what={tr("ออกใบเบิก/คืนสินค้าคงคลัง")} permKey="scrap:record" />
 
       {warn && (
         <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
@@ -391,24 +391,22 @@ export default function MaterialRequests() {
 
       <InfoMore style={{ marginBottom: 10 }} id="mr_help"
         lead={<>{tr('📦 ใบนี้ใช้เบิกชิ้นงานจากฝ่ายผลิตไปทดสอบ — ของที่ทดสอบแล้วดึงเข้า')}<b>{tr('ใบรายงานของเสีย')}</b>{tr('ได้')}</>}>
-        ที่หน้า <b>{tr('ใบรายงานของเสีย')}</b> กดปุ่ม “⤵ ดึงจากใบเบิก QA” แล้วเลือกใบ —
-        รายการจะถูกเติมให้พร้อมผูกกลับมาที่ใบเบิกใบนี้ (สืบย้อนได้ว่าชิ้นไหนเบิกด้วยใบไหน)
-        <br />{tr('⚠️ ดึงได้เฉพาะใบที่')} <b>{tr('อนุมัติแล้ว')}</b> ขึ้นไป — ใบที่ยังไม่อนุมัติแปลว่ายังไม่ได้ของ
-        จะรายงานว่าทำลายไปแล้วไม่ได้
-        <br />{tr('จำนวนที่ดึงไปใช้')} <b>{tr('“จำนวนที่จ่ายจริง”')}</b> ก่อนเสมอ ไม่มีค่อยใช้จำนวนที่ขอเบิก
+        {tr("ที่หน้า")} <b>{tr('ใบรายงานของเสีย')}</b> {tr("กดปุ่ม “⤵ ดึงจากใบเบิก QA” แล้วเลือกใบ — รายการจะถูกเติมให้พร้อมผูกกลับมาที่ใบเบิกใบนี้ (สืบย้อนได้ว่าชิ้นไหนเบิกด้วยใบไหน")})
+        <br />{tr('⚠️ ดึงได้เฉพาะใบที่')} <b>{tr('อนุมัติแล้ว')}</b> {tr("ขึ้นไป — ใบที่ยังไม่อนุมัติแปลว่ายังไม่ได้ของ จะรายงานว่าทำลายไปแล้วไม่ได้")}
+        <br />{tr('จำนวนที่ดึงไปใช้')} <b>{tr('“จำนวนที่จ่ายจริง”')}</b> {tr("ก่อนเสมอ ไม่มีค่อยใช้จำนวนที่ขอเบิก")}
       </InfoMore>
 
       {loading ? (
         <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !visible.length ? (
         <div style={{ padding: 26, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-          ยังไม่มีใบเบิกในเดือนนี้{hidden > 0 && ` (ซ่อน ${hidden} ใบของส่วนงานอื่น)`}
+          {tr("ยังไม่มีใบเบิกในเดือนนี้")}{hidden > 0 && ` (${tr("ซ่อน")} ${hidden} ${tr("ใบของส่วนงานอื่น")})`}
         </div>
       ) : (
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 760 }}>
             <thead><tr>
-              {['เลขที่', 'วันที่เบิก', 'ประเภท', 'ผู้ขอเบิก', 'หน่วยงาน', 'รายละเอียด', 'สถานะ', ''].map((h, i) =>
+              {[tr("เลขที่"), tr("วันที่เบิก"), tr("ประเภท"), tr("ผู้ขอเบิก"), tr("หน่วยงาน"), tr("รายละเอียด"), tr("สถานะ"), ''].map((h, i) =>
                 <th key={i} style={thSt}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
@@ -509,12 +507,12 @@ export default function MaterialRequests() {
       )}
 
       {picker && (
-        <Modal title={tr('เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)')} dismissable onClose={() => { setPicker(null); setPq(''); }}>
+        <Modal title={tr('เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Material Master)')} dismissable onClose={() => { setPicker(null); setPq(''); }}>
           <input autoFocus value={pq} onChange={e => setPq(e.target.value)}
             placeholder={tr('ค้นด้วยรหัส MAT หรือชื่อพาร์ท')} style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
           {!parts.length && (
-            <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
-              ⚠️ ยังไม่มีข้อมูลใน Parts Master — กรอกรหัส/ชื่อเองได้ในตาราง แล้วไปลงทะเบียนที่ Product Master → 🗂 Parts Master
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>
+              ⚠️ {tr("ยังไม่มีข้อมูลใน Material Master — กรอกรหัส/ชื่อเองได้ในตาราง แล้วไปลงทะเบียนที่")} Product Master → 🗂 Material Master
             </div>
           )}
           <div style={{ maxHeight: 380, overflowY: 'auto' }}>
@@ -566,8 +564,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
   };
 
   return (
-    <Modal title={`${req.id ? 'แก้ไข' : 'ออก'}ใบขอ${KIND_LABEL[req.kind]}สินค้าคงคลัง (FM-STO-003)`} onClose={onClose} width={1020}>
-      <ReadOnlyNote show={ro} role={role} compact what="แก้ใบเบิก" permKey="scrap:record" />
+    <Modal title={`${req.id ? tr('แก้ไข') : tr('ออก')}${tr("ใบขอ")}${KIND_LABEL[req.kind]}${tr("สินค้าคงคลัง")} (FM-STO-003)`} onClose={onClose} width={1020}>
+      <ReadOnlyNote show={ro} role={role} compact what={tr("แก้ใบเบิก")} permKey="scrap:record" />
       {/* 🪜 ถึงขั้นไหน — กฎ matReqFlow() (utils/materialRequest.js) · UI §6.30 */}
       {req.id && (() => { const f = matReqFlow(req); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
 
@@ -596,7 +594,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
 
         <F label={tr('วันที่เบิก *')}><input type="date" value={req.request_date || ''} readOnly={ro} onChange={e => setReq({ request_date: e.target.value })} style={inpSt} /></F>
         <F label={tr('วันที่ต้องการสินค้า')}><input type="date" value={req.need_date || ''} readOnly={ro} onChange={e => setReq({ need_date: e.target.value })} style={inpSt} /></F>
-        <F label={`ประเภทของการ${KIND_LABEL[req.kind]}`}>
+        <F label={`${tr("ประเภทของการ")}${KIND_LABEL[req.kind]}`}>
           <select value={req.move_code || ''} disabled={ro} onChange={e => setReq({ move_code: e.target.value })} style={inpSt}>
             {moves.map(m => <option key={m.code} value={m.code}>{tr(m.label)}</option>)}
           </select>
@@ -623,7 +621,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <span style={{ flex: 1 }} />
         {canRecord && <>
           <button onClick={onPickBom} style={btnSt()} title={tr('เลือกพาร์ทแม่ในพื้นที่นี้ แล้วระบบแตก BOM ให้ติ๊กลูกที่จะเบิก')}>🌳 {tr('เลือกแม่ → แตก BOM')}</button>
-          <button onClick={() => onPick(null)} style={btnSt()}>{tr('เลือกจาก Parts Master')}</button>
+          <button onClick={() => onPick(null)} style={btnSt()}>{tr('เลือกจาก Material Master')}</button>
           <button onClick={addItem} style={btnSt()}>{tr('＋ เพิ่มแถว')}</button>
           <button onClick={onSaveTemplate} style={btnSt()} title={tr('เก็บหัวใบ+รายการไว้ใช้ซ้ำกับงานประจำ')}>{tr('💾 บันทึกเป็น template')}</button>
         </>}
@@ -631,7 +629,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
-            {['#', 'รหัสสินค้าคงคลัง', 'รายละเอียด', 'จำนวนที่ขอ', 'หน่วย', 'จ่าย/รับคืนจริง', 'วันที่ผลิต', 'Batch No.', ''].map((h, i) =>
+            {['#', tr("รหัสสินค้าคงคลัง"), tr("รายละเอียด"), tr("จำนวนที่ขอ"), tr("หน่วย"), tr("จ่าย/รับคืนจริง"), tr("วันที่ผลิต"), 'Batch No.', ''].map((h, i) =>
               <th key={i} style={thSt}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
@@ -647,7 +645,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 </td>
                 <td style={tdSt}><input value={it.description || ''} readOnly={ro} onChange={e => setItem(it._key, { description: e.target.value })} style={{ ...inpSt, width: 230 }} /></td>
                 <td style={tdSt}><input type="number" min="0" value={it.qty ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty: e.target.value })} style={{ ...inpSt, width: 72 }} /></td>
-                {/* 📏 หน่วยจากทะเบียน `uom_units` + ✏️ ระบุเอง (หน่วยนอกทะเบียน) · ล็อกตาม Parts Master เมื่อ MAT อยู่ในทะเบียน (เหมือนเดิม) */}
+                {/* 📏 หน่วยจากทะเบียน `uom_units` + ✏️ ระบุเอง (หน่วยนอกทะเบียน) · ล็อกตาม Material Master เมื่อ MAT อยู่ในทะเบียน (เหมือนเดิม) */}
                 <td style={tdSt}><SelectOrFree compact value={it.unit || ''} readOnly={ro || !!uomOf(it.mat_no)} disabled={ro || !!uomOf(it.mat_no)}
                   options={uomOptions(uomIdx).map(o => o.value)} onChange={v => setItem(it._key, { unit: v })}
                   style={{ width: 96, ...(uomOf(it.mat_no) ? { opacity: 0.8 } : {}) }} selectStyle={{ ...inpSt, width: '100%' }} inputStyle={inpSt} />
@@ -662,33 +660,33 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         </table>
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-        “จ่าย/รับคืนจริง” สโตร์เป็นคนกรอก — ใบรายงานของเสียจะยึดจำนวนนี้ก่อน ไม่มีค่อยใช้จำนวนที่ขอ
+        “{tr("จ่าย/รับคืนจริง” สโตร์เป็นคนกรอก — ใบรายงานของเสียจะยึดจำนวนนี้ก่อน ไม่มีค่อยใช้จำนวนที่ขอ")}
       </div>
 
       {/* ── ลายเซ็น ── */}
       <div style={{ margin: '14px 0 6px', fontSize: 13, fontWeight: 700 }}>{tr('ลายเซ็น')}</div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {SIGS.map(s => (
-          <div key={s.k} style={{ flex: '1 1 180px', minWidth: 170, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8 }}>
+          <div key={tr(s.k)} style={{ flex: '1 1 180px', minWidth: 170, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
               {tr(s.label)} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? tr('ผู้เบิก/คืน') : tr('ผู้จ่ายสินค้า')})</span>
             </div>
-            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder={tr('— เลือก (พิมพ์ค้นหาชื่อ) —')}
-              inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(s.k, id)} />
-            <input type="date" disabled={ro} value={req[`${s.k}_date`] || ''}
-              onChange={e => setReq({ [`${s.k}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
-            {req[`${s.k}_sig_url`] &&
-              <img src={req[`${s.k}_sig_url`]} alt="" style={{ height: 26, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
-            {!req[`${s.k}_sig_url`] && req[`${s.k}_name`] && (isSelfName(req[`${s.k}_name`], fullName)
+            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${tr(s.k)}_name`])?.id || ''} placeholder={tr('— เลือก (พิมพ์ค้นหาชื่อ) —')}
+              inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(tr(s.k), id)} />
+            <input type="date" disabled={ro} value={req[`${tr(s.k)}_date`] || ''}
+              onChange={e => setReq({ [`${tr(s.k)}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
+            {req[`${tr(s.k)}_sig_url`] &&
+              <img src={req[`${tr(s.k)}_sig_url`]} alt="" style={{ height: 26, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
+            {!req[`${tr(s.k)}_sig_url`] && req[`${tr(s.k)}_name`] && (isSelfName(req[`${tr(s.k)}_name`], fullName)
               ? (mySig && !ro
-                  ? <button onClick={() => setReq({ [`${s.k}_sig_url`]: mySig })} style={{ ...btnSt(), marginTop: 4, fontSize: 11, padding: '3px 9px' }}>✍️ เซ็นช่องนี้</button>
-                  : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{mySig ? '' : 'โปรไฟล์ของคุณยังไม่มีลายเซ็น'}</div>)
-              : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>รอ {req[`${s.k}_name`]} login มาเซ็นเอง</div>)}
+                  ? <button onClick={() => setReq({ [`${tr(s.k)}_sig_url`]: mySig })} style={{ ...btnSt(), marginTop: 4, fontSize: 11, padding: '3px 9px' }}>✍️ {tr("เซ็นช่องนี้")}</button>
+                  : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{mySig ? '' : tr("โปรไฟล์ของคุณยังไม่มีลายเซ็น")}</div>)
+              : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{tr("รอ")} {req[`${tr(s.k)}_name`]} login {tr("มาเซ็นเอง")}</div>)}
           </div>
         ))}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
-        ลายเซ็นดึงจากโปรไฟล์ของ<b>คนที่ login เท่านั้น</b> — เลือกชื่อคนอื่นได้ แต่เจ้าตัวต้องมากดเซ็นเอง · ใครยังไม่มีลายเซ็นให้ไปบันทึกที่เมนูโปรไฟล์ → จัดการลายเซ็น
+        {tr("ลายเซ็นดึงจากโปรไฟล์ของ")}<b>{tr("คนที่ login เท่านั้น")}</b> — {tr("เลือกชื่อคนอื่นได้ แต่เจ้าตัวต้องมากดเซ็นเอง · ใครยังไม่มีลายเซ็นให้ไปบันทึกที่เมนูโปรไฟล์ → จัดการลายเซ็น")}
       </div>
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
@@ -742,7 +740,7 @@ function BomPickModal({ sloc, lines, onClose, onApply }) {
     let alive = true;
     loadProductsMaster()
       .then(r => { if (alive) setProducts({ rows: r || [], failed: '' }); })
-      .catch(e => { if (alive) setProducts({ rows: [], failed: `โหลดทะเบียนสินค้าไม่สำเร็จ (${e?.message || e})` }); });
+      .catch(e => { if (alive) setProducts({ rows: [], failed: `${tr("โหลดทะเบียนสินค้าไม่สำเร็จ")} (${e?.message || e})` }); });
     loadBomParentIds().then(r => { if (alive) setBomIds(r); });
     return () => { alive = false; };
   }, []);
@@ -836,7 +834,7 @@ function BomKidsStep({ root, onBack, onClose, onApply }) {
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: '55vh', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 600 }}>
             <thead><tr>
-              {['ใช้', 'ชั้น', 'ลูก', 'ต่อ 1 แม่', 'จำนวนเบิก', 'หน่วย'].map(h => <th key={h} style={thSt}>{tr(h)}</th>)}
+              {[tr("ใช้"), tr("ชั้น"), tr("ลูก"), tr("ต่อ 1 แม่"), tr("จำนวนเบิก"), tr("หน่วย")].map(h => <th key={h} style={thSt}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {rows.map(r => (
@@ -878,7 +876,7 @@ function BomKidsStep({ root, onBack, onClose, onApply }) {
 function Modal({ title, onClose, children, width = 620, dismissable = false }) {
   return (
     <div className="modal-scroll" onClick={dismissable ? onClose : undefined} style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '3vh 12px', overflowY: 'auto' }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 97vw)`, maxHeight: '94vh', overflowY: 'auto', padding: 18 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 97vw)`, maxHeight: '94vh', overflowY: 'auto', padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>

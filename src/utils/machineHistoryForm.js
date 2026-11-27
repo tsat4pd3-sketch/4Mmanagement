@@ -14,6 +14,7 @@ import { isMoOpen } from './mtnStepPerm.js';
 import { problemLabelOf } from './machineRepairHistory.js';
 import { assignedTechsOf, prNumbersOf } from './mtnPurchase.js';
 import { UNGROUPED_LABEL } from './unclassified.js';
+import { dateLocale } from './i18n.js';
 
 export const ROWS_PER_PAGE = 15;
 
@@ -23,7 +24,7 @@ export function splitDateTime(v) {
   if (!v) return { d: '', t: '' };
   const dt = new Date(v);
   if (!Number.isFinite(dt.getTime())) return { d: '', t: '' };
-  const d = dt.toLocaleDateString('th-TH', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+  const d = dt.toLocaleDateString(dateLocale(), { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
   const t = dt.toLocaleTimeString('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hour12: false });
   return { d, t };
 }

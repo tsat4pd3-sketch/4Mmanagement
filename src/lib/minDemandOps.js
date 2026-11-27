@@ -62,11 +62,26 @@ export async function loadMinAlerts() {
 
   const withName = levels.map(l => ({ ...l, part_name: nameOf.get(l.mat_no) || '' }));
   const lastMove = new Map((moves.data || []).map(m => [`${m.line_name}\u0001${m.mat_no}`, m.last_at]));
+  /* 🔎 "ของตัวนี้ขยับจริงที่ไหน" — RPC คืน **ทุก** คู่ (ไลน์, mat) ของ mat ที่ขอมาอยู่แล้ว
+     ⇒ ได้ฟรีจากข้อมูลบนสายเดิม **ไม่ต้องยิงคิวรีเพิ่ม** (กฎเหล็ก DB ข้อ 11: egress คิดเป็นไบต์)
+     เก็บที่ขยับล่าสุดสุดต่อ mat · ตัวเทียบว่า "ที่อื่น" ทำใน `minAlerts` (ของกลางที่เดียว) */
+  const byMat = new Map();
+  (moves.data || []).forEach(m => {
+    if (!m?.line_name || !m?.mat_no) return;
+    const cur = byMat.get(m.mat_no);
+    if (!cur || String(m.last_at || '') > String(cur.lastAt || '')) {
+      byMat.set(m.mat_no, { line_name: m.line_name, lastAt: m.last_at, moves: m.moves });
+    }
+  });
   const rows = minAlerts(
     withName,
     (ln, mat) => { const v = onHand.get(`${ln}\u0001${mat}`); return v === undefined ? null : v; },
     (mat) => ownerOf.get(mat) || null,
-    { lastMoveOf: (ln, mat) => lastMove.get(`${ln}\u0001${mat}`) || null, now: new Date().toISOString() },
+    {
+      lastMoveOf: (ln, mat) => lastMove.get(`${ln}\u0001${mat}`) || null,
+      movesElsewhereOf: (ln, mat) => byMat.get(mat) || null,
+      now: new Date().toISOString(),
+    },
   );
   return { rows, summary: minAlertSummary(rows), error: null };
 }

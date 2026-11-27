@@ -160,8 +160,8 @@ export default function MonitorBoardGrid({
   if (!periods.length) {
     return (
       <div style={{ ...card, fontSize: FS + 1 }}>
-        ⚠️ บอร์ดนี้ยังไม่มีคอลัมน์ช่วงเวลา — ตั้ง “วันเริ่ม” และ “จำนวนคอลัมน์” ก่อน
-        {board.period_kind === 'date' ? ' (บอร์ดรายวันส่งต้องมีวันที่ลูกค้าสั่งอย่างน้อย 1 วัน)' : ''}
+        ⚠️ {tr("บอร์ดนี้ยังไม่มีคอลัมน์ช่วงเวลา — ตั้ง “วันเริ่ม” และ “จำนวนคอลัมน์” ก่อน")}
+        {board.period_kind === 'date' ? tr(" (บอร์ดรายวันส่งต้องมีวันที่ลูกค้าสั่งอย่างน้อย 1 วัน)") : ''}
       </div>
     );
   }
@@ -186,12 +186,11 @@ export default function MonitorBoardGrid({
           {loadWarn ? <div>🔴 {loadWarn}</div> : null}
           {summary.partial ? (
             <div>
-              ⚠️ <b>{summary.seedMissingCount} {tr('พาร์ทยังไม่ใส่ยอดยกมา')}</b> (ช่องคอลัมน์แรก
-              {seed ? ` ${periodHead(seed.date, { today: todayKey }).bot}` : ''}) ⇒ แถวที่ต้องคำนวณของพาร์ทนั้นขึ้นขีด “–” ทั้งแถว
-              — ระบบไม่เดายอดยกมาให้ เพราะ “ยกมา 0” กับ “ไม่รู้ว่ายกมาเท่าไหร่” ตัดสินใจคนละแบบ
+              ⚠️ <b>{summary.seedMissingCount} {tr('พาร์ทยังไม่ใส่ยอดยกมา')}</b> ({tr("ช่องคอลัมน์แรก")}
+              {seed ? ` ${periodHead(seed.date, { today: todayKey }).bot}` : ''}) ⇒ {tr("แถวที่ต้องคำนวณของพาร์ทนั้นขึ้นขีด “–” ทั้งแถว — ระบบไม่เดายอดยกมาให้ เพราะ “ยกมา 0” กับ “ไม่รู้ว่ายกมาเท่าไหร่” ตัดสินใจคนละแบบ")}
               <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                 {summary.seedMissing.slice(0, 12).map((s) => s.mat_no || '(ไม่มีเลข)').join(' · ')}
-                {summary.seedMissing.length > 12 ? ` … อีก ${summary.seedMissing.length - 12}` : ''}
+                {summary.seedMissing.length > 12 ? ` … ${tr("อีก")} ${summary.seedMissing.length - 12}` : ''}
               </div>
             </div>
           ) : null}
@@ -223,7 +222,7 @@ export default function MonitorBoardGrid({
               disabled={winStart <= 0} aria-label={tr('ย้อนช่วงวันที่')}>←</button>
             <span style={{ color: 'var(--muted)' }}>
               {win.length > 1 ? `${periodHead(win[1].date, { today: todayKey }).bot} – ${periodHead(win[win.length - 1].date, { today: todayKey }).bot}` : ''}
-              {` (จาก ${body.length} ช่วง)`}
+              {` (${tr("จาก")} ${body.length} ${tr("ช่วง")})`}
             </span>
             <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
               title={tr('กลับมาที่คอลัมน์วันนี้')}>{tr('วันนี้')}</button>
@@ -246,9 +245,9 @@ export default function MonitorBoardGrid({
         {editable ? (
           <>✏️ <b>{tr('แก้ตัวเลขได้เลย — คลิกที่ช่องแล้วพิมพ์ทับ')}</b>
             <span style={{ color: 'var(--muted)' }}>
-              {' · '}<b>Enter</b> {tr('ลงช่องล่าง')}{' · '}<b>Tab</b> {tr('ไปช่องขวา')}{' · '}<b>Esc</b> ยกเลิก
-              {' · '}{tr('แถวที่ติดป้าย')} <b>{tr('ƒ สูตร')}</b> (พื้นเทา ตัวเอียง) ระบบคำนวณให้ พิมพ์ทับไม่ได้
-              {' · '}ค่าที่คนกรอกชนะค่าที่ระบบดึงเสมอ
+              {' · '}<b>Enter</b> {tr('ลงช่องล่าง')}{' · '}<b>Tab</b> {tr('ไปช่องขวา')}{' · '}<b>Esc</b> {tr("ยกเลิก")}
+              {' · '}{tr('แถวที่ติดป้าย')} <b>{tr('ƒ สูตร')}</b> ({tr("พื้นเทา ตัวเอียง) ระบบคำนวณให้ พิมพ์ทับไม่ได้")}
+              {' · '}{tr("ค่าที่คนกรอกชนะค่าที่ระบบดึงเสมอ")}
             </span>
           </>
         ) : (
@@ -298,7 +297,7 @@ export default function MonitorBoardGrid({
           <tbody>
             {shown.length === 0 ? (
               <tr><td colSpan={win.length + (showSl ? 5 : 2)} style={{ padding: 18, textAlign: 'center', color: 'var(--muted)' }}>
-                {parts.length === 0 ? 'บอร์ดนี้ยังไม่มีพาร์ท — นำเข้าจากไฟล์ Excel หรือเพิ่มเอง' : 'ไม่มีพาร์ทที่ตรงเงื่อนไข'}
+                {parts.length === 0 ? tr("บอร์ดนี้ยังไม่มีพาร์ท — นำเข้าจากไฟล์ Excel หรือเพิ่มเอง") : tr("ไม่มีพาร์ทที่ตรงเงื่อนไข")}
               </td></tr>
             ) : shown.map((part, pi) => {
               const sl = slSummary({
@@ -350,7 +349,7 @@ export default function MonitorBoardGrid({
                         style={{
                           marginLeft: 6, fontSize: FS - 1.5, fontWeight: 800, padding: '0 5px',
                           borderRadius: 'var(--r-xs)', border: '1px solid var(--border2)',
-                          background: 'var(--bg2)', color: 'var(--muted)', whiteSpace: 'nowrap',
+                          background: 'var(--bg2-surf)', color: 'var(--muted)', whiteSpace: 'nowrap',
                         }}>{tr('ƒ สูตร')}</span>
                     ) : null}
                   </td>
@@ -375,10 +374,10 @@ export default function MonitorBoardGrid({
                           if (c?.src === 'locked') { if (onLockedCell) onLockedCell({ partId: part.id, rowKey: row.key, periodKey: p.key }); return; }
                           if (c?.editable && !editing) startEdit(part.id, row.key, p.key, c.v);
                         }}
-                        title={lvSt ? `${lvSt === 'low' ? 'ต่ำกว่า MIN' : lvSt === 'high' ? 'เกิน MAX' : 'อยู่ในช่วง MIN–MAX'} (MIN ${fmtN(levelOf(part)?.min)} · MAX ${fmtN(levelOf(part)?.max)})`
-                          : br ? `ต่ำกว่า MIN ${fmtN(br.short)} ชิ้น (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? 'ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ'
-                          : c?.src === 'locked' ? `🔒 ระบบเป็นเจ้าของ (คลังกดรับแล้ว) — แก้บนบอร์ดไม่ได้${onLockedCell ? ' · กดเพื่อขอปรับยอดคลัง' : ''}`
-                          : c?.src === 'ledger' ? '🔗 ยอดคงเหลือจริงในคลัง (ledger) ณ ตอนนี้ — ไม่ใช่สูตร · ยอดไม่ตรงของจริงให้ตรวจนับที่ /line-stock?tab=count' : undefined)}
+                        title={lvSt ? `${lvSt === 'low' ? tr('ต่ำกว่า MIN') : lvSt === 'high' ? tr('เกิน MAX') : tr('อยู่ในช่วง MIN–MAX')} (MIN ${fmtN(levelOf(part)?.min)} · MAX ${fmtN(levelOf(part)?.max)})`
+                          : br ? `${tr("ต่ำกว่า")} MIN ${fmtN(br.short)} ${tr("ชิ้น")} (MIN ${fmtN(br.min)})` : (c?.src === 'system' ? tr("ระบบดึงจากใบผลิต/สต๊อก — กดเพื่อกรอกทับ")
+                          : c?.src === 'locked' ? `🔒 ${tr("ระบบเป็นเจ้าของ (คลังกดรับแล้ว) — แก้บนบอร์ดไม่ได้")}${onLockedCell ? tr(' · กดเพื่อขอปรับยอดคลัง') : ''}`
+                          : c?.src === 'ledger' ? tr("🔗 ยอดคงเหลือจริงในคลัง (ledger) ณ ตอนนี้ — ไม่ใช่สูตร · ยอดไม่ตรงของจริงให้ตรวจนับที่ /line-stock?tab=count") : undefined)}
                         style={{
                           ...tdBase, textAlign: 'right', cursor: (c?.editable && editable) ? 'cell' : (c?.src === 'locked' && onLockedCell ? 'pointer' : 'default'),
                           minWidth: COL_W, width: COL_W, padding: editing ? 0 : tdBase.padding,
@@ -443,10 +442,10 @@ export default function MonitorBoardGrid({
       {/* ── ที่มาของตัวเลข (ต้องเขียนไว้ เพราะ 2 ชีทในไฟล์เดิมคิด Total SL คนละแบบ) ──── */}
       <div style={{ fontSize: FS, color: 'var(--muted)', lineHeight: 1.8 }}>
         {showSl ? <><b>Total SL</b> {tr('ของบอร์ดนี้นับจากแถว')} <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
-        {board.sl_includes_seed ? ' + ยอดยกมา' : ''} {tr('(ข้ามคอลัมน์ยอดยกมาในการรวม)')}</> : null}
-        {' · '}<b>{tr('ƒ สูตร')}</b> = แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้
-        {' · '}<b>⚙</b> = ระบบดึงจากใบผลิต/สต๊อกให้ กรอกทับได้ (ค่าที่คนกรอกชนะเสมอ)
-        {' · '}<b>–</b> = ข้อมูลไม่พอให้คิด (ไม่ใช่ 0)
+        {board.sl_includes_seed ? tr(" + ยอดยกมา") : ''} {tr('(ข้ามคอลัมน์ยอดยกมาในการรวม)')}</> : null}
+        {' · '}<b>{tr('ƒ สูตร')}</b> = {tr("แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้")}
+        {' · '}<b>⚙</b> = {tr("ระบบดึงจากใบผลิต/สต๊อกให้ กรอกทับได้ (ค่าที่คนกรอกชนะเสมอ")})
+        {' · '}<b>–</b> = {tr("ข้อมูลไม่พอให้คิด (ไม่ใช่")} 0)
         {!editable ? <> · <b>{tr('อ่านอย่างเดียว')}</b> {tr('(ไม่มีสิทธิ์แก้บอร์ดนี้)')}</> : null}
       </div>
     </div>
@@ -457,13 +456,13 @@ export default function MonitorBoardGrid({
 function PartHead({ part, board, shortAt, racks = null, raw = null, level = null }) {
   const sub = [];
   if (part.model) sub.push(part.model);
-  if (part.rack) sub.push(`แร็ค ${part.rack}`);
+  if (part.rack) sub.push(`${tr("แร็ค")} ${part.rack}`);
   if (part.lot_qty) sub.push(`LOT ${fmtN(part.lot_qty)}`);
-  if (part.packing) sub.push(isStoreBoard(board) ? `STD/PC ${fmtN(part.packing)}` : `บรรจุ ${fmtN(part.packing)}`);
+  if (part.packing) sub.push(isStoreBoard(board) ? `STD/PC ${fmtN(part.packing)}` : `${tr("บรรจุ")} ${fmtN(part.packing)}`);
   /* 🏬 บอร์ดสโตร์: MIN/MAX จาก kanban_standards · ยังไม่ตั้ง = บอกตรงๆ */
   if (isStoreBoard(board)) sub.push(level && (level.min != null || level.max != null) ? `MIN ${fmtN(level.min)} · MAX ${fmtN(level.max)}` : 'ยังไม่ตั้ง MIN/MAX');
   if (part.ct_sec) sub.push(`CT ${part.ct_sec}s`);
-  if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ชิ้น/จังหวะ`);
+  if (part.pieces_per_shot > 1) sub.push(`${part.pieces_per_shot} ${tr("ชิ้น/จังหวะ")}`);
   return (
     /* 🔴 หัวพาร์ทต้อง "ตัดบรรทัดเอง" — `tdBase` ตั้ง `whiteSpace:'nowrap'` ไว้สำหรับช่องตัวเลข
        ⇒ ถ้าไม่ปลดที่นี่ บรรทัดรายละเอียด (รุ่น · LOT · บรรจุ · CT) จะ**ล้นออกนอกคอลัมน์หัว**
@@ -477,7 +476,7 @@ function PartHead({ part, board, shortAt, racks = null, raw = null, level = null
           เดิมส่ง `matText(part)` ⇒ หัวพาร์ททุกแถวขึ้น `MAT [object Object]` แทนเลขจริง (แก้ 05/10)
           ชื่อพาร์ทวาดเป็นบรรทัดของตัวเองข้างล่าง (clamp 2 บรรทัด) จึงไม่ส่ง `name` เข้ามาซ้ำ */}
       <div style={{ fontWeight: 700, fontSize: FS + 0.5 }}>
-        {matText(part.mat_no, null, { pNo: part.part_no }) || part.mat_no || '(ไม่มีเลข)'}
+        {matText(part.mat_no, null, { pNo: part.part_no }) || part.mat_no || tr("(ไม่มีเลข)")}
       </div>
       {part.part_name ? (
         <div style={{
@@ -497,14 +496,14 @@ function PartHead({ part, board, shortAt, racks = null, raw = null, level = null
           {raw.cover.enough === null
             ? <span title={tr('ข้อมูลไม่พอ — ห้ามตอบว่าพอหรือไม่พอ')}> {tr('· เทียบงานท้ายไลน์ไม่ได้')}</span>
             : (raw.cover.enough
-              ? <span style={{ color: 'var(--accent)' }}> {tr('· เหล็กพอ (เหลือ')} {fmtN(raw.cover.diff, 1)} กก.)</span>
-              : <span style={{ color: '#f87171', fontWeight: 700 }}> {tr('· เหล็กขาด')} {fmtN(-raw.cover.diff, 1)} {tr('กก.')}</span>)}
+              ? <span style={{ color: 'var(--accent)' }}> {tr('· เหล็กพอ (เหลือ')} {fmtN(raw.cover.diff, 1)} {tr("กก.")})</span>
+              : <span style={{ color: 'var(--red)', fontWeight: 700 }}> {tr('· เหล็กขาด')} {fmtN(-raw.cover.diff, 1)} {tr('กก.')}</span>)}
         </div>
       ) : null}
-      {shortAt ? <div style={{ color: '#f87171', fontWeight: 700, fontSize: FS - 0.5 }}>{tr('⚠ ของขาด')} {shortAt.slice(5)}</div> : null}
+      {shortAt ? <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: FS - 0.5 }}>{tr('⚠ ของขาด')} {shortAt.slice(5)}</div> : null}
       {!part.in_registry && part.mat_no ? (
         <div style={{ color: 'var(--accent2)', fontSize: FS - 1 }} title={tr('พาร์ทนี้ยังไม่อยู่ในทะเบียนสินค้า (dr_products) ⇒ ระบบดึงยอดผลิต/CT ให้ไม่ได้')}>
-          ⚠ ยังไม่อยู่ในทะเบียนสินค้า
+          ⚠ {tr("ยังไม่อยู่ในทะเบียนสินค้า")}
         </div>
       ) : null}
     </div>

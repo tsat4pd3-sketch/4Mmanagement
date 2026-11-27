@@ -102,8 +102,13 @@ test('ใบ MO ที่ต้องเปิด PR แต่ยังไม่
     { id: 'g', repair_path: null, status: 'assigned' },                      // ยังไม่ระบุเส้นทาง
   ];
   const prs = [{ order_id: 'e', status: 'requested' }, { order_id: 'f', status: 'cancelled' }];
-  const out = mosNeedingPr(orders, prs, o => o.status !== 'closed').map(o => o.id);
-  assert.deepEqual(out, ['b', 'a', 'f']);   // เก่าสุดก่อน
+  const rows = mosNeedingPr(orders, prs, o => o.status !== 'closed');
+  /* 🔴 26/11 — ใบ `d` (ปิดแล้ว · เส้นทางบังคับ PR · ไม่มีใบ) **ต้องอยู่ในคิว**
+     เดิมกรอง `isOpen` ทิ้ง ⇒ พอ ผจก. เซ็นปิด ใบก็หลุดเงียบ (หลุดจริงไป 20 ใบ 7/9–18/11)
+     ไม่มี report_at ⇒ เรียงขึ้นหน้าสุด · `isOpen` เหลือหน้าที่ติดธง `_moClosed` ให้จอ */
+  assert.deepEqual(rows.map(o => o.id), ['d', 'b', 'a', 'f']);   // เก่าสุดก่อน (ไม่มีวัน = ว่าง มาก่อน)
+  assert.deepEqual(rows.map(o => o._moClosed), [true, false, false, false],
+    'ใบที่ปิดแล้วต้องติดธง _moClosed ให้จอเขียนบอก ไม่ใช่ปนกับใบที่ยังเปิด');
   assert.ok(NEEDS_PR_PATHS().includes('inhouse_pr') && NEEDS_PR_PATHS().includes('outsource'));
 });
 

@@ -20,6 +20,7 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
   ResponsiveContainer, Tooltip,
 } from 'recharts';
+import { chartAnim } from '../utils/motion';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import useIsMobile from '../utils/useIsMobile';
@@ -52,7 +53,7 @@ function RadarTooltipContent({ active, payload }) {
   const { subject, value } = payload[0].payload;
   const lv = getLevel(value);
   return (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12 }}>
+    <div style={{ background: 'var(--bg3-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12 }}>
       <div style={{ fontWeight: 700, color: 'var(--text)' }}>{subject}</div>
       <div style={{ color: lv.color, fontWeight: 800, fontSize: 15 }}>{value}<span style={{ fontSize: 11, fontWeight: 400, marginLeft: 2 }}>/ 100</span></div>
       <div style={{ fontSize: 11, color: lv.color }}>{tr(lv.label)}</div>
@@ -78,7 +79,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
       // ไม่ตรงกับที่ doc_control ตั้งไว้ที่ /doc-forms (โหลดแล้วครั้งเดียว เรียกซ้ำคืน cache ทันที)
       await Promise.all([loadDocForms(), loadPositions()]);   // master ตำแหน่ง — ใบพิมพ์แปลง key เป็นชื่อ
       // ดึงผู้ประเมิน (หัวหน้าแผนก/leader) + ผู้รับรอง (หัวหน้าส่วน/supervisor หรือ manager) จากไลน์ของพนักงาน
-      let assessor = { name: '', pos: 'หัวหน้าแผนก', sig: null };
+      let assessor = { name: '', pos: tr("หัวหน้าแผนก"), sig: null };
       let certifier = { name: '', pos: 'หัวหน้าส่วน', sig: null };
       if (emp.line_id) {
         // หา "คนเซ็น" ตามไลน์ ไม่ใช่การเช็คสิทธิ์ — จึงเทียบ role ตรงๆ ได้ (ไม่ขัดกฎห้าม hardcode role array)
@@ -89,7 +90,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
         const ldr = (sgs || []).find(p => p.role === 'leader');
         const sv  = (sgs || []).find(p => p.role === 'supervisor');
         const mgr = (sgs || []).find(p => p.role === 'manager');
-        if (ldr) assessor  = { name: ldr.full_name || '', pos: ldr.position || 'หัวหน้าแผนก', sig: ldr.signature_url || null };
+        if (ldr) assessor  = { name: ldr.full_name || '', pos: ldr.position || tr("หัวหน้าแผนก"), sig: ldr.signature_url || null };
         const cert = sv || mgr;
         if (cert) certifier = { name: cert.full_name || '', pos: cert.position || 'หัวหน้าส่วน', sig: cert.signature_url || null };
       }
@@ -109,7 +110,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
       });
       const w = window.open('', '_blank'); w.document.write(html); w.document.close();
     } catch (e) {
-      toast.error('พิมพ์ใบประเมินไม่สำเร็จ: ' + (e?.message || e));
+      toast.error((tr('พิมพ์ใบประเมินไม่สำเร็จ') + ': ') + (e?.message || e));
     } finally {
       setPrinting(false);
     }
@@ -139,7 +140,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
         width: wide ? 'min(96vw, 1040px)' : 'min(460px, 94vw)',
         maxHeight: '92vh',
         display: 'flex', flexDirection: 'column',
-        background: 'var(--bg2)',
+        background: 'var(--bg2-surf)',
         border: `1px solid ${glowColor}55`,
         borderRadius: 'var(--r-lg)',   /* 09/11: เดิม 20 → ถูกแปลงเป็นแคปซูลผิดในรอบ 4 (user: โมดัลกลายเป็นวงรี) · modal = --r-lg */
         /* 🌑 เงาโมดัล = token (ห้าม rgba ดิบ · ธีมสว่างจะเงาดำทึบ) · glow สีคือสัญญาณระดับทักษะ */
@@ -192,7 +193,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 17, color: 'var(--text)', lineHeight: 1.2 }}>{emp.name}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{emp.employee_id_code}</div>
             <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
+              {emp.group_name && <span style={{ fontSize: 11, background: 'var(--bg3-surf)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px', border: '1px solid var(--border2)' }}>{emp.group_name}</span>}
               <span style={{ fontSize: 11, background: `${glowColor}22`, color: glowColor, borderRadius: 'var(--r-xs)', padding: '2px 7px', border: `1px solid ${glowColor}44`, fontWeight: 700 }}>
                 {tr(overall.label)}
               </span>
@@ -210,7 +211,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
           {radarData.slice(0, 4).map(d => {
             const lv = getLevel(d.value);
             return (
-              <div key={d.subject} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px', border: '1px solid var(--border)' }}>
+              <div key={d.subject} style={{ background: 'var(--bg3-surf)', borderRadius: 'var(--r-md)', padding: '8px 10px', border: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.subject}</div>
                 <div style={{ fontSize: 16, fontWeight: 800, color: lv.color, fontFamily: 'var(--font-display)' }}>{d.value}</div>
                 <div style={{ height: 3, background: 'var(--border2)', borderRadius: 'var(--r-xs)', marginTop: 4 }}>
@@ -233,7 +234,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
                 tick={{ fill: 'var(--text2)', fontSize: 11, fontFamily: 'var(--font-body)' }}
               />
               <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-              <Radar
+              <Radar {...chartAnim()}
                 dataKey="value"
                 stroke={glowColor}
                 fill={glowColor}
@@ -250,7 +251,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             border: `1px solid ${glowColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             opacity: printing ? 0.6 : 1,
           }}>
-            {printing ? 'กำลังเตรียม...' : '🖨️ พิมพ์ใบประเมินทักษะรายบุคคล (F-PRS-P1-119)'}
+            {printing ? tr("กำลังเตรียม...") : tr("🖨️ พิมพ์ใบประเมินทักษะรายบุคคล (F-PRS-P1-119)")}
           </button>
         </div>
         </div>{/* /left column */}

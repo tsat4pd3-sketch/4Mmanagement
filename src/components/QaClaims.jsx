@@ -130,17 +130,17 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       ({ data: row, error } = await supabase.from('qa_customer_claims').insert({ ...payload, claim_no, created_by: fullName || null }).select('id').single());
     }
     setBusy(false);
-    if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return null; }
+    if (error) { toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${error.message}`); return null; }
     // แจ้งเฉพาะเคลมที่เพิ่งเปิดใหม่ — แก้ไข/ตอบกลับทีหลังไม่ต้องเด้งซ้ำ
     if (!f.id) notifyEvent({
       event: 'qa_claim_opened', type: 'error', ref_table: 'qa_customer_claims', ref_id: row?.id,
       line_name: f.line_name || null, actor: fullName,
       lines: [
-        `🏢 ลูกค้า: ${f.customer.trim()}${f.customer_ref ? ` · ref ${f.customer_ref.trim()}` : ''}`,
-        `🏭 ไลน์: ${f.line_name || '—'} · พาร์ท: ${f.part_no?.trim() || '—'}`,
-        `🚫 เคลม ${Number(f.qty_claim) || 0} ชิ้น · ${f.severity}`,
+        `🏢 ${tr("ลูกค้า")}: ${f.customer.trim()}${f.customer_ref ? ` · ref ${f.customer_ref.trim()}` : ''}`,
+        `🏭 ${tr("ไลน์")}: ${f.line_name || '—'} · ${tr("พาร์ท")}: ${f.part_no?.trim() || '—'}`,
+        `🚫 ${tr("เคลม")} ${Number(f.qty_claim) || 0} ${tr("ชิ้น")} · ${f.severity}`,
         `📝 ${f.defect_desc.trim().slice(0, 300)}`,
-        f.due_reply_date ? `📅 ต้องตอบกลับภายใน ${f.due_reply_date}` : '',
+        f.due_reply_date ? `📅 ${tr("ต้องตอบกลับภายใน")} ${f.due_reply_date}` : '',
       ],
     });
     toast.success(msg);
@@ -151,16 +151,16 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
   /* ❌ ยกเลิกเคลมที่เปิดผิด/ใบซ้ำ (19/10 · หน้างานแจ้ง "เปิดผิดแก้ไม่ได้") — ไม่ลบ: เลขที่ต้องสอบย้อนได้
      ต้องมีเหตุผล (DB check) · นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error) */
   const cancel = async (c) => {
-    const reason = window.prompt(`ยกเลิก ${c.claim_no} — เหตุผล (เช่น เปิดซ้ำกับ CLM-xxx / กรอกผิดใบ):`);
+    const reason = window.prompt(`${tr("ยกเลิก")} ${c.claim_no} — ${tr("เหตุผล (เช่น เปิดซ้ำกับ CLM-xxx / กรอกผิดใบ")}):`);
     if (reason == null) return;
     if (!reason.trim()) { toast.error('ต้องใส่เหตุผลการยกเลิก'); return; }
     setBusy(true);
     const ok = checkWriteRows(await supabase.from('qa_customer_claims').update({
       status: QA_CANCELLED, cancel_reason: reason.trim(), cancelled_by: fullName || null, cancelled_at: new Date().toISOString(),
-    }).eq('id', c.id).select('id'), `ยกเลิก ${c.claim_no}`);
+    }).eq('id', c.id).select('id'), `${tr("ยกเลิก")} ${c.claim_no}`);
     setBusy(false);
     if (!ok) return;
-    toast.success(`ยกเลิก ${c.claim_no} แล้ว (ดูได้ที่ตัวกรอง "ยกเลิก")`);
+    toast.success(`${tr("ยกเลิก")} ${c.claim_no} ${tr("แล้ว (ดูได้ที่ตัวกรอง \"ยกเลิก")}")`);
     setDetail(null); load();
   };
 
@@ -173,27 +173,27 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
     if (!capa_no) { setBusy(false); toast.error('ออกเลขที่ CAPA ไม่สำเร็จ — ลองใหม่อีกครั้ง'); return; }
     const { data, error } = await supabase.from('qa_capa').insert({
       capa_no, ncr_id: c.ncr_id || null,
-      title: `เคลมลูกค้า ${c.customer} — ${c.defect_desc.slice(0, 50)} (${c.claim_no})`,
+      title: `${tr("เคลมลูกค้า")} ${c.customer} — ${c.defect_desc.slice(0, 50)} (${c.claim_no})`,
       owner_name: fullName || null, part_no: c.part_no || null, line_name: c.line_name || null,
-      d2_problem: `${c.defect_desc}\n(ลูกค้า: ${c.customer}${c.customer_ref ? ` · ref ${c.customer_ref}` : ''} · จำนวนเคลม ${c.qty_claim} ชิ้น)`,
+      d2_problem: `${c.defect_desc}\n(${tr("ลูกค้า")}: ${c.customer}${c.customer_ref ? ` · ref ${c.customer_ref}` : ''} · ${tr("จำนวนเคลม")} ${c.qty_claim} ${tr("ชิ้น")})`,
       status: 'open', created_by: fullName || null,
     }).select('id').single();
     if (error) { setBusy(false); toast.error(error.message); return; }
     /* นับแถว — ใบ CAPA ถูกสร้างแล้ว ถ้าผูกกลับไม่ติด เคลมจะไม่มี capa_id = ใบ CAPA กำพร้า หาไม่เจอจากเคลม */
     checkWriteRows(await supabase.from('qa_customer_claims').update({ capa_id: data.id, status: c.status === 'open' ? 'investigating' : c.status }).eq('id', c.id).select('id'), 'ผูก CAPA เข้าเคลม',
-      { zeroMsg: `เปิด CAPA ${capa_no} แล้ว แต่ผูกกลับเข้าเคลมไม่ได้ (0 แถว) — ไปผูกเองที่แท็บ CAPA` });
+      { zeroMsg: `${tr("เปิด")} CAPA ${capa_no} ${tr("แล้ว แต่ผูกกลับเข้าเคลมไม่ได้ (0 แถว) — ไปผูกเองที่แท็บ")} CAPA` });
     notifyEvent({
       event: 'qa_capa_opened', type: 'info', ref_table: 'qa_capa', ref_id: data.id,
       line_name: c.line_name || null, actor: fullName,
       lines: [
-        `📄 ${capa_no} — เปิดจากเคลม ${c.claim_no}`,
-        `🏢 ลูกค้า: ${c.customer}`,
-        `🏭 ไลน์: ${c.line_name || '—'} · พาร์ท: ${c.part_no || '—'}`,
+        `📄 ${capa_no} — ${tr("เปิดจากเคลม")} ${c.claim_no}`,
+        `🏢 ${tr("ลูกค้า")}: ${c.customer}`,
+        `🏭 ${tr("ไลน์")}: ${c.line_name || '—'} · ${tr("พาร์ท")}: ${c.part_no || '—'}`,
         `📝 ${String(c.defect_desc || '').slice(0, 300)}`,
       ],
     });
     setBusy(false);
-    toast.success(`เปิด ${capa_no} จากเคลมนี้แล้ว`);
+    toast.success(`${tr("เปิด")} ${capa_no} ${tr("จากเคลมนี้แล้ว")}`);
     load();
     onOpenCapa?.({ _openId: data.id });
   };
@@ -201,7 +201,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
   if (missing) {
     return (
       <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
-        ยังไม่ได้ติดตั้งทะเบียนเคลมลูกค้า — แจ้ง admin ให้ apply migration <b>20260817_qa_customer_claims</b>
+        {tr("ยังไม่ได้ติดตั้งทะเบียนเคลมลูกค้า — แจ้ง admin ให้")} apply migration <b>20260817_qa_customer_claims</b>
       </div>
     );
   }
@@ -211,7 +211,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
       <FilterBar>
         <Segmented label={tr('สถานะ')} value={filter} onChange={setFilter} options={[
-          { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
+          { value: 'all', label: ALL.status }, { value: 'active', label: tr("ยังไม่ปิด") }, { value: 'closed', label: tr("ปิดแล้ว") }, { value: 'cancelled', label: tr("ยกเลิก") },
         ]} />
         <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>{tr('รับเคลมใหม่')}</button>}
@@ -222,10 +222,10 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
         {[
           ['📮 เคลมที่ยังไม่ปิด', openList.length, openList.length ? '#f59e0b' : '#22c55e', 'ทั้งหมดในทะเบียน'],
           ['⏰ เลยกำหนดตอบ', overdue.length, overdue.length ? '#ef4444' : '#22c55e', 'ยังไม่ได้ตอบลูกค้า'],
-          ['🔁 เคลมซ้ำ', sureIds.size, sureIds.size ? '#ef4444' : '#22c55e', maybeIds.size ? `+ อาจซ้ำอีก ${maybeIds.size} ใบ (ใน ${REPEAT_MONTHS} เดือน)` : `พาร์ท+อาการเดิมใน ${REPEAT_MONTHS} เดือน`],
-          ['🛠 ผูก 8D แล้ว', scoped.filter((c) => c.capa_id).length, undefined, `จากทั้งหมด ${scoped.length} ใบ`],
+          ['🔁 เคลมซ้ำ', sureIds.size, sureIds.size ? '#ef4444' : '#22c55e', maybeIds.size ? `+ ${tr("อาจซ้ำอีก")} ${maybeIds.size} ${tr("ใบ (ใน")} ${REPEAT_MONTHS} ${tr("เดือน")})` : `${tr("พาร์ท+อาการเดิมใน")} ${REPEAT_MONTHS} ${tr("เดือน")}`],
+          ['🛠 ผูก 8D แล้ว', scoped.filter((c) => c.capa_id).length, undefined, `${tr("จากทั้งหมด")} ${scoped.length} ${tr("ใบ")}`],
         ].map(([label, val, color, sub]) => (
-          <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '10px 13px' }}>
+          <div key={label} style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '10px 13px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: color || 'var(--text)' }}>{val}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div>
@@ -236,12 +236,12 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       {(sureIds.size > 0 || maybeIds.size > 0) && (
         <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${sureIds.size ? '#ef444466' : '#f59e0b66'}`, background: sureIds.size ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.6 }}>
           {sureIds.size > 0 && <div style={{ color: '#ef4444' }}>
-            🔁 <b>{tr('เคลมซ้ำ')} {sureIds.size} {tr('ใบ')}</b> {tr('— พาร์ทเดิม อาการเดิม กลับมาภายใน')} {REPEAT_MONTHS} เดือน
+            🔁 <b>{tr('เคลมซ้ำ')} {sureIds.size} {tr('ใบ')}</b> {tr('— พาร์ทเดิม อาการเดิม กลับมาภายใน')} {REPEAT_MONTHS} {tr("เดือน")}
             <span style={{ color: 'var(--text2)' }}> {tr('· มาตรการจาก 8D ครั้งก่อน')}<b>{tr('ยังไม่ได้ผลจริง')}</b> {tr('— ทบทวนของเดิม อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3)')}</span>
           </div>}
           {maybeIds.size > 0 && <div style={{ color: '#f59e0b', marginTop: sureIds.size ? 5 : 0 }}>
             ❓ <b>{tr('อาจซ้ำอีก')} {maybeIds.size} {tr('ใบ')}</b>
-            <span style={{ color: 'var(--text2)' }}> — พาร์ทเดิมและพูดถึงชิ้นส่วนเดียวกัน แต่ข้อความไม่ตรงพอจะฟันธง (เช่น "นัทไม่มี" กับ "นัทเชื่อมเยื้องศูนย์" คนละอาการ) <b>{tr('ต้องเปิดดูเอง')}</b></span>
+            <span style={{ color: 'var(--text2)' }}> — {tr("พาร์ทเดิมและพูดถึงชิ้นส่วนเดียวกัน แต่ข้อความไม่ตรงพอจะฟันธง (เช่น \"นัทไม่มี\" กับ \"นัทเชื่อมเยื้องศูนย์\" คนละอาการ")}) <b>{tr('ต้องเปิดดูเอง')}</b></span>
           </div>}
         </div>
       )}
@@ -254,7 +254,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
           <thead style={{ background: 'var(--bg2)' }}>
-            <tr>{['เลขเคลม', 'วันที่', 'ลูกค้า', 'พาร์ท', 'อาการ', 'จำนวน', 'กำหนดตอบ', 'สถานะ', 'งานแก้ไข'].map((h) => <th key={h} style={thSt}>{tr(h)}</th>)}</tr>
+            <tr>{[tr("เลขเคลม"), tr("วันที่"), tr("ลูกค้า"), tr("พาร์ท"), tr("อาการ"), tr("จำนวน"), tr("กำหนดตอบ"), tr("สถานะ"), tr("งานแก้ไข")].map((h) => <th key={h} style={thSt}>{tr(h)}</th>)}</tr>
           </thead>
           <tbody>
             {shown.map((c) => {
@@ -274,7 +274,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                   <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
                   <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.line_name}</div>}</td>
                   <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={tr(SEVERITY[c.severity]?.label)} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
-                  <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
+                  <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / ${tr("คืน")} ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
                     {c.due_reply_date || '—'}{late && <div style={{ fontSize: 11 }}>{tr('เลยกำหนด')}</div>}
                   </td>
@@ -287,7 +287,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                 </tr>
               );
             })}
-            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>{tr('ยังไม่มีเคลมในช่วงนี้')}{hiddenN > 0 ? ` (ซ่อน ${hiddenN} ใบของไลน์นอกขอบเขตคุณ)` : ''}</td></tr>}
+            {!shown.length && <tr><td colSpan={9} style={{ ...tdSt, textAlign: 'center', color: 'var(--muted)', padding: 26 }}>{tr('ยังไม่มีเคลมในช่วงนี้')}{hiddenN > 0 ? ` (${tr("ซ่อน")} ${hiddenN} ${tr("ใบของไลน์นอกขอบเขตคุณ")})` : ''}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -305,7 +305,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
   const ro = !canRecord || detail.status === 'closed' || detail.status === QA_CANCELLED;
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{detail.id ? detail.claim_no : tr('รับเคลมลูกค้าใหม่')}</h3>
         {/* 🪜 ถึงขั้นไหน — กฎ claimFlow() (utils/qaDocStatus.js) · UI §6.30 */}
         {detail.id && (() => { const f = claimFlow(detail); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
@@ -316,7 +316,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           return (
             <div style={{ marginBottom: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${sure.length ? '#ef444466' : '#f59e0b66'}`, background: sure.length ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.65 }}>
               <b style={{ color: sure.length ? '#ef4444' : '#f59e0b' }}>
-                {sure.length ? `🔁 เคลมซ้ำ — พาร์ทนี้เคยถูกเคลมด้วยอาการเดียวกันมาแล้ว ${sure.length} ครั้ง` : `❓ พาร์ทนี้เคยถูกเคลมเรื่องชิ้นส่วนเดียวกัน ${repeats.length} ครั้ง — ตรวจดูว่าอาการเดียวกันไหม`}
+                {sure.length ? `🔁 ${tr("เคลมซ้ำ — พาร์ทนี้เคยถูกเคลมด้วยอาการเดียวกันมาแล้ว")} ${sure.length} ${tr("ครั้ง")}` : `❓ ${tr("พาร์ทนี้เคยถูกเคลมเรื่องชิ้นส่วนเดียวกัน")} ${repeats.length} ${tr("ครั้ง — ตรวจดูว่าอาการเดียวกันไหม")}`}
               </b>
               <div style={{ color: 'var(--text2)', marginTop: 4 }}>
                 {repeats.slice(0, 4).map((r) => (
@@ -325,7 +325,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
               </div>
               {sure.length > 0 && (
                 <div style={{ color: '#f59e0b', marginTop: 5 }}>
-                  มาตรการจาก 8D ครั้งก่อน<b>{tr('ยังไม่ได้ผลจริง')}</b> — ทบทวนของเดิมก่อน อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3 effectiveness)
+                  {tr("มาตรการจาก 8D ครั้งก่อน")}<b>{tr('ยังไม่ได้ผลจริง')}</b> — {tr("ทบทวนของเดิมก่อน อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม")} (IATF §10.2.3 effectiveness)
                 </div>
               )}
             </div>
@@ -378,7 +378,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
         </div>
 
         {detail.id && (
-          <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <b>{tr('งานแก้ไข:')}</b>
             {detail.capa_id
               ? <><Chip label={tr('มี 8D แล้ว')} color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>{tr('เปิดใบ 8D →')}</button></>
@@ -408,7 +408,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
             <button style={btnSt('#22c55e')} disabled={busy} onClick={() => {
               /* ⚠️ ปิดเคลมโดยไม่มี 8D = ไม่มีหลักฐานว่าแก้อะไร — auditor จับข้อนี้แน่ */
               if (!detail.capa_id) { toast.error('ปิดเคลมไม่ได้ — ต้องเปิด 8D และดำเนินการแก้ไขก่อน'); return; }
-              save({ status: 'closed' }, `ปิด ${detail.claim_no} แล้ว ✓`);
+              save({ status: 'closed' }, `${tr("ปิด")} ${detail.claim_no} ${tr("แล้ว")} ✓`);
             }}>{tr('✅ ปิดเคลม')}</button>
           )}
         </div>

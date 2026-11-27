@@ -37,7 +37,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
       const { data, error } = await supabaseDR.from('dr_products')
         .select('mat_no, p_no, name, line_name').not('mat_no', 'is', null);
       if (dead) return;
-      if (error) { toast.error(`โหลดสินค้าไม่สำเร็จ: ${error.message}`); setProducts([]); return; }
+      if (error) { toast.error(`${tr("โหลดสินค้าไม่สำเร็จ")}: ${error.message}`); setProducts([]); return; }
       setProducts(data || []);
       const r = resolveMatForSet(set, data || []);
       setMatNo(r.matNo); setHow(r.how); setCandidates(r.candidates || []);
@@ -52,7 +52,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
     supabaseDR.from('part_routings').select('id, seq, step_name, line_name').eq('mat_no', matNo).eq('is_active', true).order('seq')
       .then(({ data, error }) => {
         if (dead) return;
-        if (error) toast.error(`เช็ค routing เดิมไม่สำเร็จ: ${error.message}`);
+        if (error) toast.error(`${tr("เช็ค routing เดิมไม่สำเร็จ")}: ${error.message}`);
         setExisting(data || []);
       });
     return () => { dead = true; };
@@ -66,7 +66,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
     const rows = toRoutingRows(matNo, steps);
     if (!rows.length) { toast.error('ยังไม่ได้ติ๊กขั้นไหนเลย'); return; }
     if (existing.length && !await askConfirm(
-      `พาร์ท ${matNo} มี routing เดิมอยู่ ${existing.length} ขั้น — แทนที่ทั้งชุด?\n(ชุดเดิมถูกปิดใช้งานเก็บเป็นประวัติ ไม่ลบทิ้ง)`)) return;
+      `${tr("พาร์ท")} ${matNo} ${tr("มี routing เดิมอยู่")} ${existing.length} ${tr("ขั้น — แทนที่ทั้งชุด?\\n(ชุดเดิมถูกปิดใช้งานเก็บเป็นประวัติ ไม่ลบทิ้ง")})`)) return;
     setSaving(true);
     const oldIds = existing.map(r => r.id);
     if (oldIds.length) {
@@ -74,7 +74,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
       const { data: off, error } = await supabaseDR.from('part_routings')
         .update({ is_active: false }).in('id', oldIds).select('id');
       if (error || (off || []).length !== oldIds.length) {
-        toast.error(`ปิดชุดเดิมไม่สำเร็จ${error ? `: ${error.message}` : ' (แก้ได้ไม่ครบ)'}`);
+        toast.error(`${tr("ปิดชุดเดิมไม่สำเร็จ")}${error ? `: ${error.message}` : tr(' (แก้ได้ไม่ครบ)')}`);
         setSaving(false); return;
       }
     }
@@ -91,13 +91,13 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         const n = (back.data || []).length;
         backMsg = (!back.error && n === oldIds.length)
           ? ' — คืนชุดเดิมให้แล้ว'
-          : ` — ⚠️ คืนชุดเดิมไม่ครบ (${n}/${oldIds.length}) ตรวจ routing ของ ${matNo} ด้วยตนเองทันที`;
+          : ` — ⚠️ ${tr("คืนชุดเดิมไม่ครบ")} (${n}/${oldIds.length}) ${tr("ตรวจ routing ของ")} ${matNo} ${tr("ด้วยตนเองทันที")}`;
       }
-      toast.error(`บันทึกไม่สำเร็จ: ${insErr.message}${backMsg}`);
+      toast.error(`${tr("บันทึกไม่สำเร็จ")}: ${insErr.message}${backMsg}`);
       setSaving(false); return;
     }
     setSaving(false); setDone(true);
-    toast.success(`บันทึก routing ${rows.length} ขั้นของ ${matNo} แล้ว`);
+    toast.success(`${tr("บันทึก")} routing ${rows.length} ${tr("ขั้นของ")} ${matNo} ${tr("แล้ว")}`);
   };
 
   return (
@@ -107,9 +107,9 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
-        ระบบแปลงรายการ OP ของ PFC เป็นร่างลำดับกระบวนการ (ตาราง <b>part_routings</b> ที่ใบ VSM ใช้) —
+        {tr("ระบบแปลงรายการ OP ของ PFC เป็นร่างลำดับกระบวนการ (ตาราง")} <b>part_routings</b> {tr("ที่ใบ VSM ใช้")}) —
         <b style={{ color: 'var(--text)' }}> {tr('ตรวจ/ติ๊กออก/แก้ชื่อ แล้วกดยืนยัน ระบบไม่บันทึกเองอัตโนมัติ')}</b> ·
-        CT / C/O / LOT / คน ไม่ต้องกรอก (VSM ไปหาจากข้อมูลจริงให้)
+        CT / C/O / LOT / {tr("คน ไม่ต้องกรอก (VSM ไปหาจากข้อมูลจริงให้")})
       </div>
 
       {products == null ? (
@@ -118,16 +118,16 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         <div style={{ padding: 24, textAlign: 'center' }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>{tr('✅ บันทึก routing แล้ว')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 14 }}>
-            เปิดหน้า VSM เลือกสินค้า <b>{matNo}</b> แล้วกด "⚡ สร้างร่างจากข้อมูลจริง" — ผังจะแตกเป็นหลายกล่องตาม routing นี้
+            {tr("เปิดหน้า VSM เลือกสินค้า")} <b>{matNo}</b> {tr("แล้วกด \"⚡ สร้างร่างจากข้อมูลจริง\" — ผังจะแตกเป็นหลายกล่องตาม routing นี้")}
           </div>
           <Link to="/vsm" style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-ink)', background: 'var(--accent)', padding: '8px 18px', borderRadius: 6, textDecoration: 'none' }}>
-            🗺️ ไปหน้า VSM
+            🗺️ {tr("ไปหน้า")} VSM
           </Link>
         </div>
       ) : !matNo ? (
         <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' }}>
           {how === 'ambiguous' ? <>
-            ⚠️ เลขพาร์ท {set.part_no} {tr('ตรงกับหลาย MAT SAP —')} <b>{tr('เลือกให้ชัดก่อน (ระบบไม่เดาให้)')}</b>:
+            ⚠️ {tr("เลขพาร์ท")} {set.part_no} {tr('ตรงกับหลาย MAT SAP —')} <b>{tr('เลือกให้ชัดก่อน (ระบบไม่เดาให้)')}</b>:
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               {candidates.map(c => (
                 <button key={c.mat_no} onClick={() => { setMatNo(c.mat_no); setHow('picked'); }}
@@ -137,37 +137,36 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
               ))}
             </div>
           </> : <>
-            ⚠️ ชุดเอกสารนี้ยังไม่ผูกเลข MAT SAP และเทียบเลขพาร์ท ({set.part_no}) กับ p_no ใน Product Master ไม่เจอ —
-            routing ต้องผูกกับ MAT ถึงจะโยงข้อมูลผลิตได้ · <b>กรอก "MAT SAP" ที่ปุ่ม ✏️ แก้ข้อมูลชุด ก่อน</b>
-            (หรือตั้ง p_no ของสินค้าที่ Product Master ให้ตรงกับ {set.part_no})
+            ⚠️ {tr("ชุดเอกสารนี้ยังไม่ผูกเลข MAT SAP และเทียบเลขพาร์ท")} ({set.part_no}) {tr("กับ p_no ใน Product Master ไม่เจอ — routing ต้องผูกกับ MAT ถึงจะโยงข้อมูลผลิตได้")} · <b>{tr("กรอก \"MAT SAP\" ที่ปุ่ม ✏️ แก้ข้อมูลชุด ก่อน")}</b>
+            ({tr("หรือตั้ง p_no ของสินค้าที่ Product Master ให้ตรงกับ")} {set.part_no})
           </>}
         </div>
       ) : <>
         <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
-          ผูกกับ MAT SAP: <b style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{matNo}</b>
+          {tr("ผูกกับ MAT SAP")}: <b style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{matNo}</b>
           {matched ? ` · ${matched.name}` : ''}
           <span style={{ color: 'var(--muted)' }}>
-            {how === 'set_mat' ? ' (จากชุดเอกสาร)' : how === 'p_no' ? ` (จับคู่ p_no ${set.part_no})` : ''}
+            {how === 'set_mat' ? tr(" (จากชุดเอกสาร)") : how === 'p_no' ? ` (${tr("จับคู่")} p_no ${set.part_no})` : ''}
           </span>
-          {!matched && <span style={{ color: '#f59e0b' }}> {tr('· ⚠ เลขนี้ยังไม่มีใน Product Master — ใบ VSM จะยังเลือกไม่ได้จนกว่าจะเพิ่มสินค้า')}</span>}
+          {!matched && <span style={{ color: 'var(--amber)' }}> {tr('· ⚠ เลขนี้ยังไม่มีใน Product Master — ใบ VSM จะยังเลือกไม่ได้จนกว่าจะเพิ่มสินค้า')}</span>}
         </div>
 
         {existing.length > 0 && (
           <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12, color: 'var(--text)', marginBottom: 10 }}>
-            ⚠️ พาร์ทนี้มี routing อยู่แล้ว {existing.length} {tr('ขั้น (')}{existing.map(r => r.step_name).slice(0, 3).join(' → ')}{existing.length > 3 ? ' → …' : ''}) —
-            ยืนยันจะ<b>{tr('แทนที่ทั้งชุด')}</b> (ชุดเดิมเก็บเป็นประวัติ)
+            ⚠️ {tr("พาร์ทนี้มี routing อยู่แล้ว")} {existing.length} {tr('ขั้น (')}{existing.map(r => r.step_name).slice(0, 3).join(' → ')}{existing.length > 3 ? ' → …' : ''}) —
+            {tr("ยืนยันจะ")}<b>{tr('แทนที่ทั้งชุด')}</b> ({tr("ชุดเดิมเก็บเป็นประวัติ")})
           </div>
         )}
         {included > 10 && (
-          <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 8 }}>
-            ติ๊กไว้ {included} ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก
+          <div style={{ fontSize: 11.5, color: 'var(--amber)', marginBottom: 8 }}>
+            {tr("ติ๊กไว้")} {included} {tr("ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก")}
           </div>
         )}
 
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead style={{ background: 'var(--bg2)' }}>
-              <tr>{['✓', 'OP', 'ชนิด', 'ชื่อขั้น (แก้ได้)', 'ไลน์', 'เครื่อง', 'จุดพักหลังขั้น (WIP)'].map((h, i) =>
+              <tr>{['✓', 'OP', tr("ชนิด"), tr("ชื่อขั้น (แก้ได้)"), tr("ไลน์"), tr("เครื่อง"), tr("จุดพักหลังขั้น (WIP)")].map((h, i) =>
                 <th key={i} style={{ padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
               </tr>
             </thead>
@@ -203,17 +202,17 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
             <summary style={{ cursor: 'pointer' }}>{tr('ข้าม')} {skipped.length} {tr('รายการ (ทางเข้า child part / ขนส่ง / rework / จุดพักที่แปลงเป็น WIP แล้ว)')}</summary>
             {skipped.map((s, i) => (
               <div key={i} style={{ padding: '2px 0 0 14px' }}>
-                OP {s.op_no || '—'} · {s.name || '—'} — {s.reason === 'wip' ? `→ เป็นจุดพักหลัง OP ${s.target}` : s.kind}
+                OP {s.op_no || '—'} · {s.name || '—'} — {s.reason === 'wip' ? `→ ${tr("เป็นจุดพักหลัง")} OP ${s.target}` : s.kind}
               </div>
             ))}
           </details>
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
           <button onClick={confirm} disabled={saving || !included}
             style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
-            {saving ? '⏳ กำลังบันทึก…' : `✅ ยืนยันบันทึก ${included} ขั้น`}
+            {saving ? tr("⏳ กำลังบันทึก…") : `✅ ${tr("ยืนยันบันทึก")} ${included} ${tr("ขั้น")}`}
           </button>
         </div>
       </>}

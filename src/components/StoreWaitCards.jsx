@@ -33,15 +33,15 @@ import {
   REQ_STATUS, buildRequestCards, requestLinesOf, matLinesOf, scopeShortMats, waitText,
 } from '../utils/storeTvDemand';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
-const fmtQty = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '–' : Number(v).toLocaleString('th-TH'));
+const fmtQty = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '–' : Number(v).toLocaleString(dateLocale()));
 
 /* สีต่อเคสรอบส่ง — C ด่วนสุด (ไลน์รออยู่แล้วจริง) · D รองลงมา
    ⚠️ "งานค้างของสโตร์" ไม่ใช่ alarm เครื่องหยุด → **ห้ามกระพริบ** (กฎ Andon: กระพริบเฉพาะแดงของเครื่อง) */
 const CASE = {
-  C: { color: '#ef4444', rank: 0, label: 'เลยเวลาส่ง' },
-  D: { color: '#f59e0b', rank: 1, label: 'รับไม่ครบ' },
+  C: { color: 'var(--red)', rank: 0, label: 'เลยเวลาส่ง' },
+  D: { color: 'var(--amber)', rank: 1, label: 'รับไม่ครบ' },
 };
 /** สีบนผังของไลน์ที่ "เรียกของ" (ไม่มีรอบส่งค้าง) — ม่วง แยกจากเขียว/เหลือง/แดงของสถานะเครื่อง */
 export const REQ_MAP_COLOR = '#a855f7';
@@ -86,9 +86,9 @@ export function useStoreTv({ enabled, inScope, scoped, knownLines }) {
     else { setErr(null); setAbn(abnRes.data || []); }
 
     const reqErrs = [];
-    if (wipRes.error) reqErrs.push(`คำขอเติมเข้าไลน์: ${wipRes.error.message}`);
+    if (wipRes.error) reqErrs.push(`${tr("คำขอเติมเข้าไลน์")}: ${wipRes.error.message}`);
     else setWip(wipRes.data || []);
-    if (rawRes.error) reqErrs.push(`ใบเบิกวัตถุดิบ: ${rawRes.error.message}`);
+    if (rawRes.error) reqErrs.push(`${tr("ใบเบิกวัตถุดิบ")}: ${rawRes.error.message}`);
     else {
       const rows = rawRes.data || [];
       setRaw(rows);
@@ -96,7 +96,7 @@ export function useStoreTv({ enabled, inScope, scoped, knownLines }) {
       if (ids.length) {
         const { rows: lots, error } = await fetchByIds(ids,
           (part) => supabaseDR.from('child_lot_requests').select('id, source_line, child_mat_no').in('id', part));
-        if (error) reqErrs.push(`ไลน์ของใบเบิกวัตถุดิบ: ${error}`);
+        if (error) reqErrs.push(`${tr("ไลน์ของใบเบิกวัตถุดิบ")}: ${error}`);
         const m = {}; (lots || []).forEach(l => { m[l.id] = l; });
         setLotById(m);
       } else setLotById({});
@@ -110,7 +110,7 @@ export function useStoreTv({ enabled, inScope, scoped, knownLines }) {
         fetchByIds(aMats, (part) => supabaseDR.from('line_stock_summary').select('mat_no, line_name').in('mat_no', part), { orderBy: 'mat_no' }),
         fetchByIds(aMats, (part) => supabaseDR.from('line_part_levels').select('mat_no, line_name').eq('is_active', true).in('mat_no', part), { orderBy: 'mat_no' }),
       ]);
-      if (st.error || lv.error) setErr(`ผูกพาร์ทจะขาดเข้าไลน์ไม่ได้: ${st.error || lv.error}`);
+      if (st.error || lv.error) setErr(`${tr("ผูกพาร์ทจะขาดเข้าไลน์ไม่ได้")}: ${st.error || lv.error}`);
       setMatRows([...(st.rows || []), ...(lv.rows || [])]);
     } else setMatRows([]);
   }, []);
@@ -139,7 +139,7 @@ export function useStoreTv({ enabled, inScope, scoped, knownLines }) {
     const m = {};
     abn.filter(r => CASE[r.code] && r.line_name && (!inScope || inScope(r.line_name))).forEach(r => {
       const c = CASE[r.code];
-      const g = (m[r.line_name] = m[r.line_name] || { line: r.line_name, rank: 9, color: '#6b7280', items: [] });
+      const g = (m[r.line_name] = m[r.line_name] || { line: r.line_name, rank: 9, color: 'var(--muted)', items: [] });
       g.items.push({ code: r.code, what: r.part_name || '', detail: r.detail || '' });
       if (c.rank < g.rank) { g.rank = c.rank; g.color = c.color; }
     });
@@ -156,7 +156,7 @@ export function useStoreTv({ enabled, inScope, scoped, knownLines }) {
   /* สีบนผังต่อไลน์ — รอบส่งค้าง (C/D) ชนะ "เรียกของ" (ไลน์รออยู่แล้วจริง) · เครื่องหยุดชนะทั้งคู่ (ตัดสินที่บอร์ดแม่) */
   const lineMap = useMemo(() => {
     const m = {};
-    Object.values(reqLines).forEach(g => { m[g.line] = { color: REQ_MAP_COLOR, label: `เรียกของ ${g.n}` }; });
+    Object.values(reqLines).forEach(g => { m[g.line] = { color: REQ_MAP_COLOR, label: `${tr("เรียกของ")} ${g.n}` }; });
     waiting.forEach(w => { m[w.line] = { color: w.color, label: CASE[w.items[0]?.code]?.label || 'รอของ' }; });
     return m;
   }, [reqLines, waiting]);
@@ -171,17 +171,17 @@ function RequestCard({ c, img, onClick }) {
   return (
     <PartCard
       code={c.mat} name={c.name} img={img}
-      status={{ label: st.label, color: st.color }}
+      status={{ label: tr(st.label), color: st.color }}
       metric={{ label: c.kind === 'raw' ? 'วัตถุดิบที่ต้องจ่าย' : 'จำนวนที่ต้องส่ง', value: fmtQty(c.qty) }}
-      aside={{ label: 'ส่งไปไลน์', value: c.line || '⚠ ไม่ระบุไลน์' }}
+      aside={{ label: tr("ส่งไปไลน์"), value: c.line || '⚠ ไม่ระบุไลน์' }}
       /* รอนานเกินชั่วโมงแรก = รีบจริง (alert สงวนไว้ใช้เฉพาะเคสนี้ · กฎ PartCard ข้อ 5) */
       alert={c.status === 'pending' && c.waitMin != null && c.waitMin >= 60}
       rows={[
         { k: c.status === 'pending' ? 'รอมาแล้ว' : 'ไลน์เรียกเมื่อ', v: wt ? `${wt}` : 'ไม่ทราบเวลา' },
-        { k: 'ที่มา', v: c.kind === 'raw' ? '🧱 ไลน์ child ขอวัตถุดิบ' : c.source === 'store' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
-        { k: 'ใช้ทำ', v: c.useFor || null },
-        { k: 'หยิบแล้ว', v: c.pickedQty != null ? fmtQty(c.pickedQty) : null },
-        { k: '⚠️ เลข MAT', v: c.fgWarn ? 'เป็น FG (1xxx) — สโตร์ตัดจ่ายไม่ได้ ถามไลน์ว่าต้องการเลข 2xxx/3xxx/5xxx ตัวไหน' : null },
+        { k: tr("ที่มา"), v: c.kind === 'raw' ? '🧱 ไลน์ child ขอวัตถุดิบ' : c.source === 'store' ? '🏬 สโตร์ส่งตามแผนผลิต' : '📦 ไลน์ขอเบิก' },
+        { k: tr("ใช้ทำ"), v: c.useFor || null },
+        { k: tr("หยิบแล้ว"), v: c.pickedQty != null ? fmtQty(c.pickedQty) : null },
+        { k: tr("⚠️ เลข MAT"), v: c.fgWarn ? 'เป็น FG (1xxx) — สโตร์ตัดจ่ายไม่ได้ ถามไลน์ว่าต้องการเลข 2xxx/3xxx/5xxx ตัวไหน' : null },
       ]}
       onClick={onClick} />
   );
@@ -203,18 +203,18 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
       <span style={{ fontSize: 13 * big, fontWeight: 900 }}>{tr('ไลน์เรียกของ')}</span>
       {req.cards.length > 0 && (
         <span style={{ fontSize: 11 * big, fontWeight: 800, color: REQ_STATUS.pending.color }}>
-          {req.cards.length} {tr('รายการ ·')} {nLines} ไลน์
+          {req.cards.length} {tr('รายการ ·')} {nLines} {tr("ไลน์")}
         </span>
       )}
     </div>
     {reqErr && (
-      <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 12.5 }}>
-        ⚠ ดึงคำขอจากไลน์ไม่สำเร็จ — รายการด้านล่างอาจไม่ครบ ({reqErr})
+      <div style={{ ...card, borderColor: '#ef4444', color: 'var(--red)', fontSize: 12.5 }}>
+        ⚠ {tr("ดึงคำขอจากไลน์ไม่สำเร็จ — รายการด้านล่างอาจไม่ครบ")} ({reqErr})
       </div>
     )}
     {loaded && !reqErr && !req.cards.length && (
-      <div style={{ ...card, textAlign: 'center', padding: 18, fontSize: 13 * big, fontWeight: 800, color: '#22c55e' }}>
-        ✅ ไม่มีไลน์ไหนเรียกของ
+      <div style={{ ...card, textAlign: 'center', padding: 18, fontSize: 13 * big, fontWeight: 800, color: 'var(--green)' }}>
+        ✅ {tr("ไม่มีไลน์ไหนเรียกของ")}
       </div>
     )}
     {!loaded && <div style={{ ...card, color: 'var(--muted)', fontSize: 12.5 }}>{tr('กำลังโหลดคำขอจากไลน์…')}</div>}
@@ -227,19 +227,19 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
     )}
     {req.cards.length > REQ_SHOW && (
       <div onClick={goQueue} style={{ ...card, cursor: 'pointer', fontSize: 12 * big, fontWeight: 800, color: 'var(--text2)', padding: 10 }}>
-        + อีก {req.cards.length - REQ_SHOW} รายการ — ดูทั้งหมดที่บอร์ดสโตร์ ›
+        + {tr("อีก")} {req.cards.length - REQ_SHOW} {tr("รายการ — ดูทั้งหมดที่บอร์ดสโตร์")} ›
       </div>
     )}
     {req.noLine > 0 && (
-      <div style={{ fontSize: 11, color: '#f59e0b' }}>
-        ⚠ {req.noLine} ใบไม่ระบุไลน์ — ขึ้นทุกจอสโตร์ (ไปแก้ใบที่บอร์ดสโตร์)
+      <div style={{ fontSize: 11, color: 'var(--amber)' }}>
+        ⚠ {req.noLine} {tr("ใบไม่ระบุไลน์ — ขึ้นทุกจอสโตร์ (ไปแก้ใบที่บอร์ดสโตร์")})
       </div>
     )}
 
     {/* ══ ② รอบส่งคัมบังค้าง ══ */}
     {err && (
-      <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 12.5 }}>
-        ⚠ ดึงสถานะสโตร์ไม่สำเร็จ — รอบส่ง/พาร์ทจะขาดยังไม่ใช่ของจริง ({err})
+      <div style={{ ...card, borderColor: '#ef4444', color: 'var(--red)', fontSize: 12.5 }}>
+        ⚠ {tr("ดึงสถานะสโตร์ไม่สำเร็จ — รอบส่ง/พาร์ทจะขาดยังไม่ใช่ของจริง")} ({err})
       </div>
     )}
     {waiting.length > 0 && <div style={{ fontSize: 12.5 * big, fontWeight: 900 }}>{tr('รอบส่งคัมบังค้าง')}</div>}
@@ -255,7 +255,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
             {w.line}
           </span>
           <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 12 * big, fontWeight: 900, color: w.color, whiteSpace: 'nowrap' }}>
-            {CASE[w.items[0].code].label}
+            {tr(CASE[w.items[0].code].label)}
           </span>
         </div>
         {w.items.slice(0, 3).map((it, i) => (
@@ -277,7 +277,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
           {short.rows.length}
         </span>
       </div>
-      {!err && !short.rows.length && <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 700 }}>{tr('✅ ทุกพาร์ทของส่วนงานนี้อยู่เหนือ Min')}</div>}
+      {!err && !short.rows.length && <div style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>{tr('✅ ทุกพาร์ทของส่วนงานนี้อยู่เหนือ Min')}</div>}
       {short.rows.length > 0 && (
         <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '0 0 3px' }}>
           <span style={{ flex: 1 }}>{tr('พาร์ท')}</span><span style={{ width: 120, textAlign: 'right' }}>{tr('เหลือ / Min')}</span>
@@ -291,7 +291,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
             {/* ครบ 3 ค่าผ่านของกลาง — รหัสไม่ถูกตัด ชื่อตัดได้ตัวเดียว */}
             <MatLabel mat={r.mat_no} name={r.part_name} size={12} style={{ minWidth: 0, flex: 1 }} />
             <span style={{ width: 120, flexShrink: 0, textAlign: 'right', fontSize: 13, fontWeight: 900, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums', color: out ? '#ef4444' : '#facc15' }}>
-              {out ? 'หมด' : fmtQty(r.qty_on_hand)}
+              {out ? tr("หมด") : fmtQty(r.qty_on_hand)}
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}> / {fmtQty(r.min_qty)}</span>
             </span>
           </div>
@@ -300,13 +300,13 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
       {short.rows.length > SHORT_SHOW && (
         <div onClick={() => navigate?.('/store-monitor')}
           style={{ cursor: 'pointer', fontSize: 11.5, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
-          + อีก {short.rows.length - SHORT_SHOW} พาร์ท — ดูทั้งหมดที่เฝ้าระวังสต๊อก ›
+          + {tr("อีก")} {short.rows.length - SHORT_SHOW} {tr("พาร์ท — ดูทั้งหมดที่เฝ้าระวังสต๊อก")} ›
         </div>
       )}
       {short.unbound > 0 && (
         <div onClick={() => navigate?.('/store-monitor')}
           style={{ cursor: 'pointer', fontSize: 11, color: 'var(--muted)', paddingTop: 5, borderTop: '1px solid var(--border)' }}>
-          ℹ อีก {short.unbound} พาร์ททั้งโรงงานที่ต่ำกว่า Min แต่ชี้ส่วนงานไม่ได้ (มีของแค่ที่ STORE/คลัง FG) — ดูที่เฝ้าระวังสต๊อก ›
+          ℹ {tr("อีก")} {short.unbound} {tr("พาร์ททั้งโรงงานที่ต่ำกว่า Min แต่ชี้ส่วนงานไม่ได้ (มีของแค่ที่ STORE/คลัง FG) — ดูที่เฝ้าระวังสต๊อก")} ›
         </div>
       )}
     </div>
@@ -314,7 +314,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
     {/* ══ ④ สั่งซื้อค้าง — นับรวมอย่างเดียว ห้ามโชว์รายใบ ══ */}
     {poPending.length > 0 && (
       <div onClick={goQueue} style={{ ...card, cursor: 'pointer', fontSize: 11.5 * big, color: 'var(--muted)' }}>
-        สั่งซื้อค้าง (ยังไม่รับเข้า) <b style={{ color: 'var(--text)' }}>{poPending.length}</b> พาร์ท — ดูที่บอร์ดสโตร์ ›
+        {tr("สั่งซื้อค้าง (ยังไม่รับเข้า")}) <b style={{ color: 'var(--text)' }}>{poPending.length}</b> {tr("พาร์ท — ดูที่บอร์ดสโตร์")} ›
       </div>
     )}
   </>);

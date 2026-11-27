@@ -28,6 +28,9 @@
    7. **สีคืนเป็น tone** ('warn'/'bad'/'none') ให้จอแปลงผ่าน `statusTone.js` ห้ามคืน hex
    ═══════════════════════════════════════════════════════════════════════════ */
 import { isMoOpen, moWaitMeta, MO_STATUS_LABEL } from './mtnStepPerm.js';
+/* 🛒 "เส้นทางซ่อมนี้บังคับเปิด PR ไหม" — ทะเบียนเดียวกับที่จอใช้วาดปุ่มเส้นทาง
+   (ห้ามเทียบคีย์ `inhouse_pr`/`outsource`/`blocked` เองที่นี่ — เพิ่มเส้นทางใหม่แล้วด่านนี้จะตกหล่น) */
+import { repairPathMeta } from './mtnPurchase.js';
 import { assignedTechsOf, joinTechs } from './mtnPurchase.js';
 import { STALE_DAYS, STALE_HARD_DAYS, stageAgeOf, staleTone } from './mtnStale.js';
 
@@ -74,18 +77,34 @@ export const openPrRows = (prs) => (Array.isArray(prs) ? prs : [])
  * 🔴 **ด่านนี้คนละเรื่องกับการแก้ใบขอซื้อ** — ใบปิดแล้วยังต้องรับของ/ยกเลิก PR ได้
  *    (ด่าน `pr-loop-not-locked-by-mo`) · บล็อก "ปิดใบตอน PR ค้าง" ไม่ใช่ล็อกแผง PR
  */
-export function moCloseGate(stage, prs) {
-  const none = { rows: [], nos: [], noNo: 0 };
+export function moCloseGate(stage, prs, repairPath) {
+  const none = { rows: [], nos: [], noNo: 0, reason: null };
   if (!PR_CLOSE_STAGES.includes(stage)) return { gate: 'ok', ...none };
   if (prs == null) return { gate: 'unknown', ...none };
   const rows = openPrRows(prs);
-  if (!rows.length) return { gate: 'ok', ...none };
-  return {
-    gate: 'block',
-    rows,
-    nos: rows.map(r => String(r?.pr_no || '').trim()).filter(Boolean),
-    noNo: rows.filter(r => !String(r?.pr_no || '').trim()).length,
-  };
+  if (rows.length) {
+    return {
+      gate: 'block',
+      reason: 'pr_open',
+      rows,
+      nos: rows.map(r => String(r?.pr_no || '').trim()).filter(Boolean),
+      noNo: rows.filter(r => !String(r?.pr_no || '').trim()).length,
+    };
+  }
+  /* 🆕 26/11 · คำสั่ง user — **ลูป PR ที่ไม่เคยเริ่ม ก็คือลูปที่ยังไม่จบ**
+     เส้นทาง "ตัดอะไหล่ใช้แล้วเปิด PR ซื้อมาเติม" / "ส่งซ่อมนอก" / "รออะไหล่" ที่ **ไม่มีใบ PR เลย**
+     เดิมผ่านด่านนี้ฉลุย (ด่านนับเฉพาะใบที่ "ค้าง") ⇒ ปิดใบแล้ว **เปิด PR ไม่ได้อีก**
+       · ปุ่ม "🛒 บันทึกใบขอซื้อ" ผูก `canAdd={isMoOpen(o) && …}` ⇒ ปิดใบ = ปุ่มหาย
+       · `mosNeedingPr()` กรอง `isMoOpen` ⇒ ใบหลุดจากลิสต์ช่วยงานของแอดมินช่าง
+     วัดจริง 25/11 (DR): **ค้างแบบนี้ไปแล้ว 20 ใบ** (inhouse_pr 16 · outsource 4) ตั้งแต่ 7/9–18/11
+     = อะไหล่ที่ตัดไปใช้แล้วไม่ได้ซื้อมาเติม 20 ครั้ง โดยไม่มีใครรู้
+     🔴 **ใบที่ถูกยกเลิกทั้งหมด = คนตัดสินใจแล้วว่าไม่ซื้อ ⇒ ไม่บล็อก** (เกณฑ์เดียวกับขั้น `need`
+        ของ `prQueueStateOf()`) · 🔴 ไม่ส่ง `repairPath` มา = ไม่รู้เส้นทาง ⇒ **ไม่บล็อก** (ไม่รู้ ≠ ผิด) */
+  if (repairPath !== undefined && repairPathMeta(repairPath)?.needsPr
+      && !(prs || []).some(p => p && p.status !== 'cancelled')) {
+    return { gate: 'block', ...none, reason: 'no_pr', path: repairPath };
+  }
+  return { gate: 'ok', ...none };
 }
 
 /** ข้อความบอกเหตุ + ทางแก้ของด่านข้างบน (จอใช้ชุดเดียวกันทั้ง toast และแผ่นเตือนบนจอ) */
@@ -93,6 +112,15 @@ export function moCloseGateText(g) {
   if (!g || g.gate === 'ok') return null;
   if (g.gate === 'unknown')
     return '⚠ ตรวจใบขอซื้อของใบนี้ไม่สำเร็จ — ระบบไม่ได้ตรวจว่าลูป PR จบหรือยัง (เซ็นได้ตามปกติ)';
+  /* 🛒 ลูปที่ไม่เคยเริ่ม — ต้องบอก **ทางออก 2 ทาง** ไม่ใช่บล็อกเฉยๆ
+     (บล็อกโดยไม่บอกทางออก = ใบค้างกองแทนที่จะปิดผิด — แย่พอกัน) */
+  if (g.reason === 'no_pr') {
+    return 'ปิดใบยังไม่ได้ — เส้นทางนี้ต้องเปิดใบขอซื้อ (PR) แต่ยังไม่มีสักใบ\n'
+      + 'ปิดไปแล้วจะเปิด PR ไม่ได้อีก (ปุ่มเปิดใบขอซื้อมีเฉพาะตอนใบยังไม่ปิด) — อะไหล่ที่ตัดไปใช้จะไม่ได้ซื้อมาเติม\n'
+      + 'ทำอย่างใดอย่างหนึ่งก่อน:\n'
+      + '① เปิดใบขอซื้อที่แผง “ใบขอซื้อ (PR)” ในใบนี้ แล้วเดินลูปให้จบ (รับของ หรือ ยกเลิก)\n'
+      + '② ถ้าไม่ได้ตัดอะไหล่จริง ให้เปลี่ยนเส้นทางเป็น “🔧 ซ่อมเองได้ — จบงานเลย” ที่แผงเส้นทางงานซ่อม';
+  }
   const what = [
     g.nos.length ? `เลข PR: ${g.nos.join(', ')}` : null,
     g.noNo ? `ยังไม่ได้ลงเลข PR ${g.noNo} ใบ` : null,
@@ -110,6 +138,26 @@ export function moCloseGateText(g) {
  *    "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ") — ไปตาม ผจก. ตอนที่ของยังไม่มา
  *    คือไล่ผิดคน · ไม่ส่ง `prs` มา = พฤติกรรมเดิมเป๊ะ (ไม่รู้ = ไม่เดา)
  */
+/** 🛒 ป้ายของใบที่ "ถึงคิวปิดใบแล้ว แต่ลูป PR ยังไม่จบ" — ปิดไม่ได้จริงๆ (23/11 · หน้างานแจ้ง) */
+export const MO_LABEL_WAIT_PR = '🛒 รอลูปจัดซื้อ (PR) — ปิดใบยังไม่ได้';
+
+/**
+ * ใบนี้ "ขึ้นว่ารออนุมัติปิด แต่กดไม่ได้เพราะ PR ค้าง" ไหม
+ *
+ * 🔴 23/11 (หน้างานแจ้ง · *"บอกรออนุมัติแต่อนุมัติไม่ได้ ติด loop pr"* · *"สถานะควรจะตรงนะ"*):
+ *    ป้ายบอก "รอ ผจก.ฝ่ายที่แจ้ง อนุมัติปิดใบ" ⇒ ผจก.เปิดเข้ามา แล้วเจอกล่องแดง "ปิดใบยังไม่ได้"
+ *    ⇒ จอพูดไม่ตรงกับความจริง · ผจก.เสียเที่ยว และคนที่ต้องลงมือจริง (ช่าง/จัดซื้อ) ไม่ถูกตาม
+ *    วัดจริง 23/11: ใบค้างขั้นปิด (ขั้น 8 ฟอร์ม MTN) หลายใบย้อนถึง 21/10
+ * 🔴 **ใช้ `moCloseGate()` ตัวเดียวกับด่านตอนกดจริง** — ห้ามเทียบ status ของ PR เองที่นี่
+ *    ไม่งั้นป้ายกับปุ่มพูดคนละเรื่องอีกรอบ (คลาสเดิมที่กำลังแก้อยู่)
+ * 🔴 `prs == null` (อ่านไม่ได้/ไม่ได้ส่งมา) = **ไม่ override** คืนป้ายเดิมเป๊ะ (ไม่รู้ ≠ ไม่มี)
+ */
+export function moPrBlocked(order = {}, prs = null) {
+  if (!isMoOpen(order)) return false;
+  if (prs == null) return false;
+  return moCloseGate(moWaitMeta(order).stage, prs, order?.repair_path).gate === 'block';
+}
+
 export function chaseSideOf(order = {}, { prs = null } = {}) {
   if (!isMoOpen(order)) return null;
   const { stage, meta } = moWaitMeta(order);

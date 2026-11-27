@@ -10,10 +10,10 @@ import { supabase } from '../supabaseClient';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { firstWarnings } from '../utils/qaFmeLineWarn';
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 
 const hhmm = (iso) => (iso
-  ? new Date(iso).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false })
+  ? new Date(iso).toLocaleTimeString(dateLocale(), { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false })
   : '—');
 
 const TONE = {

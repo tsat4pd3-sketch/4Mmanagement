@@ -158,7 +158,7 @@ export default function SearchSelect({
       const hit = exactScanMatch(options, scanned);
       if (hit) { pick(hit); return; }
       setOpen(true); setActive(NO_ROW);
-      toast.error(`ไม่พบรหัส "${scanned}" ที่ตรงตัวในรายการ — เลือกจากรายการเอง (ระบบไม่เลือกตัวที่ใกล้เคียงให้)`);
+      toast.error(`${tr("ไม่พบรหัส")} "${scanned}" ${tr("ที่ตรงตัวในรายการ — เลือกจากรายการเอง (ระบบไม่เลือกตัวที่ใกล้เคียงให้")})`);
       return;
     }
     if (!open && (e.key === 'ArrowDown' || e.key === 'Enter')) { setOpen(true); return; }
@@ -213,18 +213,18 @@ export default function SearchSelect({
           <div style={{ flex: 1, minWidth: 0 }}>
             {inputBox}
           </div>
-          <button type="button" onClick={() => setScanOpen(true)} title={`สแกน${scan === true ? '' : scan}`} aria-label={`สแกน${scan === true ? '' : scan}`}
-            style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
+          <button type="button" onClick={() => setScanOpen(true)} title={`${tr("สแกน")}${scan === true ? '' : scan}`} aria-label={`${tr("สแกน")}${scan === true ? '' : scan}`}
+            style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
             📷
           </button>
         </div>
       ) : inputBox}
       {scanOpen && (
-        <ScanModal title={`สแกน${scan === true ? 'เพื่อเลือก' : scan}`} hint={tr('ส่องกล้องที่ป้าย/บัตร หรือกดปุ่มสแกนข้างเครื่อง — เลือกให้เฉพาะตัวที่รหัสตรงเป๊ะ')}
+        <ScanModal title={`${tr("สแกน")}${scan === true ? tr('เพื่อเลือก') : scan}`} hint={tr('ส่องกล้องที่ป้าย/บัตร หรือกดปุ่มสแกนข้างเครื่อง — เลือกให้เฉพาะตัวที่รหัสตรงเป๊ะ')}
           onClose={() => setScanOpen(false)}
           onScan={(parsed) => {
             const hit = exactScanMatch(options, parsed.raw);
-            if (!hit) return `ไม่พบ "${parsed.raw}" ที่ตรงตัวในรายการนี้ — ป้ายผิดชนิด/ไม่อยู่ในทะเบียน หรือเลือกจากรายการเอง`;
+            if (!hit) return `${tr("ไม่พบ")} "${parsed.raw}" ${tr("ที่ตรงตัวในรายการนี้ — ป้ายผิดชนิด/ไม่อยู่ในทะเบียน หรือเลือกจากรายการเอง")}`;
             pick(hit);
           }} />
       )}
@@ -240,7 +240,7 @@ export default function SearchSelect({
       )}
 
       {open && (
-        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+        <div style={{ marginTop: 4, background: 'var(--card-surf)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
           {loadFail && (
             <div style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>{loadFail}</div>
           )}
@@ -297,7 +297,7 @@ export default function SearchSelect({
           {/* ⚠️ ห้ามตัดของหายเงียบ — บอกเสมอว่าซ่อนไปกี่รายการ */}
           {hidden > 0 && (
             <div style={{ padding: '5px 10px', fontSize: 11, color: 'var(--muted)', borderTop: '1px solid var(--border)', background: 'var(--bg3)' }}>
-              แสดง {rows.length} {tr('จาก')} {matched.length} {tr('— พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน')} {hidden})
+              {tr("แสดง")} {rows.length} {tr('จาก')} {matched.length} {tr('— พิมพ์เพิ่มเพื่อค้นให้แคบลง (ซ่อน')} {hidden})
             </div>
           )}
         </div>

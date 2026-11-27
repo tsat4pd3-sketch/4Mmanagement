@@ -28,7 +28,7 @@ import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (U
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 const minutesBetween = (a, b) => (a && b ? Math.max(0, Math.round((new Date(b) - new Date(a)) / 60000)) : null);
-const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} นาที` : `${Math.floor(m / 60)} ชม. ${m % 60} นาที`);
+const fmtMin = (m) => (m == null ? '—' : m < 60 ? `${m} ${trI18n("นาที")}` : `${Math.floor(m / 60)} ${trI18n("ชม.")} ${m % 60} ${trI18n("นาที")}`);
 
 /* ความพึงพอใจ 5 ด้าน × 3 ระดับ — **คีย์ต้องตรงกับ SAT_DIMS ใน MtnRepair.jsx เป๊ะ**
    (ค่าที่เก็บใน `mtn_orders.satisfaction` เป็น jsonb คีย์ชุดนี้ · เปลี่ยนคีย์ = ใบเก่าอ่านไม่ออก) */
@@ -95,7 +95,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
     const satOverall = rated.length ? rated.reduce((s, o) => s + satAvg(o.satisfaction), 0) / rated.length : null;
     const satByDim = SAT_DIMS.map(d => {
       const vs = rated.map(o => Number(o.satisfaction?.[d.key])).filter(v => v >= 1 && v <= 3);
-      return { label: d.label, avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length };
+      return { label: trI18n(d.label), avg: vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null, n: vs.length };
     });
     return { n: rows.length, resp: avg(resp), ttr: avg(ttr), bd: avg(bd),
              respBox: box(resp), ttrBox: box(ttr), bdBox: box(bd), lateN, lateHr: LATE_MIN / 60,
@@ -108,7 +108,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
        `def` = นิยามศัพท์ภาษาอังกฤษ (Mean Time To …) — อ่านรอบเดียวพอ ⇒ พับหลัง ⓘ ได้
      ปนกัน 2 อย่างในช่องเดียวแบบเดิม = ต้องเลือกว่าพับทั้งก้อนหรือไม่พับเลย ซึ่งผิดทั้งคู่ */
   const Card = ({ t, v, c, h, def }) => (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, flex: 1, minWidth: 170 }}>
+    <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, flex: 1, minWidth: 170 }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>
       {(h || def) && (
@@ -131,15 +131,12 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
       </TimeRangeBar>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.7 }}>
         <InfoMore label={trI18n('ตัวเลขนี้นับจากอะไร · ต่างจาก OBEYA ยังไง')} id="mtnkpi-def">
-        📋 <b style={{ color: 'var(--text2)' }}>{trI18n('นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว')}</b> — วัดการตอบสนองของทีมช่าง
-        · ส่วน <b style={{ color: 'var(--text2)' }}>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
-        <b style={{ color: 'var(--text2)' }}> {trI18n('downtime จริงของเครื่อง')}</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
+        📋 <b style={{ color: 'var(--text2)' }}>{trI18n('นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว')}</b> — {trI18n("วัดการตอบสนองของทีมช่าง · ส่วน")} <b style={{ color: 'var(--text2)' }}>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> {trI18n("ที่อยู่ล่างสุดของหน้านี้นับจาก")}
+        <b style={{ color: 'var(--text2)' }}> {trI18n('downtime จริงของเครื่อง')}</b> — {trI18n("คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ")}
         {/* 🏛️ 13/10 user ถาม "ข้อมูลพวกนี้ต้องตรงกับ OBEYA ไหม" — บอร์ด KPI ใช้สูตรทางการ (730 ชม./เครื่อง/เดือน · รายปฏิทินเดือน)
             จึงไม่เท่ากับหน้านี้ที่ใช้เวลาเดินเครื่องจริง/ช่วงวันที่เลือก — เขียนไว้ตรงนี้ ไม่งั้นกลายเป็น "2 จอตอบคนละเลข" */}
         <div>
-          🏛️ <b style={{ color: 'var(--text2)' }}>{trI18n('บอร์ด OBEYA (KPI ส่งกลุ่ม)')}</b> คิด MTBF/MTTR/Machine Break Down จาก downtime ชุดเดียวกัน
-          แต่ใช้<b style={{ color: 'var(--text2)' }}>{trI18n('สูตรทางการ KPI Guideline')}</b> (ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล)
-          — ตัวเลขจึงต่างจากหน้านี้ที่ใช้เวลาเดินเครื่องจริงและช่วงวันที่เลือก ไม่ใช่ข้อมูลคนละชุด
+          🏛️ <b style={{ color: 'var(--text2)' }}>{trI18n('บอร์ด OBEYA (KPI ส่งกลุ่ม)')}</b> {trI18n("คิด MTBF/MTTR/Machine Break Down จาก downtime ชุดเดียวกัน แต่ใช้")}<b style={{ color: 'var(--text2)' }}>{trI18n('สูตรทางการ KPI Guideline')}</b> ({trI18n("ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล) — ตัวเลขจึงต่างจากหน้านี้ที่ใช้เวลาเดินเครื่องจริงและช่วงวันที่เลือก ไม่ใช่ข้อมูลคนละชุด")}
         </div>
         </InfoMore>
         {/* ⏱️ "เวลาในใบ ≠ เวลาที่เครื่องหยุด" (11/11 · คำสั่ง user — ทีม MTN ดึงเลขไปส่งส่วนกลางไม่ได้)
@@ -149,19 +146,18 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
             🔴 เกณฑ์ 24 ชม. ต้องเขียนให้เห็น ไม่ใช่ตัดเงียบ (นับเฉยๆ ไม่ได้จัดหมวด/เดาสาเหตุ) */}
         {stat.lateN > 0 && (
           <div style={{ color: 'var(--amber)' }}>
-            ⏱️ <b>{stat.lateN} {trI18n('จาก')} {stat.n} {trI18n('ใบ')}</b> {trI18n('มีเวลาแจ้ง→ซ่อมเสร็จเกิน')} {stat.lateHr} ชม.
-            — ส่วนใหญ่คือ<b>{trI18n('กดปุ่มย้อนหลัง')}</b> ไม่ใช่เครื่องหยุดนานขนาดนั้น
-            {' '}{trI18n('⇒ จอนี้จึงโชว์')} <b>{trI18n('ค่ากลาง')}</b> เป็นตัวหลัก · ค่าเฉลี่ยอยู่ในบรรทัดใต้การ์ด
-            {' '}(ยิ่งค่าเฉลี่ยห่างค่ากลางมาก ยิ่งแปลว่ากดย้อนหลังเยอะ)
+            ⏱️ <b>{stat.lateN} {trI18n('จาก')} {stat.n} {trI18n('ใบ')}</b> {trI18n('มีเวลาแจ้ง→ซ่อมเสร็จเกิน')} {stat.lateHr} {trI18n("ชม. — ส่วนใหญ่คือ")}<b>{trI18n('กดปุ่มย้อนหลัง')}</b> {trI18n("ไม่ใช่เครื่องหยุดนานขนาดนั้น")}
+            {' '}{trI18n('⇒ จอนี้จึงโชว์')} <b>{trI18n('ค่ากลาง')}</b> {trI18n("เป็นตัวหลัก · ค่าเฉลี่ยอยู่ในบรรทัดใต้การ์ด")}
+            {' '}({trI18n("ยิ่งค่าเฉลี่ยห่างค่ากลางมาก ยิ่งแปลว่ากดย้อนหลังเยอะ")})
             <div style={{ color: 'var(--muted)' }}>
-              เวลาที่เครื่องหยุดจริงดูที่ <b>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> ล่างสุดของหน้านี้ (นับจาก downtime) — เลขที่ส่งกลุ่มใช้ฐานนั้น ไม่ใช่เวลาในใบ MO
+              {trI18n("เวลาที่เครื่องหยุดจริงดูที่")} <b>{trI18n('MTTR/MTBF รายอุปกรณ์')}</b> {trI18n("ล่างสุดของหน้านี้ (นับจาก downtime) — เลขที่ส่งกลุ่มใช้ฐานนั้น ไม่ใช่เวลาในใบ")} MO
             </div>
           </div>
         )}
         {/* พาเรโตถูกย้ายไปแท็บ QC7 (แยกตามชนิดสินทรัพย์) — ต้องมีทางไปให้ชัด ไม่ใช่หายเงียบ */}
         {onGoQc7 && (
           <div>
-            อยากดู <b style={{ color: 'var(--text2)' }}>{trI18n('พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม')}</b> {trI18n('แยกตามชนิดอุปกรณ์ →')}{' '}
+            {trI18n("อยากดู")} <b style={{ color: 'var(--text2)' }}>{trI18n('พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม')}</b> {trI18n('แยกตามชนิดอุปกรณ์ →')}{' '}
             <button type="button" onClick={onGoQc7} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
               {trI18n('ไปแท็บ QC 7 Tools')}
             </button>
@@ -171,23 +167,23 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
         {/* 📏 ใบนี้คือ **ฐานของค่าเฉลี่ยทุกใบทางขวา** — เขียนไว้ให้ชัด ไม่งั้น MTTR ที่คิดจาก 2 ใบ
             กับที่คิดจาก 200 ใบ ดูน่าเชื่อถือเท่ากันบนจอ (UI §6.18 ข้อ 4) */}
-        <Card t="งานที่ปิด (ในช่วง)" v={`${stat.n} ใบ`} h="ฐานที่ใช้คิด MTTA / MTTR / MDT ทุกตัวทางขวา" />
+        <Card t={trI18n("งานที่ปิด (ในช่วง)")} v={`${stat.n} ${trI18n("ใบ")}`} h={trI18n("ฐานที่ใช้คิด MTTA / MTTR / MDT ทุกตัวทางขวา")} />
         {/* 📐 ค่ากลางเป็นตัวหลัก เฉลี่ยอยู่ในบรรทัดคำอธิบาย (11/11 · คำสั่ง user)
             ใบที่กดปุ่มย้อนหลังดันค่าเฉลี่ยพุ่ง แต่ไม่สะเทือนค่ากลาง ⇒ 2 ตัวห่างกันมาก = สัญญาณ */}
-        <Card t="MTTA — เข้าดำเนินการ (ค่ากลาง)" v={fmtMin(stat.respBox.p50)} c="#3b82f6"
-          h={`เฉลี่ย ${fmtMin(stat.respBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.respBox.p90)}`}
+        <Card t={trI18n("MTTA — เข้าดำเนินการ (ค่ากลาง)")} v={fmtMin(stat.respBox.p50)} c="#3b82f6"
+          h={`${trI18n("เฉลี่ย")} ${fmtMin(stat.respBox.avg)} · ${trI18n("ช้าสุด 10% เกิน")} ${fmtMin(stat.respBox.p90)}`}
           def={trI18n('Mean Time To Acknowledge = แจ้ง → ช่างรับงาน')} />
-        <Card t="MTTR — เวลาซ่อม (ค่ากลาง)" v={fmtMin(stat.ttrBox.p50)} c="#f59e0b"
-          h={`เฉลี่ย ${fmtMin(stat.ttrBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.ttrBox.p90)}`}
+        <Card t={trI18n("MTTR — เวลาซ่อม (ค่ากลาง)")} v={fmtMin(stat.ttrBox.p50)} c="#f59e0b"
+          h={`${trI18n("เฉลี่ย")} ${fmtMin(stat.ttrBox.avg)} · ${trI18n("ช้าสุด 10% เกิน")} ${fmtMin(stat.ttrBox.p90)}`}
           def={trI18n('Mean Time To Repair = รับงาน → ซ่อมเสร็จ (ไม่รวมเวลารอช่าง · หักช่วงส่งซ่อมนอกแล้ว)')} />
-        <Card t="MDT — หยุดรวม (ค่ากลาง)" v={fmtMin(stat.bdBox.p50)} c="#ef4444"
-          h={`เฉลี่ย ${fmtMin(stat.bdBox.avg)} · ช้าสุด 10% เกิน ${fmtMin(stat.bdBox.p90)}`}
+        <Card t={trI18n("MDT — หยุดรวม (ค่ากลาง)")} v={fmtMin(stat.bdBox.p50)} c="#ef4444"
+          h={`${trI18n("เฉลี่ย")} ${fmtMin(stat.bdBox.avg)} · ${trI18n("ช้าสุด 10% เกิน")} ${fmtMin(stat.bdBox.p90)}`}
           def={trI18n('Mean Down Time = แจ้ง → ซ่อมเสร็จ (MTTA + MTTR)')} />
-        <Card t={`ความพึงพอใจเฉลี่ย (${stat.satN} ใบ)`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'}
+        <Card t={`${trI18n("ความพึงพอใจเฉลี่ย")} (${stat.satN} ${trI18n("ใบ")})`} v={stat.satOverall != null ? `${Math.round(stat.satOverall / 3 * 100)}%` : '—'}
           c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
       {stat.satN > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, marginBottom: 16 }}>
+        <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{trI18n('ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)')}</div>
           {stat.satByDim.map(d => {
             const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0;
@@ -211,11 +207,11 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
             ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+          {trI18n("ความน่าเชื่อถือรายอุปกรณ์")} — MTTR / MTBF
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
           {/* 🔴 ป้ายที่มาของตัวเลข (คนละฐานกับการ์ดข้างบน) ห้ามพับ — พับแล้วกลายเป็น "จอเดียวกันตอบคนละเลข" */}
-          นับจาก <b style={{ color: 'var(--text2)' }}>{trI18n('downtime จริงของเครื่อง')}</b> {trI18n('ไม่ใช่ใบแจ้งซ่อม')}{' '}
+          {trI18n("นับจาก")} <b style={{ color: 'var(--text2)' }}>{trI18n('downtime จริงของเครื่อง')}</b> {trI18n('ไม่ใช่ใบแจ้งซ่อม')}{' '}
           <MoreMark text={trI18n('มีตัวกรองของตัวเองด้านล่าง')} />
         </div>
         <MachineReliability machines={machines} lineObjs={lineObjs} scopeLines={scopeLines} />

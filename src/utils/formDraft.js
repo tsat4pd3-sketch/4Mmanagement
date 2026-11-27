@@ -12,6 +12,7 @@
    · ตอนนี้เปิดเฉพาะมือถือ (จอคอมไม่วาดแถบกู้คืน — กฎ "จอคอมห้ามเปลี่ยน") ตัวไฟล์นี้ไม่ผูกกับขนาดจอ
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 import { useEffect, useRef } from 'react';
+import { dateLocale } from './i18n.js';
 
 const PREFIX = 'esm_draft_v1:';
 export const DRAFT_MAX_AGE_MS = 14 * 60 * 60 * 1000;   // 14 ชม. ≈ เกินกะยาวสุด (กะ+OT) แล้วทิ้ง
@@ -58,7 +59,7 @@ export function purgeOldDrafts({ now = Date.now(), maxAgeMs = DRAFT_MAX_AGE_MS }
 
 /** เวลาที่เก็บร่าง แบบสั้นๆ ไว้เขียนบนแถบกู้คืน (HH:MM เวลาไทย) */
 export function draftTimeText(at) {
-  try { return new Date(at).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }); }
+  try { return new Date(at).toLocaleTimeString(dateLocale(), { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit' }); }
   catch { return ''; }
 }
 

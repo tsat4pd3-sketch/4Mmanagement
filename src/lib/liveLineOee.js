@@ -52,6 +52,8 @@ export function liveOeeByLine({
       ngQty: sumDefectQty(defs, 'line'),
       // ของเสีย/ทดลอง/ของสงสัย กินรอบเครื่อง ⇒ เข้าตัวเศษ %P (กฎเหล็ก OEE)
       ngForP: ngByMatFrom(defs, os),
+      /* ฐานของ %Q = ยอดผลิต (oee.js §7.2.2) ⇒ ต้องส่งแถวดิบ ไม่ใช่ `ngForP` ที่นับงานทดลองด้วย */
+      qRows: defs,
       parallelN: parallelUnitsOf(row),
       parallelCap: isParallelLine(row?.flow_mode) ? parallelUnitsOf(row) : 1,
       breakPolicies: breakPolicies || [],

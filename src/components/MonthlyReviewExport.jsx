@@ -90,7 +90,7 @@ export default function MonthlyReviewExport({ onClose }) {
       // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล้มแล้ว modal ค้าง "กำลังโหลด…" ตลอดไป
       //    (ไม่มี toast ไม่มีปุ่มลองใหม่) — ห้ามล้มเหลวเงียบ
       const loadErr = lineRes.error || nodeRes.error;
-      if (loadErr) { setLoadError(loadErr.message || 'โหลดรายชื่อไลน์ไม่สำเร็จ'); toast.error(`โหลดรายชื่อไลน์/ส่วนงานไม่สำเร็จ: ${loadErr.message || ''}`); return; }
+      if (loadErr) { setLoadError(loadErr.message || 'โหลดรายชื่อไลน์ไม่สำเร็จ'); toast.error(`${tr("โหลดรายชื่อไลน์/ส่วนงานไม่สำเร็จ")}: ${loadErr.message || ''}`); return; }
       setLoadError(null);
       const lineArr = lines || [];
       const parentNames = new Set(lineArr.map(l => l.parent_line_name).filter(Boolean));
@@ -158,14 +158,14 @@ export default function MonthlyReviewExport({ onClose }) {
       // ก้อนเสริมของโหมด full (เป้า OEE / ถังเหลือง / ผังกำลังคน) โหลดไม่ครบ = สไลด์นั้นบอกเอง แต่ต้องเตือนที่นี่ด้วย
       (data.full?.warns || []).forEach(w => toast.error(`⚠ ${w}`));
       // 💸 ก้อนความสูญเปล่า/มูลค่า — ล้มเหลว = ไม่มีสไลด์ Loss Analysis ต้องบอก ห้ามเงียบ
-      (data.lean?.warns || []).forEach(w => toast.error(`⚠ ${w} — เด็คนี้จะไม่มีสไลด์ Loss Analysis`));
+      (data.lean?.warns || []).forEach(w => toast.error(`⚠ ${w} — ${tr("เด็คนี้จะไม่มีสไลด์")} Loss Analysis`));
       /* เทรนด์มี 2 ระดับความเสียหาย ห้ามบอกเหมารวม (QC 2026-09-08):
          มีสไลด์อยู่แต่ตัวเลขบางส่วนเพี้ยน (เช่น pair map ไม่ครบ) ≠ ไม่มีสไลด์เลย */
       const hasTrend = (data.trend?.months?.length || 0) > 1;
       if (data.trend?.warn) {
         toast.error(hasTrend
-          ? `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — สไลด์ progression ยังมี แต่ตัวเลขเดือนก่อนอาจคลาดเคลื่อน (หมายเหตุกำกับบนสไลด์แล้ว)`
-          : `⚠ เทรนด์ย้อนหลัง: ${data.trend.warn} — เด็คนี้จะไม่มีสไลด์ progression`);
+          ? `⚠ ${tr("เทรนด์ย้อนหลัง")}: ${data.trend.warn} — ${tr("สไลด์ progression ยังมี แต่ตัวเลขเดือนก่อนอาจคลาดเคลื่อน (หมายเหตุกำกับบนสไลด์แล้ว")})`
+          : `⚠ ${tr("เทรนด์ย้อนหลัง")}: ${data.trend.warn} — ${tr("เด็คนี้จะไม่มีสไลด์")} progression`);
       } else if (trendMonths > 1 && mode !== 'full' && !hasTrend) {
         toast.info('ย้อนหลังไม่มีกะที่ปิดแล้วพอเทียบ — เด็คนี้จะไม่มีสไลด์ progression');
       }
@@ -194,7 +194,7 @@ export default function MonthlyReviewExport({ onClose }) {
         orgLine: 'Thai Summit Automotive Plant4',
         docForm: df,
       });
-      toast.success(`ดาวน์โหลดแล้ว: ${fname}`);
+      toast.success(`${tr("ดาวน์โหลดแล้ว")}: ${fname}`);
       onClose?.();
     } catch (e) {
       toast.error(e.message || 'สร้างรายงานไม่สำเร็จ');
@@ -205,7 +205,7 @@ export default function MonthlyReviewExport({ onClose }) {
   const rowSt = { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card-surf)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 900 }}>Monthly Performance Review (.pptx)</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -230,8 +230,7 @@ export default function MonthlyReviewExport({ onClose }) {
             </div>
             {mode === 'full' && (
               <div style={{ fontSize: 11.5, color: 'var(--accent2, #d9a441)', marginTop: 6, lineHeight: 1.6 }}>
-                ⚠️ ประมาณ <b>{estSlides} {tr('สไลด์')}</b> ({totalSel} ไลน์ × 4 + ภาพรวม) — เลือกไลน์เยอะจะสร้างนาน
-                และไฟล์ใหญ่ · แนะนำติ๊กเฉพาะส่วนงาน/ไลน์ที่จะนำเสนอจริง
+                ⚠️ {tr("ประมาณ")} <b>{estSlides} {tr('สไลด์')}</b> ({totalSel} {tr("ไลน์ × 4 + ภาพรวม) — เลือกไลน์เยอะจะสร้างนาน และไฟล์ใหญ่ · แนะนำติ๊กเฉพาะส่วนงาน/ไลน์ที่จะนำเสนอจริง")}
               </div>
             )}
           </div>
@@ -251,13 +250,12 @@ export default function MonthlyReviewExport({ onClose }) {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                 {mode === 'full'
                   ? <>{tr('โหมด Full data ใช้')} <b>{tr('ปีปฏิทิน (ม.ค. → เดือนที่เลือก)')}</b> {tr('เสมอ — กราฟ Jan–Dec และ OEE รายไตรมาส Q1–Q4 มีความหมายเฉพาะบนปีปฏิทิน')}</>
-                  : <>{tr('เพิ่มสไลด์')} <b>PERFORMANCE TREND</b> (กราฟ OEE รายส่วนงาน + ตาราง OEE/DT/PPM/Output ต่อเดือน + Δ)
-                    และป้าย ▲▼ เทียบเดือนก่อนบนการ์ดตัวเลข · ย้อนหลังยิ่งเยอะยิ่งใช้เวลาดึงข้อมูลนานขึ้น</>}
+                  : <>{tr('เพิ่มสไลด์')} <b>PERFORMANCE TREND</b> ({tr("กราฟ OEE รายส่วนงาน + ตาราง OEE/DT/PPM/Output ต่อเดือน + Δ) และป้าย ▲▼ เทียบเดือนก่อนบนการ์ดตัวเลข · ย้อนหลังยิ่งเยอะยิ่งใช้เวลาดึงข้อมูลนานขึ้น")}</>}
               </div>
             </div>
           </div>
           <div>
-            <div style={lb}>{tr('ขอบเขตรายงาน — ติ๊กได้ตั้งแต่ทั้งส่วนงาน จนถึงรายไลน์ (เลือกแล้ว')} {totalSel} ไลน์)</div>
+            <div style={lb}>{tr('ขอบเขตรายงาน — ติ๊กได้ตั้งแต่ทั้งส่วนงาน จนถึงรายไลน์ (เลือกแล้ว')} {totalSel} {tr("ไลน์")})</div>
             <div style={{ display: 'grid', gap: 6 }}>
               {tree.map(s => {
                 const secLines = linesOfSec(s);
@@ -313,12 +311,11 @@ export default function MonthlyReviewExport({ onClose }) {
             <div><div style={lb}>{tr('ตำแหน่ง')}</div><input type="text" value={presPosition} onChange={e => setPresPosition(e.target.value)} style={{ width: '100%' }} /></div>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
-            สร้างเด็ค PowerPoint ตาม template TSG <b>Revision 01</b> (พื้นขาว · เขียว-ส้มชุดใหม่ · โลโก้ใหม่)
-            จากข้อมูลกะที่ปิดแล้วของเดือนที่เลือก — Executive Summary → กราฟ OEE รายไลน์ →
-            <b>{tr('PERFORMANCE TREND ย้อนหลัง')}</b> → รายส่วน/ไลน์ → Top Downtime +
-            <b>{tr('วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ')}</b> + ใบซ่อม MO →
+            {tr("สร้างเด็ค PowerPoint ตาม")} template TSG <b>Revision 01</b> ({tr("พื้นขาว · เขียว-ส้มชุดใหม่ · โลโก้ใหม่) จากข้อมูลกะที่ปิดแล้วของเดือนที่เลือก — Executive Summary → กราฟ OEE รายไลน์")} →
+            <b>{tr('PERFORMANCE TREND ย้อนหลัง')}</b> → {tr("รายส่วน/ไลน์")} → Top Downtime +
+            <b>{tr('วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ')}</b> + {tr("ใบซ่อม")} MO →
             Top Defects → <b>{tr('Loss Analysis (6 Big Losses / 8 Wastes + มูลค่าเป็นบาท)')}</b> →
-            Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
+            Focus {tr("เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม")}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{tr('ยกเลิก')}</button>

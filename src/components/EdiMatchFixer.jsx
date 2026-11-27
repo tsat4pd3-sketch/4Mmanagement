@@ -41,7 +41,7 @@ const btn = (primary) => ({
 const LIMIT = 8;
 const soldBtn = {
   fontSize: 12, fontWeight: 800, padding: '5px 10px', borderRadius: 6, cursor: 'pointer',
-  background: 'rgba(34,197,94,0.14)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.5)', fontFamily: 'var(--font-body)',
+  background: 'rgba(34,197,94,0.14)', color: 'var(--green)', border: '1px solid rgba(34,197,94,0.5)', fontFamily: 'var(--font-body)',
 };
 
 export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
@@ -56,7 +56,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     /* 🔴 คู่นี้ตอบแค่ "ส่งอะไรให้ลูกค้า" (Delivery · shipping chart) ⇒ ต้องเป็นตัวขาย 1xx เสมอ (user 01/10)
        2xx ได้ความต้องการจาก BOM ของ 1xx ที่เรียกมันอยู่แล้ว · ผูก 2xx ตรงๆ = ใบส่งของเป็นงานระหว่างทาง + ความต้องการนับซ้ำ */
     if (!isFgMat(mat)) {
-      toast.error(`${mat} ไม่ใช่ตัวขาย (1xx) — ของที่ส่งลูกค้าต้องเป็น 1xx · 2xx ได้ความต้องการผ่าน BOM ของ 1xx อยู่แล้ว`);
+      toast.error(`${mat} ${tr("ไม่ใช่ตัวขาย (1xx) — ของที่ส่งลูกค้าต้องเป็น 1xx · 2xx ได้ความต้องการผ่าน BOM ของ 1xx อยู่แล้ว")}`);
       return;
     }
     const key = `${shipTo}|${part}`;
@@ -68,7 +68,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     if (checkWrite(res, 'บันทึกการจับคู่พาร์ท')) {
       if (!res.data?.length) toast.error('บันทึกไม่สำเร็จ (0 แถว)');
       else {
-        toast.success(`✅ จำแล้ว: ${part}${shipTo ? ` (${lbl(shipTo)})` : ''} → ${mat} · อ่านไฟล์ใหม่…`);
+        toast.success(`✅ ${tr("จำแล้ว")}: ${part}${shipTo ? ` (${lbl(shipTo)})` : ''} → ${mat} · ${tr("อ่านไฟล์ใหม่")}…`);
         await onSaved?.();
       }
     }
@@ -78,8 +78,8 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
   /** ปุ่ม "ตัวขาย" ที่ระบบเสนอ (จาก BOM/ชื่อ) — ใส่ไว้หน้าสุดเพราะเป็นคำตอบที่ถูกบ่อยสุดของงานต่างประเทศ */
   const soldButtons = (part, shipTo, note) => (edi.sold?.[part] || []).map(c => (
     <button key={`s-${c.mat_no}`} type="button" disabled={!!busy} style={soldBtn}
-      title={`${c.name || ''}${c.customer ? ` · ลูกค้า ${c.customer}` : ''}\nที่มา: ${c.why}`}
-      onClick={() => save(shipTo, part, c.mat_no, note || `ตัวขาย (${c.why})`)}>
+      title={`${c.name || ''}${c.customer ? ` · ${tr("ลูกค้า")} ${c.customer}` : ''}\n${tr("ที่มา")}: ${c.why}`}
+      onClick={() => save(shipTo, part, c.mat_no, note || `${tr("ตัวขาย")} (${c.why})`)}>
       🏷️ {c.mat_no}{c.customer ? ` · ${c.customer}` : ''}
     </button>
   ));
@@ -89,7 +89,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
   const list = (k, arr) => (showAll[k] ? arr : arr.slice(0, LIMIT));
   const more = (k, arr) => arr.length > LIMIT && (
     <button type="button" style={{ ...btn(false), marginTop: 6 }} onClick={() => setShowAll(s => ({ ...s, [k]: !s[k] }))}>
-      {showAll[k] ? 'ย่อ' : `แสดงทั้งหมด (${arr.length})`}
+      {showAll[k] ? tr("ย่อ") : `${tr("แสดงทั้งหมด")} (${arr.length})`}
     </button>
   );
   const readOnly = !canEdit && (
@@ -123,9 +123,8 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
         <div style={box('239,68,68')}>
           <div style={head('#ef4444')}>🔴 {ambRows.length} {tr('คู่ (พาร์ท × ship-to) มีหลาย MAT — เลือกว่าปลายทางนี้ใช้ MAT ไหน')}</div>
           <div style={hint}>
-            ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง ⇒ <b>{tr('MAT ที่เหลือดูเหมือนไม่มีใครสั่ง')}</b> ·
-            กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว 🏷️ = <b>{tr('ตัวขาย (1xx)')}</b> ที่ระบบหาจาก BOM ·
-            โชว์เฉพาะ 1xx — ความต้องการ 2xx มาจาก BOM ของ 1xx ไม่ต้องผูกที่นี่
+            {tr("ถ้าไม่เลือก ระบบจะใส่ MAT ตัวแรกให้ทุกปลายทาง")} ⇒ <b>{tr('MAT ที่เหลือดูเหมือนไม่มีใครสั่ง')}</b> ·
+            {tr("กดปุ่ม MAT ที่ถูกต้อง ระบบจำไว้ใช้ครั้งต่อไปเลย · ปุ่มเขียว")} 🏷️ = <b>{tr('ตัวขาย (1xx)')}</b> {tr("ที่ระบบหาจาก BOM · โชว์เฉพาะ 1xx — ความต้องการ 2xx มาจาก BOM ของ 1xx ไม่ต้องผูกที่นี่")}
           </div>
           {list('amb', ambRows).map(a => (
             <div key={`${a.part}|${a.st}`} style={row}>
@@ -161,8 +160,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
         <div style={box('245,158,11')}>
           <div style={head('#f59e0b')}>⚠️ {unm.length} {tr('พาร์ท ยังไม่รู้ว่าเป็น MAT ไหน — เลือก MAT แล้วกดจำ')}</div>
           <div style={hint}>
-            ถ้าไม่เลือก จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน (ไม่ผูกกับสินค้าในระบบ = ไม่ขึ้นในแผนผลิต) ·
-            ถ้าหา MAT ไม่เจอในรายการ แปลว่ายังไม่มีสินค้านี้ใน Product Master ให้เพิ่มที่นั่นก่อน
+            {tr("ถ้าไม่เลือก จะบันทึกด้วยเลขพาร์ทลูกค้าไปก่อน (ไม่ผูกกับสินค้าในระบบ = ไม่ขึ้นในแผนผลิต) · ถ้าหา MAT ไม่เจอในรายการ แปลว่ายังไม่มีสินค้านี้ใน Product Master ให้เพิ่มที่นั่นก่อน")}
           </div>
           {list('unm', unm).map(part => {
             const sts = edi.unmatchedShipTos?.[part] || [];
@@ -178,13 +176,13 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                       <ProductSelect value={pick[part] || ''} onChange={o => setPick(p => ({ ...p, [part]: o?.mat_no || '' }))} />
                     </div>
                     <select value={scope[part] ?? ''} onChange={e => setScope(s => ({ ...s, [part]: e.target.value }))}
-                      style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                      style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2-surf)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                       <option value="">{tr('ใช้กับทุก ship-to')}</option>
                       {sts.map(st => <option key={st} value={st}>{tr('เฉพาะ')} {lbl(st)}</option>)}
                     </select>
                     <button type="button" disabled={!!busy || !pick[part]} style={btn(true)}
                       onClick={() => save(scope[part] ?? '', part, pick[part], 'เลือกเองบนจอนำเข้า EDI')}>
-                      {busy === `${scope[part] ?? ''}|${part}` ? '…' : 'จำคู่นี้'}
+                      {busy === `${scope[part] ?? ''}|${part}` ? '…' : tr("จำคู่นี้")}
                     </button>
                   </>
                 )}
@@ -200,8 +198,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
         <div style={box('245,158,11')}>
           <div style={head('#f59e0b')}>{base.length} {tr('พาร์ท ระบบเดาจากเลขฐาน (rev ต่างกัน) — ยืนยันหรือเปลี่ยน')}</div>
           <div style={hint}>
-            rev สะกดต่างแต่เป็นพาร์ทเดิม = กด <b>{tr('✓ ถูก')}</b> · ถ้าเป็นพาร์ทใหม่จาก EC (ออกเลขใหม่) ให้เลือก MAT ใหม่แทน
-            ไม่งั้นความต้องการจะเข้า MAT rev เก่า
+            rev {tr("สะกดต่างแต่เป็นพาร์ทเดิม = กด")} <b>{tr('✓ ถูก')}</b> · {tr("ถ้าเป็นพาร์ทใหม่จาก EC (ออกเลขใหม่) ให้เลือก MAT ใหม่แทน ไม่งั้นความต้องการจะเข้า MAT rev เก่า")}
           </div>
           {list('base', base).map(b => (
             <div key={b.part} style={row}>
@@ -233,8 +230,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
         <div style={box('59,130,246')}>
           <div style={head('#60a5fa')}>{nonFg.length} {tr('พาร์ท ยังไม่ได้ผูกตัวขาย (1xx) — เลือกว่าส่งเบอร์ไหน')}</div>
           <div style={hint}>
-            ความต้องการลูกค้าควรลงที่ <b>{tr('ตัวขาย (1xx)')}</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
-            กดปุ่มเขียวเพื่อผูกกับตัวขาย หรือเลือก 1xx เอง · ไม่ต้องห่วงงาน 2xx — ความต้องการของมันมาจาก BOM ของ 1xx (งานแพ็คเรียกใช้)
+            {tr("ความต้องการลูกค้าควรลงที่")} <b>{tr('ตัวขาย (1xx)')}</b> — {tr("งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค · กดปุ่มเขียวเพื่อผูกกับตัวขาย หรือเลือก 1xx เอง · ไม่ต้องห่วงงาน 2xx — ความต้องการของมันมาจาก BOM ของ 1xx (งานแพ็คเรียกใช้")})
           </div>
           {list('nonfg', nonFg).map(n => (
             <div key={n.part} style={row}>

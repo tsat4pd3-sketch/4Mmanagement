@@ -43,6 +43,19 @@ const db = createClient(URL, KEY);
 const arg = (k, d = null) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : d; };
 const APPLY = process.argv.includes('--apply');
 const FORCE = process.argv.includes('--force');   // ⚠️ ปิดด่าน "คิดย้อนต้องตรง" — ดูหัวไฟล์
+/* ⚠️ `--with-p` = เขียน `oee_p` ด้วย (ปกติแตะแค่ `oee_a`) — ใช้ตอน "คิดใหม่ทั้งสูตร" เช่น
+   กะงานคู่ RH/LH ก่อน 18/09 ที่คิดเวลามาตรฐานซ้ำ 2 เท่า (ชิ้น ≠ shot)
+   🔴 **ยังไม่แตะ `oee_q`** — %Q ต้องการทะเบียนถังเหลือง (`QBIN_EMBED`) ซึ่ง dump ไม่ได้ดึงมา
+      ⇒ `oee = A × P × Q(ที่ stamp ไว้)` · ขาด Q = ไม่เขียน `oee`
+   🔴 ต้องมี `defects` ใน dump — ตัวเศษ %P รวมของเสีย/ของสงสัย (`ngByMatFrom`)
+      ไม่มี = %P ต่ำกว่าจริง ⇒ สคริปต์หยุดทันที ไม่เดา */
+const WITH_P = process.argv.includes('--with-p');
+/* 🔀 `--lines <json>` = ทะเบียนไลน์ + แมป affects_lanes ⇒ **ทำไลน์เครื่องขนานได้**
+   รูปแบบ: { lines: { "<ชื่อไลน์>": { parallel_stations, flow_mode } }, affectsLanes: { "<machineKey>": n } }
+   (`parallel_stations`/`flow_mode` อยู่ฝั่ง **Main** · `affects_lanes` อยู่ฝั่ง **DR** — ดึงมาใส่ไฟล์เอง)
+   🔴 ไลน์ที่อยู่ในไฟล์นี้ = สคริปต์หารเลนให้ตรงกับที่จอทำ ⇒ **ไม่ต้องข้ามอีก**
+   🔴 ไลน์ที่ไม่อยู่ในไฟล์ = พฤติกรรมเดิม (ข้ามถ้าอยู่ใน PARALLEL_LINES หรือ DT รวมเกินเวลากะ) */
+const LINES_FILE = arg('--lines');
 const REASON = FORCE ? 'dt-rule-20261116-all' : 'dt-rule-20261116';
 const NOTE = FORCE ? 'คิด %A ใหม่ด้วยกฎ/ทะเบียนวันนี้ทุกกะ (คำสั่ง user 18/11) — %P/%Q ไม่แตะ'
                    : 'นิยาม downtime ใหม่ 16/11 — %P/%Q ไม่แตะ';
@@ -61,9 +74,16 @@ const MOVED_TO_UNPLANNED = new Set([
   '49421914-9ec5-4fde-876f-9c896cfdb91b',   // หยุดไลน์คัดแยกชิ้นงาน
   '036ce39a-0eb5-4107-a315-5b481bbec668',   // เคาะเศษ / ทำความสะอาดสต๊อปเปอร์
 ]);
-/* ไลน์เครื่องขนาน — ข้าม (ต้องใช้ flow_mode/parallel_stations ฝั่ง Main) */
+/* 🔴 ไลน์เครื่องขนาน — ข้าม (สคริปต์นี้ไม่ได้ต่อ Main จึงส่ง lineFlow/machineCount ว่าง
+   ⇒ `laneWeightFn()` ไม่ทำงาน ⇒ DT รายเครื่องถูกหักเต็มจำนวน %A ต่ำผิด)
+   ⚠️ ลิสต์นี้ต้องตรงกับ `production_lines.parallel_stations > 1` ฝั่ง Main (20/11: 9 ไลน์)
+      คิวรีรีเฟรช: select name from production_lines where parallel_stations > 1;
+   🕳️ เคสจริง 20/11: ลิสต์ตกหล่น LASER-345 / LASER-789 (parallel_stations = 3)
+      ⇒ 12 กะถูกเขียน %A ต่ำผิดเฉลี่ย -33 จุด ต้องย้อนคืนทีหลัง (reason `revert-parallel-20261120`)
+      ⇒ จึงเพิ่มด่านอัตโนมัติข้างล่าง (`DT รวม > เวลากะ`) ไว้จับไลน์ที่ตกหล่นในอนาคตด้วย */
 const PARALLEL_LINES = new Set(['Assembly Line D - GWM&RA', 'Line D1 - GWM', 'Line D3 - STAMPED',
-  'Line D4 - BRK FRT BMPR', 'Line D5 - BRK RR BMPR', 'Line D6 - Sub Assembly', 'SUB APRON']);
+  'Line D4 - BRK FRT BMPR', 'Line D5 - BRK RR BMPR', 'Line D6 - Sub Assembly', 'SUB APRON',
+  'LASER-345', 'LASER-789']);
 
 const round2 = (v) => Math.round(v * 100) / 100;
 const die = (label, error) => { if (error) { console.error(`❌ ${label}:`, error.message); process.exit(1); } };
@@ -83,11 +103,28 @@ const main = async () => {
     `${FORCE ? ' · ⚠️  --force (ไม่มีด่านคิดย้อน)' : ''}\n`);
 
   const chunk = (a, n) => a.reduce((o, v, i) => ((o[Math.floor(i / n)] ||= []).push(v), o), []);
-  let sessions, breaks, prods, kstds, orders = [], dts = [];
+  let sessions, breaks, prods, kstds, orders = [], dts = [], defects = [];
+
+  /* ทะเบียนไลน์สำหรับหารเลน — ไม่ส่ง = ทุกไลน์ 1 เลน (พฤติกรรมเดิมเป๊ะ) */
+  let lineCfg = {}, affectsLanes = null;
+  if (LINES_FILE) {
+    const j = JSON.parse(readFileSync(LINES_FILE, 'utf8'));
+    lineCfg = j.lines || {};
+    affectsLanes = j.affectsLanes || null;
+    const n = Object.keys(lineCfg).length;
+    console.log(`ทะเบียนไลน์สำหรับหารเลน ${n} ไลน์` +
+      Object.entries(lineCfg).map(([k, v]) => ` · ${k}=${v?.parallel_stations || 1} เลน`).join(''));
+  }
 
   if (DUMP) {
     /* 🔌 ออฟไลน์: input ชุดเดียวกับที่โหลดจาก DB — ตรรกะข้างล่างใช้ร่วมกัน ห้ามแยกเป็นสูตรที่ 2 */
-    ({ sessions, breaks, prods, kstds, orders, dts } = JSON.parse(readFileSync(DUMP, 'utf8')));
+    let defectsDump;
+    ({ sessions, breaks, prods, kstds, orders, dts, defects: defectsDump } = JSON.parse(readFileSync(DUMP, 'utf8')));
+    defects = defectsDump || [];
+    if (WITH_P && !defectsDump) {
+      console.error('❌ --with-p ต้องมี `defects` ใน dump (ตัวเศษ %P รวมของเสีย) — ไม่มี = %P ต่ำกว่าจริง');
+      process.exit(1);
+    }
     sessions = (sessions || []).sort((a, b) => String(a.work_date).localeCompare(String(b.work_date)));
     if (STAMPS) {
       const num = (v) => (v === '' || v == null ? null : Number(v));
@@ -115,8 +152,20 @@ const main = async () => {
       orders.push(...o); dts.push(...d);
     }
   }
+  /* 🔴 `laneWeightFn` ตัดสินจาก `d.machine_no` — dump ที่ไม่มีคอลัมน์นี้จะถูกนับเป็น
+     "ไม่ระบุเครื่อง = หยุดทั้งไลน์" ทุกแถว ⇒ **ไม่หารเลนเลย เงียบๆ** ⇒ %A ต่ำผิดเหมือนเดิม
+     (นี่คืออุบัติเหตุ 20/11 ซ้ำรอย) ⇒ ตรวจก่อน ไม่ผ่าน = หยุด */
+  if (Object.values(lineCfg).some(v => Number(v?.parallel_stations) > 1)) {
+    const hasMc = dts.some(x => 'machine_no' in x);
+    if (!hasMc) {
+      console.error('❌ --lines มีไลน์เครื่องขนาน แต่ dump ไม่มีคอลัมน์ `machine_no` ในใบ downtime');
+      console.error('   ⇒ หารเลนไม่ได้ จะได้ %A ต่ำผิดแบบเงียบๆ — เติม machine_no ใน dump ก่อน');
+      process.exit(1);
+    }
+  }
+
   const by = (rows) => rows.reduce((m, r) => ((m[r.session_id] ||= []).push(r), m), {});
-  const ordBy = by(orders), dtBy = by(dts);
+  const ordBy = by(orders), dtBy = by(dts), defBy = by(defects);
   console.log(`ใบผลิต ${orders.length} · ใบ downtime ${dts.length}\n`);
 
   /* ย้อนสภาพ "ก่อนแก้นิยาม" ของแต่ละใบ: หมวดเดิม + ไม่มีเพดาน */
@@ -126,17 +175,34 @@ const main = async () => {
     planned_cap_min: null,
   } });
 
-  const stat = { skipLine: 0, skipNoA: 0, skipMismatch: 0, skipZero: 0, same: 0, changed: 0 };
-  const rows = [], worst = [], zeroed = [];
+  const stat = { skipLine: 0, skipNoA: 0, skipMismatch: 0, skipZero: 0, skipDtOverShift: 0, same: 0, changed: 0 };
+  const rows = [], worst = [], zeroed = [], overShift = [];
 
   for (const s of sessions) {
-    if (PARALLEL_LINES.has(s.line_name)) { stat.skipLine++; continue; }
+    /* ไลน์ที่มีทะเบียนแล้ว = หารเลนได้ ⇒ ไม่ข้าม · ไม่มีทะเบียน = กติกาเดิม */
+    const lf = lineCfg[s.line_name] || null;
+    const laneN = Number(lf?.parallel_stations) > 1 ? Number(lf.parallel_stations) : 1;
+    if (!lf && PARALLEL_LINES.has(s.line_name)) { stat.skipLine++; continue; }
     if (s.shift_min == null || (s.oee_a == null && !FORCE)) { stat.skipNoA++; continue; }
     const dl = dtBy[s.id] || [];
-    const base = { session: s, orders: ordBy[s.id] || [], defects: [], ngQty: 0,
+
+    /* 🔴 ด่านจับ "ไลน์เครื่องขนานที่หลุดลิสต์" โดยไม่ต้องต่อทะเบียน Main:
+       DT รวมเกินความยาวกะ = เป็นไปไม่ได้บนไลน์เครื่องเดียว ⇒ ลงรายเครื่องแน่ๆ
+       สคริปต์นี้หารเลนไม่ได้ ⇒ **ข้าม ห้ามเดา** (เคส LASER-789 12/10: DT 829 น. บนกะ 570 น.) */
+    /* 🔴 ไลน์ที่หารเลนได้ ต้องเทียบด้วย "นาทีของไลน์" ไม่ใช่นาทีดิบ
+       (ไลน์ 3 เลนลง DT รายเครื่อง ดิบเกินเวลากะเป็นเรื่องปกติ — ของไลน์จริงไม่เกิน) */
+    const dtSum = laneN > 1
+      ? dl.reduce((a, x) => a + (Number(x.duration_min) || 0) * (x.machine_no ? 1 / laneN : 1), 0)
+      : dl.reduce((a, x) => a + (Number(x.duration_min) || 0), 0);
+    if (dtSum > Number(s.shift_min)) {
+      stat.skipDtOverShift++;
+      if (overShift.length < 20) overShift.push(`${s.work_date} ${String(s.line_name).padEnd(24)} ${s.shift.padEnd(5)} DT ${dtSum} น. > เวลากะ ${s.shift_min} น. (${dl.length} ใบ)`);
+      continue;
+    }
+    const base = { session: s, orders: ordBy[s.id] || [], defects: defBy[s.id] || [], ngQty: 0,
       products: prods, kanbanStds: kstds, breakPolicies: breaks,
       processType: s.break_snapshot?.process_type ?? null,
-      lineFlow: {}, machineCount: 0, endTime: s.end_time || null };
+      lineFlow: lf || {}, machineCount: 0, affectsLanes, endTime: s.end_time || null };
 
     const oldR = computeSessionOee({ ...base, downtimes: dl.map(asOld) });
     const aOldCalc = oldR.A == null ? null : oldR.A * 100;
@@ -148,7 +214,11 @@ const main = async () => {
     }
     const newR = computeSessionOee({ ...base, downtimes: dl });
     const aNew = newR.A == null ? null : round2(newR.A * 100);
-    if (aNew == null || (s.oee_a != null && Math.abs(aNew - Number(s.oee_a)) < 0.005)) { stat.same++; continue; }
+    const pNew = WITH_P && newR.P != null ? round2(newR.P * 100) : null;
+    const pMoved = WITH_P && pNew != null && s.oee_p != null && Math.abs(pNew - Number(s.oee_p)) >= 0.005;
+    const aMoved = aNew != null && (s.oee_a == null || Math.abs(aNew - Number(s.oee_a)) >= 0.005);
+    if (!aMoved && !pMoved) { stat.same++; continue; }
+    if (aNew == null) { stat.same++; continue; }
 
     /* 🔴 คิดใหม่ได้ %A = 0 ทั้งที่กะนั้นมียอดผลิต = "คิดไม่ได้" ไม่ใช่ "เครื่องไม่เคยเดิน"
        (ใบ downtime ตกนอกช่วงพาร์ททุกใบ ⇒ ทางคิดราย MAT กินเวลาเดินหมด)
@@ -159,9 +229,12 @@ const main = async () => {
       continue;
     }
 
-    const p = s.oee_p == null ? null : Number(s.oee_p), q = s.oee_q == null ? null : Number(s.oee_q);
+    /* %P ที่จะใช้คิด `oee` — โหมด --with-p ใช้ค่าใหม่ · โหมดปกติใช้ค่าที่ stamp ไว้ (ไม่แตะ %P) */
+    const p = WITH_P ? pNew : (s.oee_p == null ? null : Number(s.oee_p));
+    const q = s.oee_q == null ? null : Number(s.oee_q);
     const oeeNew = (p == null || q == null) ? null : round2(aNew * p * q / 10000);
     rows.push({ s, aOld: s.oee_a == null ? null : Number(s.oee_a), aNew, reproduced,
+      pOld: s.oee_p == null ? null : Number(s.oee_p), pNew,
       oeeOld: s.oee == null ? null : Number(s.oee), oeeNew,
       movedMin: Math.round((newR.loggedUnplannedDT || 0) - (oldR.loggedUnplannedDT || 0)) });
     stat.changed++;
@@ -177,28 +250,35 @@ const main = async () => {
   if (rows.length > 20) console.log(`  … อีก ${rows.length - 20} กะ`);
 
   const withOld = rows.filter(r => r.aOld != null);
+  const withP = rows.filter(r => r.pOld != null && r.pNew != null);
+  const avgP = (f) => withP.length ? round2(withP.reduce((a, r) => a + f(r), 0) / withP.length) : 0;
   const avg = (f) => withOld.length ? round2(withOld.reduce((a, r) => a + f(r), 0) / withOld.length) : 0;
   console.log(`\n── สรุป ──
   กะที่ตรวจ                 ${sessions.length}
   ข้าม: ไลน์เครื่องขนาน      ${stat.skipLine}
   ข้าม: ไม่มี %A / shift_min ${stat.skipNoA}
   คำนวณย้อนไม่ตรง stamp    ${stat.skipMismatch}   ← ${FORCE ? '⚠️  --force: คิดใหม่ให้ด้วย' : 'ข้าม (ทะเบียนเปลี่ยนไปแล้ว)'}
+  ข้าม: DT รวม > เวลากะ        ${stat.skipDtOverShift}   ← ไลน์เครื่องขนาน (หารเลนไม่ได้)
   ข้าม: คิดใหม่ได้ 0 ทั้งที่ผลิต ${stat.skipZero}   ← fail-closed (ดูลิสต์ล่าง)
   ตัวเลขเท่าเดิม             ${stat.same}
   ✍️  ต้องแก้                 ${stat.changed}
-  %A เฉลี่ย ${avg(r => r.aOld)} → ${avg(r => r.aNew)}  (${avg(r => r.aNew - r.aOld)})`);
+  %A เฉลี่ย ${avg(r => r.aOld)} → ${avg(r => r.aNew)}  (${avg(r => r.aNew - r.aOld)})` +
+    (WITH_P ? `\n  %P เฉลี่ย ${avgP(r => r.pOld)} → ${avgP(r => r.pNew)}  (${avgP(r => r.pNew - r.pOld)})` : ''));
   if (worst.length) console.log('\n  ตัวอย่างกะที่คำนวณย้อนไม่ตรง:\n   ' + worst.join('\n   '));
+  if (overShift.length) console.log('\n  ⚠️  กะที่ DT รวมเกินเวลากะ (ไม่แตะ — น่าจะเป็นไลน์เครื่องขนานที่หลุดลิสต์):\n   ' + overShift.join('\n   '));
   if (zeroed.length) console.log('\n  ⚠️  กะที่คิดใหม่ได้ %A = 0 ทั้งที่มียอดผลิต (ไม่แตะ — ต้องให้คนไล่ดูใบ DT):\n   ' + zeroed.join('\n   '));
 
   /* 🔌 ออฟไลน์: ออกเป็น SQL (log ค่าเดิมก่อน แล้วค่อยเขียนทับ — ลำดับเดียวกับทาง DB เป๊ะ) */
   if (SQL) {
     const q = (v) => (v == null ? 'null' : String(v));
     const L = ['begin;', `insert into public.oee_restamp_log
-  (session_id, reason, oee_a_before, oee_a_after, oee_before, oee_after, moved_min, note) values`];
+  (session_id, reason, oee_a_before, oee_a_after, ${WITH_P ? 'oee_p_before, oee_p_after, ' : ''}oee_before, oee_after, moved_min, note) values`];
     L.push(rows.map(r => `  ('${r.s.id}', '${REASON}', ${q(r.aOld)}, ${q(r.aNew)}, ` +
+      `${WITH_P ? `${q(r.pOld)}, ${q(r.pNew)}, ` : ''}` +
       `${q(r.oeeOld)}, ${q(r.oeeNew)}, ${q(r.movedMin)}, '${NOTE}${r.reproduced ? '' : ' · คิดย้อนไม่ตรง'}')`).join(',\n') + ';');
     for (const r of rows) {
       L.push(`update public.production_sessions set oee_a = ${q(r.aNew)}` +
+        `${WITH_P && r.pNew != null ? `, oee_p = ${q(r.pNew)}` : ''}` +
         `${r.oeeNew == null ? '' : `, oee = ${q(r.oeeNew)}`} where id = '${r.s.id}';`);
     }
     L.push('commit;');
@@ -212,12 +292,14 @@ const main = async () => {
   console.log(`\n✍️  เขียน ${rows.length} กะ …`);
   for (const c of chunk(rows, 50)) {
     const log = c.map(r => ({ session_id: r.s.id, reason: REASON, note: NOTE + (r.reproduced ? '' : ' · คิดย้อนไม่ตรง'),
-      oee_a_before: r.aOld, oee_before: r.oeeOld, oee_a_after: r.aNew, oee_after: r.oeeNew, moved_min: r.movedMin }));
+      oee_a_before: r.aOld, oee_before: r.oeeOld, oee_a_after: r.aNew, oee_after: r.oeeNew, moved_min: r.movedMin,
+      ...(WITH_P ? { oee_p_before: r.pOld, oee_p_after: r.pNew } : {}) }));
     const { error: le } = await db.from('oee_restamp_log').insert(log);
     die('บันทึกค่าเดิมลง oee_restamp_log', le);      // 🔴 log ไม่ติด = ห้ามเขียนทับ (ย้อนไม่ได้)
     for (const r of c) {
       const { error } = await db.from('production_sessions')
-        .update({ oee_a: r.aNew, oee: r.oeeNew }).eq('id', r.s.id).select('id');
+        .update({ oee_a: r.aNew, ...(WITH_P && r.pNew != null ? { oee_p: r.pNew } : {}), oee: r.oeeNew })
+        .eq('id', r.s.id).select('id');
       die(`เขียนกะ ${r.s.work_date} ${r.s.line_name}`, error);
     }
   }

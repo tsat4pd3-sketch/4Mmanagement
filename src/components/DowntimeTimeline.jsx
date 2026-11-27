@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CLOSE_AHEAD_WARN_MIN, dtCoverMin, fmtOffset } from '../utils/shiftWindow';
 
-import { tr } from '../utils/i18n';
+import { tr, dateLocale } from '../utils/i18n';
 /**
  * ⏱ ไทม์ไลน์เครื่องหยุดรายไลน์ — "หยุดตอนไหนของวัน" ไม่ใช่แค่ "หยุดรวมกี่นาที"
  *
@@ -61,7 +61,7 @@ export function downtimeSpan(d, nowMs) {
 
 const PLANNED_COLOR = '#64748b';   // เทาสงบ — หยุดตามแผนไม่ใช่ loss (กฎ Andon: ห้ามแดง ห้ามกระพริบ)
 const RUN_COLOR     = 'rgba(34,197,94,0.55)';
-const hhmm = (ms) => new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+const hhmm = (ms) => new Date(ms).toLocaleTimeString(dateLocale(), { hour: '2-digit', minute: '2-digit', hour12: false });
 
 export default function DowntimeTimeline({ sessions = [], downtimes = [], workDate, isMobile = false }) {
   const [sel, setSel] = useState(null);
@@ -114,7 +114,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       row.stops.push({
         ...sp, planned,
         open: !d.ended_at && !(Number(d.duration_min) > 0),
-        name: d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท',
+        name: d.dr_downtime_types?.name_th || tr("ไม่ระบุประเภท"),
         color: planned ? PLANNED_COLOR : (d.dr_downtime_types?.color || '#ef4444'),
         machine: d.machine_no || '',
         note: d.description || '',
@@ -179,30 +179,30 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                 <div style={{ width: labelW, flexShrink: 0, paddingRight: 8, minWidth: 0 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.line}>{r.line}</div>
                   <div style={{ fontSize: 11, color: unplannedMin > 0 ? '#ef4444' : 'var(--muted)' }}>
-                    {unplannedMin > 0 ? `หยุด ${unplannedMin} น.` : 'ไม่มีหยุดนอกแผน'}
+                    {unplannedMin > 0 ? `${tr("หยุด")} ${unplannedMin} ${tr("น.")}` : tr("ไม่มีหยุดนอกแผน")}
                   </div>
                   {unaccMin > CLOSE_AHEAD_WARN_MIN && (
-                    <div title={`กะนี้ปิดไปแล้ว แต่ "เวลาปิดกะ" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง และช่วงที่ล้ำ ${fmtOffset(unaccMin)} ไม่มีใบ Downtime รองรับเลย\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ หรือลง Downtime คลุมช่วงที่ไม่ได้ผลิต`}
-                      style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', cursor: 'help' }}>
-                      ⚠️ ปลายกะไม่มีอะไรรองรับ {fmtOffset(unaccMin)}
+                    <div title={`${tr("กะนี้ปิดไปแล้ว แต่ \"เวลาปิดกะ\" ที่บันทึกไว้ล้ำหน้าเวลาที่กดปิดจริง และช่วงที่ล้ำ")} ${fmtOffset(unaccMin)} ${tr("ไม่มีใบ Downtime รองรับเลย\\nแถบเขียวจึงลากไปในอนาคต และเวลาเดินเครื่อง (ฐานของ %A/%P) ถูกคิดเกินจริงเท่านั้น\\n→ แก้ที่หน้า Daily Report ปุ่มแก้เวลาเริ่ม-ปิดกะ หรือลง Downtime คลุมช่วงที่ไม่ได้ผลิต")}`}
+                      style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)', cursor: 'help' }}>
+                      ⚠️ {tr("ปลายกะไม่มีอะไรรองรับ")} {fmtOffset(unaccMin)}
                     </div>
                   )}
                 </div>
 
-                <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', overflow: 'hidden' }}>
+                <div style={{ position: 'relative', flex: 1, height: 26, background: 'var(--bg2-surf)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)', overflow: 'hidden' }}>
                   {/* เส้นตารางรายชั่วโมง */}
                   {ticks.map(t => (
                     <div key={t} style={{ position: 'absolute', left: `${pct(t)}%`, top: 0, bottom: 0, width: 1, background: 'var(--border)', opacity: 0.5 }} />
                   ))}
                   {/* ช่วงที่กะเปิด = เดินเครื่อง (พื้นเทา = ไม่ได้เปิดกะ) */}
                   {r.runs.map((x, i) => (
-                    <div key={`r${i}`} title={`${x.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'} ${hhmm(x.st)}–${hhmm(x.en)}`}
+                    <div key={`r${i}`} title={`${x.shift === 'night' ? tr('🌙 กะดึก') : tr('☀️ กะเช้า')} ${hhmm(x.st)}–${hhmm(x.en)}`}
                       style={{ position: 'absolute', left: `${pct(x.st)}%`, width: `${Math.max(0.3, pct(x.en) - pct(x.st))}%`, top: 0, bottom: 0, background: RUN_COLOR }} />
                   ))}
                   {/* ช่วงหยุด — วาดทับช่วงเดินเครื่อง */}
                   {r.stops.map((x, i) => (
                     <div key={`s${i}`} onClick={() => setSel({ ...x, line: r.line })}
-                      title={`${x.planned ? '🗓️ ' : '🔴 '}${x.name}${x.machine ? ` · ${x.machine}` : ''}\n${hhmm(x.st)}–${x.open ? 'ยังหยุดอยู่' : hhmm(x.en)} · ${x.mins} นาที${x.note ? `\n💬 ${x.note}` : ''}`}
+                      title={`${x.planned ? '🗓️ ' : '🔴 '}${x.name}${x.machine ? ` · ${x.machine}` : ''}\n${hhmm(x.st)}–${x.open ? tr('ยังหยุดอยู่') : hhmm(x.en)} · ${x.mins} ${tr("นาที")}${x.note ? `\n💬 ${x.note}` : ''}`}
                       style={{
                         position: 'absolute', left: `${pct(x.st)}%`, width: `${Math.max(0.4, pct(x.en) - pct(x.st))}%`,
                         top: x.planned ? 9 : 0, bottom: 0, background: x.color,
@@ -216,8 +216,8 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
                 {/* กรอกแค่จำนวนนาที = วางบนแกนไม่ได้ — ต้องเห็น ห้ามหายเงียบ */}
                 {r.untimed > 0 && (
                   <div title={tr('รายการที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวม/พาเรโต้ยังนับให้ครบ)')}
-                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
-                    ⏱ +{r.untimed} ({r.untimedMin} น.)
+                    style={{ marginLeft: 6, flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>
+                    ⏱ +{r.untimed} ({r.untimedMin} {tr("น.")})
                   </div>
                 )}
               </div>
@@ -227,12 +227,12 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
       </div>
 
       {sel && (
-        <div style={{ marginTop: 8, padding: '8px 11px', background: 'var(--bg2)', border: `1px solid ${sel.color}`, borderRadius: 'var(--r-md)', fontSize: 11.5, lineHeight: 1.65 }}>
-          <b style={{ color: sel.planned ? PLANNED_COLOR : sel.color }}>{sel.planned ? '🗓️ หยุดตามแผน' : '🔴 หยุดนอกแผน'} · {sel.name}</b>
+        <div style={{ marginTop: 8, padding: '8px 11px', background: 'var(--bg2-surf)', border: `1px solid ${sel.color}`, borderRadius: 'var(--r-md)', fontSize: 11.5, lineHeight: 1.65 }}>
+          <b style={{ color: sel.planned ? PLANNED_COLOR : sel.color }}>{sel.planned ? tr("🗓️ หยุดตามแผน") : tr("🔴 หยุดนอกแผน")} · {sel.name}</b>
           {' '}<span style={{ color: 'var(--muted)' }}>{sel.line}</span>
           {sel.machine && <> {tr('· เครื่อง')} <b>{sel.machine}</b></>}
           <div style={{ color: 'var(--text2)' }}>
-            {hhmm(sel.st)} – {sel.open ? <b style={{ color: '#ef4444' }}>{tr('ยังหยุดอยู่')}</b> : hhmm(sel.en)} · <b>{sel.mins}</b> นาที
+            {hhmm(sel.st)} – {sel.open ? <b style={{ color: 'var(--red)' }}>{tr('ยังหยุดอยู่')}</b> : hhmm(sel.en)} · <b>{sel.mins}</b> {tr("นาที")}
           </div>
           {sel.note && <div style={{ color: 'var(--text2)' }}>{sel.note}</div>}
           <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>{tr('✕ ปิด')}</button>
@@ -241,8 +241,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
 
       {totalUntimed > 0 && (
         <div data-warn="1" style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.55 }}>
-          มี <b>{totalUntimed} {tr('รายการ')}</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
-          (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้
+          {tr("มี")} <b>{totalUntimed} {tr('รายการ')}</b> {tr("ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้ (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้")}
         </div>
       )}
     </div>

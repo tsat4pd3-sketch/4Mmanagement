@@ -12,6 +12,7 @@ import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { faultGaps, FAULT_GAP_MIN, FAULT_GAP_STATES } from '../utils/machineFacts';
 import { machineKey } from '../utils/machineNo';
+import { tr } from '../utils/i18n';
 
 const H = 3600000;
 const hm = (msv) => new Date(msv).toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false });
@@ -72,32 +73,32 @@ export default function MachineFaultGaps({ session, orders = [], downtimes = [],
   if (!res.err && !gaps.length) {
     return (
       <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px', ...style }}>
-        🏭 ข้อมูลจากเครื่อง: ไม่มีเครื่องเสีย (FAULT) นานกว่า {FAULT_GAP_MIN} นาที ที่ยังไม่ลง downtime
+        {tr("ข้อมูลจากเครื่อง: ไม่มีเครื่องเสีย (FAULT) นานกว่า")} {FAULT_GAP_MIN} {tr("นาที ที่ยังไม่ลง")} downtime
       </div>
     );
   }
   return (
-    <div style={{ border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '10px 12px', background: 'var(--card)', display: 'grid', gap: 8, ...style }}>
+    <div style={{ border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '10px 12px', background: 'var(--card-surf)', display: 'grid', gap: 8, ...style }}>
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
-        ⚠️ เครื่องเสียแต่ยังไม่ลง downtime ({gaps.length})
+        ⚠️ {tr("เครื่องเสียแต่ยังไม่ลง")} downtime ({gaps.length})
         <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>
-          {' '}· จากเครื่อง (Node-RED) · FAULT นานกว่า {FAULT_GAP_MIN} นาที · กด "ลงจากช่วงนี้" แล้วเลือกสาเหตุเอง ระบบไม่บันทึกให้
+          {' '}· {tr("จากเครื่อง (Node-RED) · FAULT นานกว่า")} {FAULT_GAP_MIN} {tr("นาที · กด \"ลงจากช่วงนี้\" แล้วเลือกสาเหตุเอง ระบบไม่บันทึกให้")}
         </span>
       </div>
       {res.err && <div style={{ fontSize: 12, color: 'var(--red)' }}>{res.err}</div>}
-      {res.truncated && <div style={{ fontSize: 12, color: 'var(--amber)' }}>ช่วงหยุดเกิน 1,000 รายการ — แสดงเฉพาะส่วนแรก</div>}
+      {res.truncated && <div style={{ fontSize: 12, color: 'var(--amber)' }}>{tr("ช่วงหยุดเกิน 1,000 รายการ — แสดงเฉพาะส่วนแรก")}</div>}
       {gaps.map(g => (
         <div key={g.key} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', fontSize: 12.5 }}>
           <b style={{ fontFamily: 'ui-monospace, monospace' }}>{g.machineNo}</b>
           <span>{hm(g.startMs)}–{hm(g.endMs)}</span>
-          <span style={{ color: 'var(--red)', fontWeight: 700 }}>{Math.round(g.min)} นาที</span>
+          <span style={{ color: 'var(--red)', fontWeight: 700 }}>{Math.round(g.min)} {tr("นาที")}</span>
           <span style={{ color: 'var(--muted)' }}>
-            {g.reasonText ? `เหตุที่กดหน้าเครื่อง: ${g.reasonText}` : 'ไม่ได้กดเหตุผลที่หน้าเครื่อง'}
+            {g.reasonText ? `${tr("เหตุที่กดหน้าเครื่อง")}: ${g.reasonText}` : tr("ไม่ได้กดเหตุผลที่หน้าเครื่อง")}
           </span>
           {canEdit && (
             <button type="button" className="pg-btn" style={{ marginLeft: 'auto' }}
               onClick={() => onUse?.({ machine_no: g.machineNo, start_time: hm(g.startMs), end_time: hm(g.endMs), downtime_type_id: g.suggestTypeId || '' })}>
-              ลงจากช่วงนี้
+              {tr("ลงจากช่วงนี้")}
             </button>
           )}
         </div>

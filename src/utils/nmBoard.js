@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /* ══ 🧭 New Model Board (IEC) — กฎ/สูตรกลาง (pure ทั้งไฟล์ มีเทส) ═══════════════════════
    ถอดจากบอร์ด OBEYA จริงของ IEC (MODEL 737D MLM) — ดู docs/IEC-NEW-MODEL-OBEYA-DESIGN.md
 
@@ -79,10 +80,10 @@ export function freshness(iso, now = new Date()) {
 
 export function freshLabel(iso, now = new Date()) {
   const d = daysSince(iso, now);
-  if (d === null) return 'ไม่เคยอัปเดต';
-  if (d <= 0) return 'อัปเดตวันนี้';
-  if (d === 1) return 'อัปเดตเมื่อวาน';
-  return `อัปเดต ${d} วันก่อน`;
+  if (d === null) return tr('ไม่เคยอัปเดต');
+  if (d <= 0) return tr('อัปเดตวันนี้');
+  if (d === 1) return tr('อัปเดตเมื่อวาน');
+  return `${tr('อัปเดต')} ${d} ${tr('วันก่อน')}`;
 }
 
 /* ── EVA ของโปรเจค = 3 แกน (หัวบอร์ดจริงเขียน Result KPI / Process KPI / Milestone) ── */

@@ -11,7 +11,9 @@
    · ห้ามพับแท็บเข้า dropdown (01/10 · คำสั่ง user) — เดสก์ท็อป wrap · มือถือเลื่อนแนวนอน
 
    ใช้:  <TabBar tabs={[{ key, label, badge?, title? }]} value={tab} onChange={setTab} />
-         <TabBar size="sm" … />   // แถบในหน้า (13px) */
+         <TabBar size="sm" … />   // แถบในหน้า (13px)
+         <TabBar scroller after={<ปุ่ม/>} … />   // 24/11: แถวเดียว (25/11 ทุกขนาดจอ) ล้นแล้วมีปุ่ม ◀ ▶ เลื่อน · `after` = ของท้ายแถบ (นอกกล่องเลื่อน)
+         · ใช้โดย PageHeader โหมดหัวเพจกะทัดรัด (หมวดใน `STICKY_TAB_GROUPS`) · ไม่ส่ง `scroller` = แบบเดิมเป๊ะ */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import useIsMobile from '../utils/useIsMobile';
 import useLang from '../utils/useLang';
@@ -21,7 +23,7 @@ import useScrollEdges from '../utils/useScrollEdges';   // ↔️ 18/11: มื�
 
 const IND_EASE = 'cubic-bezier(.4,1.2,.45,1)';
 
-export default function TabBar({ tabs, value, onChange, size, audit = false, className, style, right }) {
+export default function TabBar({ tabs, value, onChange, size, audit = false, className, style, right, scroller = false, after, arrows }) {
   const isMobile = useIsMobile();
   const { tr } = useLang();
   const tabList = (tabs || []).filter(Boolean);
@@ -62,7 +64,8 @@ export default function TabBar({ tabs, value, onChange, size, audit = false, cla
     if (Math.abs(sc.scrollLeft - want) > 2) sc.scrollTo({ left: want, behavior: animOn && !prefersReduced() ? 'smooth' : 'auto' });
   }, [value, sig, animOn]);
 
-  const edges = useScrollEdges(scrollRef, [sig, isMobile]);
+  const hscroll = isMobile || scroller;   // กล่องเลื่อนแนวนอน: มือถือเสมอ · จอคอมเฉพาะ `scroller`
+  const edges = useScrollEdges(scrollRef, [sig, isMobile, scroller]);
   const moving = animOn && !prefersReduced();
   const slide = moving ? `transform .28s ${IND_EASE}, width .28s ${IND_EASE}, height .28s ${IND_EASE}` : 'none';
   const fs = size === 'sm' ? 12.5 : 13.5;
@@ -73,11 +76,13 @@ export default function TabBar({ tabs, value, onChange, size, audit = false, cla
      🔴 โครง DOM ต้องนิ่ง: มือถือ = wrapper เสมอ (ไม่ใช่ "มี wrapper เฉพาะตอนล้น") — ไม่งั้นกล่องเลื่อนถูกสร้างใหม่ตอนสลับ
      แล้ว listener/ResizeObserver ค้างอยู่กับ element เก่าที่ถูกถอด (วัดได้ 0 ⇒ ขอบจางหายทันทีที่เริ่มเลื่อน · เจอจริง 18/11)
      จอคอม overflow visible ⇒ คืน root เดิมเป๊ะ ไม่มี wrapper (desktopdiff 0) */
+  const deskScroll = scroller;   // 25/11 (คำสั่ง user "เหมือนจอคอม") — มือถือ/จอแคบก็แถวเดียว + ◀ ▶ แบบเดียวกัน
   const bar = (
-    <div ref={scrollRef} className={isMobile ? undefined : className} style={{ overflowX: isMobile ? 'auto' : 'visible', paddingTop: 2, paddingBottom: 2, ...(isMobile ? null : style) }}>
+    <div ref={scrollRef} className={deskScroll ? 'tabbar-scroller' : (isMobile ? undefined : className)}
+      style={{ overflowX: hscroll ? 'auto' : 'visible', paddingTop: 2, paddingBottom: 2, ...(deskScroll ? { flex: 1, minWidth: 0 } : null), ...(isMobile || deskScroll ? null : style) }}>
       <div ref={rowRef} {...barAttr} style={{
-        position: 'relative', display: 'flex', gap: 2, borderBottom: '1px solid var(--border)', alignItems: 'center',
-        flexWrap: isMobile ? 'nowrap' : 'wrap', width: isMobile ? 'max-content' : 'auto',
+        position: 'relative', display: 'flex', gap: 2, borderBottom: deskScroll ? 'none' : '1px solid var(--border)', alignItems: 'center',
+        flexWrap: hscroll ? 'nowrap' : 'wrap', width: hscroll ? 'max-content' : 'auto',
       }}>
         {ind && (
           <span aria-hidden="true" {...(audit ? { 'data-tab-ind': '' } : {})} style={{
@@ -106,6 +111,28 @@ export default function TabBar({ tabs, value, onChange, size, audit = false, cla
       </div>
     </div>
   );
+  /* 🖥️ scroller (จอคอม): แถวเดียวไม่ตัดบรรทัด · ล้นเมื่อไหร่ค่อยมีปุ่ม ◀ ▶ (ปุ่มที่สุดทางแล้ว = จาง กดไม่ได้)
+     เส้นใต้ย้ายมาอยู่ที่กรอบนอก ⇒ ยาวเต็มแถวรวมปุ่ม · ป้ายแท็บไม่ถูกบีบ (ห้ามพับเข้า dropdown — กฎเดิม) */
+  if (deskScroll) {
+    // `arrows="always"` (27/11 มาตรฐานกิจกรรม): ปุ่ม ◀ ▶ มีเสมอ — ไม่ล้น = จางกดไม่ได้ (ตำแหน่งไม่กระโดด)
+    const over = arrows === 'always' || edges.left || edges.right;
+    const step = (dir) => { const sc = scrollRef.current; if (sc) sc.scrollBy({ left: dir * Math.max(120, sc.clientWidth * 0.7), behavior: prefersReduced() ? 'auto' : 'smooth' }); };
+    const arrow = (dir, on) => (
+      <button type="button" data-tab-scroll={dir < 0 ? 'left' : 'right'} onClick={() => step(dir)} disabled={!on}
+        aria-label={dir < 0 ? tr('เลื่อนแท็บไปทางซ้าย') : tr('เลื่อนแท็บไปทางขวา')} title={dir < 0 ? tr('เลื่อนแท็บไปทางซ้าย') : tr('เลื่อนแท็บไปทางขวา')}
+        style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)',
+          color: on ? 'var(--text)' : 'var(--muted)', opacity: on ? 1 : 0.4, cursor: on ? 'pointer' : 'default', fontSize: 12, lineHeight: 1,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{dir < 0 ? '◀' : '▶'}</button>
+    );
+    return (
+      <div className={className} style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, borderBottom: '1px solid var(--border)', ...style }}>
+        {over && arrow(-1, edges.left)}
+        {bar}
+        {over && arrow(1, edges.right)}
+        {after}
+      </div>
+    );
+  }
   if (!isMobile) return bar;
   return (
     <div className={className} style={{ position: 'relative', minWidth: 0, ...style }}>

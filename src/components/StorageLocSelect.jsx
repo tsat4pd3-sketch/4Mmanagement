@@ -31,12 +31,12 @@ export default function StorageLocSelect({ scan, value = '', onChange, allowFree
   return (
     <div style={style}>
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : (value || '')} options={optionsAll} onChange={emit}
-      scan={scan === false ? undefined : (scan || 'รหัสคลัง')}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
-        allowFree={allowFree} placeholder={placeholder} freeHint="รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก"
+      scan={scan === false ? undefined : (scan || tr("รหัสคลัง"))}   /* 📷 มือถือ: สแกนเพื่อเลือก (27/10) · scan={false} = ปิด */
+        allowFree={allowFree} placeholder={placeholder} freeHint={tr("รูปแบบ ตัวอักษร 1-3 + เลข 3 หลัก")}
         emptyText={tr('ไม่พบรหัสคลังนี้ในทะเบียน')} disabled={disabled}
         loadFail={failed ? registryFailText('ทะเบียนรหัสคลัง', stale) : ''}
         inputStyle={{ fontFamily: 'monospace', textTransform: 'uppercase', ...(bad ? { borderColor: '#ef4444' } : {}), ...inputStyle }} />
-      {bad && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>{tr('✗ รูปแบบรหัสคลังไม่ถูกต้อง (เช่น S401 / P402)')}</div>}
+      {bad && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 2 }}>{tr('✗ รูปแบบรหัสคลังไม่ถูกต้อง (เช่น S401 / P402)')}</div>}
     </div>
   );
 }

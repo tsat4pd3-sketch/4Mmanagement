@@ -1,0 +1,32 @@
+-- ════════════════════════════════════════════════════════════════════════════
+-- ลบ index ซ้ำซ้อน `idx_qa_results_sheet` ออกจาก `qa_inspection_results`
+-- Main ("MAIN" · ewhdfqwfwofivojtsizn)                                 2026-11-23
+--
+-- ที่มา: ตารางนี้ **ห้ามลบแถว** (บันทึกคุณภาพ บังคับเก็บ 7-15 ปีตามข้อกำหนดลูกค้า
+--   · 📄 `docs/modules/qa-inspection.md` §อายุเก็บ) ⇒ ลดพื้นที่ได้เฉพาะทาง index
+--
+-- `idx_qa_results_sheet (sheet_id)` ซ้ำซ้อนกับ unique `(sheet_id, item_id)`
+--   ที่มีอยู่แล้ว — **คอลัมน์นำตัวเดียวกัน** ⇒ คิวรี `where sheet_id = ?`
+--   ใช้ตัว composite ได้ (B-tree leading column) ยังเป็น index scan ไม่ใช่ seq scan
+--
+-- วัด 23/11 ก่อนลบ:
+--   · unique (sheet_id, item_id) — 7192 kB · สแกน **94,289** ครั้ง  ← ตัวหลัก (คีย์ upsert)
+--   · idx_qa_results_sheet       —  952 kB · สแกน   2,377 ครั้ง  ← ตัวนี้ (ลบ)
+--   · idx_qa_results_item        —  944 kB · สแกน     399 ครั้ง  ← **เก็บไว้**
+--     (`item_id` ไม่ใช่คอลัมน์นำของ composite ⇒ ไม่มีตัวอื่นแทนได้)
+--   · pkey (id)                  — 3976 kB · สแกน     411 ครั้ง  ← PK เก็บไว้
+--
+-- ได้อะไร: คืน ~1 MB ทันที + **ลด index ที่ต้องเขียน 1 ตัวต่อการ insert 4,378 ครั้ง/วัน**
+--   (≈16% ของ index ที่โตในตารางนี้ · ลด WAL ตามไปด้วย)
+-- แลกอะไร: การอ่าน `sheet_id` เดี่ยวไปใช้ index ที่กว้างกว่า (7.2 MB) = ช้าลงเล็กน้อย
+--   — user เคาะรับ trade-off นี้แล้ว 23/11
+--
+-- 🔴 ห้ามสร้างคืนโดยไม่วัด — ถ้าวันหนึ่ง `sheet_id` เดี่ยวกลายเป็นคิวรีร้อน
+--    ให้ดู `pg_stat_user_indexes` ก่อน ไม่ใช่เดา
+--
+-- ย้อนกลับ:
+--   create index if not exists idx_qa_results_sheet
+--     on public.qa_inspection_results (sheet_id);
+-- ════════════════════════════════════════════════════════════════════════════
+
+drop index if exists public.idx_qa_results_sheet;

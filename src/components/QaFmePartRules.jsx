@@ -36,7 +36,7 @@ export default function QaFmePartRules({ canEdit, fullName, centralMode }) {
         .not('mat_no', 'is', null).order('line_name').order('part_no').limit(1000),   // 19/11 วัด 10 พาร์ท
       supabase.from('qa_fme_part_rules').select('mat_no, mid_mode, mid_every_pcs, mid_every_min, sample_n, is_active, updated_by, updated_at').limit(1000),   // 1 แถวต่อพาร์ท QA (ไม่เกินจำนวนพาร์ท)
     ]);
-    if (p.error || r.error) setFail(`โหลดไม่สำเร็จ: ${(p.error || r.error).message}`); else setFail('');
+    if (p.error || r.error) setFail(`${tr("โหลดไม่สำเร็จ")}: ${(p.error || r.error).message}`); else setFail('');
     setParts(p.data || []);
     const m = {}; (r.data || []).forEach(x => { m[x.mat_no] = x; }); setRules(m);
   }, []);
@@ -86,7 +86,7 @@ export default function QaFmePartRules({ canEdit, fullName, centralMode }) {
       <div style={{ maxHeight: 360, overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
           <thead><tr>
-            {['ไลน์', 'พาร์ท', 'Middle', 'ทุกกี่ชิ้น', 'ทุกกี่นาที', 'ตรวจต่อรอบ (ชิ้น)'].map(h => (
+            {[tr("ไลน์"), tr("พาร์ท"), 'Middle', tr("ทุกกี่ชิ้น"), tr("ทุกกี่นาที"), tr("ตรวจต่อรอบ (ชิ้น)")].map(h => (
               <th key={h} style={th}>{tr(h)}</th>
             ))}
           </tr></thead>
@@ -101,7 +101,7 @@ export default function QaFmePartRules({ canEdit, fullName, centralMode }) {
                   <td style={td}><MatLabel mat={p.mat_no} name={p.part_name} pNo={p.part_no} oneLine /></td>
                   <td style={td}>
                     <select disabled={dis} value={mode} onChange={e => save(p.mat_no, { mid_mode: e.target.value || null, is_active: e.target.value === 'off' ? true : (r?.is_active ?? true) })}>
-                      {MODES.map(m => <option key={m.k} value={m.k}>{tr(m.label)}</option>)}
+                      {MODES.map(m => <option key={tr(m.k)} value={tr(m.k)}>{tr(m.label)}</option>)}
                     </select>
                   </td>
                   <td style={td}>
@@ -139,7 +139,7 @@ function NumCell({ value, onSave, disabled, placeholder }) {
   return (
     <input type="number" min="1" value={v} disabled={disabled} placeholder={placeholder}
       onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-      style={{ width: 80, padding: '4px 6px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', opacity: disabled ? 0.45 : 1 }} />
+      style={{ width: 80, padding: '4px 6px', fontSize: 12, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2-surf)', color: 'var(--text)', opacity: disabled ? 0.45 : 1 }} />
   );
 }
 const th = { padding: '6px 8px', textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', borderBottom: '1px solid var(--border2)', position: 'sticky', top: 0, background: 'var(--bg3)' };

@@ -135,3 +135,59 @@ test('amMonthlyAoa — หัว + แถวไลน์ + แถวเครื
   assert.equal(m1[5], 'NP')
   assert.equal(m1[6], 'NG')
 })
+
+// ⚙️ รายเครื่อง (23/11 · คำสั่ง user) — ใบผลิตลงเลขเครื่องครบ = ตัดสินรายเครื่อง · ไม่ลง/ลงไม่ครบ = ทั้งไลน์ · สถานี = robot ตามเพื่อน
+test('รายเครื่อง: เครื่องที่ไม่อยู่บนใบผลิต = NP · ไม่ลงเลขเครื่อง = ทั้งไลน์ · ปน = ทั้งไลน์ · สถานีพา robot', () => {
+  const L = [{ id: 1, name: 'D3', parent_line_name: null }]
+  const J = [
+    { id: 'jig1', name: 'JIG 1', machine_no: 'JT-01', equipment_type: 'jig' },
+    { id: 'jig2', name: 'JIG 2', machine_no: 'JT-02', equipment_type: 'jig' },
+    { id: 'rb', name: 'ROBOT', machine_no: 'RB-02', equipment_type: 'machine' },
+  ]
+  const T = J.map(j => ({ line_name: 'D3', jig_id: j.id, shift: null, created_at: '2026-11-01T00:00:00Z' }))
+  const runs = new Map(['01', '02', '03', '04'].map(d => [runKey(`2026-12-${d}`, 'day'), new Set(['D3'])]))
+  const orders = new Map([
+    [runKey('2026-12-01', 'day'), [{ line_name: 'D3', machine_no: 'JT01' }]],                                    // รายเครื่อง
+    [runKey('2026-12-02', 'day'), [{ line_name: 'D3', machine_no: null }]],                                      // ไม่ลงเลขเครื่อง
+    [runKey('2026-12-03', 'day'), [{ line_name: 'D3', machine_no: 'JT-01' }, { line_name: 'D3', machine_no: '' }]], // ปน
+    [runKey('2026-12-04', 'day'), [{ line_name: 'D3', machine_no: 'JT-02' }]],
+  ])
+  const st = { stations: [{ id: 's', is_active: true }], members: [{ station_id: 's', jig_id: 'jig2' }, { station_id: 's', jig_id: 'rb' }] }
+  const base = { month: '2026-12', shift: 'day', targets: T, jigs: J, inspections: [], runsByKey: runs, lines: L, now: NOW }
+  const cellOf = (rep, id, d) => rep.rows[0].machines.find(m => m.jig_id === id).cells[d - 1].state
+
+  const rep = buildAmMonthly({ ...base, ordersByKey: orders, amStations: st })
+  assert.equal(cellOf(rep, 'jig1', 1), 'missed'); assert.equal(cellOf(rep, 'jig2', 1), 'no_run'); assert.equal(cellOf(rep, 'rb', 1), 'no_run')
+  for (const id of ['jig1', 'jig2', 'rb']) assert.equal(cellOf(rep, id, 2), 'missed', `ไม่ลงเลขเครื่อง ${id}`)
+  for (const id of ['jig1', 'jig2', 'rb']) assert.equal(cellOf(rep, id, 3), 'missed', `ปน ${id}`)
+  assert.equal(cellOf(rep, 'jig1', 4), 'no_run'); assert.equal(cellOf(rep, 'jig2', 4), 'missed')
+  assert.equal(cellOf(rep, 'rb', 4), 'missed', 'robot ไม่อยู่บนใบ แต่เพื่อนในสถานีเดิน = ต้องตรวจ')
+  assert.deepEqual(rep.rows[0].modeDays, { machine: 2, mixed: 1, line_no_mno: 1, line: 0 })
+  assert.equal(rep.ordersUnknown, false)
+
+  // ไม่มีสถานี = robot ไม่อยู่บนใบ = NP (กฎเดิมของบอร์ดวันนี้)
+  assert.equal(cellOf(buildAmMonthly({ ...base, ordersByKey: orders }), 'rb', 4), 'no_run')
+  // อ่านใบผลิตไม่ได้ = ทั้งไลน์ทุกวัน (พฤติกรรมเดิม) + บอกจอ
+  const old = buildAmMonthly(base)
+  assert.equal(cellOf(old, 'jig2', 1), 'missed'); assert.equal(old.ordersUnknown, true)
+})
+
+test('รายเครื่อง: ทุกเครื่องในทะเบียนไม่เดิน = ช่องไลน์ NP ไม่ใช่ "ขาด"', () => {
+  const L = [{ id: 1, name: 'D4', parent_line_name: null }]
+  const J = [{ id: 'a', name: 'A', machine_no: 'SP-41', equipment_type: 'machine' }]
+  const rep = buildAmMonthly({
+    month: '2026-12', shift: 'day', targets: [{ line_name: 'D4', jig_id: 'a', shift: null }], jigs: J, inspections: [], lines: L, now: NOW,
+    runsByKey: new Map([[runKey('2026-12-01', 'day'), new Set(['D4'])]]),
+    ordersByKey: new Map([[runKey('2026-12-01', 'day'), [{ line_name: 'D4', machine_no: 'SP-13' }]]]),
+  })
+  assert.equal(rep.rows[0].cells[0].state, 'no_run')
+})
+
+import { amModeDaysShort, amModeDaysNote } from '../amMonthly.js'
+test('ป้ายโหมดใต้ชื่อไลน์: สั้นบนจอ · เต็มใน tooltip/Excel · ไม่มีวันเปิดกะ = null', () => {
+  const md = { machine: 14, mixed: 2, line_no_mno: 3, line: 1 }
+  assert.equal(amModeDaysShort(md), 'รายเครื่อง 14 · ไม่ครบ 2 · ทั้งไลน์ 4 วัน')
+  assert.equal(amModeDaysShort({ line_no_mno: 5 }), 'ทั้งไลน์ 5 วัน')
+  assert.equal(amModeDaysShort({}), null); assert.equal(amModeDaysShort(null), null)
+  assert.match(amModeDaysNote(md), /ใบผลิตลงเลขเครื่องไม่ครบ 2 วัน/)
+})

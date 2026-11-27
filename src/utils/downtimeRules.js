@@ -7,6 +7,7 @@
    เคยมีแล้วทำเครื่องที่ซ่อมเสร็จกระพริบค้าง คนหน้างานสับสน (ดูประวัติใน downtimeAlarm.js)     */
 
 import { SESSION_STATUSES_LIVE } from './sessionStatus.js';
+import { tr } from './i18n.js';
 
 // รายการยังเปิดค้างอยู่จริง (ไม่สนประเภท)
 export function isOpenDT(d) {
@@ -63,7 +64,7 @@ export function dtElapsedMin(d, nowMs = Date.now()) {
    ⚠️ ไม่รู้เวลาเริ่ม (กรอกแค่จำนวนนาที) = '—' ห้ามแปลงเป็น 0 (0 อ่านเป็น "เพิ่งหยุด") */
 export function fmtDtElapsed(m) {
   if (m == null) return '—';
-  return m >= 60 ? `${Math.floor(m / 60)} ชม. ${m % 60} น.` : `${m} น.`;
+  return m >= 60 ? `${Math.floor(m / 60)} ${tr('ชม.')} ${m % 60} ${tr('น.')}` : `${m} ${tr('น.')}`;
 }
 
 export const DT_OPEN_ALERT_MIN_DEFAULT = 15;

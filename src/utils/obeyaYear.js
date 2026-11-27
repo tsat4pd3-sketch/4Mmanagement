@@ -19,14 +19,15 @@
 import { round1, statusOf, Q_THIN_DEFECT_ROWS } from './obeyaKpi.js';
 import { scoreDef, summaryOf } from './kpiSetup.js';
 import { DEFAULT_OEE_TARGET, orderPlanQty, ppmOf } from './oee.js';
+import { monthsShort } from './dateFormat.js';
+import { tr } from './i18n.js';
 
 /* ── ช่วงเวลา ─────────────────────────────────────────────────────────────────────── */
-export const MONTH_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 export const SUMMARY_KEY = 'ALL';           // คีย์ของแท่งที่ 13
 
 export const yearOf = (today) => Number(String(today).slice(0, 4));
 export const monthKeys = (year) => Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
-export const monthLabel = (k) => (k === SUMMARY_KEY ? 'สรุป' : MONTH_TH[Number(String(k).slice(5, 7)) - 1] || k);
+export const monthLabel = (k) => (k === SUMMARY_KEY ? tr('สรุป') : monthsShort()[Number(String(k).slice(5, 7)) - 1] || k);
 export const lastDayOf = (k) => { const [y, m] = String(k).split('-').map(Number); return new Date(y, m, 0).getDate(); };
 
 /** ปีปฏิทิน — ปีปัจจุบันตัดที่ `today` (เดือนถัดไปยังไม่เกิด) · ปีย้อนหลัง = ทั้งปี */
@@ -172,25 +173,27 @@ export function axisDeliveryYear({ rows = [], year, targetPct = 100 } = {}) {
 /* ════ C ════ มูลค่าความสูญเสีย = เครื่องหยุดนอกแผน × บาท/ชม. + ของเสีย × ต้นทุน/ชิ้น
    ผู้เรียกแปลง rollup.downtime / rollup.defects เป็นบาทมาก่อน (ต้องใช้ rate/cost ที่โหลดจาก DB — ไฟล์นี้ไม่โหลด)
    rows: { m, dt (บาท), ng (บาท) } · missingRate/missingCost = จำนวนไลน์/พาร์ทที่คิดไม่ได้ (ห้ามใส่ 0 แทน) */
-const seedCost = () => ({ dt: 0, ng: 0 });
-const addCost = (a, r) => { a.dt += n(r.dt); a.ng += n(r.ng); };
+const seedCost = () => ({ dt: 0, ng: 0, ot: 0, mo: 0 });   // 26/11: + ot (ค่า OT · utils/otCost.js) · 27/11: + mo (ค่าซ่อม MO · utils/moCost.js)
+const addCost = (a, r) => { a.dt += n(r.dt); a.ng += n(r.ng); a.ot += n(r.ot); a.mo += n(r.mo); };
 // `sessions` = จำนวนกะในขอบเขต (0 = ไม่มีข้อมูล ⇒ null ห้ามเป็น 0 บาท "ไม่มีความสูญเสีย" · QC 05/10) · null = ไม่รู้ (พฤติกรรมเดิม)
-export function axisCostYear({ rows = [], year, target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
+export function axisCostYear({ rows = [], year, target = null, missingRate = 0, missingCost = 0, otNote = '', moNote = '', sessions = null } = {}) {
   const map = byMonth(rows, seedCost, addCost);
-  const { series, total, months } = monthSeries(year, map, seedCost, a => Math.round(a.dt + a.ng), 'sum');
-  const sum = total.dt + total.ng;
+  const { series, total, months } = monthSeries(year, map, seedCost, a => Math.round(a.dt + a.ng + a.ot + a.mo), 'sum');
+  const sum = total.dt + total.ng + total.ot + total.mo;
   if (sessions === 0 && !(sum > 0)) {
-    return { key: 'C', unit: 'บาท', better: 'down', target, months, value: null, dtBaht: 0, ngBaht: 0,
+    return { key: 'C', unit: 'บาท', better: 'down', target, months, value: null, dtBaht: 0, ngBaht: 0, otBaht: 0, moBaht: 0,
       series, summaryKind: 'sum', state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในปีนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย' };
   }
   const notes = [];
+  if (otNote) notes.push(otNote);
+  if (moNote) notes.push(moNote);
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
   return {
     key: 'C', unit: 'บาท', better: 'down', target, months,
     value: sum > 0 ? Math.round(sum) : (notes.length || !months ? null : 0),
-    dtBaht: Math.round(total.dt), ngBaht: Math.round(total.ng),
-    series: series.map(p => (p.acc ? { ...p, dt: Math.round(p.acc.dt), ng: Math.round(p.acc.ng) } : p)),
+    dtBaht: Math.round(total.dt), ngBaht: Math.round(total.ng), otBaht: Math.round(total.ot), moBaht: Math.round(total.mo),
+    series: series.map(p => (p.acc ? { ...p, dt: Math.round(p.acc.dt), ng: Math.round(p.acc.ng), ot: Math.round(p.acc.ot), mo: Math.round(p.acc.mo) } : p)),
     summaryKind: 'sum',
     state: notes.length ? 'thin' : (sum > 0 ? 'ok' : 'none'),
     note: notes.length ? `คิดได้ไม่ครบ: ${notes.join(' · ')}` : (sum > 0 ? null : 'ยังไม่มีความสูญเสียที่คิดเป็นเงินได้ในปีนี้'),
@@ -250,7 +253,9 @@ export function manualMonthSeries({ entries = {}, year, summary = 'average' } = 
   const filled = series.filter(p => !p.empty);
   /* `rate` ไม่มียอดดิบให้หารในสายกรอกมือ ⇒ `summaryOf` ถอยมาเฉลี่ยพร้อมธง approx (จอต้องติดป้าย ≈) */
   const { value, effMode, approx } = summaryOf(series.map(p => p.v), { kpi_catalog: { summary_mode: mode } });
-  const sum = value == null ? null : (effMode === 'average' ? round1(value) : value);
+  /* 🔴 20/11: ไม่ปัดทศนิยมที่นี่ (เดิม round1 เฉพาะ average ⇒ YTD โชว์ "1 %" ขณะเดือนโชว์ 1.1794 % — user: "สรุปค่ามันเป็น % หรือไม่ %")
+     การปัดเป็นเรื่องของจอ (nf ตาม decimals ของนิยาม) ค่าในแถว/ตัดสินต้องเป็นค่าจริง */
+  const sum = value;
   series.push({ k: SUMMARY_KEY, v: sum, summary: true, kind: effMode, mode, approx });
   return { series, ytd: sum, months: filled.length, mode, effMode, approx };
 }

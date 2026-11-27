@@ -51,7 +51,7 @@ export default function BomChildSelect({
         onChange?.(opt || null);
       }}
       allowFree={false} placeholder={tr(placeholder)}
-      scan={scan === false ? undefined : (scan || 'พาร์ทลูก (MAT / Part No.)')}
+      scan={scan === false ? undefined : (scan || tr("พาร์ทลูก (MAT / Part No.)"))}
       emptyText={loadFail || tr('MAT นี้ยังไม่มีพาร์ทย่อยใน BOM — เพิ่มชั้น BOM ได้ที่ /products แท็บ BOM')}
       loadFail={loadFail}
       disabled={disabled} inputStyle={{ fontFamily: 'monospace', ...inputStyle }} style={style} maxRows={maxRows} />

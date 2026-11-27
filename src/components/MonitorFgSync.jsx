@@ -51,8 +51,8 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
       fetchAllPages(() => supabaseDR.from('monitor_boards')
         .select('id, board_key, customer, kind').eq('kind', 'fg'), { orderBy: ['board_key'] }),
     ]);
-    if (ordR.error) { setErr(`อ่านออเดอร์ลูกค้าไม่สำเร็จ: ${ordR.error}`); setBusy(false); return; }
-    if (bR.error) { setErr(`อ่านบอร์ดเดิมไม่สำเร็จ: ${bR.error}`); setBusy(false); return; }
+    if (ordR.error) { setErr(`${tr("อ่านออเดอร์ลูกค้าไม่สำเร็จ")}: ${ordR.error}`); setBusy(false); return; }
+    if (bR.error) { setErr(`${tr("อ่านบอร์ดเดิมไม่สำเร็จ")}: ${bR.error}`); setBusy(false); return; }
 
     const boardOf = new Map((bR.rows || []).map(b => [String(b.customer || '').trim(), b]));
     /* พาร์ทที่อยู่บนบอร์ด FG เดิมแล้ว — ต้องรู้ก่อน ไม่งั้นนับ "เพิ่มใหม่" เกินจริง */
@@ -61,7 +61,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
     if (ids.length) {
       const pR = await fetchAllPages(() => supabaseDR.from('monitor_board_parts')
         .select('board_id, mat_no').in('board_id', ids), { orderBy: ['board_id'] });
-      if (pR.error) { setErr(`อ่านพาร์ทบนบอร์ดเดิมไม่สำเร็จ: ${pR.error}`); setBusy(false); return; }
+      if (pR.error) { setErr(`${tr("อ่านพาร์ทบนบอร์ดเดิมไม่สำเร็จ")}: ${pR.error}`); setBusy(false); return; }
       have = new Set((pR.rows || []).map(r => `${r.board_id}|${String(r.mat_no || '').trim()}`));
     }
 
@@ -129,9 +129,9 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
           is_active: true,
           updated_by_name: fullName || null,
         }, { onConflict: 'board_key' }).select('id').single();
-        if (!checkWrite(bRes, `บอร์ด FG ของ ${g.customer}`)) { setBusy(false); return; }
+        if (!checkWrite(bRes, `${tr("บอร์ด FG ของ")} ${g.customer}`)) { setBusy(false); return; }
         const boardId = bRes.data?.id;
-        if (!boardId) { toast.error(`สร้างบอร์ด ${g.customer} ไม่สำเร็จ — ไม่มีสิทธิ์เขียน`); setBusy(false); return; }
+        if (!boardId) { toast.error(`${tr("สร้างบอร์ด")} ${g.customer} ${tr("ไม่สำเร็จ — ไม่มีสิทธิ์เขียน")}`); setBusy(false); return; }
         boardsN++;
 
         const rowsRaw = g.mats.map(x => ({
@@ -149,15 +149,15 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
         for (let i = 0; i < rows.length; i += CHUNK) {
           const res = await supabaseDR.from('monitor_board_parts')
             .upsert(rows.slice(i, i + CHUNK), { onConflict: 'board_id,row_key' });
-          if (!checkWrite(res, `พาร์ท FG ของ ${g.customer}`)) { setBusy(false); return; }
+          if (!checkWrite(res, `${tr("พาร์ท FG ของ")} ${g.customer}`)) { setBusy(false); return; }
         }
         partsN += rows.length;
       }
-      toast.success(`ซิงก์แล้ว — ${boardsN} บอร์ด · ${fmt(partsN)} พาร์ท`);
+      toast.success(`${tr("ซิงก์แล้ว")} — ${boardsN} ${tr("บอร์ด")} · ${fmt(partsN)} ${tr("พาร์ท")}`);
       onSynced?.();
       onClose?.();
     } catch (e) {
-      toast.error(`ซิงก์ไม่สำเร็จ: ${e.message}`);
+      toast.error(`${tr("ซิงก์ไม่สำเร็จ")}: ${e.message}`);
     } finally {
       setBusy(false);
     }
@@ -178,7 +178,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
 
-        {err ? <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: FS + 1 }}>🔴 {err}</div> : null}
+        {err ? <div style={{ ...card, borderColor: '#ef4444', color: 'var(--red)', fontSize: FS + 1 }}>🔴 {err}</div> : null}
 
         {busy && !preview ? (
           <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังอ่านออเดอร์ลูกค้า…')}</div>
@@ -187,18 +187,17 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
         {preview ? (
           <>
             <div style={{ ...card, fontSize: FS + 0.5, lineHeight: 1.8, marginBottom: 10 }}>
-              อ่านออเดอร์ที่มีวันส่งตั้งแต่ <b>{preview.from}</b> {tr('ถึงปัจจุบันขึ้นไป (')}{BACK_DAYS} วันย้อนหลัง)
-              — เจอ FG <b>{fmt(totMats)}</b> {tr('พาร์ท /')} <b>{preview.groups.length}</b> ลูกค้า
-              {' · '}{tr('จะเพิ่มขึ้นบอร์ดใหม่')} <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> พาร์ท
+              {tr("อ่านออเดอร์ที่มีวันส่งตั้งแต่")} <b>{preview.from}</b> {tr('ถึงปัจจุบันขึ้นไป (')}{BACK_DAYS} {tr("วันย้อนหลัง) — เจอ")} FG <b>{fmt(totMats)}</b> {tr('พาร์ท /')} <b>{preview.groups.length}</b> {tr("ลูกค้า")}
+              {' · '}{tr('จะเพิ่มขึ้นบอร์ดใหม่')} <b style={{ color: 'var(--accent)' }}>{fmt(totFresh)}</b> {tr("พาร์ท")}
               <div style={{ color: 'var(--muted)', fontSize: FS }}>
-                เพิ่มอย่างเดียว ไม่ลบของเดิม · ยอดลูกค้าสั่ง/ผลิตเข้า ระบบอ่านสดทุกครั้ง ไม่ได้ก๊อปมาเก็บ
+                {tr("เพิ่มอย่างเดียว ไม่ลบของเดิม · ยอดลูกค้าสั่ง/ผลิตเข้า ระบบอ่านสดทุกครั้ง ไม่ได้ก๊อปมาเก็บ")}
               </div>
               {(preview.noCustomer || preview.noMat) ? (
                 <div style={{ color: 'var(--accent2)', marginTop: 4 }}>
-                  ⚠️ ข้ามไป
-                  {preview.noCustomer ? ` ${fmt(preview.noCustomer)} แถวที่ไม่ระบุลูกค้า (ผูกบอร์ดไม่ได้)` : ''}
+                  ⚠️ {tr("ข้ามไป")}
+                  {preview.noCustomer ? ` ${fmt(preview.noCustomer)} ${tr("แถวที่ไม่ระบุลูกค้า (ผูกบอร์ดไม่ได้")})` : ''}
                   {preview.noCustomer && preview.noMat ? ' ·' : ''}
-                  {preview.noMat ? ` ${fmt(preview.noMat)} แถวที่ไม่มีเลข MAT` : ''}
+                  {preview.noMat ? ` ${fmt(preview.noMat)} ${tr("แถวที่ไม่มีเลข")} MAT` : ''}
                 </div>
               ) : null}
             </div>
@@ -210,27 +209,27 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
                     <b>{g.customer}</b>
                     <span style={{ color: 'var(--muted)' }}>{fmt(g.mats.length)} {tr('พาร์ท · ออเดอร์')} {fmt(g.orderRows)} {tr('แถว')}</span>
                     <span style={{ marginLeft: 'auto', fontWeight: 800, color: g.fresh.length ? 'var(--accent)' : 'var(--muted)' }}>
-                      {g.board ? (g.fresh.length ? `+${fmt(g.fresh.length)} พาร์ทใหม่` : 'ครบแล้ว') : '🆕 บอร์ดใหม่'}
+                      {g.board ? (g.fresh.length ? `+${fmt(g.fresh.length)} ${tr("พาร์ทใหม่")}` : tr("ครบแล้ว")) : tr("🆕 บอร์ดใหม่")}
                     </span>
                   </div>
                   {g.fresh.length ? (
                     <div style={{ color: 'var(--muted)', fontSize: FS, marginTop: 2 }}>
                       {g.fresh.slice(0, 8).map(x => x.mat_no).join(' · ')}
-                      {g.fresh.length > 8 ? ` … อีก ${g.fresh.length - 8}` : ''}
+                      {g.fresh.length > 8 ? ` … ${tr("อีก")} ${g.fresh.length - 8}` : ''}
                     </div>
                   ) : null}
                 </div>
               ))}
               {!preview.groups.length ? (
                 <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>
-                  ไม่พบออเดอร์ลูกค้าในช่วงนี้ — นำเข้าไฟล์ 862/830 ที่หน้า Customer Demand ก่อน
+                  {tr("ไม่พบออเดอร์ลูกค้าในช่วงนี้ — นำเข้าไฟล์ 862/830 ที่หน้า Customer Demand ก่อน")}
                 </div>
               ) : null}
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
               <button type="button" onClick={onClose} disabled={busy}
-                style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+                style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3-surf)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
                 {tr('ยกเลิก')}
               </button>
               <button type="button" onClick={apply} disabled={busy || !preview.groups.length}

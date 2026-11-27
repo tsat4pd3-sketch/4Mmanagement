@@ -70,7 +70,7 @@ export default function RundownStock() {
   useLiveBoard(load, { tables: ['line_stock_transactions'], topic: 'rundown-stock', rate: RATE.ANALYTIC });
 
   const custLabel = useCallback((code) => {
-    if (!code) return '— ไม่ระบุลูกค้า —';
+    if (!code) return tr("— ไม่ระบุลูกค้า —");
     const r = shipToMap[code];
     return r && r.customer_name && r.customer_name !== code ? `${r.customer_name} (${code})` : code;
   }, [shipToMap]);
@@ -156,12 +156,12 @@ export default function RundownStock() {
   return (
     <Page>
       <PageHeader title={tr('คาดการณ์ของจะขาด — Balance FG รายวัน')} icon="📉"
-        sub={<>{tr('stock พร้อมส่ง')}{fgDest ? ` (คลัง ${fgDest})` : ''} {tr('− order ค้างส่งสะสม')} {HORIZON} {tr('วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง')}</>} />
+        sub={<>{tr('stock พร้อมส่ง')}{fgDest ? ` (${tr("คลัง")} ${fgDest})` : ''} {tr('− order ค้างส่งสะสม')} {HORIZON} {tr('วันข้างหน้า · เดินอัตโนมัติจากการปิดออเดอร์/การส่งจริง')}</>} />
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {loadWarn && (
           <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
-            <b>{tr('ข้อมูลบางส่วนโหลดไม่ครบ')}</b> ({loadWarn}) — Balance ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ
+            <b>{tr('ข้อมูลบางส่วนโหลดไม่ครบ')}</b> ({loadWarn}) — Balance {tr("ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ")}
           </NoticeBar>
         )}
         {view.length > 0 && (
@@ -184,11 +184,11 @@ export default function RundownStock() {
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {[
             { icon: '🔩', label: 'พาร์ทที่มี order ค้างส่ง', value: view.length },
-            { icon: '🔴', label: `จะติดลบใน ${HORIZON} วัน`, value: shortCount, warn: shortCount > 0 },
+            { icon: '🔴', label: `${tr("จะติดลบใน")} ${HORIZON} ${tr("วัน")}`, value: shortCount, warn: shortCount > 0 },
             { icon: '✅', label: 'stock พอตลอดช่วง', value: view.filter(r => r.tracked && r.firstShort == null).length },
             ...(untracked ? [{ icon: '❔', label: 'ยังเช็ค stock ไม่ได้ (เลขยังไม่จับคู่ MAT SAP)', value: untracked, warn: true }] : []),
           ].map(c => (
-            <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+            <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2-surf)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {tr(c.label)}</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? 'var(--red)' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>
@@ -197,13 +197,13 @@ export default function RundownStock() {
 
         {view.length === 0 ? (
           <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-            ไม่มี order ค้างส่งใน {HORIZON} วันข้างหน้า — อัพโหลด Order (EDI 862) ที่หน้า 📈 Planner & Sales
+            {tr("ไม่มี order ค้างส่งใน")} {HORIZON} {tr("วันข้างหน้า — อัพโหลด Order (EDI 862) ที่หน้า")} 📈 Planner & Sales
           </div>
         ) : (
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('Balance FG รายวัน (เรียงพาร์ทที่จะขาดเร็วสุดขึ้นก่อน)')}</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวบน = ยอดต้องส่งวันนั้น · ตัวล่าง = Balance สะสม (แดง = จะขาด ต้องผลิตเพิ่ม/เปิด OT)</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr("ตัวบน = ยอดต้องส่งวันนั้น · ตัวล่าง = Balance สะสม (แดง = จะขาด ต้องผลิตเพิ่ม/เปิด")} OT)</span>
             </div>
             <div className="table-sticky" style={{ overflowX: 'auto' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 900 }}>
@@ -214,7 +214,7 @@ export default function RundownStock() {
                     </th>
                     {(() => {
                       /* คอลัมน์ "ยกมา" = stock พร้อมส่งตอนนี้ — ป้าย/สีชุดเดียวกับคอลัมน์ยกมาของบอร์ด */
-                      const h = periodHead(today, { today, seed: true, seedBot: 'ตอนนี้' });
+                      const h = periodHead(today, { today, seed: true, seedBot: tr("ตอนนี้") });
                       const t = periodTone({ seed: true });
                       return (
                         <th style={{ padding: '6px 8px', fontSize: 11, textAlign: 'right', minWidth: 64, background: t.bg, borderLeft: t.edge, borderRight: t.edge }}>
@@ -273,11 +273,7 @@ export default function RundownStock() {
               </table>
             </div>
             <InfoMore label={tr('Balance คิดยังไง')} size={11.5} style={{ padding: '8px 14px', borderTop: '1px solid var(--border2)' }}>
-              Balance = stock พร้อมส่งตอนนี้ − ยอด order ที่ยังไม่ส่งสะสมรายวัน · stock เดินเองอัตโนมัติ
-              (สแกนปิดออเดอร์ = รับเข้า · กด "ส่งแล้ว" = หักออก) จึงเป็นภาพ ณ ปัจจุบันเสมอ ไม่ต้องรอปิดกะ ·
-              นับเฉพาะของใน<b>{tr('คลัง FG')}</b>{fgDest ? ` (${fgDest})` : ''} — ของที่ยังอยู่ mini-store ของไลน์ / STORE ก่อนแพ็ค ยังส่งลูกค้าไม่ได้ จึงไม่นับ ·
-              แถวที่ขึ้น ❔ คือ<b>{tr('เลขบน order ยังจับคู่ MAT SAP ไม่ได้')}</b> (ไม่ได้แปลว่าไม่มีของ) — ตั้ง p_no ที่ Product Master
-              หรือกดปุ่ม 🔗 จับคู่เลข SAP ในหน้า 📈 Planner &amp; Sales แล้วจะคำนวณให้ทันที
+              Balance = stock {tr("พร้อมส่งตอนนี้ − ยอด order ที่ยังไม่ส่งสะสมรายวัน · stock เดินเองอัตโนมัติ (สแกนปิดออเดอร์ = รับเข้า · กด \"ส่งแล้ว\" = หักออก) จึงเป็นภาพ ณ ปัจจุบันเสมอ ไม่ต้องรอปิดกะ · นับเฉพาะของใน")}<b>{tr('คลัง FG')}</b>{fgDest ? ` (${fgDest})` : ''} — {tr("ของที่ยังอยู่ mini-store ของไลน์ / STORE ก่อนแพ็ค ยังส่งลูกค้าไม่ได้ จึงไม่นับ · แถวที่ขึ้น ❔ คือ")}<b>{tr('เลขบน order ยังจับคู่ MAT SAP ไม่ได้')}</b> ({tr("ไม่ได้แปลว่าไม่มีของ) — ตั้ง p_no ที่ Product Master หรือกดปุ่ม 🔗 จับคู่เลข SAP ในหน้า 📈 Planner & Sales แล้วจะคำนวณให้ทันที")}
             </InfoMore>
           </div>
         )}

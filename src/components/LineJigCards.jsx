@@ -11,6 +11,7 @@ import { getWorkDate, getCurrentShift } from '../utils/workDate';
 import { loadJigShift } from '../lib/jigOeeData';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { JigOeeCard, KindLegend } from './JigOee';
+import { tr } from '../utils/i18n';
 
 export default function LineJigCards({ lineNames = [], target = 0.85, style }) {
   const [data, setData] = useState(null);
@@ -31,14 +32,14 @@ export default function LineJigCards({ lineNames = [], target = 0.85, style }) {
   return (
     <div style={{ display: 'grid', gap: 8, ...style }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'baseline' }}>
-        <b style={{ fontSize: 14, color: 'var(--text)' }}>🏭 รายจิ๊ก — ข้อมูลจากเครื่อง (สด)</b>
+        <b style={{ fontSize: 14, color: 'var(--text)' }}>🏭 {tr("รายจิ๊ก — ข้อมูลจากเครื่อง (สด")})</b>
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {data.sh === 'day' ? 'กะเช้า' : 'กะดึก'} {data.wd} · คนละชุดกับ OEE ไลน์ด้านบน (ที่คนลง) ·{' '}
-          <Link to={`/oee-analytics?tab=machine&wd=${data.wd}&sh=${data.sh}`}>ดูลึกรายเครื่อง →</Link>
+          {data.sh === 'day' ? tr("กะเช้า") : tr("กะดึก")} {data.wd} · {tr("คนละชุดกับ OEE ไลน์ด้านบน (ที่คนลง")}) ·{' '}
+          <Link to={`/oee-analytics?tab=machine&wd=${data.wd}&sh=${data.sh}`}>{tr("ดูลึกรายเครื่อง")} →</Link>
         </span>
         <span style={{ marginLeft: 'auto' }}><KindLegend kinds={['run', 'minor', 'fault', 'idle', 'planned_stop', 'no_plan']} /></span>
       </div>
-      {data.errors?.length > 0 && <div style={{ fontSize: 12, color: 'var(--red)' }}>อ่านไม่สำเร็จ: {data.errors.join(' · ')}</div>}
+      {data.errors?.length > 0 && <div style={{ fontSize: 12, color: 'var(--red)' }}>{tr("อ่านไม่สำเร็จ")}: {data.errors.join(' · ')}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10, alignContent: 'start' }}>
         {data.jigs.map(j => <JigOeeCard key={`${j.sourceId}|${j.tag}`} j={j} target={target} />)}
       </div>

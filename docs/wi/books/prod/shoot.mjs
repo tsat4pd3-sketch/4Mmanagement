@@ -7,6 +7,8 @@ const res = fs.existsSync(OUT+'/boxes.json') ? JSON.parse(fs.readFileSync(OUT+'/
 async function dismiss(){ for(let i=0;i<20;i++){const x=pg.getByRole('button',{name:/รับทราบ/}).first(); if(!(await x.count()))break; await x.click().catch(()=>{}); await pg.waitForTimeout(100);} }
 let LOOSE=false;
 async function findVisible(label){
+  if (label.startsWith('@')){ const loc=pg.getByLabel(label.slice(1),{exact:true}); const n=await loc.count();   // "@ป้าย" = ช่องที่ชี้ด้วย aria-label (select ฯลฯ)
+    for (let i=0;i<Math.min(n,10);i++){ const bb=await loc.nth(i).boundingBox().catch(()=>null); if (bb && bb.width>0 && bb.y>=0 && bb.y+bb.height<=1000) return bb; } return null; }
   let EX=false; if (label.startsWith('=')){ EX=true; label=label.slice(1); }
   let SKIP=0; const nm=/#(\d+)$/.exec(label); if (nm){ SKIP=Number(nm[1])-1; label=label.slice(0,-nm[0].length); }   // "ป้าย#2" = ตัวที่ 2 ที่มองเห็น
   for (const loc of [pg.getByRole('button',{name:label,exact:EX}), pg.getByRole('menuitem',{name:label,exact:EX}), pg.getByText(label,{exact:EX})]) {

@@ -1,3 +1,4 @@
+import { tr } from './i18n.js';
 /**
  * 🏬 storageZones — สูตรกลางของ "โซนจัดเก็บในคลัง" (WMS เฟส 1 · 2026-08-25)
  *
@@ -81,7 +82,7 @@ export function zoneHealth(f) {
 }
 
 export function zoneHealthText(f) {
-  if (!f || !f.mats.length) return '🏬 ยังไม่ผูก MAT';
+  if (!f || !f.mats.length) return ("🏬 " + tr("ยังไม่ผูก MAT"));
   if (f.shortCount) return `🟥 ต่ำกว่า Min ${f.shortCount} รายการ`;
   if (f.fillPct != null && f.fillPct >= 100) return `⚠ ล้นความจุ ${f.fillPct}%`;
   const boxes = f.unknownPkg ? `${f.totPkgs}+? กล่อง` : `${f.totPkgs} กล่อง`;
