@@ -689,6 +689,12 @@ Platform:    Render.com (Static Site)
 
 ---
 
+## 🔒 จองงานก่อนทำ (2 loop · 2026-11-27)
+
+ESM ทำงาน 2 loop (**หลัก** = เจ้าของ · **smf01** = ผู้ช่วยพัฒนา บัญชี `tsat4smf01`) → ทุก session ต้องอ่าน + จองใน `docs/WORK-CLAIMS.md` แล้ว push เข้า `main` **ก่อนแก้อะไร** · ห้ามแตะไฟล์ / ตารางที่อีก loop จองอยู่ · เสร็จแล้วลบบรรทัดจอง + เขียนบันทึก
+
+---
+
 ## Branch & Deploy Workflow
 
 - **Main branch:** `main`

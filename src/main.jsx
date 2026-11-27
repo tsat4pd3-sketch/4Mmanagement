@@ -4,6 +4,7 @@ import './index.css'
 import App from './App.jsx'
 import { LangProvider } from './utils/useLang.js'   // 🌐 ปุ่มสลับ ไทย/English (utils/i18n.js)
 import { onMasterLoadFail } from './utils/masterCache.js'
+import { hasPendingInput } from './utils/pendingInput.js'
 import { toast } from './components/Toast'
 
 /* 🔴 โหลดทะเบียน (master) ไม่สำเร็จ = ต้องเห็นบนจอ ห้ามเงียบ (2026-10-04)
@@ -47,16 +48,115 @@ window.addEventListener('vite:preloadError', (e) => {
    เมื่อ server ไม่ส่ง Cache-Control ชัดเจน) → ได้แอปเวอร์ชันเก่าที่ chunk โดนลบไปแล้ว
    คลิกอะไรก็พังเงียบๆ — เทียบ build ตัวเอง (__BUILD_ID__) กับ version.json บน server
    (fetch แบบ no-store เสมอ ไม่โดน cache) ตอนเปิดแอป + ทุกครั้งที่กลับมาโฟกัสแท็บ */
+/* ── 🔴 ของที่คนกรอกค้าง ชนะการรีโหลดเสมอ (2026-11-27 · คำสั่ง user) ──────────
+   หน้างานแจ้ง: "จอชอบรีเฟรชระหว่างลงข้อมูล ทำให้ต้องกรอกใหม่"
+   ต้นเหตุคือ version guard ตัวนี้เอง — เด้งทันทีที่รู้ว่า build ไม่ตรง รวมถึง
+   **ตอนคนคลิกกลับเข้าแท็บ** (สลับไปเปิดโปรแกรมอื่นแล้วกลับมา = รีโหลดใส่เลย)
+
+   กฎใหม่: เจอเวอร์ชันใหม่ตอนมีของกรอกค้าง ⇒ **ไม่รีโหลด** ขึ้นแถบบอกแล้วรอจอว่าง
+   · ตัวตัดสิน "มีของกรอกค้างไหม" = `utils/pendingInput.js` ที่เดียว (ห้ามเขียนกฎซ้ำที่นี่)
+   · จอว่าง = รีโหลดเองเหมือนเดิมเป๊ะ ⇒ **จอ TV ไม่มีช่องกรอก ไม่กระทบ**
+     (ห้ามถอยกลับไปเป็นปัญหา 19/08 ที่จอ TV รันโค้ดเก่าค้างข้ามกะ)
+
+   🔴 เลื่อนได้แค่การรีโหลด "เชิงป้องกัน" ตัวนี้ — **ห้ามเลื่อน `vite:preloadError`
+      และ chunk error ใน ErrorBoundary** เพราะ 2 ตัวนั้นหน้าพังไปแล้ว (React ล่ม)
+      เลื่อนเท่ากับได้จอดำ ซึ่งคือปัญหาที่กลไกนี้ถูกสร้างมาแก้ตั้งแต่ต้น            */
+
+let newBuildSeen = false;   // เจอเวอร์ชันใหม่บน server แล้ว (ยังไม่ได้รีโหลด)
+let heldOnce = false;       // เคยเลื่อนเพราะมีของกรอกค้างมาแล้ว
+let cleanTicks = 0;         // จอว่างมากี่รอบติด
+let barEl = null;
+
+let leavingOnPurpose = false;
+const forceReload = () => { leavingOnPurpose = true; window.location.reload(); };
+
+/* แถบบอกว่ามีเวอร์ชันใหม่ — DOM ล้วน ไม่พึ่ง React (ต้องขึ้นได้แม้ React กำลังมีปัญหา)
+   วางบนสุดของจอ: ของที่ fixed ชิดล่างต้องบวก --mnav-h ตามกฎมือถือ ตัวนี้เลยอยู่ด้านบน */
+const showUpdateBar = () => {
+  if (barEl || typeof document === 'undefined') return;
+  barEl = document.createElement('div');
+  barEl.setAttribute('role', 'status');
+  barEl.style.cssText = [
+    'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:10002',
+    'display:flex', 'align-items:center', 'justify-content:center',
+    'gap:10px', 'flex-wrap:wrap', 'padding:7px 12px',
+    'background:var(--amber-dim, rgba(227,162,58,0.12))',
+    'borderBottom:1px solid var(--amber-line, rgba(227,162,58,0.40))',
+    'color:var(--text, #e8f0eb)', 'font-size:12.5px', 'font-weight:600',
+    'font-family:Sarabun, Tahoma, sans-serif',
+    'box-shadow:var(--shadow-float, 0 6px 18px rgba(0,0,0,0.35))',
+    'border-bottom:1px solid var(--amber-line, rgba(227,162,58,0.40))',
+  ].join(';');
+
+  const msg = document.createElement('span');
+  msg.textContent = '🔄 มีเวอร์ชันใหม่ — กรอกให้เสร็จแล้วกดบันทึกก่อน ระบบจะโหลดหน้าใหม่ให้เองเมื่อพร้อม';
+  const now = document.createElement('button');
+  now.type = 'button';
+  now.textContent = 'โหลดเลย';
+  now.style.cssText = [
+    'padding:4px 12px', 'border-radius:7px', 'border:none', 'cursor:pointer',
+    'background:var(--accent, #2fbf63)', 'color:var(--accent-ink, #fff)',
+    'font-size:12px', 'font-weight:800', 'font-family:inherit',
+  ].join(';');
+  /* 🔴 กดเองคือเจตนาของคน — ข้าม `canAutoReload()` (ตัวกันวน loop ของการรีโหลดอัตโนมัติ)
+     ไม่งั้นกดแล้วไม่เกิดอะไรขึ้นถ้าเพิ่งมีการรีโหลดไปใน 30 วิ
+     🔴 **ตั้งใจไม่ตั้ง `leavingOnPurpose`** — ถ้ายังมีของกรอกค้าง ให้ `beforeunload` ข้างล่าง
+        ถามยืนยันตามปกติ (กดปุ่มนี้พลาดตอนกรอกค้าง = ของหายเหมือนกัน) */
+  now.onclick = () => {
+    try { sessionStorage.removeItem(RELOAD_KEY); } catch { /* โหมดส่วนตัว */ }
+    window.location.reload();
+  };
+  const later = document.createElement('button');
+  later.type = 'button';
+  later.textContent = 'ซ่อนแถบนี้';
+  later.style.cssText = [
+    'padding:4px 10px', 'border-radius:7px', 'cursor:pointer', 'background:transparent',
+    'color:inherit', 'border:1px solid currentColor', 'opacity:0.65',
+    'font-size:12px', 'font-weight:700', 'font-family:inherit',
+  ].join(';');
+  /* ซ่อนแค่แถบ — ไม่ยกเลิกการรอ พอจอว่างก็ยังรีโหลดเองตามปกติ (ข้อมูลปลอดภัยแล้วตอนนั้น) */
+  later.onclick = () => { try { barEl?.remove(); } catch { /* ถูกถอดไปแล้ว */ } };
+
+  barEl.append(msg, now, later);
+  try { document.body.appendChild(barEl); } catch { barEl = null; }
+};
+
+/** จะรีโหลดเพราะเจอเวอร์ชันใหม่ — ผ่านด่าน "มีของกรอกค้างไหม" ก่อนเสมอ */
+const reloadForNewBuild = () => {
+  if (!newBuildSeen) return;
+  if (hasPendingInput()) { heldOnce = true; cleanTicks = 0; showUpdateBar(); return; }
+  /* เคยเลื่อนมาแล้ว ⇒ ต้องว่าง 2 รอบติดก่อน กันรีโหลดใส่จังหวะที่คนเพิ่งล้างช่องเพื่อพิมพ์ใหม่
+     (ยังไม่เคยเลื่อน = เส้นทางเดิมเป๊ะ รีโหลดทันที ไม่มีแถบ ไม่มีดีเลย์) */
+  if (heldOnce && ++cleanTicks < 2) return;
+  if (canAutoReload()) forceReload();
+};
+
 const checkVersion = async () => {
+  if (newBuildSeen) { reloadForNewBuild(); return; }   // รู้แล้ว ไม่ต้องยิงซ้ำ
   try {
     const res = await fetch('/version.json', { cache: 'no-store' });
     if (!res.ok) return; // dev/ไฟล์ไม่มี — ข้าม
     const { build } = await res.json();
-    if (build && build !== __BUILD_ID__ && canAutoReload()) window.location.reload();
+    if (!build || build === __BUILD_ID__) return;
+    newBuildSeen = true;
+    reloadForNewBuild();
   } catch { /* offline — ข้าม รอบหน้าค่อยเช็คใหม่ */ }
 };
 checkVersion();
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkVersion(); });
+
+/* รอจอว่างระหว่างที่เลื่อนไว้ — ถี่กว่ารอบเช็คเวอร์ชันเพราะตรงนี้ไม่ยิงเน็ตเลย
+   (เป็นการอ่าน DOM ล้วน) · ไม่มีอะไรค้าง = ไม่ทำอะไร ไม่กินแรงเครื่อง */
+const HELD_RECHECK_MS = 15 * 1000;
+setInterval(() => { if (newBuildSeen) reloadForNewBuild(); }, HELD_RECHECK_MS);
+
+/* 🔴 กด F5 / ปิดแท็บเองตอนมีของกรอกค้าง = เตือนก่อน (เดิมไม่มีด่านนี้เลยทั้งแอป)
+   เปลี่ยนหน้าในแอป (SPA) ไม่ยิง event นี้ ⇒ เตือนเฉพาะตอนจะออกจากหน้าจริงๆ */
+window.addEventListener('beforeunload', (e) => {
+  if (leavingOnPurpose || !hasPendingInput()) return;
+  e.preventDefault();
+  e.returnValue = '';   // เบราว์เซอร์เลือกข้อความเอง กำหนดไม่ได้
+});
 /* ⚠️ จอ TV ที่เปิดค้าง 24/7 = visible ตลอด → **ไม่มี visibilitychange เลย** → ไม่มีวันรู้ว่ามีเวอร์ชันใหม่
    (พบ 2026-08-19: แก้ egress แล้ว deploy ไป แต่จอ TV ยังรันโค้ดเก่าจนกว่าจะมีคนไปกด F5
     — bug fix ทุกตัวที่ผ่านมาก็ไปไม่ถึงจอ TV ด้วยเหตุผลเดียวกัน)

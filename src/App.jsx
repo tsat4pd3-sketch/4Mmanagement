@@ -142,6 +142,7 @@ const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const Rfq = lazy(() => import('./pages/Rfq'));
 const Activity = lazy(() => import('./pages/Activity'));   // 🎯 หมวดกิจกรรม 9 หน้า (25/11)
+const Activity5s = lazy(() => import('./pages/activity5s/Activity5s'));   // ♻️ 5S ต่อฐานข้อมูลแล้ว (27/11 · ยกจากระบบ Core · loop smf01)
 const Workflows = lazy(() => import('./pages/Workflows'));             // 🧩 e-Workflow ใบงานที่ user สร้างเอง (13/11)
 const WorkflowDesigner = lazy(() => import('./pages/WorkflowDesigner')); // 🧩 ออกแบบใบงาน (Key User → admin เผยแพร่)
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
@@ -2543,7 +2544,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               {/* 🎯 หมวดกิจกรรม — 9 path วาดหน้าเดียว (key = path ให้ state ไม่ข้ามกิจกรรม) */}
               {ACTIVITIES.map(a => (
                 <Route key={a.path} path={a.path} element={
-                  <RoleRoute path={a.path} userRole={role}><Activity key={a.path} /></RoleRoute>} />
+                  <RoleRoute path={a.path} userRole={role}>{a.key === '5s' ? <Activity5s key={a.path} /> : <Activity key={a.path} />}</RoleRoute>} />
               ))}
               <Route path="/rfq" element={
                 <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>

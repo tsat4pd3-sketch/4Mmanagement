@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildNodeRedFlow, envVarName } from '../nodeRedFlow.js';
-import { sourceStatus, healthBars, kindLabel, INTEGRATION_KINDS } from '../integrationKinds.js';
+import { sourceStatus, healthBars, kindLabel, kindOf, mergeKinds, INTEGRATION_KINDS } from '../integrationKinds.js';
 
 const URL = 'https://example.test/functions/v1/ingest-energy';
 const ALL_ENERGY = ['energy_readings', 'energy_events', 'energy_daily', 'energy_limits'];
@@ -97,14 +97,48 @@ test('ทะเบียนชนิด: ไม่มีชนิด "เลข 
   assert.equal(new Set(INTEGRATION_KINDS.map(k => k.key)).size, INTEGRATION_KINDS.length);
 });
 
-test('edge integration-admin ใช้รายชื่อชนิดเดียวกับทะเบียน (edge import จาก src/ ไม่ได้ — ห้ามเพี้ยน)', async () => {
+test('ชนิดในตัวในโค้ด = แถว seed is_builtin ของ migration (27/11 · ทะเบียนจริงอยู่ตาราง integration_kinds)', async () => {
   const { readFileSync } = await import('node:fs');
-  const src = readFileSync(new globalThis.URL('../../../supabase/functions/integration-admin/index.ts', import.meta.url), 'utf8');
-  const m = src.match(/const KINDS = \[([^\]]*)\]/);
-  assert.ok(m, 'หา KINDS ใน integration-admin ไม่เจอ');
-  const edge = [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]).sort();
-  assert.deepEqual(edge, INTEGRATION_KINDS.map(k => k.key).sort(),
-    '\n❌ ชนิดข้อมูลใน edge integration-admin ไม่ตรง src/utils/integrationKinds.js — แก้ 2 ที่ให้ตรงกันแล้ว deploy edge ใหม่\n');
+  const sql = readFileSync(new globalThis.URL('../../../supabase/migrations/20261127_integration_kinds_sensors.sql', import.meta.url), 'utf8');
+  const seeded = [...sql.matchAll(/\('([a-z_]+)',\s*'[^']*',\s*'[^']*',\s*'[^']*',\s*true,/g)].map(x => x[1]).sort();
+  assert.deepEqual(seeded, INTEGRATION_KINDS.map(k => k.key).sort(),
+    '\n❌ ชนิดในตัวใน src/utils/integrationKinds.js ไม่ตรง seed ของ migration — เพิ่มชนิดในตัวต้อง seed แถว is_builtin ด้วย\n');
+  // edge ต้องอ่านทะเบียนจากตาราง ห้ามกลับไป hardcode รายชื่อ
+  const edge = readFileSync(new globalThis.URL('../../../supabase/functions/integration-admin/index.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(edge, /const KINDS = \[/);
+  assert.match(edge, /from\('integration_kinds'\)/);
+});
+
+test('mergeKinds: DB แก้ชื่อชนิดในตัวได้ · ชนิดเพิ่มเอง = เซนเซอร์ · อ่านไม่ได้ = ชนิดในตัวตามโค้ด', () => {
+  const rows = [
+    { key: 'energy_readings', label: 'ไฟฟ้ารายนาที', icon: '🔌', help: null, is_builtin: true, sort_order: 1 },
+    { key: 'temp', label: 'อุณหภูมิ', icon: null, unit: '°C', help: '', is_builtin: false, sort_order: 20 },
+  ];
+  const ks = mergeKinds(rows);
+  const er = kindOf('energy_readings', ks);
+  assert.equal(er.label, 'ไฟฟ้ารายนาที'); assert.equal(er.icon, '🔌'); assert.equal(er.body, 'readings'); assert.equal(er.builtin, true);
+  assert.equal(er.help, null);                                   // DB ตั้งว่าง = ว่างจริง (ไม่ถอยไปข้อความในโค้ด)
+  const t = kindOf('temp', ks);
+  assert.equal(t.custom, true); assert.equal(t.body, 'sensors'); assert.equal(t.unit, '°C'); assert.equal(t.icon, '📈'); assert.equal(t.status, 'live');
+  assert.equal(kindOf('machine_live', ks).label, 'สถานะสดของเครื่อง');   // DB ไม่มีแถว = ยังอยู่ตามโค้ด
+  assert.equal(mergeKinds(null).length, INTEGRATION_KINDS.length);
+  assert.ok(mergeKinds(null).every(k => k.builtin));
+  assert.equal(kindLabel('temp', ks), '📈 อุณหภูมิ');
+  assert.match(kindLabel('nope', ks), /ไม่รู้จัก/);
+});
+
+test('flow: ชนิดเพิ่มเอง = แม่แบบ sensors (ไม่มีโหนด mysql) · ไม่ส่ง kindDefs = ไม่รู้จัก (ข้าม + บอก)', () => {
+  const ks = mergeKinds([{ key: 'vibration', label: 'การสั่นสะเทือน', unit: 'mm/s', is_builtin: false }]);
+  const r = buildNodeRedFlow({ source: { code: 'pd2', key_hint: 'ab12' }, kinds: ['vibration'], ingestUrl: 'https://x.test/f', kindDefs: ks });
+  assert.deepEqual(r.built, ['vibration']);
+  assert.ok(!r.nodes.some(n => n.type === 'mysql'));
+  const fn = r.nodes.find(n => n.type === 'function').func;
+  assert.match(fn, /kind: 'vibration'/);
+  assert.match(fn, /msg\.payload = \{ sensors \}/);
+  assert.match(fn, /x-source-key/);
+  const r2 = buildNodeRedFlow({ source: { code: 'pd2', key_hint: 'ab12' }, kinds: ['vibration'], ingestUrl: 'https://x.test/f' });
+  assert.deepEqual(r2.built, []);
+  assert.equal(r2.skipped[0].key, 'vibration');
 });
 
 test('flow PD2: สถานะสด ส่งข้อความต้นทางตามจริง (MachineStatus) · ไม่แปลรหัสเอง', () => {
