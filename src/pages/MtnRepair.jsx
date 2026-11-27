@@ -22,6 +22,8 @@ import { loadProfilesPeople } from '../utils/usePeople';   // 🔄 เซ็น�
 import { toast } from '../components/Toast';
 import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmount, partAmount, sumLabor, sumParts, grandTotal, satScore, mtnApprovalState, purposeOfPrint, qaAppliesTo, isMtnFormRow, QA_SKIP_REASON_PURPOSE, QA_SKIP_REASON_MTN_FORM, needsPlantMgrByCost, orderCostTotal, PLANT_MGR_COST_LIMIT, isToolTeamRow, MO_IO_DIGITS, MO_PR_DIGITS, moGridChars, moTechSignBox } from '../utils/mtnMoForm';
 import AuditLogViewer from '../components/AuditLogViewer';
+import DraftBar from '../components/DraftBar';
+import { useFormDraft } from '../utils/useFormDraft';   // 💾 ร่างที่กรอกค้าง — กู้ได้ถ้าหน้าหลุด (27/11)
 import StepFlow from '../components/StepFlow';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { ackWaitsOnMe, signWaitsOnMe } from '../utils/myQueue';   // ✍️ กฎ "ใบนี้รอเราเซ็นไหม" ที่เดียว (23/11 · sign 27/11)
@@ -1577,6 +1579,13 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
   const set = (k, v) => { setDirty(true); setF(p => ({ ...p, [k]: v })); };
   const pickBefore = (file) => { setDirty(true); setBeforeFile(file); };
   const tryClose = async () => { if (!dirty || await confirmDiscard()) onClose(); };
+  /* 💾 ร่างที่กรอกค้าง (27/11 · คำสั่ง user) — ด่านชั้นแรกคือ `utils/pendingInput.js` ที่กันการรีโหลด
+     ตอนกำลังกรอก · ตัวนี้รับเคสที่กันไม่ได้: เบราว์เซอร์ปิดเอง · ไฟดับ · กดปิดแท็บพลาด
+     🔴 `skip: !dirty` — ยังไม่แตะอะไรก็ยังไม่เก็บ ไม่งั้นค่า prefill (ชื่อผู้แจ้ง/ค่าจากดาวน์ไทม์)
+        จะทำให้แถบ "กรอกต่อ" เด้งทุกครั้งที่เปิดฟอร์ม ทั้งที่ไม่มีใครกรอกอะไรค้างไว้
+     🔴 โหมด "เพิ่มรายละเอียดย้อนหลัง" (fillOrderId) ไม่เก็บ — แก้ใบที่มีอยู่แล้ว ไม่ใช่ใบใหม่
+     ⚠️ รูปก่อนซ่อม (beforeFile) เก็บไม่ได้ — ไฟล์กู้กลับไม่ได้จริง (ดู useFormDraft) */
+  const draft = useFormDraft('mtn-new-order', f, { skip: !dirty || !!fillOrderId });
   /* แผนก/ส่วนงาน อ่านจากผังองค์กร (org_nodes) — dept_section เป็นคีย์ scope ของ orderInReporterScope()
      พิมพ์เองผิดตัวเดียว = ใบหลุด/เข้า scope คนอื่นเงียบๆ (audit 2026-09-07) · ผังว่าง = ถอยไป section ของไลน์ */
   const orgSections = useOrgSections();
@@ -1915,6 +1924,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
       if (error) return toast.error(error.message);
       if (beforeFile) { try { const blob = await resizeMoImage(beforeFile); const url = await uploadMtnImg(blob, `before/${data.id}-${Date.now()}.${imgExt(blob)}`); const { error: eImg } = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id); if (eImg) throw new Error(`ผูกรูปเข้าใบไม่สำเร็จ (${eImg.message}) — แนบใหม่ได้ด้วยปุ่มแก้ไข`); data.before_img = url; } catch (e) { toast.error((trI18n('อัปโหลดรูปไม่สำเร็จ') + ': ') + e.message); } }
       notifyMtn(data, 'mtn_reported');
+      draft.clear();   // 💾 ลงฐานแล้ว ร่างไม่จำเป็นอีก
       toast.success('แจ้งซ่อมแล้ว รอ MTN รับงาน'); onSaved();
     } finally { setSaving(false); }   // รูปแปลงค้าง/เน็ตหลุด ปุ่มต้องปลดเสมอ (feedback 2026-09-08)
   };
@@ -1925,6 +1935,8 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
           ① ทีม/ชนิดงาน → ② ที่ไหน (แผนก → ส่วนงาน → ไลน์) → ③ อุปกรณ์ (ชนิด → เลข) → ④ ปัญหา (กลุ่ม → หัวข้อย่อย → รายละเอียด → รูป)
           → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
       <div style={{ display: 'grid', gap: 12 }}>
+        {/* 💾 เจอร่างที่กรอกค้างไว้ — "กรอกต่อ" / "เริ่มใหม่" (ของกลาง ห้ามวาดแถบเองในหน้า · UI §6.43) */}
+        <DraftBar draft={draft} onRestore={(d) => { setDirty(true); setF(p => ({ ...p, ...d })); }} />
         <FormStep n={1} title={trI18n('แจ้งถึงทีมช่าง · ชนิดงาน')} />
         {/* 🔴 ต้องเลือกเอง — ห้ามมีค่าตั้งต้น (13/11 · คำสั่ง user "ส่งผิดแผนกบ่อย ให้บังคับต้องเลือก")
             ยังไม่เลือก = ขอบส้ม + ป้ายเตือน (ไม่ใช่ขอบ accent เหมือนช่องที่กรอกแล้ว) */}
