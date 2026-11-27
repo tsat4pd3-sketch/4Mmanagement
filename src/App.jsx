@@ -815,13 +815,19 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
   /* แถวเมนู 1 แถว — **ตัวเดียวใช้ทั้งแผงลอยและ drawer** ห้ามก๊อปแยก (เคยแยกแล้วหน้าตาเพี้ยนกัน)
      `group` = หมวดที่กำลังวาดอยู่ ⇒ รู้ว่าแถวนี้เป็น "บ้านจริง" หรือ "ทางลัด" (ดู `isNavGuest`) */
-  const navRow = (item, group, onClick) => {
+  /* `fold` = แถวหัวของเมนูที่มีข้อย่อย (27/11 · คำสั่ง user "ลูกศรซ่อนขยายอยู่หน้าข้อความ · กดชื่อ = ซ่อน/ขยาย ไม่ใช่เด้งหน้า")
+     ⇒ วาดเป็นปุ่มพับ (ลูกศรแทนที่ไอคอน) · เข้าหน้าได้จากข้อย่อย · "อยู่ตรงนี้" หน้าตาเดิม */
+  const navRow = (item, group, onClick, fold) => {
     const cur = location.pathname === item.to;
     const guest = isNavGuest(item, group);
     const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
+    const Row = fold ? 'button' : Link;
     return (
-      <Link
-        to={item.to} className="nav-link"
+      <Row
+        {...(fold
+          ? { type: 'button', 'aria-expanded': fold.open, onClick: fold.onToggle }
+          : { to: item.to, onClick })}
+        className="nav-link"
         aria-current={cur ? 'page' : undefined}
         title={guest ? `${tr(item.label)} — ทางลัด · เมนูนี้อยู่หมวด "${tr(item.group)}"` : tr(item.label)}
         style={{
@@ -836,7 +842,6 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
              🔴 คืนที่ด้วยการลด gap/padding เท่านั้น **ห้ามลดฟอนต์ต่ำกว่า 11px** (UI-STANDARD §5) */
           ...(guest ? { gap: 8, paddingLeft: 10, paddingRight: 10 } : null),
         }}
-        onClick={onClick}
       >
         {cur && !guest && (
           <motion.span layoutId="nav-active" transition={railPill()} aria-hidden="true" className="neon-row" style={{
@@ -846,7 +851,10 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             <span className="neon-bar" style={{ position: 'absolute', left: 0, top: 7, bottom: 7, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />
           </motion.span>
         )}
-        <Icon glyph={item.icon} size={17} style={{ opacity: guest ? 0.7 : 1, position: 'relative', zIndex: 1 }} />
+        {fold
+          ? <svg aria-hidden="true" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+              style={{ flexShrink: 0, position: 'relative', zIndex: 1, transition: 'transform .15s', transform: fold.open ? 'rotate(90deg)' : 'none' }}><path d="M9 6l6 6-6 6" /></svg>
+          : <Icon glyph={item.icon} size={17} style={{ opacity: guest ? 0.7 : 1, position: 'relative', zIndex: 1 }} />}
         <span style={{ position: 'relative', zIndex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(item.label)}</span>
         {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
             (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
@@ -855,7 +863,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             ↗{tr(homeShort)}
           </span>
         )}
-      </Link>
+      </Row>
     );
   };
 
@@ -882,12 +890,6 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     background: on ? 'var(--accent-dim)' : 'transparent', borderLeft: `2px solid ${on ? 'var(--accent)' : 'transparent'}`,
     whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
   });
-  const chevron = (open, onToggle, label) => (
-    <button type="button" onClick={onToggle} aria-expanded={open} aria-label={label} title={label} style={{
-      width: 24, height: 24, flexShrink: 0, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer',
-      color: 'var(--muted)', fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    }}>{open ? '▾' : '▸'}</button>
-  );
   const subNav = (item, group, onPick) => {
     const reg = subTabsOf(item);
     if (!reg) return navRow(item, group, onPick);
@@ -899,12 +901,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
     const toggle = (k, cur) => setSubOpen(o => ({ ...o, [k]: !cur }));
     return (
       <>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>{navRow(item, group, onPick)}</div>
-          {chevron(open2, () => toggle(k2, open2), open2 ? tr('ซ่อนข้อย่อย') : tr('แสดงข้อย่อย'))}
-        </div>
+        {navRow(item, group, onPick, { open: open2, onToggle: () => toggle(k2, open2) })}
         {open2 && (
-          <div role="group" aria-label={tr(item.label)} style={{ margin: '1px 0 4px 20px', paddingLeft: 6, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div role="group" aria-label={tr(item.label)} style={{ margin: '1px 0 4px 18px', paddingLeft: 6, borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 1 }}>
             {reg.tabs.map(t => {
               const on = curTab === String(t.key);
               const label = tr(t.label);

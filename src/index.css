@@ -275,6 +275,8 @@ body.esm-tv-shell .filter-bar { display: none !important; }
   background: var(--accent-dim);
   color: var(--accent);
 }
+/* แถวหัวที่พับข้อย่อยได้ (Sub bar 27/11) = <button class="nav-link"> — ล้างหน้าตาปุ่มของเบราว์เซอร์ · hover ยังชนะ (.nav-link:hover เจาะจงกว่า) */
+button.nav-link { width: 100%; border: none; background: transparent; font-family: inherit; text-align: left; cursor: pointer; }
 
 /* ─── Card ─────────────────────────────────────────────────────── */
 .card {
