@@ -23,7 +23,7 @@ import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
-import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, ppmOf, fmtPpm, QBIN_EMBED } from '../utils/oee';
+import { isTrialDefect, defectQty, isSuspectPending, orderProducedQty, ppmOf, fmtPpm, defectQtyForQBase, defectQtyForP, QBIN_EMBED } from '../utils/oee';
 import { qaViewScope, qaWriteCtx } from '../utils/qaViewScope';
 import { checkWriteRows } from '../utils/dbWrite';
 import { isOpenQaDoc, QA_DONE_IN, qaDocInFilter, ncrFlow, capaFlow } from '../utils/qaDocStatus';
@@ -339,6 +339,14 @@ function QualityDashboard() {
     let total = 0, ng = 0, pendingSuspect = 0;
     /* ของสงสัยที่ QA ยังไม่ตัดสิน — ไม่นับใน NG/PPM (defectQty) แต่ต้องเขียนบนจอว่ารอกี่ชิ้น (oee.js §7.1) */
     const notePending = (d) => { if (!isTrialDefect(d) && isSuspectPending(d)) pendingSuspect += Number(d.qty_suspect) || 0; };
+    /* 🔴 ฐานของ FTT = **ยอดผลิต** (ทุกชิ้นที่เครื่องทำออกมา · oee.js §7.2.2) ไม่ใช่ "ยอดสแกน + ของเสีย"
+       FTT = ชิ้นที่ผ่านฉลุยรอบแรก ÷ ชิ้นที่เข้ากระบวนการ ⇒ ของสงสัย/ของส่งซ่อม **ไม่ได้ผ่านรอบแรก**
+       ต้องอยู่ในตัวหาร แม้ภายหลัง QA จะเคลียร์ว่าใช้ได้ (เคสจริง Line 61 11/11: 445/475 = 93.7%
+       ไม่ใช่ 100%) · `defectQtyForQBase` ตัดงานทดลองออกให้เข้าคู่กับตัวหัก `defectQty` ด้านล่าง */
+    let basePcs = 0;
+    /* 🔴 คนละตัวกับ `basePcs` — อันนี้คือ **"ยอดผลิต" ที่โชว์บนจอ** จึง **นับงานทดลองด้วย**
+       (เครื่องทำมันออกมาจริง) ส่วนฐาน FTT ตัดงานทดลองออก · §7.2.2 "2 ตัวนี้คนละคำถาม ห้ามสลับ" */
+    let pcsAll = 0;
 
     if (productFilter) {
       // ── ระดับ product: ยอดผลิตจากใบงานของ product นั้น · NG จาก defect ที่ผูกใบงาน ──
@@ -346,16 +354,18 @@ function QualityDashboard() {
       const orderIds = new Set(oInScope.map(o => o.id));
       oInScope.forEach(o => {
         const s = sessById.get(o.session_id); if (!s) return;
-        const t = prodQty(o); total += t;
+        const t = prodQty(o); total += t; basePcs += t; pcsAll += t;
         addDate(s.work_date, t, 0); addLine(s.line_name || '—', t, 0);
       });
       defects.forEach(d => {
         if (!d.prod_order_id || !orderIds.has(d.prod_order_id)) return;
         addType(d);   // พาเรโตเห็นทุกอย่าง (รวมงานทดลอง/สงสัย) — เหมือนทางไม่กรองสินค้า
+        pcsAll += defectQtyForP(d);        // "ยอดผลิต" นับทุกชิ้นที่เครื่องทำออกมา รวมงานทดลอง
         /* 🔴 สูตรเดียวกับทางไม่กรองสินค้า (QC 05/10) — เดิมใช้ qty_ng ดิบ ⇒ กดกรองสินค้าแล้ว
            งานทดลองถูกนับ + ของสงสัยที่ QA ตัดสินว่าเสียหาย = เลขเปลี่ยนแค่เพราะกดตัวกรอง */
         if (isTrialDefect(d)) return;
         notePending(d);
+        basePcs += defectQtyForQBase(d);
         const s = sessById.get(d.session_id); const g = defectQty(d); ng += g;
         if (s) { addDate(s.work_date, 0, g); addLine(s.line_name || '—', 0, g); }
       });
@@ -377,12 +387,14 @@ function QualityDashboard() {
         sessHasDefect.add(d.session_id);
         notePending(d);
         if (!isTrialDefect(d)) defBySession.set(d.session_id, (defBySession.get(d.session_id) || 0) + defectQty(d));
+        basePcs += defectQtyForQBase(d);
+        pcsAll  += defectQtyForP(d);
         addType(d);
       });
       shownSessions.forEach(s => {
         const t = s.actual_qty || 0;
         const g = sessHasDefect.has(s.id) ? (defBySession.get(s.id) || 0) : (s.qty_ng || 0);
-        total += t; ng += g;
+        total += t; ng += g; basePcs += t; pcsAll += t;
         addDate(s.work_date, t, g); addLine(s.line_name || '—', t, g);
       });
     }
@@ -405,11 +417,14 @@ function QualityDashboard() {
       (p) => p.qty,
     );
     return {
-      total, ng, pendingSuspect,
-      // total = ยอดสแกน = "ของดี" ล้วน · ผลิตจริงทั้งหมด = total + ng → PPM/FTT ต้องหารด้วยผลิตจริง ไม่ใช่ของดี
-      // (กฎ Q "การ์ดที่สแกน=ของดีล้วน" 2026-08-02 · เดิม ng/total ทำ PPM สูงเกินจริง, (total−ng)/total ทำ FTT ต่ำเกินจริง)
+      total, ng, pendingSuspect, pcsAll: Math.max(pcsAll, total + ng),
+      /* total = ยอดสแกน = "ของดี" ล้วน (กฎ Q "การ์ดที่สแกน = ของดีล้วน" 2026-08-02)
+         · PPM มีสูตรที่เดียว `ppmOf()` — ตัวหารเป็น **ยอดสแกนดี** ตามกฎ §7.3 (16/11) ห้ามแก้ที่นี่
+         · FTT ตัวหาร = **ยอดผลิต** (27/11 · §7.2.2) — `Math.max` กันเคสที่ของเสียมาจาก rollup
+           ของกะ (ไม่มีแถว `defect_logs`) ซึ่งไม่ได้ถูกนับเข้า `basePcs` ⇒ ฐานห้ามต่ำกว่าของเสียที่หัก */
       ppm: ppmOf(ng, total),
-      ftt: (total + ng) ? +(total / (total + ng) * 100).toFixed(2) : null,
+      ftt: (() => { const base = Math.max(basePcs, total + ng);
+        return base ? +(total / base * 100).toFixed(2) : null; })(),
       ppmTrend, lineRows, pareto,
     };
   }, [shownSessions, shownSessIds, sessById, orders, defects, lineFilter, productFilter]);
@@ -448,11 +463,13 @@ function QualityDashboard() {
             และ **ยอดผลิต/NG ถูกทาเขียวเมื่อ 0** ทั้งที่ "ผลิต 0 ชิ้น" ไม่ใช่เรื่องดี
             (0 ของ NG = ดีจริง · 0 ของยอดผลิต = ยังไม่มีข้อมูล ⇒ คนละเรื่อง ห้ามใช้สีเดียวกัน)
             เกณฑ์ PPM/FTT ที่หน้านี้ตั้งเอง เขียนกำกับไว้ใน `sub` แล้ว (UI §6.18 ข้อ 5) */}
-        <KpiCard label={trI18n('ยอดผลิตรวม')} value={stat.total.toLocaleString()} unit={trI18n("ชิ้น")}
-          sub={productFilter ? `${trI18n("ชิ้นงาน")}: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} ${trI18n("กะที่ปิดแล้ว")}${lineFilter ? ` · ${lineFilter}` : ''}`} />
+        {/* 🔴 "ยอดผลิต" = ทุกชิ้นที่เครื่องทำออกมา ไม่ใช่ยอดสแกน (oee.js §7.2.2 · คำสั่ง user 25/11)
+            ⇒ ของดีย้ายไปอยู่บรรทัดใต้ **ห้ามปล่อยให้การ์ดเดียวตอบ 2 ความหมาย** */}
+        <KpiCard label={trI18n('ยอดผลิตรวม')} value={stat.pcsAll.toLocaleString()} unit={trI18n("ชิ้น")}
+          sub={`${trI18n('ดี')} ${stat.total.toLocaleString()}${stat.pcsAll > stat.total ? ` · ${trI18n('ยังไม่ใช่ของดี')} ${(stat.pcsAll - stat.total).toLocaleString()}` : ''} · ${productFilter ? `${trI18n("ชิ้นงาน")}: ${productOptions.find(p => p.key === productFilter)?.label || productFilter}` : `${shownSessions.length} ${trI18n("กะที่ปิดแล้ว")}${lineFilter ? ` · ${lineFilter}` : ''}`}`} />
         <KpiCard label={trI18n('ของเสียรวม (NG)')} value={stat.ng.toLocaleString()} unit={trI18n("ชิ้น")}
           color={statusColor(toneOf({ value: stat.ng, zeroIsGood: true }))}
-          sub={`${stat.total + stat.ng > 0 ? `${trI18n("จากผลิตจริง")} ${(stat.total + stat.ng).toLocaleString()} ${trI18n("ชิ้น")}` : trI18n('ยังไม่มีข้อมูล')}${stat.pendingSuspect ? ` · ⏳ ${trI18n("ของสงสัยรอ")} QA ${stat.pendingSuspect.toLocaleString()} ${trI18n("ชิ้น (ยังไม่นับ — PPM/FTT ยังไม่สรุป")})` : ''}`} />
+          sub={`${stat.pcsAll > 0 ? `${trI18n("จากผลิตจริง")} ${stat.pcsAll.toLocaleString()} ${trI18n("ชิ้น")}` : trI18n('ยังไม่มีข้อมูล')}${stat.pendingSuspect ? ` · ⏳ ${trI18n("ของสงสัยรอ")} QA ${stat.pendingSuspect.toLocaleString()} ${trI18n("ชิ้น (ยังไม่นับ — PPM/FTT ยังไม่สรุป")})` : ''}`} />
         {/* 🔢 PPM = ชิ้นต่อล้าน ⇒ จำนวนเต็มเสมอ (`fmtPpm` · oee.js §7.3 · feedback 16/11)
             ยอดผลิตยังไม่ถูกบันทึกแต่มีของเสีย = คิดไม่ได้ ⇒ ขีด **พร้อมเขียนเหตุบนจอ** ห้ามโชว์ 1,000,000 */}
         <KpiCard primary label={trI18n('PPM — ของเสียต่อล้านชิ้น')} value={stat.ppm != null ? fmtPpm(stat.ppm) : null}
@@ -464,7 +481,7 @@ function QualityDashboard() {
         <KpiCard label="FTT (First Time Through)" value={stat.ftt != null ? `${stat.ftt}%` : null}
           color={stat.ftt == null ? 'var(--text)'
             : statusColor(stat.ftt >= 99 ? 'good' : stat.ftt >= 97 ? 'warn' : 'bad')}
-          sub={trI18n('เกณฑ์จอนี้: เขียว ≥ 99% · เหลือง ≥ 97%')} />
+          sub={`${trI18n('ผ่านรอบแรก ÷ ยอดผลิต')} · ${trI18n('เกณฑ์จอนี้: เขียว ≥ 99% · เหลือง ≥ 97%')}`} />
         <KpiCard label={trI18n('NCR เปิดค้าง')} value={ncrOpen} unit={trI18n("ใบ")}
           color={statusColor(toneOf({ value: ncrOpen, zeroIsGood: true, over: 'warn' }))} sub={trI18n('ยังไม่ปิดรายการ')} />
         <KpiCard label={trI18n('CAPA เกินกำหนด')} value={capaOverdue} unit={trI18n("ใบ")}

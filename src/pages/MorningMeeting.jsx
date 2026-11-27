@@ -690,7 +690,10 @@ export default function MorningMeeting() {
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 52px 44px 52px', columnGap: 8, rowGap: 5, alignItems: 'baseline' }}>
                   <span />
-                  <span style={head}>{tr('ยอดผลิต')}</span>
+                  {/* 🔴 ช่องนี้คือ "ของดีที่สแกนได้" (คู่กับ % เทียบเป้า) **ไม่ใช่ "ยอดผลิต"**
+                      ซึ่งตั้งแต่ 25/11 แปลว่า *ทุกชิ้นที่เครื่องทำออกมา* (oee.js §7.2.2)
+                      ⇒ เปลี่ยนป้ายให้ตรงความหมาย ห้ามให้คำว่า "ยอดผลิต" มี 2 ความหมายในระบบ */}
+                  <span style={head}>{tr('ผลิตได้')}</span>
                   <span style={head} title={tr('% เทียบเป้าการผลิตของกะ')}>{tr('ตามเป้า')}</span>
                   <span style={head}>OEE</span>
                   <span style={head}>DT</span>

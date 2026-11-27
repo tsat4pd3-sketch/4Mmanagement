@@ -144,3 +144,29 @@ test('🆕 เคสที่เพิ่งทำได้ — สงสัย 
   assert.equal(suspectPendingQty(d), 0);
   assert.equal(producedTotalCount(95, [d]), 100, 'ยอดผลิตไม่ขยับตามผลพิจารณา');
 });
+
+/* ══ 🧾 ยอดผลิตจาก "คอลัมน์ rollup" — สำหรับรายงาน/export ที่ไม่มีแถว defect_logs (27/11) ═══ */
+import { sessionTotalCount, defectQtyForQBase, defectQtyForP } from '../oee.js';
+
+test('⑦ sessionTotalCount — ยอดผลิตจาก rollup ที่ stamp ไว้ (ไม่ต้องดึงแถวของเสีย)', () => {
+  const sess = { actual_qty: 95, qty_ok: 95, qty_ng: 0, qty_suspect: 5, qty_repair: 0 };
+  assert.equal(sessionTotalCount(sess), 100, 'user: "ผลิตได้งาน 100"');
+  /* ใช้ได้เพราะ **ยอดผลิตไม่ขยับตอน QA ตัดสิน** ⇒ ค่าที่ stamp ตอนปิดกะยังจริงเสมอ
+     (ต่างจาก %Q ที่ขยับ — ตัวนั้นห้ามใช้ rollup ต้องยึด defect_logs) */
+  assert.equal(sessionTotalCount({ ...sess, qty_repair: 7 }), 107);
+  assert.equal(sessionTotalCount({ actual_qty: 300 }), 300, 'ไม่มีของเสีย = เท่ายอดสแกน');
+  assert.equal(sessionTotalCount(null), 0);
+  assert.equal(sessionTotalCount({}), 0, 'แถวว่าง = 0 ไม่ใช่ NaN');
+});
+
+test('⑧ ฐาน FTT = ยอดผลิต — ของสงสัย/ซ่อม "ไม่ได้ผ่านรอบแรก" ต้องอยู่ในตัวหาร', () => {
+  /* เคสจริง Line 61 กะเช้า 11/11: สแกน 445 · สงสัย 30 · NG 0 */
+  const d = { id: 'D1', qty_ng: 0, qty_suspect: 30, qty_repair: 0, quality_bin_records: [] };
+  const base = Math.max(445 + defectQtyForQBase(d), 445 + 0);
+  assert.equal(base, 475);
+  assert.equal(+(445 / base * 100).toFixed(2), 93.68, 'FTT 93.68% ไม่ใช่ 100%');
+  /* งานทดลองออกจากฐาน FTT (เข้าคู่กับตัวหักที่ตัดงานทดลองอยู่แล้ว) */
+  assert.equal(defectQtyForQBase({ qty_ng: 50, is_trial: true }), 0);
+  /* แต่ "ยอดผลิตรวม" ที่โชว์บนจอยังนับงานทดลอง — คนละตัว */
+  assert.equal(defectQtyForP({ qty_ng: 50, is_trial: true }), 50);
+});

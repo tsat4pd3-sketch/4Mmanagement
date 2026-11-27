@@ -61,7 +61,7 @@ import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
-import { affectsLanesMap, computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, sumReworkPending, ngByMatFrom, producedTotalCount, orderCloseMs, matRawWindow } from '../utils/oee';
+import { affectsLanesMap, computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, sumReworkPending, ngByMatFrom, producedTotalCount, sessionTotalCount, orderCloseMs, matRawWindow } from '../utils/oee';
 import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime, dtCoverMin } from '../utils/shiftWindow';
 import { handoverOf, handoverBlockText, sessionLabel as hoSessionLabel } from '../utils/sessionHandover';
@@ -8762,6 +8762,10 @@ function ExportTab() {
     const ngQty       = dfRows.length ? dfRows.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) : (s.qty_ng || 0);
     // ยอดดี = ยอดสแกน ห้ามลบ NG ซ้ำ (กฎ Q 2026-08-02 — การ์ดที่สแกนปิดคือของดีล้วน)
     const okQty       = s.qty_ok ?? (s.actual_qty || 0);
+    /* 🔴 "ยอดผลิตรวม" = ทุกชิ้นที่เครื่องทำออกมา (oee.js §7.2.2) — เดิมใส่ `actual_qty`
+       ซึ่งเท่ากับช่อง "ยอดดี (OK)" ข้างๆ เป๊ะ ⇒ ไฟล์ export มี 2 คอลัมน์เลขเดียวกัน
+       · มีแถวของเสีย = คิดจากแถว (แม่นกว่า) · ไม่มี = ใช้ rollup ที่ stamp ไว้ (ยอดผลิตไม่ขยับตอน QA ตัดสิน) */
+    const totalPcs    = dfRows.length ? producedTotalCount(s.actual_qty, dfRows) : sessionTotalCount(s);
     return {
       'วันที่': fmtDate(s.work_date),
       'ไลน์': s.line_name,
@@ -8769,7 +8773,7 @@ function ExportTab() {
       'สินค้า': s.dr_products?.name || '',
       'เวลาเริ่ม': s.start_time || '',
       'เวลาสิ้นสุด': s.end_time || '',
-      'ยอดผลิตรวม': s.actual_qty || 0,
+      'ยอดผลิตรวม': totalPcs,
       'ยอดดี (OK)': okQty,
       'ยอดเสีย (NG)': ngQty,
       'Downtime รวม (นาที)': +totalDT.toFixed(1),
@@ -8795,7 +8799,9 @@ function ExportTab() {
       const planDT   = dts.filter(d => d.dr_downtime_types?.category === 'planned').reduce((a, d) => a + (d.duration_min || 0), 0);
       const dfR2     = s.defect_logs || [];   // NG ยึด defect_logs — บวก session.qty_ng ซ้ำ = 2 เท่า (แก้ 2026-08-05)
       const ngQty    = dfR2.length ? dfR2.reduce((a, d) => a + (d.qty_ng || 0) + (d.qty_suspect || 0), 0) : (s.qty_ng || 0);
-      const totalQty = s.actual_qty || 0;
+      /* 🔴 "ยอดผลิต" = ทุกชิ้นที่เครื่องทำออกมา (oee.js §7.2.2) ไม่ใช่ยอดสแกน
+         มีแถวของเสีย = คิดจากแถว · ไม่มี = rollup ที่ stamp ไว้ (ยอดผลิตไม่ขยับตอน QA ตัดสิน) */
+      const totalQty = dfR2.length ? producedTotalCount(s.actual_qty, dfR2) : sessionTotalCount(s);
       const ctSec    = s.dr_products?.cycle_time_sec || 0;
 
       // Main OEE row
@@ -8808,6 +8814,7 @@ function ExportTab() {
         'Unplanned DT (นาที)': +unplanDT.toFixed(1),
         'Planned DT (นาที)': +planDT.toFixed(1),
         'ยอดผลิต': totalQty,
+        'ดี (OK)': s.qty_ok ?? (s.actual_qty || 0),
         'NG': ngQty,
         'A (%)': s.oee_a != null ? +Number(s.oee_a).toFixed(1) : '',
         'P (%)': s.oee_p != null ? +Number(s.oee_p).toFixed(1) : '',
@@ -8826,6 +8833,7 @@ function ExportTab() {
           'Unplanned DT (นาที)': '',
           'Planned DT (นาที)': '',
           'ยอดผลิต': '',
+          'ดี (OK)': '',
           'NG': '',
           'A (%)': '',
           'P (%)': '',
@@ -8983,7 +8991,8 @@ function ExportTab() {
         styles: { font: 'Sarabun', fontSize: 9, cellPadding: 2.5, halign: 'center' },
         head: [['ยอดผลิตรวม', 'ดี (OK)', 'เสีย (NG)', 'A (%)', 'P (%)', 'Q (%)', 'OEE (%)']],
         body: [[
-          s.actual_qty || 0, okQty, ngQty,
+          /* ยอดผลิตรวม = ทุกชิ้นที่เครื่องทำออกมา (§7.2.2) — ใบนี้มี `defect_logs` ของกะมาแล้ว */
+          producedTotalCount(s.actual_qty, s.defect_logs || []), okQty, ngQty,
           s.oee_a != null ? Number(s.oee_a).toFixed(1) : '-',
           s.oee_p != null ? Number(s.oee_p).toFixed(1) : '-',
           s.oee_q != null ? Number(s.oee_q).toFixed(1) : '-',
