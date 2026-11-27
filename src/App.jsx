@@ -48,6 +48,8 @@ import ScrollHint from './components/ScrollHint';
 import MobileNavBar from './components/MobileNavBar';
 import MobilePushPrompt from './components/MobilePushPrompt'; // 📲 แถบชวนเปิด push (มือถือเท่านั้น) — 2026-10-20
 import LineRegistryAlert from './components/LineRegistryAlert';
+import KeepScreenAwake from './components/KeepScreenAwake';
+import { shouldKeepAwake } from './utils/keepAwake';
 import ScanWedgeGuard from './components/ScanWedgeGuard';
 import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่างฟอร์มที่หมดอายุ (ร่างค้างห้ามกินที่ในเครื่อง)   // 🔫 ปุ่มสแกนข้างเครื่อง handheld — มือถือเท่านั้น
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
@@ -2189,10 +2191,16 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
   /* 📺 จอวนหน้า — บัญชีที่มีแผนใน `display_rotations` จะวนหน้าเอง (ตั้งที่ /display-rotation)
      ต้องอยู่ทุก branch (/tv · Home · หน้าปกติ) ไม่งั้นวนเข้า /tv แล้วตัววนหายไปพร้อม layout
      ปิดตอน admin จำลองมุมมอง (viewAs) — ไม่งั้นจอ admin วนตามแผนของตัวเอง */
+  /* 💡 กันทีวีดับจอเอง (27/11 · ทีวี LG ขึ้น "To turn the screen back on…" ทั้งที่ปิดประหยัดพลังงานแล้ว)
+     อยู่ใน `rotator` เพราะตัวนี้ถูกวาดทุก branch (/tv · Home · หน้าปกติ) — ตัดสินที่ utils/keepAwake.js */
+  const keepAwake = !IN_FRAME && shouldKeepAwake({
+    tvShell, kiosk: isKiosk, ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  });
   const rotator = (
     <Suspense fallback={null}>
       <DisplayRotator userId={userId} role={userRole} disabled={!!viewAs || IN_FRAME} shell={tvShell}
         onLogout={handleLogout} theme={theme} onToggleTheme={onToggleTheme} />
+      {keepAwake && <KeepScreenAwake />}
     </Suspense>
   );
   const role       = userRole; // ไม่ fallback เป็น 'admin' อีกต่อไป — profileLoaded gate ด้านบนรับประกันว่า role ถูก resolve แล้วก่อนถึงจุดนี้
