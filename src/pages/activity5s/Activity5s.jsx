@@ -1,7 +1,8 @@
 /* ══ ♻️ กิจกรรม 5S (/activity-5s) — ยกจากระบบ Core (2026-11-27 · คำสั่ง user "ยก 5ส ที่เราสร้าง ก๊อปไปสร้างใน ESM" · loop smf01) ══
    โครงเดียวกับหน้ากิจกรรมอื่น (`pages/Activity.jsx`): ส่วน Dashboard / Edit Data / Setting สลับที่ Sub Bar (`?tab=`) ·
    Detail Bar = ส่วนย่อย (`?sec=`) · Tool Bar ตำแหน่งตายตัว (รีเฟรช · เพิ่ม · แก้ไข · ลบ — 🔍 ของ Tool Bar หาช่องค้นหาในการ์ดเอง)
-   · รอบ 1 (27/11): Setting = พื้นที่ · ทีม · หัวข้อตรวจ · แผนตรวจ · เกณฑ์ผ่าน · Dashboard / Edit Data = รอบ 2 (จอบอกตรงๆ)
+   · รอบ 1 (27/11): Setting = พื้นที่ · ทีม · หัวข้อตรวจ · แผนตรวจ · เกณฑ์ผ่าน
+   · รอบ 2 (27/11): Dashboard = กลยุทธ์ · ภาพรวม · อันดับ · ผู้ตรวจ · แผนงาน · ทีม (`Dashboard.jsx` + สูตร `dash.js`) · Edit Data = รอบถัดไป
    · ข้อมูล: ตาราง act02_* (MAIN · migration 20261127_act02_5s_main.sql) · เขียน = สิทธิ์ `act_5s:manage` (RLS has_perm คีย์เดียวกัน)
    · ปีเลือกในการ์ด (ไม่ใช้ `filters=` — มี filters แล้ว Tool Bar/Detail Bar ไม่ค้าง ตามกติกา PageHeader std) */
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -20,13 +21,14 @@ import { checkWrite, checkWriteRows } from '../../utils/dbWrite';
 import { askConfirm } from '../../utils/askConfirm';
 import { yearDisplay } from '../../utils/dateFormat';
 import useLang from '../../utils/useLang';
-import { PERM, SETTING_SECTIONS } from './labels';
+import { DASH_SECTIONS, PERM, SETTING_SECTIONS } from './labels';
+import Dashboard5s from './Dashboard';
 import { FormModal, Table5s, TargetForm } from './setting';
 import { SECTIONS, missingField, stamp } from './sections';
 
 const THIS_YEAR = new Date().getFullYear();
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, minHeight: '60vh' };
-const sel = { padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13 };
+const sel = { width: 'auto', padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13 };
 
 export default function Activity5s() {
   const { tr } = useLang();
@@ -36,9 +38,13 @@ export default function Activity5s() {
   const [tab, setTab] = useTabParam(ACTIVITY_TABS.map(t => t.key), ACTIVITY_TABS[0].key);
   const [sp] = useSearchParams();
 
-  const sections = useMemo(() => (tab === 'setting' ? SETTING_SECTIONS.map(s => ({ key: s.key, label: tr(s.label) })) : []), [tab, tr]);
+  const sections = useMemo(() => {
+    const list = tab === 'setting' ? SETTING_SECTIONS : tab === 'dashboard' ? DASH_SECTIONS : [];
+    return list.map(s => ({ key: s.key, label: tr(s.label) }));
+  }, [tab, tr]);
   useNavSubItems(pathname, tab, 'sec', sections, { all: false });
-  const sec = sections.find(s => s.key === sp.get('sec'))?.key || sections[0]?.key || null;
+  /* Dashboard เปิดมาที่ "ภาพรวม" (กลยุทธ์อยู่ซ้ายสุดแต่ไม่ใช่หน้าแรก — แบบเดียวกับ Core) */
+  const sec = sections.find(s => s.key === sp.get('sec'))?.key || (tab === 'dashboard' ? 'summary' : sections[0]?.key) || null;
   const cfg = tab === 'setting' && sec ? SECTIONS[sec] : null;
 
   const [year, setYear] = useState(THIS_YEAR);
@@ -56,7 +62,7 @@ export default function Activity5s() {
   /* พื้นที่ใช้ทุกส่วน (ชื่อพื้นที่ในทีม / แผนตรวจ · ตัวเลือกในฟอร์ม) */
   useEffect(() => {
     let alive = true;
-    supabase.from('act02_area').select('act_area, area_code, act_area_name, status').order('area_code').then(({ data, error }) => {
+    supabase.from('act02_area').select('act_area, area_code, act_area_name, area_type, status').order('area_code').then(({ data, error }) => {
       if (!alive) return;
       setAreaErr(error ? error.message : '');
       setAreas(data || []);
@@ -141,10 +147,15 @@ export default function Activity5s() {
     <Page top="flush">
       <PageHeader layout="std" icon="♻️" title="5S" tabs={ACTIVITY_TABS} tab={tab} onTab={setTab} tools={tools} />
       <div data-activity-card="1" style={card}>
-        {tab !== 'setting' && (
+        {tab === 'dashboard' && sec && (
+          <Dashboard5s sec={sec} year={year} yearPick={yearPick} areas={areas} tick={tick} q={q}
+            searchBox={<SearchInput value={q} onChange={setQ} placeholder={tr('ค้นหา…')} />} />
+        )}
+
+        {tab === 'edit' && (
           <>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>5S · {tab === 'dashboard' ? 'Dashboard' : 'Edit Data'}</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ยังไม่มีข้อมูลบนหน้านี้ — ส่วนนี้ทำในรอบถัดไป (ตั้งค่า 5S อยู่ที่ Setting)')}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>5S · Edit Data</div>
+            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ยังไม่มีข้อมูลบนหน้านี้ — ส่วนบันทึกใบตรวจทำในรอบถัดไป (Dashboard อ่านใบตรวจที่นำเข้าแล้ว)')}</div>
           </>
         )}
 

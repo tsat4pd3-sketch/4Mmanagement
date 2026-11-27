@@ -21,12 +21,12 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-27 19:30 · 5S รอบ 2: Dashboard (กลยุทธ์ · ภาพรวม · อันดับ · ผู้ตรวจ · แผนงาน · ทีม) + หัวเพจ std กะทัดรัด (ชื่อหน้า + breadcrumb แถวเดียว) · แตะ: `src/pages/activity5s/**` · `src/components/PageHeader.jsx` (เฉพาะแถวชื่อหน้าของ std) · ข้อมูล act02_audit / act02_audit_score / act02_task (นำเข้าจาก Core)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-27 · smf01 · 5S รอบ 2: Dashboard 6 ส่วน (กลยุทธ์ · ภาพรวม · อันดับ · ผู้ตรวจ · แผนงาน · ทีม) ยกสูตรจาก Core · ข้อมูลไม่พอ = จอบอก (ไม่โชว์ 0) · หัวเพจ std จอคอม: ชื่อหน้า + breadcrumb แถวเดียว (สูง 114 → 76px · ทุกหน้า std) · ไฟล์หลัก `src/pages/activity5s/Dashboard.jsx` `dash.js` `src/components/PageHeader.jsx` `docs/UI-CONVENTIONS.md` · ไม่มี migration (ประวัติใบตรวจ/แผนงานนำเข้าจาก Core ด้วย SQL ที่ user รัน) · ⚠️ harness `audit/vite.audit.mjs`: alias ข้อแรก `(^|/)../supabaseClient` กิน `../../supabaseClient` ก่อนข้อ 2 ⇒ หน้าในโฟลเดอร์ย่อยโหลดไม่ขึ้นใน harness (ไม่ได้แก้ — ของ loop หลัก)
 - 2026-11-27 · หลัก · แท็บ "ภาพรวมวันนี้" `/oee-analytics` แถวการ์ดบนสุดเหลือ **2 ใบ** (ยุบการ์ด "ยอดผลิตรวมวันนี้" เข้าไปเป็นท่อนล่างของการ์ด "กะที่กำลังผลิตอยู่ตอนนี้" · ผังไลน์ได้ที่กว้างขึ้น) + **เลิกเลือกไลน์ให้เองเงียบๆ**: กรองไลน์ไว้ = ตามตัวกรอง · ไม่ได้กรอง = ช่องเลือกบนการ์ด (ค่าเริ่มต้นว่าง + เขียนบนจอว่าผังเป็นของไลน์เดียว) · ไฟล์หลัก `src/pages/OEEAnalytics.jsx` `docs/modules/oee.md` · ไม่มี migration
 - 2026-11-27 · หลัก · รอบตรวจคู่มือ WI รายสัปดาห์ 27/11 — ทำใหม่ทั้ง 6 เล่ม (ps/prod/wh/mtn/qa/eng) + เลื่อน base เป็น f19f9137 · ไฟล์หลัก `docs/wi/books/**` `docs/wi/books.json` · ไม่แตะ src/ · ไม่มี migration
 - 2026-11-27 · หลัก · audit harness หา path รีโปจากตำแหน่งไฟล์เอง (เลิก hardcode `/home/user/4Mmanagement`) — รองรับรีโปเปลี่ยนชื่อเป็น `ESM` และเครื่อง smf01 · ตรวจแล้ว: index/alias mock/virtual:schema-usage ตรงกับก่อนแก้ · ไฟล์หลัก `audit/vite.audit.mjs` · ไม่มี migration

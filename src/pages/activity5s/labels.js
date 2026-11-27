@@ -35,7 +35,15 @@ export const S_GROUPS = ['1S', '2S', '3S', '4S', '5S'];
 export const S_GROUP_LABEL = { '1S': 'สะสาง', '2S': 'สะดวก', '3S': 'สะอาด', '4S': 'สร้างมาตรฐาน', '5S': 'สร้างวินัย' };
 export const AUDIT_TEAMS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
 
-/* Detail Bar ของแต่ละส่วน (Sub Bar ?tab=) — Setting ทำรอบ 1 · Dashboard / Edit Data รอบ 2 */
+/* Detail Bar ของแต่ละส่วน (Sub Bar ?tab=) — Setting รอบ 1 · Dashboard รอบ 2 (27/11) · Edit Data รอบถัดไป */
+export const DASH_SECTIONS = [
+  { key: 'strategy', label: 'กลยุทธ์' },
+  { key: 'summary',  label: 'ภาพรวม' },
+  { key: 'ranking',  label: 'อันดับ' },
+  { key: 'auditor',  label: 'ผู้ตรวจ' },
+  { key: 'schedule', label: 'แผนงาน' },
+  { key: 'team',     label: 'ทีม' },
+];
 export const SETTING_SECTIONS = [
   { key: 'area',      label: 'พื้นที่' },
   { key: 'team',      label: 'ทีม' },

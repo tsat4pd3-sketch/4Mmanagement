@@ -345,6 +345,7 @@ export default function PageHeader({
         </div>
   ) : null;
 
+  const stdOneRow = std && !isMobile && !inHub && compact;   // ชื่อหน้า + breadcrumb แถวเดียว (ดูคอมเมนต์ที่แถวชื่อหน้า)
   /* 📍 แถว Detail Bar รายการพื้นที่ (SAP) — std + แท็บในหน้า = แถวที่ 2 ใต้แท็บ (ไม่ถือ Tool Bar) */
   const detailRow = detailItems ? (
       <div data-detailbar="1" className="ph-chrome">
@@ -366,7 +367,7 @@ export default function PageHeader({
        🔴 ตัวตรวจลำดับ (`audit/stdsweep.mjs`) ต้องวัด "ก้นของก้อนนี้" ไม่ใช่ก้นของ `h1`
           ไม่งั้นคำอธิบายใต้ชื่อหน้า (`sub=`) จะถูกนับเป็น "ของแทรกเหนือแถบกรอง" ทุกหน้า
           (เจอจริง 20/10: รายงาน 19 มุมมอง ซึ่งส่วนใหญ่เป็น false positive จากเหตุนี้) */
-    <div data-ph-root="1" ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 'var(--ph-mb, 12px)',
+    <div data-ph-root="1" ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: stdOneRow ? 6 : 10, marginBottom: 'var(--ph-mb, 12px)',
       /* 📌 sticky: พื้นทึบกันเนื้อหาทะลุ · z ต่ำกว่าแผงเมนู (997+) / กระดิ่ง (1200) · เว้นขวาพ้น 🔔 ให้แถบแท็บ (ชื่อหน้าย้ายมาเว้นที่นี่แทน) */
       ...(sticky ? { position: 'sticky', top: stickTop, zIndex: 50, background: 'var(--bg)', paddingRight: 52,
         ...(isMobile ? { paddingLeft: 50 } : null) } : null) }}>
@@ -387,10 +388,19 @@ export default function PageHeader({
                 {icon && <Icon glyph={icon} size={19} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}<span style={{ minWidth: 0 }}>{tr(title)}</span>
               </h2>
             ) : (
+            stdOneRow ? (
+              /* 📐 std จอคอม (27/11 · คำสั่ง user "ส่วนหัวใช้พื้นที่เปลือง ขยับขึ้นอีก"): ชื่อหน้า + breadcrumb แถวเดียว ⇒ Detail Bar / Tool Bar ขึ้นมาแถวที่ 2 */
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap' }}>
+                  {icon && <Icon glyph={icon} size={19} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}{tr(title)}
+                </h2>
+                {crumbs}
+              </div>
+            ) : (
             <h2 style={{ margin: 0, fontSize: 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
               {icon && <Icon glyph={icon} size={22} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}{tr(title)}
             </h2>
-            )
+            ))
           )}
           {sub && !compact && <SubLine text={tr(sub)} marginTop={inHub ? 0 : 3} />}
         </div>
@@ -402,7 +412,7 @@ export default function PageHeader({
       </div>
       )}
 
-      {compact && crumbs}
+      {compact && !stdOneRow && crumbs}
 
       {/* 📍 Detail Bar — ใต้ breadcrumb (ดูคอมเมนต์ `detail` ข้างบน) · "ทั้งหมด" = ล้างตัวกรอง */}
       {emptyDetailRow && std && (
