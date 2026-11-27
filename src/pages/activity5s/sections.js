@@ -18,7 +18,7 @@ const statusCell = (r) => tr(labelOf(STATUS, r.status));
 /* ── ค่าตั้งของแต่ละส่วน ─────────────────────────────────────────────────────────────── */
 export const SECTIONS = {
   area: {
-    table: 'act02_area', key: 'act_area', yearly: false,
+    dbTable: 'act02_area', key: 'act_area', yearly: false,
     select: '*', order: [['area_code', true]],
     columns: [
       { key: 'area_code', label: 'รหัส', mono: true, width: 80 },
@@ -42,7 +42,7 @@ export const SECTIONS = {
   },
 
   team: {
-    table: 'act02_team', key: 'act_team', yearly: true,
+    dbTable: 'act02_team', key: 'act_team', yearly: true,
     select: '*', order: [['role', true], ['team', true], ['employee_code', true]],
     columns: [
       { key: 'employee_code', label: 'รหัส', mono: true, width: 90 },
@@ -77,7 +77,7 @@ export const SECTIONS = {
   },
 
   checklist: {
-    table: 'act02_checklist', key: 'act_checklist', yearly: true,
+    dbTable: 'act02_checklist', key: 'act_checklist', yearly: true,
     select: '*', order: [['item_no', true]],
     columns: [
       { key: 'item_no', label: 'ข้อ', width: 60, align: 'right' },
@@ -101,7 +101,7 @@ export const SECTIONS = {
   },
 
   plan: {
-    table: 'act02_audit_plan', key: 'act_audit_plan', yearly: true,
+    dbTable: 'act02_audit_plan', key: 'act_audit_plan', yearly: true,
     select: '*', order: [['month', true], ['week', true]],
     columns: [
       { key: 'round', label: 'รอบ', align: 'right', width: 60 },

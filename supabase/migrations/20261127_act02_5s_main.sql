@@ -211,6 +211,19 @@ insert into public.permission_catalog (resource, action, label, group_name, sort
 select 'act_5s', 'manage', '5S: ตั้งค่า (พื้นที่ · ทีม · หัวข้อตรวจ · แผนตรวจ · เกณฑ์ผ่าน · กลยุทธ์)', 'คุณภาพ & วิศวกรรม', 790
 where not exists (select 1 from public.permission_catalog where resource = 'act_5s' and action = 'manage');
 
+-- เปิด RLS ทุกตาราง (เขียนแยกบรรทัดให้ด่าน new-table-needs-rls อ่านเจอ · policy อยู่ข้อ 5)
+alter table public.act_activity enable row level security;
+alter table public.act_strategy enable row level security;
+alter table public.act02_area enable row level security;
+alter table public.act02_team enable row level security;
+alter table public.act02_checklist enable row level security;
+alter table public.act02_audit_plan enable row level security;
+alter table public.act02_setting enable row level security;
+alter table public.act02_audit enable row level security;
+alter table public.act02_audit_score enable row level security;
+alter table public.act02_issue enable row level security;
+alter table public.act02_task enable row level security;
+
 -- 5) RLS + GRANT + trigger ทุกตาราง (อ่าน = login · เขียน = act_5s:manage) · ไม่มีคำสั่ง drop (MCP ถามยืนยัน) — สร้างเมื่อยังไม่มี
 do $$
 declare t text;

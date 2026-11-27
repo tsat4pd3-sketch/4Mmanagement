@@ -67,7 +67,7 @@ export default function Activity5s() {
   useEffect(() => {
     let alive = true;
     if (!cfg) return undefined;
-    let qy = supabase.from(cfg.table).select(cfg.select);
+    let qy = supabase.from(cfg.dbTable).select(cfg.select);
     if (cfg.yearly) qy = qy.eq('year', year);
     for (const [col, asc] of cfg.order) qy = qy.order(col, { ascending: asc, nullsFirst: false });
     qy.then(({ data, error }) => {
@@ -102,8 +102,8 @@ export default function Activity5s() {
     const row = { ...cfg.toRow(v), ...stamp() };
     setBusy(true);
     const res = form.mode === 'add'
-      ? await supabase.from(cfg.table).insert([row]).select(cfg.key)
-      : await supabase.from(cfg.table).update(row).eq(cfg.key, form.id).select(cfg.key);
+      ? await supabase.from(cfg.dbTable).insert([row]).select(cfg.key)
+      : await supabase.from(cfg.dbTable).update(row).eq(cfg.key, form.id).select(cfg.key);
     setBusy(false);
     const label = form.mode === 'add' ? tr('เพิ่ม') : tr('บันทึก');
     if (form.mode === 'add' ? !checkWrite(res, label) : !checkWriteRows(res, label)) return;
@@ -114,7 +114,7 @@ export default function Activity5s() {
   const remove = async () => {
     if (!current) return;
     if (!await askConfirm(`${tr('ลบ')} "${cfg.name(current, ctx)}" ?`)) return;
-    const res = await supabase.from(cfg.table).delete().eq(cfg.key, current[cfg.key]).select(cfg.key);
+    const res = await supabase.from(cfg.dbTable).delete().eq(cfg.key, current[cfg.key]).select(cfg.key);
     if (!checkWriteRows(res, tr('ลบ'))) return;
     toast.success(`${tr('ลบ')} ${cfg.name(current, ctx)} ${tr('แล้ว')}`);
     setPicked(null); reload();
@@ -122,11 +122,12 @@ export default function Activity5s() {
 
   /* Tool Bar: ปุ่มที่ใช้ไม่ได้ในส่วนนี้ = จาง (ไม่ส่ง / disabled) · ไม่มีสิทธิ์ = จาง */
   const tableSec = !!cfg;
+  /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาดเอง (กฎ i18n-map-label-at-declaration: ห้าม label: tr('…') ที่จุดประกาศ) */
   const tools = [
-    { key: 'refresh', label: tr('รีเฟรช'), onClick: reload },
-    { key: 'add', label: tr('เพิ่ม'), onClick: openAdd, disabled: !(tableSec && canEdit) },
-    { key: 'edit', label: tr('แก้ไข'), onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current) },
-    { key: 'delete', label: tr('ลบ'), onClick: remove, disabled: !(tableSec && canEdit && current) },
+    { key: 'refresh', label: 'รีเฟรช', onClick: reload },
+    { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit) },
+    { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current) },
+    { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current) },
   ];
 
   const years = [THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
