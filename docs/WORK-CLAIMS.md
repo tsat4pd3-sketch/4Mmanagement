@@ -21,6 +21,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- smf01 · เริ่ม 2026-11-27 19:30 · 5S รอบ 2: Dashboard (กลยุทธ์ · ภาพรวม · อันดับ · ผู้ตรวจ · แผนงาน · ทีม) + หัวเพจ std กะทัดรัด (ชื่อหน้า + breadcrumb แถวเดียว) · แตะ: `src/pages/activity5s/**` · `src/components/PageHeader.jsx` (เฉพาะแถวชื่อหน้าของ std) · ข้อมูล act02_audit / act02_audit_score / act02_task (นำเข้าจาก Core)
 
 ## ต้องคุยกัน
 
