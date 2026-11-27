@@ -1,7 +1,8 @@
 # 🔧 ศูนย์ PM — แท็บ "ตรวจ PM" + "ตั้งค่าจุดตรวจ" (`/pm?tab=check|setup`)
 
-> `src/pages/PmHub.jsx` ครอบ 5 หน้าเดิมเป็นแท็บ (`check` · `schedule` · `forecast` ·
-> `coordination` · `setup`) · route เดิม `/pm-check` `/pm-setup` ฯลฯ redirect เข้ามา
+> `src/pages/PmHub.jsx` ครอบ 5 หน้าเดิม + แผงเพิ่ม เป็น **8 แท็บ** (`TABS`) — `check` · `plan` · `forecast` ·
+> `levels` · `monthly` · `spc` · `coord` · `setup` (แก้ 27/11/2026 ตามโค้ดปัจจุบัน — key เดิมที่เขียนไว้ `schedule`/`coordination` ไม่มีจริง)
+> · route เดิม `/pm-check` `/pm-setup` ฯลฯ redirect เข้ามา (`/pm-schedule` → `?tab=plan` · `/pm-coordination` → `?tab=coord`)
 > สิทธิ์ piggyback บน `page:/pm-check‖/pm-schedule‖/pm-forecast‖/pm-coordination‖/pm-setup`
 > **ไม่ต้อง seed `page:/pm`**
 >
@@ -378,7 +379,7 @@ user 19/11: *"ระบบการตรวจมันเหมือน ท�
 ## 📄 ที่เกี่ยวข้อง
 
 - `docs/modules/pm-predictive-planner-sync.md` — แท็บ `forecast` (วัน PM ล่วงหน้า + buffer)
-- `docs/modules/pm-coordination.md` — แท็บ `coordination` (ใบแจ้งแผน PM ข้ามวัน)
+- `docs/modules/pm-coordination.md` — แท็บ `coord` (ใบแจ้งแผน PM ข้ามวัน · แก้ 27/11/2026 ตามโค้ดปัจจุบัน)
 - `docs/HANDOFF_PM_INSPECTION_SETUP_GAPS.md` — 📌 ออกแบบไว้ ยังไม่ลงมือ **ห้ามหยิบไปทำเองจนกว่า user สั่ง**
 
 

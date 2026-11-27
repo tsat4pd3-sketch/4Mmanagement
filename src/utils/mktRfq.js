@@ -147,7 +147,7 @@ export const RFQ_FLOW_STEPS = [
 ];
 /** "⏳ รอ: ใคร — ทำอะไร" ต่อสถานะ (ข้อความเดียวทั้งระบบ · ห้ามแต่งในหน้า) */
 const RFQ_WAITING = {
-  received:        'MKT — ส่ง CRD ให้ IEC/แผนกที่เกี่ยวข้องประเมิน',
+  received:        'MKT — กด "ส่งให้ IEC ประเมิน" ในการ์ดประเมิน (ส่ง CRD อย่างเดียวไม่แจ้ง IEC)',
   assessing:       'IEC/แผนก — ประเมินความเป็นไปได้ + ต้นทุนเบื้องต้น',
   pre_review:      'MKT — ทบทวน concept/cost ก่อนคิดราคา',
   costing:         'CSC — คิดต้นทุน (Cost Breakdown)',

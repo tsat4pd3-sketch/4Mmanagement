@@ -1,7 +1,7 @@
 # 🗂️ ออดิทระบบ Check Sheet แบบเอกสาร — LPA · Poka-Yoke · BBS · PPE (2026-11-19 · คำสั่ง user)
 
 > โหลดเฉพาะเมื่อแตะใบตรวจแบบ "ตรวจตามหัวข้อ ไม่มีรูปแนบ" ในแท็บ `/daily-checker` หรือ PPE ตอนเช็คชื่อ
-> · ระบบตรวจที่มีจุดตรวจ/ค่าตัวเลข (PM/AM `/pm?tab=check` · ตั้งค่าใบ PM · QA Check Sheet · บันทึก shim fixture)
+> · ระบบตรวจที่มีจุดตรวจ/ค่าตัวเลข (PM `/pm?tab=check` · AM `/daily-checker?tab=amcheck` (แก้ 27/11/2026 ตามโค้ดปัจจุบัน) · ตั้งค่าใบ PM · QA Check Sheet · บันทึก shim fixture)
 >   **อีก session ดูแล — ไม่อยู่ในขอบเขตไฟล์นี้**
 
 ## มาตรฐานที่ใบตรวจทุกตัวต้องมี (ต้นแบบ = LPA `src/pages/LayerProcessAudit.jsx`)

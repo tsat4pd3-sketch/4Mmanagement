@@ -73,9 +73,11 @@ policy แยกตาม **คำสั่ง** ไม่ได้แยกต�
 | `pending` → `pending_qa` \| `approved` | `Report.handleApprove` ขั้น SV (`approved` = ใบ `requires_qa=false`) | `four_m:approve_sv` |
 | `pending_qa` → `approved` | `Report` ขั้น QA | `four_m:approve_qa` |
 | `*` → `rejected` | `Report.handleReject` | `approve_sv` **or** `approve_qa` |
-| `*` → `pending` (รีเซ็ต) | `Report.jsx:2090` | `four_m:reset` |
+| `*` → `pending` (รีเซ็ต) | ปุ่ม Reset ในแถวใบ (`FourMTab` ใน `Report.jsx` — อ้างชื่อแทนเลขบรรทัด · แก้ 27/11/2026 ตามโค้ดปัจจุบัน) | `four_m:reset` |
 | สถานะไม่ขยับ + ไม่แตะคอลัมน์อนุมัติ | แนบรูป/แก้คำบรรยาย | ผ่าน |
 | เส้นทางอื่นทั้งหมด | — | **บล็อก** |
+
+> 🔐 **ชั้น ③ ฝั่งจอ (13/11 · `1b1a0595`):** ขั้น SV (`canApproveLog` ใน `FourMTab`) และปุ่ม Reset เช็คขอบเขตรายคนด้วย `canWriteLine(wCtx, log.line_name, lines, { unknownTarget: 'block' })` เพิ่มจากคีย์ — คีย์บอกแค่ "กดปุ่มเป็น" · leader ยังตัดสินด้วยครอบครัวไลน์ (`lineFamilyOf`) · ไม่รู้ไลน์ของใบ = บล็อก · ขั้น QA ยังเช็คแค่ `four_m:approve_qa` (แก้ 27/11/2026 ตามโค้ดปัจจุบัน)
 
 · `auth.uid() is null` (service role / `daily-4m-summary` / `send-notification`) = ผ่านเสมอ · admin bypass
 · **ใบ 4M ห้ามลบ** → restrictive policy `four_m_logs_delete_guard` (`four_m:reset`) — ไม่มีจอไหนลบ

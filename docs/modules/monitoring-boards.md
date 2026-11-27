@@ -96,7 +96,7 @@
 (📄 เหตุผล + ผลพิสูจน์ → `docs/modules/traceability-audit-log.md` §หยุด audit การนำเข้าเป็นชุด)
 
 ---|---|---|
-| `/monitoring` → **📥 นำเข้าจากไฟล์ Excel** (`MonitorImport`) | `monitor_boards` / `monitor_board_parts` / `monitor_cells` = **ตัวตารางบอร์ด** | บอร์ดยังเป็นข้อมูลเดือนก่อน |
+| `/line-stock?tab=monitoring` (ลิงก์เก่า `/monitoring` พามาเอง) → **📥 นำเข้า Monitoring แพลนนิ่ง** (`ImportButton k="planner_monitoring"` · ป้ายจาก `src/utils/importRegistry.js` · `MonitorImport`) · กลุ่มสโตร์มีปุ่มหลักอีกตัว **📥 นำเข้า Stock_Store** (`store_stock` · ไฟล์ของสโตร์ คนละไฟล์) (แก้ 27/11/2026 ตามโค้ดปัจจุบัน) | `monitor_boards` / `monitor_board_parts` / `monitor_cells` = **ตัวตารางบอร์ด** | บอร์ดยังเป็นข้อมูลเดือนก่อน |
 | `/planner-sales?tab=monitoring` → **📗 Monitoring (Planning)** (`MonitoringUpload`) | FC · ออเดอร์ · ประวัติการส่ง · MIN/MAX · ปรับสต็อก = **ตัวเลขที่ไหลต่อ** | แผนผลิต/Delivery/คานบังไม่เห็นยอดเดือนใหม่ |
 
 **ไม่ทับกันเลย** (คนละตาราง — `MonitorImport` ข้อ 4 ห้ามแตะตารางของอีกฝั่งอยู่แล้ว)
@@ -390,7 +390,7 @@ user ถาม: *"เรื่องเดียวกันปะ สองเ�
 
 ⇒ **ทางที่เลือก:** ยุบที่ **เมนู** ด้วย pattern เดิมของโปรเจค (embed ทั้งดุ้น เหมือน `/equipment`)
 - แท็บ 📦 FG มี 2 มุมมองสลับด้วย **`?fgv=rundown|board`** (🔴 คนละ query param กับ `?tab=` ของหน้าแม่ · UI §6.8 ข้อ 2.4)
-- `/rundown-stock` → `LegacyTabRedirect` ไป `/monitoring?tab=fg` · **ถอดออกจากเมนูแล้ว** (ลิงก์/บุ๊กมาร์กเก่ายังใช้ได้)
+- `/rundown-stock` → `LegacyTabRedirect` ไป `/monitoring?tab=fg` แล้ว `/monitoring` ส่งต่ออีกทอด ⇒ **ปลายทางจริง `/line-stock?tab=monitoring&mon=fg`** (แก้ 27/11/2026 ตามโค้ดปัจจุบัน) · **ถอดออกจากเมนูแล้ว** (ลิงก์/บุ๊กมาร์กเก่ายังใช้ได้)
 - 🔴 **ครอบ `<Hub>` เสมอตอน embed หน้าลูก** ไม่งั้นหัวเรื่องซ้อน 2 ชั้น (มีด่าน — รอบนี้ลืมแล้วด่านจับได้)
 
 ### บอร์ด FG ได้ของจาก `/rundown-stock` มาแล้ว 3 อย่าง

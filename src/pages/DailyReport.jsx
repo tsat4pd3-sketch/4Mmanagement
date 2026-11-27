@@ -2934,7 +2934,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const msg = qtyFitWarn(o, qty);
     if (!msg) return true;
     return await askConfirm(`⚠️ ${tr("ยอดนี้ดูเป็นไปไม่ได้เมื่อเทียบกับเวลาที่เครื่องมี")}\n\n${msg}\n\n`
-      + tr('กด OK = ยืนยันว่าตรวจแล้วและยอดนี้ถูกต้อง · กด Cancel = กลับไปแก้'));
+      + tr('กด ตกลง = ยืนยันว่าตรวจแล้วและยอดนี้ถูกต้อง · กด ยกเลิก = กลับไปแก้'));
   };
 
   /* 🔐 ชั้น ③ ของ "ปิดกะ / อนุมัติปิดกะ" (13/11 · audit role↔scope P1-7): คีย์ close_shift/approve_close บอกแค่ "กดปุ่มเป็น"
@@ -8253,7 +8253,7 @@ function HistoryTab({ role }) {
                       if (same && !await askConfirm(
                         `${tr("กะนี้ออกใบ")} ${same.doc_no} ${tr("ไปแล้ว และเนื้อใบยังเหมือนเดิมทุกอย่าง")}\n\n`
                         + 'ถ้าแค่อยากได้กระดาษอีกแผ่น ให้กดปุ่ม 🧾 เลขที่ใบ (พิมพ์ซ้ำใบเดิม) แทน\n'
-                        + tr('กด OK = ออกใบใหม่อีกเลขหนึ่ง'))) return;
+                        + tr('กด ตกลง = ออกใบใหม่อีกเลขหนึ่ง'))) return;
                       setHistSheet({ session: s, title: R.headline || '', dts, defs });
                     }}
                     title={tr('ออกใบรายงานปัญหาการผลิตใบใหม่ของกะนี้ (ระบบออกเลขที่ใบ + เก็บเนื้อใบไว้ให้พิมพ์ซ้ำ)')}

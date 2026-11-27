@@ -129,11 +129,11 @@ user ถาม: *"พิมพ์ QR ติดเครื่องแล้ว 
 - 🐛 แก้พร้อมกัน: `/scan` เคย select `dr_products.part_name` (ไม่มีคอลัมน์นี้ · ชื่อ = `name`) ⇒ 42703 ทุกครั้งที่สแกน MAT · มีด่าน `dr-products-has-no-part-name`
 
 ### งานค้าง
-- หน้า Daily AM board (`DailyPM.jsx`) ยังลิงก์ `dept=production` ตรงๆ (ควรอ่านทีม AM ด้วย `isAmTeam`) — ไม่ได้แตะรอบนี้
+- ~~หน้า Daily AM board (`DailyPM.jsx`) ยังลิงก์ `dept=production` ตรงๆ~~ **ปิดแล้ว** — ลิงก์ตรวจของบอร์ดไป `/daily-checker?tab=amcheck&line=` (หน้าบันทึกผลตรวจ AM) · ลิงก์ที่ยังเหลือ `dept=production` = ไปหน้าตั้งค่า `/pm?tab=setup` เท่านั้น (แก้ 27/11/2026 ตามโค้ดปัจจุบัน)
 
 ### 🛠️ QC 05/10 — `/scan`
 - 🔴 **ตาราง DR `jigs` ไม่มีคอลัมน์ `department`** — `/scan` เคย select ไปด้วย ⇒ 42703 ⇒ จิ๊กไม่เคยถูกพบ ปุ่มตรวจ PM ไม่เคยโผล่ (มีด่าน `jigs-has-no-department-column`)
-- แผนกของใบตรวจ PM อ่านจาก `checklists.department` (module=mtn) แล้วส่ง `&dept=` ไป `/pm?tab=check` (ไม่ส่ง = เปิดแผนก maintenance เสมอ · วัด 05/10: 106/147 ใบตรวจ mtn เป็น jig_maintenance) · มีหลายแผนก = ปุ่มละแผนก
+- แผนกของใบตรวจ PM อ่านจาก `checklists.department` (module=mtn) แล้วส่ง `&dept=` ไป `/pm?tab=check` — **แผนกที่เป็นทีม AM (`isAmTeam`) ไป `/daily-checker?tab=amcheck&equip=&dept=` แทน** (ปุ่ม 🏭 ตรวจ AM แยกจาก ✅ ตรวจ PM (แก้ 27/11/2026 ตามโค้ดปัจจุบัน)) (ไม่ส่ง = เปิดแผนก maintenance เสมอ · วัด 05/10: 106/147 ใบตรวจ mtn เป็น jig_maintenance) · มีหลายแผนก = ปุ่มละแผนก
 - ป้ายจุดส่งงาน `ESM:D:<uuid>` (QrLabels พิมพ์เป็นลิงก์ /scan) → หน้า /scan แสดงจุดส่ง + ทางไป /heijunka (เดิมขึ้น "ไม่พบอุปกรณ์")
 
 ## 📷 เฟส 1 "ทุกอย่างที่ต้องเลือก สแกนได้" — สแกนเพื่อเลือกใน picker กลาง (2026-10-27 · คำสั่ง user)
@@ -163,7 +163,7 @@ user ถาม: *"พิมพ์ QR ติดเครื่องแล้ว 
 `src/pages/ScanLanding.jsx` (เดิมรู้จักแค่ เครื่อง/จิ๊ก/จุดส่ง/ใบผลิต/MAT) เพิ่ม:
 | ป้าย | ตัวตัดสิน | การ์ด + ทางลัด (โผล่ตาม `canAccessPage`) |
 |---|---|---|
-| ไลน์ `ESM:L:<id>` หรือ**ชื่อไลน์เปล่าที่ตรงเป๊ะ** | `resolveLine` + `useProductionLinesState` | Daily Report `?line=` · OEE สด `/line-oee?line=` · `/management?line=` · คนในไลน์ `/people-board?line=` · ตรวจ AM/PM `/pm?tab=check&line=` · พิมพ์ใบสแกน `/qr-labels?kind=sheet&line=` (ScanSheetPanel อ่าน `?line=` ตอน mount) |
+| ไลน์ `ESM:L:<id>` หรือ**ชื่อไลน์เปล่าที่ตรงเป๊ะ** | `resolveLine` + `useProductionLinesState` | Daily Report `?line=` · OEE สด `/line-oee?line=` · `/management?line=` · คนในไลน์ `/people-board?line=` · 🏭 ตรวจ AM `/daily-checker?tab=amcheck&line=` + ✅ ตรวจ PM `/pm?tab=check&line=` (ลิงก์แยก 2 ปุ่ม (แก้ 27/11/2026 ตามโค้ดปัจจุบัน)) · พิมพ์ใบสแกน `/qr-labels?kind=sheet&line=` (ScanSheetPanel อ่าน `?line=` ตอน mount) |
 | บัตรพนักงาน (รหัสล้วน · ป้ายไม่มีชนิด) | `findByBadge` (คิวรี `.in` 2 รูป: ตามที่สแกน + `normBadgeCode`) | ข้อมูลพนักงาน `/operator?q=<รหัส>` · **🪪 เช็คชื่อ “มางาน” จบที่หน้านี้** (ดูหัวข้อล่าง) · ทางลัดไปหน้าเช็คชื่อทั้งไลน์ |
 | คลัง `ESM:W:<code>` | เทียบ `code` หลังปรับรูป | ข้อมูลคลัง + บอกว่าใช้ยิงในช่องรหัสคลัง |
 | ประเภท Downtime/งานเสีย `ESM:T`/`ESM:X` | `resolveTypeRow` (ดึงแถวเดียวตาม id) | ชื่อ/ในแผน-นอกแผน/ปิดใช้งาน + ไป Daily Report |

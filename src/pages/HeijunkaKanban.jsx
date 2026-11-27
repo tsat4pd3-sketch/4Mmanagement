@@ -1534,7 +1534,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
               : orphan ? tr("🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ \"รอรับเข้า\" รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด")
               /* 🔴 เขียนเท่าที่รู้จริง — กฎที่ถูกปิด (⚫) ไม่โผล่ในชุดนี้ (select กรอง is_active) ⇒
                  ห้ามฟันธงว่า "ของเข้าคิวแล้ว" · บอกว่าเข้าตามกฎของพาร์ท แล้วให้ไปดูที่คิวจริง */
-              : byLot ? null : tr("📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ \"สต็อกในไลน์ › รอรับเข้า\") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก");
+              : byLot ? null : tr("📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ \"Stock Management › รับของเข้าคลัง\") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก");
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
                 /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
@@ -1575,7 +1575,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
               : orphan ? tr("🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ \"รอรับเข้า\" รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด")
               /* 🔴 เขียนเท่าที่รู้จริง — กฎที่ถูกปิด (⚫) ไม่โผล่ในชุดนี้ (select กรอง is_active) ⇒
                  ห้ามฟันธงว่า "ของเข้าคิวแล้ว" · บอกว่าเข้าตามกฎของพาร์ท แล้วให้ไปดูที่คิวจริง */
-              : byLot ? null : tr("📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ \"สต็อกในไลน์ › รอรับเข้า\") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก");
+              : byLot ? null : tr("📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ \"Stock Management › รับของเข้าคลัง\") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก");
             return (
               <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
                 /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
@@ -2230,7 +2230,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             if (lotMatsOf(rulesRows || []).has(String(lot.child_mat_no || '').trim())) {
               destLoc = inflowDestOf(lot.child_mat_no, rulesRows || []);
               if (!destLoc) {
-                throw new Error(`ยังไม่ได้ตั้งคลังปลายทางของ ${lot.child_mat_no} — ไปตั้งที่ สต็อกในไลน์ › กฎรับเข้าคลัง แล้วกดรับใหม่`);
+                throw new Error(`ยังไม่ได้ตั้งคลังปลายทางของ ${lot.child_mat_no} — ไปตั้งที่ Stock Management › ตั้งค่า › กฎรับเข้า แล้วกดรับใหม่`);
               }
               txns.push({ line_name: destLoc, mat_no: lot.child_mat_no, part_name: lot.part_name, qty: lot.lot_qty,
                 type: 'issue', work_date: wd, note: `auto: ${tr("รับ child เข้า")} ${destLoc} (${tr("ล็อต")} ${lot.lot_qty} · ${tr("ผลิตที่")} ${lot.source_line})`, created_by: fullName || 'สโตร์' });
