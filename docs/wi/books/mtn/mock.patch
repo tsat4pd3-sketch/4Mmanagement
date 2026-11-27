@@ -9,7 +9,7 @@
  const ROW = (i) => ({
    id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
    line_name: 'LINE APRON ASSY / HYDROFORM',
-@@ -482,7 +484,7 @@
+@@ -522,7 +524,7 @@
       🔴 ต้องมีทั้ง 2 ฟอร์ม: `mtn_dept` = ทีมที่ใช้ฟอร์ม MTN (8 ขั้น ไม่มี QA) และทีมอื่น (7 ขั้น มี QA)
          เพราะ **เลขขั้นเดียวกันคนละความหมาย** (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN)
          ⇒ ถอดทีมใดทีมหนึ่งออก = สาขา `stageOf` ฝั่งนั้นหลุดด่าน */
@@ -17,8 +17,8 @@
 +  mtn_orders: (r, i) => withStep({
      ...r,
      mo_no: `MO-2610-${String(i).padStart(3, '0')}`,
-     status: ['pending', 'assigned', 'repaired', 'checked', 'handover', 'closed'][i % 6],
-@@ -512,6 +514,16 @@
+     /* 🔧 27/11 ค่าซ่อม MO บนแกน C: ใบที่รับมอบแล้ว (ho_at ด้านล่าง = วันล่าสุด) บางใบมีค่าใช้จ่าย บางใบยังไม่ลง (null ทั้งคู่ = สาขา nNoCost) · ห้ามถอด */
+@@ -554,6 +556,16 @@
            "กำลังซ่อม แต่ใบไม่มีชื่อช่าง" (`kind: 'no_target'`) ถูกเรนเดอร์จริงในด่าน
            ถ้าทุกแถวมีชื่อ = เส้นทางนั้นหลุดด่าน แล้วใบที่ชี้เป้าไม่ได้จะหายจากแผงโดยไม่มีใครรู้ */
      assigned_to: isNullish(r) || i % 7 === 0 ? null : 'ช่างเอก',
@@ -28,25 +28,25 @@
 +    ...(i === 11 ? { status: 'handover', mtn_dept: 'maintenance', mtn_head_at: '2026-08-05T09:00:00+07:00', approve_at: null } : {}),
 +    ...(i === 12 ? { mtn_dept: 'maintenance', purpose: 'improve', dept_manager_at: null, plant_manager_at: null, mo_approved_by: 'ผจก.ช่าง ทดสอบ', mo_ack_at: null } : {}),
 +    /* WI-MTN patch: ใบที่ระบบเปิดให้ตอนกดเรียกช่าง ยังรอรายละเอียด */
-+    ...(i === 1 ? { details_pending: true, item_type: null, problem_characteristic: null, before_img: null } : {}),
++    ...(i === 1 ? { details_pending: true, item_type: null, problem_characteristic: null, before_img: null, reported_by_name: 'ทดสอบ ระบบ' } : {}),
 +    ...(i === 15 ? { status: 'qa', mtn_dept: 'jig_maintenance' } : {}),
 +    ...(i === 10 ? { mtn_dept: 'production' } : {}),
 +    ...(i === 13 ? { status: 'handover', mtn_dept: 'maintenance', mtn_head_at: '2026-08-05T09:00:00+07:00', approve_at: '2026-08-06T09:00:00+07:00' } : {}),
    }),
    line_layouts: (r, i) => ({ ...r, line_id: i, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),   // 🔑 line_id เป็นเลข
    /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
-@@ -523,6 +535,8 @@
-     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
-     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+@@ -573,6 +585,8 @@
+     requested_at: new Date(Date.now() - [5, 20, 45, 12, 33][i % 5] * 60e3).toISOString(),
+     delivered_at: i % 4 === 3 ? new Date(Date.now() - 8 * 60e3).toISOString() : null, source: 'line_adhoc', store_ack_at: null,
    }),
 +  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
 +    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -1089,14 +1103,37 @@
-    ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
-    ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
+@@ -1279,7 +1293,28 @@
+                   { key: 'check', label: 'Supervisor', sig_label: 'ตรวจสอบโดย', kind: 'approve', assignee: { rule: 'perm_in_line', perm: 'bbs:check' } }] } } }]
+   : null
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
 +/* WI-MTN patch: ใบขอซื้อของ MO เหลือ 2 แถว ให้ปุ่มเส้นทางงานซ่อมอยู่ในจอ */
 +const _wiPr = () => ROWS.slice(0, 2).map((r, k) => ({ ...r, status: k ? 'ordered' : 'requested', pr_no: k ? '1000123456' : null }))
@@ -73,6 +73,7 @@
    if (table === 'display_rotations' && ROT_PATHS) {
      return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]
    }
+@@ -1287,7 +1322,9 @@
    if (TABLE_FIXED[table]) return TABLE_FIXED[table]
    const fn = TABLE_ROWS[table]
    const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS
