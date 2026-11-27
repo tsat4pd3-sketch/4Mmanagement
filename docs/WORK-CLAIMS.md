@@ -1,0 +1,30 @@
+# จองงาน ESM (2 loop) · เริ่ม 2026-11-27
+
+ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้องจองงานในไฟล์นี้ก่อนลงมือทุกครั้ง** กันแก้ไฟล์ / ตาราง / หน้าเดียวกันชนกัน
+
+| loop | ใคร | ทำงานจาก |
+|---|---|---|
+| **หลัก** | เจ้าของ ESM (Claude Code on the web · branch สุ่มชื่อ) | `claude/*` → merge เข้า `main` |
+| **smf01** | ผู้ช่วยพัฒนา ESM (Claude Code ในเครื่อง · บัญชี GitHub `tsat4smf01`) | `smf01/*` → merge เข้า `main` |
+
+## ขั้นตอน (ทุก session ทั้ง 2 loop)
+1. **ก่อนเริ่ม:** `git fetch origin && git checkout -B <branch> origin/main` · อ่านหัวข้อ "กำลังทำอยู่" ด้านล่าง
+2. **จอง:** เพิ่ม 1 บรรทัดใน "กำลังทำอยู่" แล้ว commit + push **เข้า `main` ทันที** (commit เล็ก ข้อความ `CLAIM: <loop> <งาน>`) — จองใน branch ตัวเองไม่นับ อีก loop มองไม่เห็น
+   `- <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง / view / function>`
+3. **ห้ามแตะ** ไฟล์ · หน้า · ตาราง · view · function · RLS ที่อีก loop จองอยู่ · ต้องใช้ร่วม = เขียนขอใน "ต้องคุยกัน" แล้วรอ
+4. **ไฟล์ใช้ร่วม** (`src/App.jsx` · เมนู / route · `src/supabaseClient.js` · `src/lib/**` · `CLAUDE.md` · `package.json`): แก้ให้น้อยที่สุด · `git pull --rebase origin main` ก่อน push ทุกครั้ง
+5. **migration:** ใส่ชื่อตาราง / view ที่แก้ในบรรทัดจอง · ชื่อไฟล์ขึ้นต้นวันที่ + ชื่อเรื่อง (แบบเดิม) ไม่ซ้ำกับของอีก loop
+6. **เสร็จ:** ลบบรรทัดจองของตัวเอง + เพิ่ม 1 บรรทัดใน "บันทึก" (ใหม่อยู่บนสุด: วันที่ · loop · ทำอะไร · ไฟล์หลัก · migration) แล้ว push เข้า `main`
+7. **จองค้างเกิน 24 ชม.** ไม่มี commit ใหม่ = ถามเจ้าของ loop นั้นก่อน ห้ามลบของคนอื่นเอง
+8. กฎ build / auto-merge / rollback เดิมใน `CLAUDE.md` §Branch & Deploy Workflow ใช้ทั้ง 2 loop
+
+## กำลังทำอยู่
+
+<!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- smf01 · เริ่ม 2026-11-27 13:00 · 5S (ยกจากระบบ Core) รอบ 1: ฐานข้อมูล + ข้อมูลเดิม + Setting · แตะ: ตารางใหม่ `act_activity` `act_strategy` `act02_*` (MAIN) + bucket `act-public` · `supabase/migrations/20261127_act02_5s_*.sql` · ไฟล์ใหม่ `src/pages/activity5s/**` · `src/utils/activityPages.js` (เฉพาะแถว 5s) · `src/App.jsx` (route /activity-5s บรรทัดเดียว)
+
+## ต้องคุยกัน
+
+## บันทึก (ใหม่อยู่บนสุด)
+
+- 2026-11-27 · smf01 · เริ่มระบบจองงาน 2 loop (ไฟล์นี้ + หัวข้อสั้นใน CLAUDE.md)

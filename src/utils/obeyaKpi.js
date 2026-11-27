@@ -205,23 +205,33 @@ export function axisDelivery({ target = 0, produced = 0, series = [], lateOrders
    ไม่ส่ง (null) = ไม่รู้ ⇒ พฤติกรรมเดิม */
 /* 💸 26/11: + `otBaht` (ค่า OT ประมาณการ · `utils/otCost.js`) — ก้อนที่ 3 ของ C · `otNote` = เหตุที่คิดไม่ได้/เดา (เขียนบนจอ ห้ามเงียบ) */
 /* 🔧 27/11: + `moBaht` (ค่าซ่อมจากใบ MO · `utils/moCost.js`) — ก้อนที่ 4 · `moNote` = ใบที่ยังไม่ลงค่าใช้จ่าย/โหลดไม่ได้ */
+/* 💵 แกน C แยก 2 ชั้น (27/11 · คำสั่ง user "downtime × activity rate คือค่าเสียโอกาส ไม่ใช่เงินที่เสียจริง — แยกออกจาก OT ที่จ่ายจริงกับของเสียที่ทิ้งจริง")
+   · `value` (ตัวเลขใหญ่) = **เงินที่จ่ายจริง** = ของเสีย (`ngBaht`) + ค่า OT (`otBaht`) + ค่าซ่อม MO (`moBaht`) → `cashBaht`
+   · เครื่องหยุดนอกแผน × อัตราค่าแรง (`dtBaht`) = **ค่าเสียโอกาส** → `oppBaht` แสดงแยก **ห้ามบวกเข้า `value`**
+   · series รายวัน: `v` = เงินจ่ายจริง · `dt` ยังอยู่ให้จอวาดแท่งแยก (คนละ stack) */
+export const cashCostOf = ({ ngBaht = 0, otBaht = 0, moBaht = 0 } = {}) => (Number(ngBaht) || 0) + (Number(otBaht) || 0) + (Number(moBaht) || 0);
 export function axisCost({ dtBaht = 0, ngBaht = 0, otBaht = 0, otNote = '', moBaht = 0, moNote = '', series = [], target = null, missingRate = 0, missingCost = 0, sessions = null } = {}) {
-  const total = (Number(dtBaht) || 0) + (Number(ngBaht) || 0) + (Number(otBaht) || 0) + (Number(moBaht) || 0);
+  const cash = cashCostOf({ ngBaht, otBaht, moBaht });
+  const opp = Number(dtBaht) || 0;
   const notes = [];
   if (otNote) notes.push(otNote);
   if (moNote) notes.push(moNote);
   if (missingRate) notes.push(`${missingRate} ไลน์ยังไม่ได้ตั้งอัตราค่าแรง/ชม. (cost center)`);
   if (missingCost) notes.push(`${missingCost} พาร์ทยังไม่มีต้นทุน/ชิ้น`);
-  if (sessions === 0 && !(total > 0)) {
-    return { key: 'C', unit: 'บาท', better: 'down', target, value: null, dtBaht: 0, ngBaht: 0, otBaht: 0, moBaht: 0,
+  const parts = { dtBaht: Math.round(opp), oppBaht: Math.round(opp), ngBaht: Math.round(Number(ngBaht) || 0), otBaht: Math.round(Number(otBaht) || 0), moBaht: Math.round(Number(moBaht) || 0), cashBaht: Math.round(cash) };
+  if (sessions === 0 && !(cash > 0) && !(opp > 0)) {
+    return { key: 'C', unit: 'บาท', better: 'down', target, value: null, ...parts,
       state: 'none', note: 'ยังไม่มีกะที่ปิดแล้วในช่วงนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย', series };
   }
+  const idleNote = opp > 0
+    ? `ไม่มีเงินจ่ายจริงในช่วงนี้ · ค่าเสียโอกาสจากเครื่องหยุด ${Math.round(opp).toLocaleString()} บาท (ไม่รวมในยอด)`
+    : 'ยังไม่มีความสูญเสียที่คิดเป็นเงินได้ในช่วงนี้';
   return {
     key: 'C', unit: 'บาท', better: 'down', target,
-    value: total > 0 ? Math.round(total) : (notes.length ? null : 0),
-    dtBaht: Math.round(dtBaht), ngBaht: Math.round(ngBaht), otBaht: Math.round(Number(otBaht) || 0), moBaht: Math.round(Number(moBaht) || 0),
-    state: notes.length ? 'thin' : (total > 0 ? 'ok' : 'none'),
-    note: notes.length ? `คิดได้ไม่ครบ: ${notes.join(' · ')}` : (total > 0 ? null : 'ยังไม่มีความสูญเสียที่คิดเป็นเงินได้ในช่วงนี้'),
+    value: cash > 0 ? Math.round(cash) : (notes.length ? null : 0),
+    ...parts,
+    state: notes.length ? 'thin' : (cash > 0 ? 'ok' : 'none'),
+    note: notes.length ? `คิดได้ไม่ครบ: ${notes.join(' · ')}` : (cash > 0 ? null : idleNote),
     series,
   };
 }

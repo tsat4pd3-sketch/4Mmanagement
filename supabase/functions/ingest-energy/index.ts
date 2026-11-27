@@ -7,6 +7,9 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v12 (2026-11-27 · คำสั่ง user "เพิ่มชนิดไม่ควร hardcode"): + body.sensors [{ kind, point, value, at }] → sensor_readings
+     ชนิดที่เพิ่มเองในหน้า /integrations (integration_kinds · is_builtin=false) · เก็บรายนาที 7 วัน (สรุปรายวัน sensor_daily = trigger)
+     ชนิดไม่รู้จัก/เป็นชนิดในตัว = ข้าม + นับบอกผู้ส่ง (sensors_skipped) ห้ามทิ้งเงียบ · ค่าอ่านไม่ออก = ข้าม ห้ามบีบเป็น 0
    v11 (2026-11-27 · คำสั่ง user "ทำทุกข้อ"): แรงดันรายเฟส v1-v3 เข้าประวัติรายนาทีด้วย (energy_readings.v1-v3 · กราฟแยก 3 เฟส)
      · กระแสรายเฟส a1-a3 ยังเก็บแค่ค่าล่าสุด (ยังไม่มีจอใช้ — ห้ามเก็บเผื่อ)
    v10 (2026-11-23 · คำสั่ง user "ล่าสุด + เก็บค่าสูงสุดแยก"): kW/A ที่โชว์ = **ค่าล่าสุด** (`last` · ตรงจอ Node-RED)
@@ -106,7 +109,7 @@ Deno.serve(async (req) => {
   try { res = await handle(sb, req, src.id); } catch (e) { res = json({ ok: false, error: String((e as Error)?.message || e) }, 500); }
   let out: any = null;
   try { out = await res.clone().json(); } catch { /* ไม่ใช่ json */ }
-  const saved = ['saved', 'history', 'events', 'daily', 'states', 'pieces', 'live'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
+  const saved = ['saved', 'history', 'events', 'daily', 'states', 'pieces', 'live', 'sensors'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
     + (Number(out?.limits?.updated) || 0);
   await tick(res.status < 300, saved, out?.error ?? (res.status < 300 ? null : `HTTP ${res.status}`),
     out ? { status: res.status, ...out } : { status: res.status });
@@ -116,6 +119,8 @@ Deno.serve(async (req) => {
 /** สถานะดิบของต้นทาง → ชุดค่าของ ESM (ไม่รู้จัก = 'other' เก็บค่าดิบไว้ใน source_state ไม่ทิ้ง) */
 const STATE_MAP: Record<string, string> = { FAULT: 'fault', UNPLANNED: 'unplanned', IDLE: 'idle', PLANNED_STOP: 'planned_stop', NO_PLAN: 'no_plan', COMM_LOSS: 'comm_loss' };
 const FACTS_KEEP_DAYS = 90;
+/** v12: ค่าเซนเซอร์รายนาที (ชนิดที่เพิ่มเอง) เก็บกี่วัน — สรุปรายวันอยู่ sensor_daily ยาว (คำสั่ง user 27/11) */
+const SENSOR_KEEP_DAYS = 7;
 
 async function handle(sb: any, req: Request, sourceId: string | null): Promise<Response> {
   let body: any;
@@ -127,7 +132,38 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
   const states: any[] = Array.isArray(body?.states) ? body.states : [];
   const pieces: any[] = Array.isArray(body?.pieces) ? body.pieces : [];
   const liveIn: any[] = Array.isArray(body?.live) ? body.live : [];
-  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length && !liveIn.length) return json({ ok: true, saved: 0 });
+  const sensorsIn: any[] = Array.isArray(body?.sensors) ? body.sensors : [];
+  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length && !liveIn.length && !sensorsIn.length) return json({ ok: true, saved: 0 });
+
+  /* 🌡️ เซนเซอร์ชนิดที่เพิ่มเอง (v12) — ต้องรู้ต้นทาง · ชนิดต้องอยู่ในทะเบียนและไม่ใช่ชนิดในตัว */
+  let snSaved = 0, snSkipped = 0;
+  if (sensorsIn.length) {
+    if (!sourceId) return json({ ok: false, error: 'sensors ต้องส่งจากต้นทางที่ลงทะเบียน (x-source-key หรือ x-source)' }, 400);
+    const { data: kinds, error: kErr } = await sb.from('integration_kinds').select('key').eq('is_builtin', false);
+    if (kErr) return json({ ok: false, error: `sensors: อ่านทะเบียนชนิดไม่ได้ ${kErr.message}` }, 500);
+    const ok = new Set((kinds || []).map((k: any) => k.key));
+    const now0 = new Date().toISOString();
+    const by = new Map<string, any>();
+    for (const x of sensorsIn) {
+      const kind = String(x?.kind ?? '').trim(), point = String(x?.point ?? '').trim().slice(0, 80);
+      const v = num(x?.value);
+      const t = Date.parse(bkk(x?.at) || body.bucket_at || now0);
+      if (!ok.has(kind) || !point || v == null || !Number.isFinite(t)) { snSkipped++; continue; }
+      const at = new Date(t); at.setUTCSeconds(0, 0);
+      const row = { source_id: sourceId, kind_key: kind, point, bucket_at: at.toISOString(), value: v, received_at: now0 };
+      by.set(`${kind}|${point}|${row.bucket_at}`, row);   // นาทีเดียวกันในก้อนเดียว = ตัวหลังชนะ
+    }
+    if (by.size) {
+      // ซ้ำนาทีเดิม = ข้าม (สรุปรายวันไม่บวกซ้ำ เมื่อต้นทางยิงซ้ำ)
+      const { error } = await sb.from('sensor_readings').upsert([...by.values()], { onConflict: 'source_id,kind_key,point,bucket_at', ignoreDuplicates: true });
+      if (error) return json({ ok: false, error: `sensors: ${error.message}` }, 500);
+      snSaved = by.size;
+      await sb.from('sensor_readings').delete().lt('bucket_at', new Date(Date.now() - SENSOR_KEEP_DAYS * 86400000).toISOString());
+    }
+  }
+  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length && !liveIn.length) {
+    return json({ ok: true, saved: 0, sensors: snSaved, sensors_skipped: snSkipped });
+  }
 
   /* 🏭 ข้อมูลจากเครื่อง (v6) — ต้องรู้ต้นทาง (ผูก tag ↔ เครื่องต่อต้นทาง) · เวลาต้นทาง = เวลาไทยไม่มีโซน ⇒ bkk() */
   let stSaved = 0, pcSaved = 0, lvSaved = 0;
@@ -183,7 +219,7 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
     }
   }
   if (!readings.length && !events.length && !daily.length && !limits.length) {
-    return json({ ok: true, saved: 0, states: stSaved, pieces: pcSaved, live: lvSaved });
+    return json({ ok: true, saved: 0, states: stSaved, pieces: pcSaved, live: lvSaved, sensors: snSaved, sensors_skipped: snSkipped });
   }
 
   // ทะเบียน topic → จุดวัด (ตั้งจากหน้า /energy แท็บ 📡)
@@ -374,5 +410,5 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
   }
 
   return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved,
-    limits: { updated: limUpdated, unknown: limUnknown }, states: stSaved, pieces: pcSaved, live: lvSaved });
+    limits: { updated: limUpdated, unknown: limUnknown }, states: stSaved, pieces: pcSaved, live: lvSaved, sensors: snSaved, sensors_skipped: snSkipped });
 }

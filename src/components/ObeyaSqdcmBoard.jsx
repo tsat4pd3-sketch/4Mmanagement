@@ -502,7 +502,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       : (ot.rows && ot.unknownRate) ? 'ยังไม่ตั้งค่าแรง OT — ค่า OT ไม่ถูกนับ'
       : (!calReady && ot.rows) ? 'อ่านปฏิทินบริษัทไม่ได้ — OT คิดที่อัตราวันทำงาน 1.5 ทุกวัน' : '';
     const series = Object.values(byDay).sort((a, b) => a.k.localeCompare(b.k))
-      .map(b => ({ ...b, ot: b.ot || 0, mo: b.mo || 0, v: Math.round(b.dt + b.ng + (b.ot || 0) + (b.mo || 0)) }));
+      .map(b => ({ ...b, ot: b.ot || 0, mo: b.mo || 0, v: Math.round(b.ng + (b.ot || 0) + (b.mo || 0)) }));   // 27/11: v = เงินจ่ายจริง · dt (ค่าเสียโอกาส) วาดแยก stack
     return { ...axisCost({ dtBaht, ngBaht, otBaht: ot.baht ?? 0, otNote, moBaht: mo.baht, moNote, series, missingRate: noRate.size, missingCost: noCost.size, sessions: fSess.length }),
       otHours: ot.hours, otRows: ot.rows, otHolidayGuess: ot.holidayGuess, moN: mo.nCost, moNoCost: mo.nNoCost };
   }, [fDts, fDefs, fSess, fAttend, bookings, otRate, otRateFail, calReady, moOrders, moLabor, moParts, moBad, lineOk, scope, lines, ccRates, partCost]);
@@ -580,10 +580,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
     if (dtBad || dfBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุด/ของเสียล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
     if (kC.value == null) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: kC.note || 'ช่วงนี้ยังไม่มีความสูญเสียที่คิดเป็นเงินได้' };
     if (!nSess) return { status: 'none', label: 'ยังไม่มีข้อมูล', why: 'ช่วงนี้ยังไม่มีกะที่ปิดแล้ว — ยังตัดสินไม่ได้ว่ามีความสูญเสียหรือไม่' };
-    if (kC.value <= 0) return { status: 'good', label: 'ไม่มีความสูญเสีย', why: 'ช่วงนี้ไม่มีเครื่องหยุดนอกแผน/ของเสียที่คิดเป็นเงินได้' };
-    // ⚠️ แดงนี้ = "มีเงินหายไป" ไม่ใช่ "เกินเป้า" — ยังไม่มีใครตั้งเพดานค่าความสูญเสียไว้
-    return { status: 'bad', label: 'มีความสูญเสีย', why: `${tr("เสียไป")} ${fmtBaht(kC.value)} (${tr("ยังไม่ได้ตั้งเพดานค่าความสูญเสีย — แดงนี้แปลว่า \"มีเงินหายไป\" ไม่ใช่ \"เกินเป้า")}")` };
-  }, [kC.value, kC.note, dtBad, dfBad, nSess]);
+    /* 27/11: ไฟตัดสินจาก "เงินที่จ่ายจริง" (ของเสีย+OT+ซ่อม MO) — ค่าเสียโอกาสจากเครื่องหยุดบอกใน why แต่ไม่ทำให้แดง */
+    const oppTxt = kC.oppBaht > 0 ? ` · ${tr('ค่าเสียโอกาสจากเครื่องหยุด')} ${fmtBaht(kC.oppBaht)} ${tr('(ไม่รวมในยอด)')}` : '';
+    if (kC.value <= 0) return { status: 'good', label: 'ไม่มีเงินจ่ายจริง', why: `${tr('ช่วงนี้ไม่มีของเสีย/OT/ค่าซ่อม MO ที่คิดเป็นเงินได้')}${oppTxt}` };
+    // ⚠️ แดงนี้ = "มีเงินจ่ายจริง" ไม่ใช่ "เกินเป้า" — ยังไม่มีใครตั้งเพดานค่าความสูญเสียไว้
+    return { status: 'bad', label: 'มีเงินจ่ายจริง', why: `${tr("จ่ายจริง")} ${fmtBaht(kC.value)} (${tr("ยังไม่ได้ตั้งเพดานค่าความสูญเสีย — แดงนี้แปลว่า \"มีเงินหายไป\" ไม่ใช่ \"เกินเป้า")}")${oppTxt}` };
+  }, [kC.value, kC.note, kC.oppBaht, dtBad, dfBad, nSess]);
 
   const paretoStat = useMemo(() => {
     if (dtBad) return { status: 'none', label: 'โหลดไม่ได้', why: 'คิวรีข้อมูลเครื่องหยุดล้มเหลว — ตัวเลขนี้ยังเชื่อไม่ได้ (ดูข้อความแดงบนหัวจอ)' };
@@ -768,7 +770,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           <YAxis domain={stacked ? undefined : domain} ticks={stacked ? undefined : ticks} allowDataOverflow={!stacked && !!ticks} tick={tickY} width="auto"
             tickFormatter={stacked ? (v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)) : undefined} />
           <Tooltip {...chartTip} formatter={stacked
-            ? ((v, nm) => [fmtBaht(v), nm === 'dt' ? tr("เครื่องหยุด") : nm === 'ot' ? tr('ค่า OT') : nm === 'mo' ? tr('ค่าซ่อม MO') : 'ของเสีย'])
+            ? ((v, nm) => [fmtBaht(v), nm === 'dt' ? tr("ค่าเสียโอกาส (เครื่องหยุด · ไม่รวมในยอด)") : nm === 'ot' ? tr('ค่า OT') : nm === 'mo' ? tr('ค่าซ่อม MO') : 'ของเสีย'])
             : (v => [fmt(v), name])}
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `${tr("สรุปปี")} ${year} (${pl[0].payload.kind === 'sum' ? tr('รวมทั้งปี') : tr('เฉลี่ยถ่วงน้ำหนักทั้งปี')})`
@@ -776,7 +778,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           {k.target != null && !stacked && <ReferenceLine y={k.target} stroke="var(--red)" strokeDasharray="4 3" />}
           {stacked ? (
             <>
-              <Bar {...chartAnim()} dataKey="dt" stackId="c" fill="var(--amber)" onClick={onBarClick} cursor="pointer" />
+              {/* 27/11: เงินจ่ายจริง (ng/ot/mo) ซ้อนกันเป็น stack เดียว · ค่าเสียโอกาส (dt) = แท่งแยกข้างๆ โปร่ง+เส้นประ ไม่รวมในยอด */}
               <Bar {...chartAnim()} dataKey="ng" stackId="c" fill="var(--blue)" onClick={onBarClick} cursor="pointer">
                 {data.map((p, i) => <Cell key={i} fill="var(--blue)" fillOpacity={p.summary ? 0.55 : 1} />)}
               </Bar>
@@ -786,6 +788,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               <Bar {...chartAnim()} dataKey="mo" stackId="c" fill="var(--muted)" radius={[2, 2, 0, 0]} onClick={onBarClick} cursor="pointer">
                 {data.map((p, i) => <Cell key={i} fill="var(--muted)" fillOpacity={p.summary ? 0.55 : 1} />)}
               </Bar>
+              <Bar {...chartAnim()} dataKey="dt" stackId="o" fill="var(--amber-dim)" stroke="var(--amber)" strokeDasharray="3 2" radius={[2, 2, 0, 0]} onClick={onBarClick} cursor="pointer" />
             </>
           ) : (
             <Bar {...chartAnim()} dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={onBarClick}>
@@ -1025,15 +1028,16 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ C — ต้นทุน ═══ */}
           {has('C') && (
-          <Sheet k={k} cw={cw} idx={3} icon={axisSheet('C').icon} title={tr('C ต้นทุนที่เสียไป')}
-            sub={`${isYear ? tr("รวมทั้งปี · ") : ""}${tr("เครื่องหยุดนอกแผน + ของเสีย + ค่า OT + ค่าซ่อม MO")}${otRate != null ? ` (${tr('OT ประมาณ')} ${otRateText(otRate)} × 1.5/2)` : ''}`}
-            subFull={`${tr("เครื่องหยุดนอกแผน + ของเสีย + ค่า OT + ค่าซ่อม MO")} — ${tr('ค่าซ่อม MO = ค่าแรง + อะไหล่ที่ช่างกรอกในใบ นับวันที่ผู้แจ้งรับมอบ')} · ${tr('ค่า OT = ชม. OT จากเช็คชื่อ × ค่าแรงมาตรฐาน × ตัวคูณตามปฏิทิน (วันทำงาน 1.5 · วันหยุด 1.5/2) · ประมาณการให้เห็นภาพ ไม่ใช่ต้นทุนบัญชี')}${kC.otHolidayGuess ? ` · ${tr('วันหยุดที่ไม่มีใบจอง OT คิด 8 ชม.')} ${kC.otHolidayGuess} ${tr('คน-วัน')}` : ''}${kC.otApprox ? ` · ${tr('วันหยุดในโหมดปีคิด 8 ชม./คน')}` : ''}`}
+          <Sheet k={k} cw={cw} idx={3} icon={axisSheet('C').icon} title={tr('C เงินที่เสียไปจริง')}
+            sub={`${isYear ? tr("รวมทั้งปี · ") : ""}${tr("ของเสีย + ค่า OT + ค่าซ่อม MO")}${otRate != null ? ` (${tr('OT ประมาณ')} ${otRateText(otRate)} × 1.5/2)` : ''} · ${tr('เครื่องหยุด = ค่าเสียโอกาส แยกไว้')}`}
+            subFull={`${tr("ตัวเลขใหญ่ = เงินที่จ่ายจริง: ของเสียที่ทิ้ง + ค่า OT ที่จ่าย + ค่าซ่อม MO")} · ${tr('เครื่องหยุดนอกแผน × อัตราค่าแรง = "ค่าเสียโอกาส" ไม่ใช่เงินที่ออกจากกระเป๋า จึงแสดงแยก (แท่งโปร่งเส้นประ) ไม่รวมในยอด')} — ${tr('ค่าซ่อม MO = ค่าแรง + อะไหล่ที่ช่างกรอกในใบ นับวันที่ผู้แจ้งรับมอบ')} · ${tr('ค่า OT = ชม. OT จากเช็คชื่อ × ค่าแรงมาตรฐาน × ตัวคูณตามปฏิทิน (วันทำงาน 1.5 · วันหยุด 1.5/2) · ประมาณการให้เห็นภาพ ไม่ใช่ต้นทุนบัญชี')}${kC.otHolidayGuess ? ` · ${tr('วันหยุดที่ไม่มีใบจอง OT คิด 8 ชม.')} ${kC.otHolidayGuess} ${tr('คน-วัน')}` : ''}${kC.otApprox ? ` · ${tr('วันหยุดในโหมดปีคิด 8 ชม./คน')}` : ''}`}
             big={kC.value != null ? fmtBaht(kC.value) : '—'}
+            bigNote={kC.oppBaht > 0 ? `${tr('ค่าเสียโอกาส')} ${fmtBaht(kC.oppBaht)}` : undefined}
             stat={costStat}
             foot={kC.note ? <WarnNote k={k} text={kC.note} />
               : (
                 <span>
-                  {`${tr("เครื่องหยุด")} ${fmtBaht(kC.dtBaht)} · ${tr("ของเสีย")} ${fmtBaht(kC.ngBaht)} · OT ${fmtBaht(kC.otBaht)}${!isYear && kC.otHours ? ` (${kC.otHours} ${tr('ชม.')})` : ''} · ${tr('ซ่อม MO')} ${fmtBaht(kC.moBaht)}${kC.moN ? ` (${kC.moN} ${tr('ใบ')})` : ''}`}
+                  {`${tr("จ่ายจริง")}: ${tr("ของเสีย")} ${fmtBaht(kC.ngBaht)} · OT ${fmtBaht(kC.otBaht)}${!isYear && kC.otHours ? ` (${kC.otHours} ${tr('ชม.')})` : ''} · ${tr('ซ่อม MO')} ${fmtBaht(kC.moBaht)}${kC.moN ? ` (${kC.moN} ${tr('ใบ')})` : ''} ‖ ${tr('ค่าเสียโอกาส')}: ${tr("เครื่องหยุด")} ${fmtBaht(kC.oppBaht)} ${tr('(ไม่รวมในยอด)')}`}
                   {canManage && !tv && (
                     <button type="button" onClick={() => setOtRateOpen(true)} title={tr('ตั้งค่าแรงมาตรฐาน OT (บาท/ชม.) — ตัวเดียวทั้งโรงงาน · ประมาณการให้หน้างานเห็นภาพ')}
                       style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 'inherit', padding: '0 6px', cursor: 'pointer' }}>
@@ -1043,20 +1047,21 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 </span>
               )}
             link={tr("ดู LOSS ละเอียด")} onLink={() => drill('/oee-analytics', { tab: 'insight', ...drillParams(org, scope) })}>
-            {isYear ? (yearBars(kC, { stacked: true }) || <EmptyChart k={k} text={tr("ยังไม่มีความสูญเสียที่คิดเป็นเงินได้")} />) : kC.series.length ? (
+            {isYear ? (yearBars(kC, { stacked: true }) || <EmptyChart k={k} text={tr("ยังไม่มีเงินจ่ายจริง/ค่าเสียโอกาสในช่วงนี้")} />) : kC.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={daySeries(kC.series)} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tick={axisTick} width="auto" tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
-                  <Tooltip {...chartTip} formatter={(v, n) => [fmtBaht(v), n === 'dt' ? tr("เครื่องหยุด") : n === 'ot' ? tr('ค่า OT') : n === 'mo' ? tr('ค่าซ่อม MO') : 'ของเสีย']} />
-                  <Bar {...chartAnim()} dataKey="dt" stackId="c" fill="var(--amber)" />
+                  <Tooltip {...chartTip} formatter={(v, n) => [fmtBaht(v), n === 'dt' ? tr("ค่าเสียโอกาส (เครื่องหยุด · ไม่รวมในยอด)") : n === 'ot' ? tr('ค่า OT') : n === 'mo' ? tr('ค่าซ่อม MO') : 'ของเสีย']} />
+                  {/* 27/11: เงินจ่ายจริง = stack "c" · ค่าเสียโอกาส (dt) = stack "o" แท่งแยก โปร่ง+เส้นประ */}
                   <Bar {...chartAnim()} dataKey="ng" stackId="c" fill="var(--blue)" />
                   <Bar {...chartAnim()} dataKey="ot" stackId="c" fill="var(--purple)" />
                   <Bar {...chartAnim()} dataKey="mo" stackId="c" fill="var(--muted)" radius={[2, 2, 0, 0]} />
+                  <Bar {...chartAnim()} dataKey="dt" stackId="o" fill="var(--amber-dim)" stroke="var(--amber)" strokeDasharray="3 2" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            ) : <EmptyChart k={k} text={tr("ยังไม่มีความสูญเสียที่คิดเป็นเงินได้")} />}
+            ) : <EmptyChart k={k} text={tr("ยังไม่มีเงินจ่ายจริง/ค่าเสียโอกาสในช่วงนี้")} />}
           </Sheet>
           )}
 

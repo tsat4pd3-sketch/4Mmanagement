@@ -8,7 +8,9 @@
    ⚠️ แม่แบบ machine_state / piece_count เขียนสำหรับ Node-RED OEE ของ PD2 (db_user02: oee_stop · oee_piece ·
       OnplanMaster · UnplanMaster) — ส่ง "ข้อเท็จจริง" อย่างเดียว ไม่ส่งเลข OEE ที่ต้นทางคิด
    🔴 ห้ามใส่รหัสลับลงไฟล์ — โหนดอ่านจาก env ของ Node-RED (`ESM_SOURCE_KEY` หรือ `INGEST_SECRET` ของต้นทาง legacy)
-   🔴 ชนิด 'planned' (ยังไม่มีปลายทางรับใน ESM) ไม่สร้างโหนด แต่คืนรายชื่อใน `skipped` ให้จอเขียนบอก */
+   🔴 ชนิด 'planned' (ยังไม่มีปลายทางรับใน ESM) ไม่สร้างโหนด แต่คืนรายชื่อใน `skipped` ให้จอเขียนบอก
+   🌡️ ชนิดที่เพิ่มเอง (เซนเซอร์ · 27/11) = แม่แบบกลาง ไม่มีโหนด mysql — โหนด function ให้ต้นทางเติมค่าเอง
+      (ESM ไม่รู้ว่าเซนเซอร์ต่ออยู่ที่ไหน) · รูปแบบ { sensors: [{ kind, point, value, at? }] } */
 import { kindOf } from './integrationKinds.js';
 
 const SAFE = (s) => String(s || '').replace(/[^a-z0-9_-]/gi, '').toLowerCase() || 'src';
@@ -29,7 +31,7 @@ export const envVarName = (source) => (source?.legacy_secret && !source?.key_hin
  * @param {string} p.ingestUrl URL ของ edge ingest-energy
  * @returns {{ nodes: object[], built: string[], skipped: {key:string, reason:string}[] }}
  */
-export function buildNodeRedFlow({ source, kinds = [], ingestUrl }) {
+export function buildNodeRedFlow({ source, kinds = [], ingestUrl, kindDefs }) {
   const code = SAFE(source?.code);
   const P = `esm_${code}_`;
   const hdr = `msg.headers = { 'content-type': 'application/json', ${authHeaderCode(source)} };`;
@@ -40,7 +42,7 @@ export function buildNodeRedFlow({ source, kinds = [], ingestUrl }) {
   const want = new Set(kinds);
 
   for (const k of kinds) {
-    const def = kindOf(k);
+    const def = kindOf(k, kindDefs);
     if (!def) skipped.push({ key: k, reason: 'ไม่รู้จักชนิดนี้' });
     else if (def.status !== 'live') skipped.push({ key: k, reason: 'ESM ยังไม่มีปลายทางรับ (planned)' });
   }
@@ -271,6 +273,34 @@ ${hdr}
 msg.payload = { live: rows };
 return msg;` },
       'ผลส่งสถานะสด');
+  }
+
+  /* 🌡️ ชนิดที่เพิ่มเอง — 1 แถวต่อชนิด: comment → inject → function (ต้นทางเติมค่า) → http → debug */
+  for (const k of kinds) {
+    const def = kindOf(k, kindDefs);
+    if (!def?.custom) continue;
+    built.push(k);
+    const y = 60 + row * 140; row++;
+    const id = (n) => `${P}x_${SAFE(k)}${n}`;
+    nodes.push(
+      { id: id(0), type: 'comment', name: `ESM: ${def.label}${def.unit ? ` (${def.unit})` : ''} ทุก 1 นาที — แก้โหนด function ให้ดึงค่าจริง`,
+        info: `kind = '${k}' · point = ชื่อจุดวัด/เครื่อง · value = ตัวเลข${def.unit ? ` หน่วย ${def.unit}` : ''} · at = เวลา (ไม่ใส่ = ตอนนี้)\nค่าที่อ่านไม่ออก/ชนิดไม่รู้จัก = ESM ข้าม และบอกจำนวนใน sensors_skipped`,
+        x: 300, y: y - 40, wires: [] },
+      { id: id(1), type: 'inject', name: 'ทุก 1 นาที', props: [], repeat: '60', crontab: '', once: true, onceDelay: '45', topic: '', x: 140, y, wires: [[id(2)]] },
+      { id: id(2), type: 'function', name: `→ sensors (${k})`, outputs: 1, x: 380, y, wires: [[id(3)]], func:
+`// 🔧 แทนที่ตัวอย่างนี้ด้วยค่าจริงของเซนเซอร์ (เช่น จาก global/flow context หรือโหนดอ่านค่า)
+const points = [
+  // { point: 'M01', value: global.get('${k}_M01') },
+];
+const sensors = points.filter(p => p.value != null && p.value !== '').map(p => ({ kind: '${k}', point: p.point, value: Number(p.value) }));
+if (!sensors.length) { node.warn('ยังไม่มีค่า ${k} — ไม่ส่ง'); return null; }
+${hdr}
+msg.payload = { sensors };
+return msg;` },
+      { id: id(3), type: 'http request', name: 'POST → ESM', method: 'POST', ret: 'obj', paytoqs: 'ignore', url: ingestUrl,
+        tls: '', persist: false, proxy: '', authType: '', x: 620, y, wires: [[id(4)]] },
+      { id: id(4), type: 'debug', name: `ผลส่ง ${def.label}`, active: true, complete: 'payload', targetType: 'msg', x: 820, y, wires: [] },
+    );
   }
 
   if (nodes.length) {
