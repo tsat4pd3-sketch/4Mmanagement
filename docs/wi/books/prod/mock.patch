@@ -1,15 +1,15 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -501,6 +501,8 @@
-     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
-     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+@@ -573,6 +573,8 @@
+     requested_at: new Date(Date.now() - [5, 20, 45, 12, 33][i % 5] * 60e3).toISOString(),
+     delivered_at: i % 4 === 3 ? new Date(Date.now() - 8 * 60e3).toISOString() : null, source: 'line_adhoc', store_ack_at: null,
    }),
 +  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
 +    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -607,10 +609,19 @@
+@@ -679,10 +681,19 @@
    production_sessions: (r, i) => ({
      ...r,
      line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
@@ -29,3 +29,30 @@
    /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
       `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
       **คีย์ล้วน** (`jigById[t.jig_id]` · `resMap[i.jig_id]` · `amEquipIds.has(j.id)`)
+@@ -1278,12 +1289,26 @@
+           steps: [{ key: 'issue', label: 'ผู้ตรวจ', sig_label: 'ออกโดย', kind: 'ack', assignee: { rule: 'perm_in_line', perm: 'bbs:record' } },
+                   { key: 'check', label: 'Supervisor', sig_label: 'ตรวจสอบโดย', kind: 'approve', assignee: { rule: 'perm_in_line', perm: 'bbs:check' } }] } } }]
+   : null
++const WI_WFPY = typeof location !== 'undefined' && new URLSearchParams(location.search).get('wfpy') === '1'
++  ? [{ id: 'wfd-pyd', key: 'pokayoke_daily', name: 'Poka-Yoke · รับทราบรายวัน', status: 'active', current_version_id: 'wfv-pyd',
++       wf_versions: { flow_schema: { binding: { subject: 'pokayoke', period: 'day', perShift: true },
++         steps: [{ key: 'leader', label: 'Leader รับทราบ', kind: 'ack' }] } } },
++     { id: 'wfd-pyw', key: 'pokayoke_weekly', name: 'Poka-Yoke · อนุมัติรายสัปดาห์', status: 'active', current_version_id: 'wfv-pyw',
++       wf_versions: { flow_schema: { binding: { subject: 'pokayoke', period: 'week', perShift: false },
++         steps: [{ key: 'sv', label: 'Supervisor อนุมัติ', kind: 'approve' }] } } }]
++  : null
+ const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
+ const rowsFor = (table) => {
+   if (table === 'display_rotations' && ROT_PATHS) {
+     return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]
+   }
+   if (table === 'wf_defs' && WF_GRID_FIXTURE) return WF_GRID_FIXTURE
++  /* WI patch: ?wfpy=1 = ใบรอบ Poka-Yoke 2 ใบ (ตาม migration 20261125b) + ใบที่รอเซ็น · ?wfgrid=1 = ใบ BBS ที่ผู้ตรวจออกใบแล้ว รอ SV */
++  if (table === 'wf_defs' && WI_WFPY) return WI_WFPY
++  if (table === 'wf_instances' && (WI_WFPY || WF_GRID_FIXTURE)) return [{ id: 'wfi-1', doc_no: WI_WFPY ? 'PYD-2611-0007' : 'BBS-2612-0001', status: 'in_progress', step_rev: 2,
++    current_step: WI_WFPY ? 0 : 1, blocked_reason: null, period_from: null, period_to: null, shift: WI_WFPY ? 'day' : null,
++    wf_tasks: [{ id: 'wft-1', assignee_id: 'x', status: 'open', step_index: WI_WFPY ? 0 : 1 }],
++    wf_actions: WI_WFPY ? [] : [{ action: 'approve', step_index: 0, actor_id: 'u-2', actor_name: 'หัวหน้ากลุ่ม ทดสอบ', acted_at: '2027-01-02T09:10:00+07:00', comment: null }] }]
+   if (TABLE_FIXED[table]) return TABLE_FIXED[table]
+   const fn = TABLE_ROWS[table]
+   const base = fn ? ROWS.map((r, idx) => fn(r, idx + 1)) : ROWS

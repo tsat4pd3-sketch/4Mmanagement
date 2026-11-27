@@ -27,7 +27,10 @@ for (const s of SPEC){
   if (only && !only.includes(s.id)) continue;
   const URL=`http://localhost:${process.env.PORT||5198}/audit/index.html?p=${s.p}&role=admin${s.q?'&'+s.q:''}`;
   await pg.goto(URL); await pg.evaluate((ls)=>{ try{ localStorage.clear(); for(const [k,v] of Object.entries(ls||{})) localStorage.setItem(k,v);}catch(e){} }, s.ls||{});
-  await pg.goto(URL); await pg.waitForTimeout(3500); await dismiss();
+  await pg.goto(URL); await pg.waitForTimeout(3500); if (!s.nodismiss) await dismiss();   // nodismiss = จอมีปุ่ม "รับทราบ" ของจริง (แผงเซ็น e-Workflow) ห้ามกดทิ้ง
+  // fill = [[css, ค่า]] กรอกช่อง (เช่น เดือน) · select = [[css, index]] เลือกตัวเลือกที่ index ของ <select> (รอบ 27/11)
+  for (const [sel, val] of (s.fill || [])) { const el = pg.locator(sel).first(); if (await el.count()) { await el.fill(val); await pg.waitForTimeout(2500); } else console.log('  fill-miss', s.id, sel); }
+  for (const [sel, idx] of (s.select || [])) { const el = pg.locator(sel).first(); if (await el.count()) { await el.selectOption({ index: idx }); await pg.waitForTimeout(2000); } else console.log('  select-miss', s.id, sel); }
   if (s.scroll){ const t=pg.getByText(s.scroll,{exact:false}).first(); if(await t.count()){ await t.scrollIntoViewIfNeeded(); await pg.evaluate(()=>{ const el=[...document.querySelectorAll('*')].find(e=>e.scrollHeight>e.clientHeight+5 && getComputedStyle(e).overflowY!=='visible' && e.clientHeight>500)||document.scrollingElement; el.scrollBy(0,-90);}); await pg.waitForTimeout(400);} }
   for (const ck of (s.click? (Array.isArray(s.click)?s.click:[s.click]) : [])){
     // "⋯" = ปุ่มเมนูคำสั่งอื่นๆ (OverflowMenu · aria-label เพิ่มเติม) · "⋯2" = ตัวที่ 2 บนจอ · "=ป้าย" = ตรงตัว

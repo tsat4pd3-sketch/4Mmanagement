@@ -81,7 +81,7 @@
 "q": "tab=live",
 "marks": [
 "กะที่เปิดอยู่",
-"=ผลิตได้",
+"=ยอดผลิต",
 "ความคืบหน้ากะนี้",
 "แยกตามชิ้นงาน",
 "Prod Orders (",
@@ -257,16 +257,47 @@
 "loose": true
 },
 {
+"id": "am_station",
+"p": "DailyChecker",
+"q": "tab=amcheck",
+"click": "SP-11",
+"marks": [
+"สถานี Robot cell #1",
+"เหลือ",
+"=OK",
+"=NG",
+"ประวัติเครื่องนี้"
+],
+"loose": true
+},
+{
 "id": "py_check",
 "p": "DailyChecker",
-"q": "tab=pokayoke",
+"q": "tab=pokayoke&wfpy=1",
+"nodismiss": true,
+"click": "=ไม่ผ่าน",
 "marks": [
-"Poka-Yoke Check",
 "กะเช้า (Shift 01)",
 "ผ่าน (จับ NG ได้)",
-"ไม่ผ่าน",
+"=ไม่ผ่าน",
+"=ยืนยันไม่ผ่าน",
 "เพิ่มอุปกรณ์"
 ]
+},
+{
+"id": "py_sign",
+"p": "DailyChecker",
+"q": "tab=pokayoke&wfpy=1",
+"nodismiss": true,
+"marks": [
+"การเซ็นของรอบนี้",
+"Poka-Yoke · รับทราบรายวัน",
+"=รับทราบ",
+"Poka-Yoke · อนุมัติรายสัปดาห์",
+"=อนุมัติ",
+"=ตีกลับ"
+],
+"loose": true
 },
 {
 "id": "sr_bins",
@@ -427,17 +458,23 @@
 {
 "id": "bbs",
 "p": "DailyChecker",
-"q": "tab=bbs",
+"q": "tab=bbs&wfgrid=1",
+"nodismiss": true,
+"fill": [
+[
+"input[type=month]",
+"2026-12"
+]
+],
 "marks": [
-"สังเกตพฤติกรรมความปลอดภัย (BBS)",
-"=ข้อตกลง",
+"=สังเกตพฤติกรรมความปลอดภัย (BBS)",
+"การเซ็นของรอบนี้",
 "เติมจากผลตรวจ PPE",
 "พิมพ์ / PDF",
-"พฤติกรรมเหมาะสม",
-"ไม่ได้ตรวจ",
-"=เพิ่มเติม"
+"ทาช่องด้วย:",
+"=เซ็น · ตรวจสอบโดย"
 ],
-"click": "⋯"
+"loose": true
 },
 {
 "id": "mpb_org",
@@ -450,6 +487,17 @@
 "โหมดจอ TV",
 "ตั้งค่าบอร์ด"
 ]
+},
+{
+"id": "mpb_layout",
+"p": "ManpowerBoard",
+"q": "tab=layout",
+"marks": [
+"=ผัง LAYOUT",
+"=ภาพรวมโรงงาน",
+"=ผังรายไลน์"
+],
+"loose": true
 },
 {
 "id": "mpb_fourm",
@@ -564,7 +612,7 @@
 "p": "DailyReport",
 "q": "tab=export",
 "marks": [
-"=Export",
+"=ส่งออก",
 "ดูตัวอย่าง",
 "=CSV",
 "=PDF",
@@ -607,6 +655,25 @@
 "วิธีใช้งาน Autonomous Maintenance (AM)",
 "ลงทะเบียนแล้ว",
 "ยังไม่ลงทะเบียน"
+],
+"loose": true
+},
+{
+"id": "am_stations",
+"p": "DailyChecker",
+"q": "tab=pm&sub=stations",
+"select": [
+[
+"select",
+1
+]
+],
+"marks": [
+"=สถานี (ใบรวม)",
+"สร้างสถานี",
+"Robot cell #1",
+"=แก้",
+"=ลบ"
 ],
 "loose": true
 }
