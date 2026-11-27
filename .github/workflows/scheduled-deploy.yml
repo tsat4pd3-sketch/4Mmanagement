@@ -35,9 +35,16 @@ concurrency:
 env:
   QUIET_MIN: 30
   MAX_WAIT_MIN: 60
-  # 🕗 หน้าต่างห้าม deploy (เวลาไทย) — กะเช้า 08:00-17:30 · ข้ามได้ด้วย [deploy-now] / Run workflow
-  HOLD_FROM: '0800'
-  HOLD_TO: '1730'
+  # 🕗 หน้าต่าง deploy ผูกกับ "เวลาพักตามแผน" + "วันไม่ทำงาน" (27/11 · คำสั่ง user)
+  #    เดิมเป็นเวลาคงที่ 08:00-17:30 ⇒ กันแค่กะเช้า · **กะดึก 20:00-07:59 เปิดโล่ง**
+  #    และ cron ยิงนาทีที่ 7 ทุกชั่วโมง = deploy ลงกลางกะดึกได้ (23:07 · 02:07 · 05:07)
+  #    ตอนนี้: deploy ได้เฉพาะตอนอยู่ในช่วงพักที่เหลือเวลา ≥ MIN_BREAK_LEFT_MIN หรือวันไม่ทำงาน
+  MIN_BREAK_LEFT_MIN: 10
+  # ทะเบียนเวลาพักอยู่ `break_policies` ฝั่ง DR (RLS = public ⇒ anon อ่านได้)
+  # คีย์นี้คือ publishable anon key ตัวเดียวกับที่ commit อยู่ใน src/supabaseClient.js แล้ว
+  # (ถูกส่งไปทุกเบราว์เซอร์ที่เปิดเว็บอยู่แล้ว — ไม่ใช่ความลับ ห้ามใส่ service_role ที่นี่)
+  DR_URL: 'https://eyhclzkifitbhbljgoav.supabase.co'
+  DR_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4'
 
 jobs:
   deploy:
@@ -53,8 +60,79 @@ jobs:
         env:
           HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
           EVENT: ${{ github.event_name }}
+          # ไม่บังคับ — ตั้งเป็น secret เมื่อไหร่ก็ได้ เพื่อให้ "วันไม่ทำงาน deploy ได้ทั้งวัน"
+          # (company_calendar ฝั่ง Main เป็น RLS `TO authenticated` ⇒ anon อ่านไม่ได้)
+          MAIN_URL: ${{ secrets.SUPABASE_MAIN_URL }}
+          MAIN_KEY: ${{ secrets.SUPABASE_MAIN_KEY }}
         run: |
           set -euo pipefail
+
+          # ───────────────────────────────────────────────────────────────────────
+          # 🕗 "ตอนนี้ deploy ได้ไหม" — ผูกกับทะเบียนจริง ไม่ใช่เวลาที่ฝังในโค้ด
+          #
+          #  อนุญาตเมื่อ: (ก) วันนี้ไม่ใช่วันทำงาน (ทั้งวัน)  หรือ
+          #              (ข) อยู่ในช่วงพักตามแผน และเหลือเวลา ≥ MIN_BREAK_LEFT_MIN นาที
+          #
+          #  🔴 อ่านทะเบียนไม่ได้ = **ไม่ deploy และไม่เลื่อน tag** (fail-closed)
+          #     ของไม่ตกค้างถาวร — cron รอบหน้ามาเก็บเอง · ด่วนจริงใช้ [deploy-now] / Run workflow
+          #  🔴 ไม่มี secret ของ Main = ข้ามข้อ (ก) ไปใช้แต่ช่วงพัก — **ห้ามเดาว่าเสาร์-อาทิตย์
+          #     คือวันหยุด** โรงงานนี้มาทำ OT วันเสาร์เป็นเรื่องปกติ (ปฏิทินมาร์ค 'working' ได้)
+          #     เดาผิดทางนี้ = deploy กลางกะที่คนทำงานอยู่
+          # ───────────────────────────────────────────────────────────────────────
+          deploy_window() {   # echo เหตุผล · return 0 = deploy ได้ · 1 = พักไว้ · 2 = อ่านไม่ได้
+            local today now_min
+            today=$(TZ=Asia/Bangkok date +%F)
+            now_min=$(( $(TZ=Asia/Bangkok date +%H) * 60 + $(TZ=Asia/Bangkok date +%-M) ))
+
+            # (ก) วันไม่ทำงาน — ต้องมี secret ของ Main เท่านั้น
+            if [ -n "${MAIN_URL:-}" ] && [ -n "${MAIN_KEY:-}" ]; then
+              local cal day_type
+              cal=$(curl -sS --max-time 20 \
+                "${MAIN_URL}/rest/v1/company_calendar?select=day_type&work_date=eq.${today}" \
+                -H "apikey: ${MAIN_KEY}" -H "Authorization: Bearer ${MAIN_KEY}" 2>/dev/null) || cal=''
+              if [ -z "$cal" ] || ! echo "$cal" | jq -e 'type=="array"' >/dev/null 2>&1; then
+                echo "อ่านปฏิทินบริษัทไม่ได้ (company_calendar)"; return 2
+              fi
+              day_type=$(echo "$cal" | jq -r '.[0].day_type // ""')
+              # กฎเดียวกับ `isWorkingDayFrom()` ใน src/utils/workingDay.js:
+              #   มาร์คไว้ → เป็นวันทำงานก็ต่อเมื่อ day_type === 'working'
+              #   ไม่ได้มาร์ค → จ-ศ = วันทำงาน · ส-อา = ไม่ใช่
+              if [ -n "$day_type" ]; then
+                if [ "$day_type" != "working" ]; then
+                  echo "วันนี้ ($today) ปฏิทินมาร์คเป็น '$day_type' = ไม่ใช่วันทำงาน — deploy ได้ทั้งวัน"; return 0
+                fi
+              else
+                local dow; dow=$(TZ=Asia/Bangkok date +%u)   # 1=จ .. 7=อา
+                if [ "$dow" -ge 6 ]; then
+                  echo "วันนี้ ($today) เสาร์/อาทิตย์ และไม่ได้มาร์คว่า 'working' = ไม่ใช่วันทำงาน — deploy ได้ทั้งวัน"; return 0
+                fi
+              fi
+            fi
+
+            # (ข) อยู่ในช่วงพักตามแผนไหม — เอาเฉพาะ anchor='clock' ที่มี start_time
+            #     (anchor='shift_end' เช่น "5ส. ท้ายกะ" คิดไม่ได้ที่นี่ ต้องรู้เวลาปิดกะจริง)
+            local br left
+            br=$(curl -sS --max-time 20 \
+              "${DR_URL}/rest/v1/break_policies?select=name_th,start_time,duration_min,anchor,is_active" \
+              -H "apikey: ${DR_KEY}" -H "Authorization: Bearer ${DR_KEY}" 2>/dev/null) || br=''
+            if [ -z "$br" ] || ! echo "$br" | jq -e 'type=="array" and length>0' >/dev/null 2>&1; then
+              echo "อ่านทะเบียนเวลาพักไม่ได้ (break_policies)"; return 2
+            fi
+            left=$(echo "$br" | jq -r --argjson now "$now_min" --argjson need "${MIN_BREAK_LEFT_MIN}" '
+              [ .[]
+                | select((.is_active // true) and (.anchor // "clock") == "clock" and .start_time != null)
+                | (.start_time | split(":") | (.[0]|tonumber)*60 + (.[1]|tonumber)) as $s
+                | { n: .name_th, s: $s, e: ($s + (.duration_min // 0)) }
+                | select($now >= .s and $now < .e)
+                | select(.e - $now >= $need)
+                | "\(.n) (เหลือ \(.e - $now) นาที)"
+              ] | first // ""')
+            if [ -n "$left" ]; then
+              echo "อยู่ในช่วงพักตามแผน: ${left} — deploy ได้"; return 0
+            fi
+            echo "เวลาไทย $(TZ=Asia/Bangkok date +%H:%M) ไม่ได้อยู่ในช่วงพักที่เหลือ ≥ ${MIN_BREAK_LEFT_MIN} นาที"
+            return 1
+          }
           if [ -z "${HOOK:-}" ]; then
             msg="ยังไม่ได้ตั้ง secret RENDER_DEPLOY_HOOK — ไม่มีการ deploy (ดู docs/modules/deploy.md)"
             if [ "$EVENT" = "workflow_dispatch" ]; then echo "::error::$msg"; exit 1; fi
@@ -93,15 +171,21 @@ jobs:
             if [ "$DEPLOY_NOW" = "yes" ]; then
               echo "เจอป้าย [deploy-now] ในคอมมิท — ข้ามหน้าต่างเวลาทำงานและการรอ ส่ง deploy ทันที"
             else
-              # 🕗 หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน (26/10 · คำสั่ง user · ลงเป็นโค้ด 19/11)
-              #    deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่หน้างานเปิดค้างพังพร้อมกันทุกเครื่อง
-              #    🔴 **พักไว้แบบ "ไม่เลื่อน tag"** — tag ยังชี้คอมมิทเก่า ⇒ cron รอบหลังเลิกกะ
+              # 🕗 หน้าต่าง deploy — ผูกกับเวลาพักตามแผน + วันไม่ทำงาน (26/10 · ลงเป็นโค้ด 19/11
+              #    · ผูกทะเบียนจริง 27/11 ตามคำสั่ง user) ดูฟังก์ชัน deploy_window ข้างบน
+              #    deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่หน้างานเปิดค้างต้องโหลดใหม่พร้อมกันทุกเครื่อง
+              #    🔴 **พักไว้แบบ "ไม่เลื่อน tag"** — tag ยังชี้คอมมิทเก่า ⇒ cron รอบถัดไป
               #       (นาทีที่ 7 ของทุกชั่วโมง) มาเก็บ deploy ให้เอง ไม่มีของตกค้างถาวร
               #    ด่วนจริง 2 ทาง: ใส่ [deploy-now] ในข้อความคอมมิท/merge · หรือกด Run workflow
-              BKK_HM=$(TZ=Asia/Bangkok date +%H%M)
-              if [ "$((10#$BKK_HM))" -ge "$((10#$HOLD_FROM))" ] && [ "$((10#$BKK_HM))" -lt "$((10#$HOLD_TO))" ]; then
-                echo "เวลาไทย ${BKK_HM} อยู่ในกะทำงาน (${HOLD_FROM}-${HOLD_TO}) — พักไว้ ยังไม่ deploy"
-                echo "   tag render-deployed ไม่ถูกเลื่อน ⇒ cron รอบแรกหลังเลิกกะจะ deploy $HEAD_SHA เอง"
+              set +e; WIN_MSG=$(deploy_window); WIN=$?; set -e
+              echo "หน้าต่าง deploy: ${WIN_MSG}"
+              if [ "$WIN" = "2" ]; then
+                echo "::warning::อ่านทะเบียนเวลาพัก/ปฏิทินไม่ได้ — ไม่ deploy รอบนี้ (fail-closed) · ${WIN_MSG}"
+                echo "   tag ไม่ถูกเลื่อน ⇒ cron รอบถัดไปลองใหม่ · ด่วนใช้ [deploy-now] หรือ Run workflow"
+                exit 0
+              fi
+              if [ "$WIN" != "0" ]; then
+                echo "พักไว้ ยังไม่ deploy — tag render-deployed ไม่ถูกเลื่อน ⇒ รอบพักถัดไปจะ deploy $HEAD_SHA เอง"
                 exit 0
               fi
               if [ "$EVENT" = "push" ]; then
@@ -114,6 +198,13 @@ jobs:
                   sleep "$WAIT"
                   git fetch -q origin main
                   HEAD_SHA=$(git rev-parse origin/main)
+                  # 🔴 รอ 30 นาทีแล้วอาจหลุดช่วงพักไปแล้ว — ต้องเช็คซ้ำก่อนยิงจริง
+                  #    (ไม่เช็ค = ตื่นมา deploy กลางกะ ซึ่งคือสิ่งที่ด่านนี้ตั้งมากัน)
+                  set +e; WIN_MSG=$(deploy_window); WIN=$?; set -e
+                  if [ "$WIN" != "0" ]; then
+                    echo "รอครบแล้วแต่หลุดหน้าต่าง deploy ไปแล้ว (${WIN_MSG}) — พักไว้ ไม่เลื่อน tag"
+                    exit 0
+                  fi
                 fi
               fi
             fi

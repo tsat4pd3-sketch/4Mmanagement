@@ -13282,3 +13282,110 @@ test('✍️ sign-queue-single-rule — ป้าย "รอคุณเซ็�
   assert.ok(/prsForLabel\(o\), fSign\)/.test(page),
     '\n\n❌ ตัวกรอง `?sign=` ไม่ได้ส่งใบขอซื้อ (prsForLabel) ⇒ ใบที่ติดลูป PR จะปนกลับมาอีก\n');
 });
+
+/* ═══ 🔄 ของที่คนกรอกค้าง ชนะการรีโหลดจาก version guard ═══  2026-11-27 · คำสั่ง user
+   เคสจริง: หน้างานแจ้ง "จอชอบรีเฟรชระหว่างลงข้อมูล ทำให้ต้องกรอกใหม่"
+   ต้นเหตุ = version guard ใน main.jsx เด้ง `location.reload()` ทันทีที่ build ไม่ตรง
+   รวมถึง**ตอนคนคลิกกลับเข้าแท็บ** ⇒ ของที่กรอกค้างใน modal/ฟอร์มหายหมด ไม่มีอะไรเตือน
+
+   🔴 เส้นแบ่งที่ห้ามเบลอ: รีโหลด "เชิงป้องกัน" (เจอ build ใหม่ · หน้ายังดีอยู่) = เลื่อนได้
+      รีโหลดตอน chunk พัง (`vite:preloadError` / ErrorBoundary) = **หน้าพังไปแล้ว ห้ามเลื่อน**
+      เลื่อนตัวหลัง = ได้จอดำ ซึ่งคือปัญหาที่กลไกนี้ถูกสร้างมาแก้ตั้งแต่ต้น */
+test('🔄 version guard ต้องเลื่อนรีโหลดเมื่อมีของกรอกค้าง · chunk error ต้องไม่เลื่อน', () => {
+  const raw = readFileSync(join(ROOT, 'src/main.jsx'), 'utf8');
+  const src = stripComments(raw);
+  const bad = [];
+
+  /* ① กฎอยู่ในของกลาง ห้ามเขียนซ้ำใน main.jsx */
+  if (!/from\s+['"]\.\/utils\/pendingInput(\.js)?['"]/.test(src))
+    bad.push('ไม่ได้ import hasPendingInput จาก utils/pendingInput');
+  if (/querySelectorAll\(\s*['"][^'"]*(input|textarea)/i.test(src))
+    bad.push('main.jsx สแกนช่องกรอกเอง — กฎต้องอยู่ที่ utils/pendingInput.js ที่เดียว');
+
+  /* ② ทางรีโหลดของ version guard ต้องผ่านด่าน */
+  const vIdx = src.indexOf('__BUILD_ID__');
+  if (vIdx < 0) bad.push('ไม่เจอการเทียบ __BUILD_ID__ — version guard หายไป?');
+  else {
+    const tail = src.slice(vIdx);
+    if (!/hasPendingInput\s*\(/.test(tail))
+      bad.push('เทียบ build แล้วไม่ได้เช็ค hasPendingInput ก่อนรีโหลด');
+    /* รีโหลดทันทีในบรรทัดเดียวกับการเทียบ build = ไม่ผ่านด่าน (รูปแบบของเดิมก่อนแก้) */
+    if (/build\s*!==\s*__BUILD_ID__[^\n]*location\.reload/.test(src))
+      bad.push('ยังรีโหลดทันทีในบรรทัดที่เทียบ build — ต้องผ่าน hasPendingInput ก่อน');
+  }
+
+  /* ③ แถบบอกคน — เลื่อนแบบเงียบ = แท็บไม่เคยได้เวอร์ชันใหม่โดยไม่มีใครรู้ */
+  if (!/มีเวอร์ชันใหม่/.test(raw)) bad.push('ไม่มีแถบบอกว่ามีเวอร์ชันใหม่ (เลื่อนเงียบไม่ได้)');
+
+  /* ④ chunk error ห้ามถูกเลื่อน — 2 จุดนี้ต้องรีโหลดตรงๆ เหมือนเดิม */
+  const pre = src.match(/vite:preloadError[\s\S]{0,260}/);
+  if (!pre) bad.push('ไม่เจอ handler vite:preloadError');
+  else if (/hasPendingInput/.test(pre[0]))
+    bad.push('vite:preloadError ถูกเอาไปผ่าน hasPendingInput — chunk พังแล้วห้ามเลื่อน (จอดำ)');
+  const cdc = src.match(/componentDidCatch[\s\S]{0,320}/);
+  if (cdc && /hasPendingInput/.test(cdc[0]))
+    bad.push('ErrorBoundary ถูกเอาไปผ่าน hasPendingInput — chunk พังแล้วห้ามเลื่อน (จอดำ)');
+
+  /* ⑤ กด F5 / ปิดแท็บเองตอนมีของค้าง = ต้องเตือน */
+  if (!/beforeunload/.test(src)) bad.push('ไม่มี beforeunload — กด F5 เองตอนกรอกค้างยังเงียบ');
+
+  /* ⑥ ของกลางต้องเบาพอให้ main.jsx เรียกก่อน render และเทสรันในโหนดได้ */
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/pendingInput.js'), 'utf8'));
+  const imports = [...util.matchAll(/^\s*import\s[^\n]*from\s*['"]([^'"]+)['"]/gm)].map(m => m[1]);
+  if (imports.length) bad.push(`utils/pendingInput.js ต้องไม่ import อะไรเลย (เจอ: ${imports.join(', ')})`);
+  if (/\bselect\b\s*,|['"]select['"]/.test(util) && !/ไม่นับ/.test(util))
+    bad.push('pendingInput นับ <select> — React ตั้ง value ทุกตัว จะค้างตลอดเวลา');
+
+  assert.deepEqual(bad, [], '\n\n❌ ด่าน "กรอกค้างชนะการรีโหลด" พัง:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: เสียเวลาได้เวอร์ชันใหม่ช้าหน่อย ≪ เสียข้อมูลที่คนพิมพ์ไปแล้ว\n'
+    + '   🔴 แต่ chunk error เลื่อนไม่ได้ — หน้าพังไปแล้ว เลื่อน = จอดำ\n'
+    + '   📄 docs/UI-CONVENTIONS.md §รีโหลดอัตโนมัติ · src/utils/pendingInput.js\n');
+});
+
+/* ═══ 💾 ร่างฟอร์มที่กรอกค้าง — ของกลางชุดเดียว ═══  2026-11-27 · คำสั่ง user
+   ชั้นที่ 2 ของเรื่อง "จอรีเฟรชแล้วต้องกรอกใหม่" (ชั้นแรก = pendingInput กันการรีโหลด)
+   รับเคสที่กันไม่ได้: เบราว์เซอร์ปิดเอง · ไฟดับ · กดปิดแท็บพลาด */
+test('💾 ร่างฟอร์ม — ต้องผ่าน useFormDraft/DraftBar · ห้ามเขียน localStorage ของร่างเองในหน้า', () => {
+  const bad = [];
+
+  /* ① ของกลางต้องยังอยู่ และยังเป็นเจ้าของกฎ */
+  const hook = stripComments(readFileSync(join(ROOT, 'src/utils/useFormDraft.js'), 'utf8'));
+  for (const fn of ['useFormDraft', 'draftPayload', 'draftAgeText']) {
+    if (!new RegExp(`export\\s+function\\s+${fn}\\b`).test(hook)) bad.push(`useFormDraft.js: ไม่มี ${fn}()`);
+  }
+  /* 🔴 browser storage ต้องห่อ try/catch ทุกจุด — โหมดส่วนตัว/ปิด site data = accessor โยน error */
+  const rawAccess = [...hook.matchAll(/localStorage\.\w+\(/g)].length;
+  const guarded = [...hook.matchAll(/try\s*\{[^}]*localStorage\.\w+\(/g)].length;
+  if (rawAccess > guarded) bad.push(`useFormDraft.js: localStorage ${rawAccess} จุด แต่ห่อ try/catch แค่ ${guarded}`);
+  /* 🔴 ไฟล์/Blob ห้ามเข้าร่าง — กู้กลับไม่ได้จริงและกิน quota */
+  if (!/instanceof\s+(Blob|File)/.test(hook)) bad.push('useFormDraft.js: ไม่ได้กัน Blob/File ออกจากร่าง');
+  /* 🔴 ต้องมีวันหมดอายุ — ร่างข้ามกะไม่ควรเด้งมาถามอีก */
+  if (!/ttlMs/.test(hook)) bad.push('useFormDraft.js: ไม่มี ttl ให้ร่างหมดอายุ');
+
+  if (!/export default function DraftBar/.test(readFileSync(join(ROOT, 'src/components/DraftBar.jsx'), 'utf8')))
+    bad.push('components/DraftBar.jsx: ไม่ใช่ component DraftBar');
+
+  /* ② หน้าไหนที่ผูกร่างแล้ว ต้องใช้แถบกลาง ไม่วาดเอง + ต้องล้างร่างหลังบันทึก */
+  const pages = walk(join(ROOT, 'src'), ['.jsx']).filter(f => !/components[/\\]DraftBar\.jsx$/.test(f));
+  for (const f of pages) {
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/useFormDraft\s*\(/.test(src)) {
+      /* ยังไม่ผูก = ห้ามเขียนกลไกร่างเองแข่ง */
+      if (/localStorage\.setItem\(\s*['"`][^'"`]*draft/i.test(src))
+        bad.push(`${relative(ROOT, f)}: เขียนร่างลง localStorage เอง — ต้องใช้ useFormDraft`);
+      continue;
+    }
+    if (!/<DraftBar\b/.test(src))
+      bad.push(`${relative(ROOT, f)}: เรียก useFormDraft แต่ไม่มี <DraftBar> — คนจะไม่รู้ว่ามีร่างให้กู้`);
+    if (!/\.clear\(\)/.test(src))
+      bad.push(`${relative(ROOT, f)}: ไม่เรียก draft.clear() — บันทึกลงฐานแล้วร่างยังค้าง เด้งถามซ้ำรอบหน้า`);
+    /* 🔴 ต้องมี skip กันแถบเด้งตอนยังไม่แตะอะไร (ค่า prefill ไม่ใช่ของที่คนกรอกค้าง) */
+    if (!/skip:/.test(src))
+      bad.push(`${relative(ROOT, f)}: useFormDraft ไม่ได้ส่ง skip — ค่า prefill จะทำให้แถบเด้งทุกครั้งที่เปิดฟอร์ม`);
+  }
+
+  assert.deepEqual(bad, [], '\n\n❌ ด่านร่างฟอร์มพัง:\n   ' + bad.join('\n   ') + '\n'
+    + '   กฎ: ร่างเก็บผ่าน `utils/useFormDraft.js` + แถบ `components/DraftBar.jsx` เท่านั้น\n'
+    + '   🔴 localStorage เป็นของ "ต่อเครื่องต่อคน" — ห้ามใช้แทนการบันทึกลง DB\n'
+    + '   📄 docs/UI-CONVENTIONS.md §6.43\n');
+});
