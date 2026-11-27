@@ -38,6 +38,9 @@ import { buildMoStaleBoard } from '../utils/mtnStale';
 import { buildMoChaseBoard, PR_CLOSE_STAGES, moCloseGate, moCloseGateText, moPrBlocked, MO_LABEL_WAIT_PR } from '../utils/moChase';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
+import WhyWhyFields from '../components/WhyWhyFields';
+import useTpmGrade from '../utils/useTpmGrade';
+import { closeGate, whyList, preventLabel } from '../utils/tpm';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText, moCodeOf } from '../utils/mtnTeams';
 import { VENDOR_STATUS, canSendVendor, canReceiveVendor, techRepairMin, grossRepairMin, mttrHoldMin, vendorHoldLabel } from '../utils/mtnVendor';
 import { isAmTeam, loadPmTeams, pmTeamsSync, DEFAULT_TEAMS } from '../utils/pmTeams';
@@ -3601,6 +3604,10 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], machines = nu
           </StepBox>
           <StepBox n={3} done={o.current_step >= 3}>
             <Row k={trI18n("ซ่อมเสร็จเมื่อ")} v={o.repair_done_at && fmtDateTime(o.repair_done_at)} /><Row k={trI18n("สาเหตุ")} v={o.root_cause} /><Row k={trI18n("วิธีแก้ไข")} v={o.solution} />
+            {/* 🔁 TPM — Why-Why (27/11) · ว่าง = ไม่แสดง (ใบเก่า/เครื่องที่ไม่บังคับ) */}
+            {o.failure_mode && <Row k={trI18n("อาการเสีย")} v={o.failure_mode} />}
+            {whyList(o.why_why).filter(Boolean).length > 0 && <Row k={trI18n("ทำไม-ทำไม")} v={whyList(o.why_why).filter(Boolean).join(" → ")} />}
+            {o.prevent_action && <Row k={trI18n("ป้องกันเกิดซ้ำ")} v={`${trI18n(preventLabel(o.prevent_action))}${o.prevent_note ? ` — ${o.prevent_note}` : ""}`} />}
             <Row k={trI18n("ช่างหลัก / รอง")} v={[o.tech_main, o.tech_secondary].filter(Boolean).join(' / ')} />
             {!!dparts.length && <Row k={trI18n("อะไหล่ที่ใช้")} v={dparts.map(p => `${p.part_name} ×${p.qty}${p.unit || ''}`).join(', ')} />}
             {(o.labor_cost != null || o.parts_cost != null) && <Row k={trI18n("ค่าใช้จ่าย")} v={`${trI18n("ค่าแรง")} ${(Number(o.labor_cost) || 0).toLocaleString()} + ${trI18n("อะไหล่")} ${(Number(o.parts_cost) || 0).toLocaleString()} = ${((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString()} ${trI18n("บาท")}`} />}
@@ -3917,7 +3924,18 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     /* ✏️ แก้ข้อมูลแจ้งซ่อมย้อนหลัง (ขั้น 1) — เปิดแค่ 3 ช่องนี้ (25/10 · คำสั่ง user)
        ไลน์/เครื่อง/ลักษณะปัญหา/ผู้แจ้ง **ล็อกไว้** — ใบออกเลข MO แล้วแก้ = สอบกลับเพี้ยน */
     problem_detail: o.problem_detail || '', report_note: o.report_note || '',
+    /* 🔁 TPM ข้อ 5 — ปิดวงจรซ่อม (27/11) · บังคับเฉพาะเครื่องเกรด A ผ่าน closeGate() (utils/tpm.js) */
+    failure_mode: o.failure_mode || '', why_why: whyList(o.why_why), prevent_action: o.prevent_action || '', prevent_note: o.prevent_note || '',
   }));
+  /* เกรดเครื่องของใบนี้ (คิดสดจากคะแนนใน /tpm) — ไม่รู้เกรด = ไม่บังคับ แต่ช่องบอกเหตุผล */
+  const tpmGrade = useTpmGrade(o.machine_no);
+  const tpmGate = closeGate({ gradeRes: tpmGrade.res, mo: f, critLoadFailed: tpmGrade.failed });
+  /* ค่าที่บันทึกลงใบ — ว่าง = null (ใบเดิมที่ไม่มีข้อมูลไม่ถูกเติมสตริงว่าง) */
+  const tpmFields = () => {
+    const whys = whyList(f.why_why).filter(Boolean);
+    return { failure_mode: f.failure_mode.trim() || null, why_why: whys.length ? whys : null,
+      prevent_action: f.prevent_action || null, prevent_note: f.prevent_note.trim() || null };
+  };
   const [beforeFile, setBeforeFile] = useState(null);
   const beforeUrl = useObjectUrl(beforeFile);
   const [afterFile, setAfterFile] = useState(null);
@@ -4172,6 +4190,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             orderNo: o.mo_no || o.id, actor: fullName || '—', as: 'ผู้ตัดสินว่าไม่เกี่ยวกับคุณภาพ',
             effect: 'ใบข้ามขั้น QA ไปขั้นถัดไปทันที',
           })) { setSaving(false); return; }
+        } else if ((_stage === 'close' || _stage === 'cost_mgr_close') && !editMode && (tpmGrade.loading || (tpmGate.required && !tpmGate.ok))) {
+          /* 🔁 TPM ข้อ 5 (27/11 · คำสั่ง user "บังคับเฉพาะเครื่องเกรด A") — ปิดใบเครื่องเกรด A ต้องมี Why-Why ครบ
+             กฎอยู่ closeGate() ที่เดียว · ไม่รู้เกรด/อ่านทะเบียนไม่ได้ = ไม่บังคับ (ช่องบนฟอร์มบอกเหตุผล) */
+          setSaving(false);
+          return toast.error(tpmGrade.loading
+            ? trI18n('กำลังอ่านเกรดเครื่องของใบนี้ — รอสักครู่แล้วกดอีกครั้ง')
+            : `${trI18n('เครื่องเกรด A — ต้องกรอก Why-Why ก่อนปิดใบ')}: ${tpmGate.missing.map(m => trI18n(m)).join(' · ')}`);
         } else if (needsSignConfirm(_stage)) {
           /* 🛒 **ด่าน: ปิดใบได้ต่อเมื่อลูป PR จบ** (10/11 · คำสั่ง user *"บล็อกเลย"*
              — เดิมเป็นเพียงคำเตือน · คำสั่งเดิม "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ")
@@ -4271,7 +4296,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         // เวลารับงาน → ใบหยุดเครื่อง (ได้ MTTA) · ตีกลับไม่นับว่ารับงาน
         if (!isReject && upd.accept_at) await syncDowntimeTimes(o, { call_mtn_ack_at: upd.accept_at }, o.report_at || upd.accept_at);
       } else if (stage === 'service') {
-        Object.assign(upd, { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
+        Object.assign(upd, tpmFields(), { root_cause: f.root_cause, solution: f.solution, tech_main: f.tech_main, tech_secondary: f.tech_secondary,
           labor_cost: f.labor_cost === '' ? null : Number(f.labor_cost), parts_cost: f.parts_cost === '' ? null : Number(f.parts_cost) });
         if (!editMode) { upd.status = 'repaired'; upd.current_step = step; upd.repair_done_at = new Date().toISOString(); }
         /* ฟอร์ม MTN: วันที่เริ่ม/เสร็จ เป็นคนละจังหวะกับ "รับงาน" — ไม่กรอก = ถือว่าเริ่มตอนรับงาน
@@ -4440,13 +4465,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         /* ขั้น 8 ของใบ MTN = **ผจก.ฝ่ายที่แจ้งอนุมัติ = ปิดใบ** (ช่อง "ผู้จัดการ" ท้ายใบ = cost_mgr_*)
            ลายเซ็นจุดสุดท้ายของ 7 จุดตาม WI — ปิดแล้วสถานะเป็น closed */
         const s = await resolveSign('cost_mgr_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็น ผจก.ฝ่ายที่แจ้ง'); }
-        Object.assign(upd, { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
+        Object.assign(upd, tpmFields(), { cost_mgr_name: f.cost_mgr_name || fullName || null, cost_mgr_sign: s, extra_comment: f.extra_comment || null });
         if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.cost_mgr_at = new Date().toISOString(); }
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
           if (eUpdN) { setSaving(false); return toast.error((trI18n('บันทึกไม่สำเร็จ') + ': ') + eUpdN.message); } }
       } else if (stage === 'close') {
         const s = await resolveSign('approve_sign'); if (!s) { setSaving(false); return toast.error('ลงลายเซ็นผู้อนุมัติ'); }
-        Object.assign(upd, { approver_name: f.approver_name, approve_sign: s });
+        Object.assign(upd, tpmFields(), { approver_name: f.approver_name, approve_sign: s });
         if (!editMode) { upd.status = 'closed'; upd.current_step = step; upd.approve_at = new Date().toISOString(); }
         // ไม่เช็คผล = ขึ้น "บันทึกแล้ว" ทั้งที่ใบยังอยู่ขั้นเดิม + ยิง Telegram ด้วยแถวเก่า (audit 2026-09-02)
         { const { error: eUpdN } = await supabaseDR.from('mtn_orders').update(upd).eq('id', o.id);
@@ -4589,6 +4614,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           </>}
           <Field label={trI18n('สาเหตุปัญหาที่เกิด')}><textarea value={f.root_cause} onChange={e => set('root_cause', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
           <Field label={trI18n('วิธีการแก้ไข')}><textarea value={f.solution} onChange={e => set('solution', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
+          <WhyWhyFields form={f} set={set} gate={tpmGate} grade={tpmGrade} />
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <Field label={trI18n('ช่างซ่อมหลัก')}><select value={f.tech_main} onChange={e => set('tech_main', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
             <Field label={trI18n('ช่างซ่อมรอง')}><select value={f.tech_secondary} onChange={e => set('tech_secondary', e.target.value)} style={inp}><option value="">—</option>{techOpts}</select></Field>
@@ -4776,11 +4802,13 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         {modalStage === 'cost_mgr_close' && <>
           <Field label={trI18n('ชื่อ ผจก. ของฝ่ายที่แจ้ง (ช่องเซ็นที่ 7 — ช่อง “ผู้จัดการ” ท้ายใบ)')}><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder={trI18n('ค้นชื่อผู้จัดการ')} /></Field>
           <Field label={trI18n('ความคิดเห็นเพิ่มเติม (ท้ายใบ)')}><textarea value={f.extra_comment} onChange={e => set('extra_comment', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
+          <WhyWhyFields form={f} set={set} gate={tpmGate} grade={tpmGrade} />
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('ลายเซ็นจุดสุดท้ายของใบ — อนุมัติแล้วสถานะจะเป็น')} <b style={{ color: 'var(--green)' }}>Close MO</b></div>}
         </>}
         {modalStage === 'close' && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
           <Field label={trI18n('ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)')}><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
+          <WhyWhyFields form={f} set={set} gate={tpmGate} grade={tpmGrade} />
           {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{trI18n('อนุมัติแล้วสถานะจะเป็น')} <b style={{ color: 'var(--green)' }}>Close MO</b></div>}
         </>}
         {/* 💰 สรุปค่าใช้จ่ายในขั้นเซ็นอนุมัติ/ปิดใบ — อ่านอย่างเดียว  (22/10 · MTN แจ้ง)

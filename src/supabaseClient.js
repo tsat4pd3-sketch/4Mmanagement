@@ -60,6 +60,7 @@ export const DR_AUDIT_TABLES = new Set([
   'die_set_shared_dies',   // common die — ชุดที่ยืมแม่พิมพ์ของชุดอื่น (05/11 · migration 20261105_die_registry_op_model_dr.sql)
   'part_routings',
   'quality_bin_records',
+  'tpm_crit_factors','tpm_settings','machine_criticality','tpm_ftag_types','tpm_ftags',   // TPM เฟส 1 (27/11 · มี updated_by_name/_uid แล้ว)
   'repair_wi_registry',      // ทะเบียน QRs ↔ WI ซ่อม (WI-PD3-069 §6) — doc_control แก้เองได้ ต้องรู้ว่าใครแก้
   'edi_part_map',            // คำตัดสินคู่ พาร์ทลูกค้า→MAT (นำเข้า EDI) — ผิดคู่ = ออเดอร์เข้า MAT ผิดทั้งเดือน ต้องรู้ว่าใครเลือก
   'prod_problem_reports',    // ใบรายงานปัญหาการผลิต FM-PD1-019 (เก็บ 1 ปี) — เอกสารคุณภาพ ต้องสอบกลับได้

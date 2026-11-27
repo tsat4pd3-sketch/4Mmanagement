@@ -85,6 +85,7 @@
 | 🌐 ปุ่มสลับ ไทย/English — ชั้นภาษาโครงหลัก `tr()` (2026-11-02 · คำสั่ง user) | `docs/modules/i18n.md` |
 | 🦺 ข้อกำหนด PPE รายหน่วยงาน (4 ชั้น) + ผลตรวจรายคน (`/ppe-setup` · 2026-11-10 · คำสั่ง user) | `docs/modules/ppe-requirements.md` |
 | 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร — ต้นทาง · รหัสลับต่อต้นทาง · สุขภาพการส่ง · gen flow (`/integrations` · 2026-11-11) | `docs/modules/integration-hub.md` |
+| 🏷️ TPM เฟส 1 — F-Tag (แดง/ขาว · แดงเปิด MO) · ระดับความสำคัญเครื่อง A/B/C (ให้คะแนน → ระบบคิด) · Why-Why บังคับตอนปิด MO เครื่องเกรด A (`/tpm` · 2026-11-27) | `docs/modules/tpm.md` |
 | QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04) | `docs/modules/qa-inspection.md` |
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` |
 | QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user) | `docs/modules/qr-equipment-scan.md` |

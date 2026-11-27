@@ -147,6 +147,7 @@ const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const Integrations = lazy(() => import('./pages/Integrations'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
+const Tpm = lazy(() => import('./pages/Tpm'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
 const RemoteControl = lazy(() => import('./pages/RemoteControl'));
@@ -243,6 +244,8 @@ export const NAV_ITEMS = [
   // ⚠️ 4 เมนู PM เดิมขึ้นต้นด้วยคำชุดเดียวกัน ("...อุปกรณ์เครื่องจักร") จนแยกไม่ออกว่าอันไหนทำอะไร
   //    ชื่อใหม่บอกการกระทำ: บันทึกผล / ดูปฏิทิน / ดูว่าจะครบกำหนด / ตั้งจุดที่ต้องตรวจ (nav audit 2026-08-27)
   { to: '/mtn-repair',  icon: '🛠️', label: 'แจ้งซ่อม MTN (MO)',                group: 'การตรวจสอบและซ่อมบำรุง' },
+  /* 🏷️ TPM เฟส 1 (2026-11-27 · คำสั่ง user) — F-Tag + ระดับความสำคัญเครื่อง A/B/C · 📄 docs/modules/tpm.md */
+  { to: '/tpm',         icon: '🏷️', label: 'TPM (F-Tag · เกรดเครื่อง)',          group: 'การตรวจสอบและซ่อมบำรุง' },
   // 🔧 ศูนย์ PM — ยุบ 5 หน้า (ตรวจ/แผน/ล่วงหน้า/ประสานงาน/ตั้งค่า) เป็นแท็บใน PmHub
   //    route เดิมทั้ง 5 redirect เข้าแท็บ · ไม่อยู่ในเมนู (pattern เดียวกับ Daily Checker)
   //    ⭐ วิธีนี้แก้ปัญหา "4 เมนู PM ชื่อขึ้นต้นเหมือนกันจนแยกไม่ออก" ได้แรงกว่าการเปลี่ยนชื่อ
@@ -2604,6 +2607,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/fixture" element={<LegacyTabRedirect to="/equipment" tab="jig" subParam="fx" />} />
               <Route path="/equipment" element={
                 <RoleRoute path="/equipment" userRole={role}><EquipmentHub /></RoleRoute>
+              } />
+              <Route path="/tpm" element={
+                <RoleRoute path="/tpm" userRole={role}><Tpm /></RoleRoute>
               } />
               <Route path="/mtn-repair" element={
                 <RoleRoute path="/mtn-repair" userRole={role}><MtnRepair /></RoleRoute>

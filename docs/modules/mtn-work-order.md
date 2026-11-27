@@ -1,6 +1,14 @@
 # MTN Work-Order — ใบแจ้งซ่อม MO (JIG/DIE/PRODUCTION 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**)
 
 
+## 🔁 Why-Why ในใบ MO — บังคับตอนปิดใบเฉพาะเครื่องเกรด A (2026-11-27 · TPM เฟส 1 · คำสั่ง user)
+- 4 คอลัมน์ใหม่ `failure_mode` · `why_why` (jsonb array) · `prevent_action` · `prevent_note` (nullable · ใบเก่าไม่กระทบ)
+- ช่องอยู่ที่ฟอร์มขั้นลงผลซ่อม (`service`) และขั้นปิดใบ (`close` / `cost_mgr_close`) — `components/WhyWhyFields.jsx`
+- 🔴 ด่านตัดสินที่ `closeGate()` (`utils/tpm.js`) ที่เดียว · วางก่อนกล่องยืนยันเซ็น · เฉพาะตอนปิดจริง (ไม่ใช่ ✏️ แก้ย้อนหลัง)
+  · **ไม่รู้เกรด = ไม่บังคับ** (เครื่องไม่อยู่ทะเบียน/ยังไม่ประเมิน/อ่านไม่ได้) · ระหว่างอ่านเกรด = ให้รอ
+- เกรดเครื่องมาจาก `/tpm` (`useTpmGrade(o.machine_no)`) · 📄 `docs/modules/tpm.md`
+- ใบซ่อมที่เปิดจาก F-Tag: `problem_group = 'F-Tag (TPM)'` · `report_note` ขึ้นต้น `[F-Tag FT-…]` · แท็กผูกด้วย `tpm_ftags.mo_id`
+
 ## 🙋 ผู้เปิดใบถอนใบของตัวเองได้ (2026-11-16 · คำสั่ง user)
 
 *"MO กรณี owner รู้ว่าเปิดผิดและยังไม่ถูกรับงานหรือ reject สามารถเข้าไปยกเลิกเองได้"*

@@ -138,6 +138,12 @@ alter table public.mtn_orders add column if not exists prevent_action text;    -
 alter table public.mtn_orders add column if not exists prevent_note   text;    -- ทำอะไร/ทำไมไม่ทำ (บังคับเมื่อ none)
 
 -- ── RLS + GRANT (anon เหมือนตาราง DR อื่น · ไม่ให้ DELETE) ──────────────────────────────
+-- เขียนตรงรายตาราง (ด่าน new-table-needs-rls อ่านไฟล์เป็นข้อความ มองไม่เห็นในลูป format) · ซ้ำกับลูปข้างล่างได้ (idempotent)
+alter table public.tpm_crit_factors    enable row level security;
+alter table public.tpm_settings        enable row level security;
+alter table public.machine_criticality enable row level security;
+alter table public.tpm_ftag_types      enable row level security;
+alter table public.tpm_ftags           enable row level security;
 do $$ declare t text; begin
   foreach t in array array['tpm_crit_factors','tpm_settings','machine_criticality','tpm_ftag_types','tpm_ftags'] loop
     execute format('alter table public.%1$s enable row level security', t);
