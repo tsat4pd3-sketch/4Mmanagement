@@ -12,7 +12,7 @@ import { buildScheduleMaps, lineScheduleTeam } from '../utils/shiftAssign';
 import { UserContext } from '../App';
 import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { dtBucketName, buildDtIndex, dtTrashStats } from '../utils/downtimeCategory';
-import { getLineFamilyNames } from '../utils/lineHierarchy';
+import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
@@ -429,6 +429,10 @@ export default function OEEAnalytics() {
      ว่าง = ยังไม่เลือก ⇒ หัวแดชบอร์ดเลือกพาร์ทที่เดินเครื่องนานสุดให้เอง (เขียนบนจอว่าเลือกตัวไหน)
      🔴 เก็บเป็น `key` ของกลุ่มพาร์ท (จาก `byProduct.key`) ไม่ใช่ MAT เดี่ยว — 1 สินค้าอาจมีหลาย MAT */
   const [selPart,    setSelPart]    = useState(() => urlParams.get('part') || '');
+  /* 🗺️ ไลน์ที่การ์ด "ผังไลน์" (แท็บภาพรวมวันนี้) กำลังโชว์ — ว่าง = ตามตัวกรองไลน์ของหน้า
+     ตัวกรองหน้าเป็น "ทั้งโรงงาน" = **คนต้องเลือกเองจากช่องบนการ์ด** ห้ามให้ระบบเลือกให้เงียบๆ
+     (27/11 · user ทัก *"filter เลือกทั้งโรงงานแต่ทำไมโชว์ Assy LWR"*) */
+  const [tdMapPick,  setTdMapPick]  = useState('');
   /* 👥 ลิสต์ทีมจากผัง (`useOrgTeams` · ผังยังไม่มีทีม = A/B/C) — 05/11 audit dropdown เดิม hardcode A/B/C
      `?team=` รับตามลิงก์ · ค่าที่ไม่อยู่ในผังยังโชว์ในช่อง (ติดป้าย) ไม่ทิ้งเงียบ */
   const orgTeams = useOrgTeams();
@@ -874,7 +878,16 @@ export default function OEEAnalytics() {
        จะได้เล่าเรื่องเดียวกัน: กะนี้ · ได้เท่าไหร่ · เครื่องไหนหยุด)
      · เลนส์ `breakdown` = "เครื่องไหนหยุดวันนี้" — ตรงกับคำถามของแท็บนี้ (PM/AM มีบ้านของมันที่ /mtn-layout)
      · ชี้ไลน์ไม่ได้ (ยังไม่มีกะเลย) = **ไม่วาดการ์ด** ปล่อยแถวเหลือ 2 ใบ ไม่ใช่โชว์ผังว่าง */
-  const tdMapLine = tdLine || tdLiveSession?.line_name || null;
+  /* ไลน์ที่ "เดินจริงในวันนี้" ในขอบเขตที่เลือก = ตัวเลือกของช่องบนการ์ด
+     🔴 ลิสต์ชื่อไลน์เรียงด้วย `sortLineNames` (ส่วนงาน→แม่→ลูก) **ห้าม `.sort()` ดิบ** (UI §5.3 ข้อ 9) */
+  const tdMapLineOptions = useMemo(
+    () => sortLineNames([...new Set(tdSessionsTeamFiltered.map(x => x.line_name).filter(Boolean))], linesFull),
+    [tdSessionsTeamFiltered, linesFull]);
+  /* 🔴 ลำดับการตัดสิน: **ตัวกรองไลน์ของหน้าชนะเสมอ** → ไม่ได้กรอง = ไลน์ที่คนเลือกบนการ์ด
+     ⇒ กรอง "ทั้งโรงงาน" แล้วยังไม่ได้เลือก = **ไม่โชว์ผัง** (การ์ดบอกให้เลือกไลน์)
+     เดิมถอยไปใช้ไลน์ของกะที่กำลังเดินให้เอง ⇒ จอบอก "ทั้งโรงงาน" แต่โชว์ผังไลน์เดียวโดยไม่บอกว่าทำไม
+     (27/11 · user ทัก) — กฎจอซื่อสัตย์: เลือกแทนคนได้ แต่ต้องเขียนบนจอ ที่นี่ "ให้คนเลือก" ตรงกว่า */
+  const tdMapLine = tdLine || (tdMapPick && tdMapLineOptions.includes(tdMapPick) ? tdMapPick : null);
   const tdMapFamily = useMemo(
     () => (tdMapLine ? getLineFamilyNames(linesFull, tdMapLine) : []), [linesFull, tdMapLine]);
   const tdMapParent = useMemo(
@@ -1755,14 +1768,15 @@ export default function OEEAnalytics() {
             </div>
           </div>
 
-          {/* Row: Live session + Production qty gauge + ผังไลน์
-              📐 27/11 (user ชี้รูป "1 เล็กลงได้มั้ย · 2 ขยับซ้าย · 3 ใส่เป็น layout ของไลน์ที่เลือก"):
-              เดิม 2 คอลัมน์ `1.4fr 1fr` ⇒ การ์ดซ้ายกว้างเกินเนื้อหา (ที่ว่างในการ์ด) และแถวเหลือที่ว่างขวา
-              ⇒ 3 คอลัมน์: ย่อใบซ้าย · ใบยอดผลิตเลื่อนมาซ้ายเอง · ที่ว่างขวากลายเป็นผังเครื่องจักรของไลน์
-              · ชี้ไลน์ไม่ได้ = กลับเป็น 2 คอลัมน์เหมือนเดิม (ห้ามเว้นช่องว่างเปล่า) */}
+          {/* Row: [กะที่กำลังผลิต + ยอดผลิตรวมวันนี้] | [ผังไลน์]
+              📐 27/11 (user: "1 เล็กลงได้มั้ย · 2 ขยับซ้าย · 3 ใส่เป็น layout ของไลน์ที่เลือก"
+                 แล้วตามด้วย "การ์ดจำนวนชิ้นงานผลิตรวม เอาไปรวมกับการ์ดกะที่กำลังผลิตอยู่เลย จะได้ขยายเลย์เอาท์")
+              เดิม 2 คอลัมน์ `1.4fr 1fr` ⇒ การ์ดซ้ายกว้างเกินเนื้อหา + แถวเหลือที่ว่างขวา
+              ⇒ ยุบ 2 ใบซ้ายเป็นใบเดียว แล้วแบ่งแถวเป็น **2 คอลัมน์** ผังได้ที่กว้างกว่าเดิม
+              · วันนั้นไม่มีกะเลย = คอลัมน์เดียวเต็มแถว (ห้ามเว้นช่องว่างเปล่า) */}
           <div style={{ display: 'grid', gap: 16, marginBottom: 16,
             gridTemplateColumns: isMobile ? 'minmax(0, 1fr)'
-              : tdMapLine ? 'minmax(0, 0.95fr) minmax(0, 0.85fr) minmax(0, 1.2fr)' : '1.4fr 1fr' }}>
+              : tdMapLineOptions.length ? 'minmax(0, 0.8fr) minmax(0, 1.4fr)' : 'minmax(0, 1fr)' }}>
             {/* 1.1 Live session */}
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1814,13 +1828,18 @@ export default function OEEAnalytics() {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* 3. Production qty gauge — เป้ากะ (target_qty) ปัจจุบันไม่ได้ตั้งในระบบ (=0 ทุกกะ)
+              {/* 📦 ยอดผลิตรวมของวันนี้ — รวมเข้ามาในการ์ดเดียวกัน (27/11 · คำสั่ง user
+                  *"เอาไปรวมกับการ์ดกะที่กำลังผลิตอยู่เลยได้มั้ย จะได้ขยายเลย์เอาท์"*) ⇒ แถวเหลือ 2 ใบ ผังกว้างขึ้น
+                  เป้ากะ (`target_qty`) ยังไม่ได้ตั้งในระบบ (=0 ทุกกะ) — เป้ากะ (target_qty) ปัจจุบันไม่ได้ตั้งในระบบ (=0 ทุกกะ)
                 target 0 = ไม่มีเป้าให้เทียบ ห้ามโชว์ "0%" (ดูเป็นพลาดเป้าทั้งที่ผลิตได้จริง) — โชว์ "ยังไม่ตั้งเป้า" (2026-07-15) */}
             {(() => { const hasTarget = tdKpi.targetQty > 0; const achievePct = hasTarget ? Math.round(Math.min(100, tdKpi.totalQty / tdKpi.targetQty * 100)) : 0; return (
-            <div style={{ ...s.section, marginBottom: 0 }}>
-              <div style={s.title}>{trI18n('จำนวนชิ้นงานที่ผลิตรวมของวันนี้')}</div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              {/* 🔴 ท่อนนี้เป็น **ยอดของทั้งวัน ทุกไลน์ในขอบเขต** ไม่ใช่ของกะที่การ์ดด้านบนโชว์
+                  ⇒ ป้ายต้องเขียนขอบเขตให้ชัด ไม่งั้นรวมการ์ดแล้วคนอ่านว่าเป็นยอดของกะนั้น (27/11) */}
+              <div style={{ ...s.title, marginBottom: 8 }}>
+                {trI18n('จำนวนชิ้นงานที่ผลิตรวมของวันนี้')}{' '}
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>· {tdScopeLabel}</span>
+              </div>
               <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('เป้าหมาย')}</div>
@@ -1847,21 +1866,45 @@ export default function OEEAnalytics() {
             </div>
             ); })()}
 
-            {/* 3.1 🗺️ ผังเครื่องจักรของไลน์ที่เลือก — ของกลาง `<LineLensMap>` (ตัวเดียวกับ /factory-map) */}
-            {tdMapLine && (
+            </div>
+
+            {/* 3.1 🗺️ ผังเครื่องจักรของไลน์ที่เลือก — ของกลาง `<LineLensMap>` (ตัวเดียวกับ /factory-map)
+                🔴 ไลน์มาจาก **ตัวกรองไลน์ของหน้า** ก่อน · ไม่ได้กรอง = ช่องบนการ์ดให้คนเลือก
+                   ห้ามเลือกให้เองเงียบๆ (27/11 · user ทัก "filter เลือกทั้งโรงงานแต่ทำไมโชว์ Assy LWR") */}
+            {tdMapLineOptions.length > 0 && (
               <div style={{ ...s.section, marginBottom: 0, minWidth: 0 }}>
-                {/* ชื่อไลน์ยาวได้มาก (ไลน์ลูก + คำต่อท้าย) ⇒ ตัดในบรรทัดตัวเอง ชื่อเต็มอยู่ใน title
-                    · หัวข้อย่อย "ผังเครื่องจักร · เครื่องหยุดวันนี้" `<LineLensMap>` เขียนให้เองแล้ว ไม่ซ้ำ */}
-                <div style={{ ...s.title, display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                <div style={{ ...s.title, display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
                   <span style={{ flex: 'none' }}>{trI18n('ผังไลน์')}</span>
-                  <span title={tdMapLine} style={{ fontWeight: 600, color: 'var(--muted)', minWidth: 0,
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tdMapLine}</span>
+                  {tdLine ? (
+                    /* หน้ากรองไลน์ไว้แล้ว = การ์ดตามตัวกรอง ไม่ต้องมีช่องให้เลือกซ้ำ (ชื่อเต็มอยู่ใน title) */
+                    <span title={tdLine} style={{ fontWeight: 600, color: 'var(--muted)', minWidth: 0,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tdLine}</span>
+                  ) : (
+                    <select value={tdMapPick} onChange={e => setTdMapPick(e.target.value)}
+                      title={trI18n('เลือกไลน์ที่จะดูผัง (เฉพาะไลน์ที่มีกะในวันที่เลือก)')}
+                      style={{ fontWeight: 600, maxWidth: '100%' }}>
+                      <option value="">{trI18n('— เลือกไลน์ —')}</option>
+                      {tdMapLineOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  )}
                 </div>
-                <LineLensMap
-                  lineName={tdMapLine} family={tdMapFamily} parentName={tdMapParent}
-                  lens="breakdown" dtRows={tdMapDt} date={tdDate}
-                  height={isMobile ? '300px' : 'clamp(240px, 32vh, 420px)'}
-                />
+                {tdMapLine ? (
+                  /* หัวข้อย่อย "ผังเครื่องจักร · เครื่องหยุดวันนี้" `<LineLensMap>` เขียนให้เองแล้ว ไม่ซ้ำ */
+                  <LineLensMap
+                    lineName={tdMapLine} family={tdMapFamily} parentName={tdMapParent}
+                    lens="breakdown" dtRows={tdMapDt} date={tdDate}
+                    height={isMobile ? '300px' : 'clamp(240px, 32vh, 420px)'}
+                  />
+                ) : (
+                  <div style={{ fontSize: 12.5, color: 'var(--muted)', lineHeight: 1.7, padding: '18px 4px' }}>
+                    {trI18n('ขอบเขตที่เลือกคือ')} <b style={{ color: 'var(--text2)' }}>{tdScopeLabel}</b> —{' '}
+                    {trI18n('ผังเป็นของไลน์เดียว จึงรวมหลายไลน์ในผังเดียวไม่ได้')}
+                    <div style={{ marginTop: 6 }}>
+                      {trI18n('เลือกไลน์ที่ช่องด้านบน หรือกรองไลน์ที่แถบด้านบนสุดของหน้า')} ·{' '}
+                      {trI18n('วันนี้มีกะ')} <b style={{ color: 'var(--text2)' }}>{tdMapLineOptions.length}</b> {trI18n('ไลน์')}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
