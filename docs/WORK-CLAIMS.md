@@ -21,6 +21,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- หลัก · เริ่ม 2026-11-27 17:50 · แก้ข้อความบนจอที่ผิด 3 จุด (RFQ ส่ง CRD ≠ ส่งให้ IEC ประเมิน · บอร์ดคัมบัง "สต็อกในไลน์ › รอรับเข้า" · DailyReport "OK/Cancel") + เอกสาร docs/modules ที่ไม่ตรงโค้ด + ตัวตรวจ WI · แตะ: `src/utils/mktRfq.js` `src/pages/Rfq.jsx` `src/pages/HeijunkaKanban.jsx` `src/pages/DailyReport.jsx` (แค่ข้อความ) · `docs/modules/*.md` · `docs/wi/kit/wi_check.mjs` · ไม่มี migration
 - หลัก · เริ่ม 2026-11-27 17:05 · แท็บ "ภาพรวมวันนี้" `/oee-analytics` — จัดการ์ดกะไม่ให้มีที่ว่าง + กรอง "ทั้งโรงงาน" ให้โชว์ผังรวมโรงงาน · แตะ: `src/pages/OEEAnalytics.jsx` · `src/components/FactoryMiniMap.jsx` (เพิ่ม prop `height` แบบ optional ค่าเดิมไม่เปลี่ยน) · ไม่มี migration
 
 ## ต้องคุยกัน
