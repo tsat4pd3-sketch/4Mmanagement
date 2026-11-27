@@ -2490,11 +2490,19 @@ test('🛡️ new-table-needs-rls — migration ที่สร้างตา�
     const sql = readFileSync(join(dir, f), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, ' ')
       .split('\n').filter(l => !/^\s*--/.test(l)).join('\n');
+    /* 🔁 เปิด RLS เป็นลูป dynamic SQL ก็นับ (27/11 — เคสจริง `20261127_act02_5s_main.sql` 11 ตาราง)
+       `execute format('alter table public.%I enable row level security', t)` + `foreach t in array array[...]`
+       = ถูกต้องและครอบคลุมกว่าเขียนทีละบรรทัด แต่ regex ต่อตารางมองไม่เห็น ⇒ main แดงทั้งที่ของถูก
+       🔴 **ยังไม่ผ่อนกฎ** — ต้องมีทั้ง 2 อย่าง: คำสั่งเปิด RLS แบบ dynamic **และ** ชื่อตารางนั้น
+          ปรากฏเป็นสตริงในไฟล์ (= อยู่ในลิสต์ของลูป) · ตารางที่ไม่อยู่ในลิสต์ยังตกด่านเหมือนเดิม */
+    const dynRls = /execute\s+format\s*\(\s*'alter\s+table\s+public\.%I\s+enable\s+row\s+level\s+security/i.test(sql);
     for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:(\w+)\.)?(\w+)/gi)) {
       const [, schema, name] = m;
       if ((schema || 'public').toLowerCase() !== 'public') continue;   // archive/temp ไม่ผ่าน API อยู่แล้ว
       const rls = new RegExp(`alter\\s+table[\\s\\S]{0,120}?\\b${name}\\b[\\s\\S]{0,80}?enable\\s+row\\s+level\\s+security`, 'i');
-      if (!rls.test(sql)) hits.push(`${f} → ${name}`);
+      if (rls.test(sql)) continue;
+      if (dynRls && new RegExp(`'${name}'`).test(sql)) continue;   // อยู่ในลิสต์ของลูปที่เปิด RLS
+      hits.push(`${f} → ${name}`);
     }
   }
   assert.deepEqual(hits, [],

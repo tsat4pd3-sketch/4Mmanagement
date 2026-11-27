@@ -27,4 +27,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-27 · หลัก · ของที่คนกรอกค้างชนะการรีโหลด (หน้างานแจ้ง "จอชอบรีเฟรชระหว่างลงข้อมูล") + หน้าต่าง deploy ผูก `break_policies`/`company_calendar` + ร่างฟอร์มใน localStorage · ไฟล์หลัก `src/utils/pendingInput.js` `src/utils/useFormDraft.js` `src/components/DraftBar.jsx` `src/main.jsx` `src/pages/MtnRepair.jsx` `.github/workflows/scheduled-deploy.yml` · ไม่มี migration
+- 2026-11-27 · หลัก · แก้ด่าน `new-table-needs-rls` ให้อ่าน "เปิด RLS เป็นลูป dynamic SQL" ได้ — `20261127_act02_5s_main.sql` ของ smf01 **ถูกต้องอยู่แล้ว** (RLS + policy + GRANT + trigger ครบ 11 ตาราง · ตรวจ DB แล้ว `relrowsecurity=true` ทุกตัว) แต่ด่าน regex ต่อตารางมองไม่เห็น ⇒ `npm run build` บน main แดงอยู่ · แก้ที่ด่าน (`src/utils/__tests__/regressionGuards.test.mjs`) **ไม่แตะ migration ที่ smf01 จองไว้** · กฎไม่ผ่อน: ต้องมีทั้งคำสั่งเปิด RLS แบบ dynamic และชื่อตารางอยู่ในลิสต์ของลูป
+
 - 2026-11-27 · smf01 · เริ่มระบบจองงาน 2 loop (ไฟล์นี้ + หัวข้อสั้นใน CLAUDE.md)
