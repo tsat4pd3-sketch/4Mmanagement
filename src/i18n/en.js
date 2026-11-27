@@ -18817,6 +18817,21 @@ const EN = {
   "หน่วยไฟในนาที": "Energy in minute",
   "แรงดัน 3 เฟส (V)": "3-phase voltage (V)",
   "เส้นทึบ L1-L2 · ประยาว L2-L3 · ประสั้น L3-L1": "solid L1-L2 · long dash L2-L3 · short dash L3-L1",
+  /* ── Obeya แกน C แยก "เงินจ่ายจริง" กับ "ค่าเสียโอกาส" (27/11) ── */
+  'C เงินที่เสียไปจริง': 'C Money actually lost',
+  'ของเสีย + ค่า OT + ค่าซ่อม MO': 'Defects + OT cost + MO repair cost',
+  'เครื่องหยุด = ค่าเสียโอกาส แยกไว้': 'downtime = opportunity cost, shown separately',
+  'ตัวเลขใหญ่ = เงินที่จ่ายจริง: ของเสียที่ทิ้ง + ค่า OT ที่จ่าย + ค่าซ่อม MO': 'Big number = cash actually paid: scrapped defects + OT paid + MO repair cost',
+  'เครื่องหยุดนอกแผน × อัตราค่าแรง = "ค่าเสียโอกาส" ไม่ใช่เงินที่ออกจากกระเป๋า จึงแสดงแยก (แท่งโปร่งเส้นประ) ไม่รวมในยอด': 'Unplanned downtime × labour rate = "opportunity cost", not cash out of pocket, so it is shown separately (translucent dashed bar) and excluded from the total',
+  'ค่าเสียโอกาส': 'Opportunity cost',
+  'ค่าเสียโอกาส (เครื่องหยุด · ไม่รวมในยอด)': 'Opportunity cost (downtime · not in total)',
+  'ค่าเสียโอกาสจากเครื่องหยุด': 'opportunity cost from downtime',
+  '(ไม่รวมในยอด)': '(not in total)',
+  'จ่ายจริง': 'Paid',
+  'ไม่มีเงินจ่ายจริง': 'No cash lost',
+  'มีเงินจ่ายจริง': 'Cash lost',
+  'ช่วงนี้ไม่มีของเสีย/OT/ค่าซ่อม MO ที่คิดเป็นเงินได้': 'No defects/OT/MO repair cost that can be valued in this period',
+  'ยังไม่มีเงินจ่ายจริง/ค่าเสียโอกาสในช่วงนี้': 'No cash lost or opportunity cost in this period yet',
 };
 
 export default EN;

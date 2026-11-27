@@ -364,7 +364,8 @@ const TABLE_ROWS = {
      🔴 แก้ id ที่นี่แล้ว **ต้องตามไปแก้ทุกจุดที่ชี้ไลน์ให้เป็นเลขด้วย** (employees.line_id ·
         org_nodes.ref_line_id · line_technicians.line_id · audit_log.new_data.line_id)
      📄 docs/modules/permission-scope-audit.md §13/11 ช่องว่างของ harness */
-  production_lines: (r, i) => ({ ...r, id: i, unit_kind: i === 5 ? 'support' : 'production' }),
+  /* 27/11: `cost_center` ให้ไลน์ (ตรงกับ cost_center_rates ข้างล่าง) — ไม่มี = แผ่น C ของ Obeya ไม่เคยคิด "ค่าเสียโอกาส" (เครื่องหยุด × rate) ใน harness เลย · ไลน์ที่ i%4===0 เว้นไว้ให้สาย "ยังไม่ได้ตั้งอัตรา" ถูกรันด้วย */
+  production_lines: (r, i) => ({ ...r, id: i, unit_kind: i === 5 ? 'support' : 'production', cost_center: isNullish(r) || i % 4 === 0 ? null : '21406' + String(i % 12).padStart(5, '0') }),
   /* 🔗 โซ่ส่งต่อ MO (11/11) — แผง "ส่งต่อแล้วปลายทางไม่มีใครทำ" ต้องถูกรันทั้ง 3 สาขา
      ของจริงมี 3 รูปทรง: ลิงก์ว่าง (ใบลูกถูกลบ) · ใบลูกถูกยกเลิก · ใบลูกยังทำงาน (ต้องไม่โผล่)
      ⚠️ แถว NULLISH ยังว่างตามกติกา = สาขา "ไม่มีวันเวลาให้นับ" (ต้องขึ้น "ไม่มีวันเวลาให้นับ" ไม่ใช่ 0 วัน) */
@@ -1037,6 +1038,8 @@ const TABLE_FIXED = {
   /* 🧩 ลำดับแผ่นที่คนจัด (09/10) — PD1 เอา OEE ขึ้นก่อน %RM · คีย์ 'gone' = แผ่นที่ไม่มีแล้ว ต้องถูกข้ามไม่พัง (ห้ามถอด) */
   /* 💸 ค่าแรงมาตรฐาน OT (26/11) + ปฏิทิน + ใบจอง OT วันหยุด — แกน C ก้อนที่ 3 · ห้ามถอด (ไม่มี = สาขา "ยังไม่ตั้งค่าแรง" เดินตลอด) */
   obeya_cost_settings: [{ id: 'default', ot_wage_per_hour: 50, updated_by_name: 'ทดสอบ ระบบ' }],
+  /* 27/11: อัตราค่าแรง/ชม. ต่อ cost center — ให้แผ่น C ของ Obeya มี "ค่าเสียโอกาส" (เครื่องหยุด × rate) ให้เห็นในรูป (CC ของไลน์ mock = 21406xxxxx) */
+  cost_center_rates: Array.from({ length: 12 }, (_, i) => ({ id: `ccr-${i}`, cost_center: `21406${String(i).padStart(5, '0')}`, effective_from: '2026-01-01', dl_rate: 120, dp_rate: 80, idp_rate: 40, oh_rate: 60 })),
   company_calendar: [{ work_date: _recentDay(3), day_type: 'ot2', note: 'หยุดชดเชย (mock)' }, { work_date: _recentDay(10), day_type: 'ot15', note: null }],
   ot_night_bookings: [{ id: 'otb-1', work_date: _recentDay(3), employee_id: 'id-1', shift: 'day', ot_period: 'holiday_day_10h', task_type_id: null }],
   kpi_board_layouts: [
@@ -1353,6 +1356,7 @@ const OBEYA_YEAR = () => ({
   ],
   downtime: [
     { m: '2026-01', line: 'LINE 060', type: 'Robot (Alarm/Error)', category: 'unplanned', min: 300 },
+    { m: '2026-01', line: LINE_NAME(1), type: 'Die ติด', category: 'unplanned', min: 240 },   // 27/11: ไลน์ที่มี cost_center ในทะเบียน mock ⇒ แผ่น C ปีมีแท่ง "ค่าเสียโอกาส" (เส้นประ) ให้เห็น
     { m: '2026-01', line: 'LINE 060', type: 'พักเที่ยง', category: 'planned', min: 2000 },
     { m: '2026-02', line: 'LINE 060', type: 'รอวัตถุดิบ', category: 'unplanned', min: 120 },
     { m: '2026-03', line: 'LINE 061', type: null, category: '', min: 45 },
