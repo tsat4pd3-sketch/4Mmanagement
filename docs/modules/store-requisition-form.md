@@ -62,7 +62,7 @@ migration `20260824_material_request.sql` (DR) + `20260824_doc_form_material_req
   · 🔴 แถว `flatDupe` (อัตราใน BOM เชื่อไม่ได้) = **จำนวนว่าง + ⚠️ ให้คนกรอก ห้ามเดา**
   · 🔴 แม่ที่ยังไม่มี BOM = เขียนบอกให้ไปลงที่ Product Master → BOM (19/11 วัด: สินค้า 253 ตัว มี BOM 153 ·
     พื้นที่ P409: HYDROFORM/BENDING/LASER-345 ยังไม่มี BOM เลย)
-  · ปุ่ม 🗂 รายแถว / "เลือกจาก Parts Master" = เลือกรหัสเดี่ยว (ไม่แตก BOM) เหมือนเดิม
+  · ปุ่ม 🗂 รายแถว / "เลือกจาก Material Master" (ชื่อปุ่มเดิม "เลือกจาก Parts Master" · แก้ 27/11/2026 ตามโค้ดปัจจุบัน) = เลือกรหัสเดี่ยว (ไม่แตก BOM) เหมือนเดิม
 - **template = ตาราง `material_request_templates` (DR · migration `20261118_material_request_templates_dr.sql`)**
   เก็บหัวใบ (ประเภท/การเคลื่อนไหว · หน่วยงาน · คลัง · Order · Cost center · plant · รายละเอียด · ไลน์) + `items` jsonb
   · **ไม่เก็บ** เลขที่/วันที่/ผู้ขอ/ลายเซ็น/สถานะ (`templateFromEditor()`) · ใช้ template = เปิดใบใหม่ปกติแล้วทับเฉพาะช่องที่ template มีค่า (`editorFromTemplate()`)
