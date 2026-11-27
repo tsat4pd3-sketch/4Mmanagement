@@ -55,9 +55,10 @@
   "id": "cd_esmart",
   "p": "CustomerDemand",
   "q": "tab=shipping",
-  "click": "อัพโหลด e-SMART",
+  "click": "นำเข้า e-SMART",
   "marks": [
-   "เลือกไฟล์ e-SMART"
+   "เลือกไฟล์ e-SMART",
+   "ไฟล์ที่รับ"
   ]
  },
  {
@@ -163,7 +164,8 @@
   "q": "tab=upload",
   "marks": [
    "อัพโหลด (Sales)",
-   "Order + รอบส่งงาน"
+   "Order + รอบส่งงาน",
+   "นำเข้า EDI 862/830"
   ]
  },
  {
@@ -292,7 +294,7 @@
   "q": "view=unified&store=rack",
   "marks": [
    "ภาชนะ (ดูอย่างเดียว)",
-   "จัดการที่ Rack Center"
+   "จัดการที่"
   ]
  }
 ]
