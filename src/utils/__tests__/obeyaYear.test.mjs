@@ -100,9 +100,12 @@ test('⭐ D ปี: ใบยกยอด (imported) ไม่นับเป้
 
 test('C ปี: แท่งสรุป = ผลรวม · คิดไม่ครบ = null + บอกว่าขาดอะไร (ห้ามโชว์ 0)', () => {
   const c = axisCostYear({ rows: [{ m: '2026-01', dt: 1000, ng: 500 }, { m: '2026-02', dt: 200, ng: 0 }], year: 2026 });
-  assert.equal(c.value, 1700);
-  assert.equal(c.series[12].v, 1700); assert.equal(c.series[12].kind, 'sum');
-  assert.equal(c.series[0].dt, 1000);
+  assert.equal(c.value, 500);              // 27/11: เงินจ่ายจริง (ng) — dt = ค่าเสียโอกาส แยกไว้
+  assert.equal(c.oppBaht, 1200); assert.equal(c.cashBaht, 500);
+  assert.equal(c.series[12].v, 500); assert.equal(c.series[12].kind, 'sum');
+  assert.equal(c.series[0].dt, 1000); assert.equal(c.series[0].v, 500);
+  const oppOnly = axisCostYear({ rows: [{ m: '2026-03', dt: 900, ng: 0 }], year: 2026, sessions: 2 });
+  assert.equal(oppOnly.value, 0); assert.match(oppOnly.note, /ค่าเสียโอกาส.*900/);
   const miss = axisCostYear({ rows: [], year: 2026, missingRate: 3 });
   assert.equal(miss.value, null); assert.equal(miss.state, 'thin'); assert.match(miss.note, /3 ไลน์/);
 });

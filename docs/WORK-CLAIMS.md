@@ -21,6 +21,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- smf01 · เริ่ม 2026-11-27 13:00 · 5S (ยกจากระบบ Core) รอบ 1: ฐานข้อมูล + ข้อมูลเดิม + Setting · แตะ: ตารางใหม่ `act_activity` `act_strategy` `act02_*` (MAIN) + bucket `act-public` · `supabase/migrations/20261127_act02_5s_*.sql` · ไฟล์ใหม่ `src/pages/activity5s/**` · `src/utils/activityPages.js` (เฉพาะแถว 5s) · `src/App.jsx` (route /activity-5s บรรทัดเดียว)
 
 ## ต้องคุยกัน
 

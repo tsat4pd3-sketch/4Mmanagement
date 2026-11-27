@@ -94,8 +94,23 @@ test('axisCost: ขาดอัตราค่าแรง/ต้นทุน = 
   assert.equal(miss.state, 'thin');
   assert.match(miss.note, /อัตราค่าแรง/);
   const ok = axisCost({ dtBaht: 1200.4, ngBaht: 300.6 });
-  assert.equal(ok.value, 1501);
+  assert.equal(ok.value, 301);             // 27/11: ตัวเลขใหญ่ = เงินจ่ายจริง (ของเสีย) — เครื่องหยุดไม่บวก
+  assert.equal(ok.oppBaht, 1200);          // ค่าเสียโอกาสแยกไว้
   assert.equal(ok.better, 'down');
+});
+
+test('⭐ axisCost: เครื่องหยุด × rate = ค่าเสียโอกาส ห้ามบวกเข้ายอด "เงินจ่ายจริง" (27/11 · คำสั่ง user)', () => {
+  const k = axisCost({ dtBaht: 5000, ngBaht: 300, otBaht: 1500, moBaht: 200, sessions: 4 });
+  assert.equal(k.value, 2000);             // ng + ot + mo
+  assert.equal(k.cashBaht, 2000);
+  assert.equal(k.oppBaht, 5000);
+  assert.equal(k.dtBaht, 5000);
+  // มีแต่ค่าเสียโอกาส ไม่มีเงินจ่ายจริง = 0 บาทจ่ายจริง แต่ note ต้องบอกว่าค่าเสียโอกาสเท่าไหร่ (ห้ามเขียนว่า "ไม่มีความสูญเสีย")
+  const oppOnly = axisCost({ dtBaht: 800, ngBaht: 0, sessions: 3 });
+  assert.equal(oppOnly.value, 0);
+  assert.match(oppOnly.note, /ค่าเสียโอกาส.*800/);
+  // ไม่มีกะ แต่มี dt (ข้อมูลขัดกัน) = ไม่ถือว่า "ไม่มีข้อมูล"
+  assert.notEqual(axisCost({ dtBaht: 10, sessions: 0 }).note, 'ยังไม่มีกะที่ปิดแล้วในช่วงนี้ — ยังไม่มีข้อมูลให้คิดความสูญเสีย');
 });
 
 test('⭐ axisCost: ไม่มีกะในช่วง = "ไม่มีข้อมูล" (null) ห้ามเป็น 0 บาท/เขียว "ไม่มีความสูญเสีย" (QC 05/10)', () => {
