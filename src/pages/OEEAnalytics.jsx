@@ -29,6 +29,7 @@ import { loadAffectsLanes } from '../utils/affectsLanes';
 import { qRatio, computeSessionOee, computeLiveOee, shiftStartDate, LIVE_MIN_ELAPSED, strictOee, wavg, wLoad, wRun, wProd, policyBreakForShift, breakIntervalsIn, dtMinOutsideBreaks, laneWeightFn, parallelNBySession, dtLineMin, laneBySessionId, buildCtMap, sumDefectQty, splitDefectQty, ngByMatFrom, isTrialDefect, avgOeeTarget, QBIN_EMBED, defectQty, defectQtyAll, suspectPendingQty } from '../utils/oee';
 import { statusColor, statusOf } from '../utils/statusTone';
 import OeeHeadline, { GaugeRing, METRIC_COLOR, oeeColor } from '../components/OeeHeadline';
+import LineLensMap from '../components/LineLensMap';   // 🗺️ ผังเครื่องจักรของไลน์ (ของกลางตัวเดียวกับ /factory-map)
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -674,6 +675,7 @@ export default function OEEAnalytics() {
 
   const tdSessionIdSet = useMemo(() => new Set(tdSessionsTeamFiltered.map(s => s.id)), [tdSessionsTeamFiltered]);
   const tdDowntimesScoped = useMemo(() => tdTeam ? tdDowntimes.filter(d => tdSessionIdSet.has(d.session_id)) : tdDowntimes, [tdDowntimes, tdTeam, tdSessionIdSet]);
+
   const tdDefectsScoped   = useMemo(() => tdTeam ? tdDefects.filter(d => tdSessionIdSet.has(d.session_id)) : tdDefects,   [tdDefects, tdTeam, tdSessionIdSet]);
 
   /* 🔀 จำนวนเลนของแต่ละกะ — ไลน์เครื่องขนานบันทึก downtime รายเครื่อง ⇒ ทุกยอดรวมนาทีในหน้านี้
@@ -865,6 +867,36 @@ export default function OEEAnalytics() {
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }
     : tdLiveRowStamped, [tdLiveCalc, tdLiveRowStamped]);
+  /* ── 🗺️ ผังเครื่องจักรของ "ไลน์ที่เลือก" ในแถวการ์ดบนสุด (27/11 · คำสั่ง user) ─────────────
+     user ชี้ที่ว่างด้านขวาของแถวแล้วสั่ง *"ใส่เป็น layout ของไลน์ที่เลือก"*
+     🔴 ใช้ของกลาง `<LineLensMap>` ตัวเดียวกับ `/factory-map` **ห้ามวาดผังใหม่ในหน้า**
+     · ไลน์ไหน: ช่องกรองไลน์ก่อน → ไม่ได้กรอง = ไลน์ของกะที่การ์ดซ้ายกำลังโชว์ (การ์ด 3 ใบในแถวเดียวกัน
+       จะได้เล่าเรื่องเดียวกัน: กะนี้ · ได้เท่าไหร่ · เครื่องไหนหยุด)
+     · เลนส์ `breakdown` = "เครื่องไหนหยุดวันนี้" — ตรงกับคำถามของแท็บนี้ (PM/AM มีบ้านของมันที่ /mtn-layout)
+     · ชี้ไลน์ไม่ได้ (ยังไม่มีกะเลย) = **ไม่วาดการ์ด** ปล่อยแถวเหลือ 2 ใบ ไม่ใช่โชว์ผังว่าง */
+  const tdMapLine = tdLine || tdLiveSession?.line_name || null;
+  const tdMapFamily = useMemo(
+    () => (tdMapLine ? getLineFamilyNames(linesFull, tdMapLine) : []), [linesFull, tdMapLine]);
+  const tdMapParent = useMemo(
+    () => (tdMapLine ? (linesFull.find(l => l.name === tdMapLine)?.parent_line_name || null) : null),
+    [linesFull, tdMapLine]);
+  /* DT นอกแผนของไลน์นั้นในวันที่เลือก → รูปแบบที่ `LineLensMap` รับ `{ machine, mins, open }`
+     (กติกา "ใบที่ยังหยุดอยู่ = นับจาก started_at ถึงตอนนี้" ชุดเดียวกับผังรวม · ไม่รู้เวลาเริ่ม = null ห้ามตีเป็น 0) */
+  const tdMapDt = useMemo(() => {
+    if (!tdMapFamily.length) return [];
+    const fam = new Set(tdMapFamily);
+    const sessOf = new Set(tdSessionsTeamFiltered.filter(x => fam.has(x.line_name)).map(x => x.id));
+    const now = Date.now();
+    return tdDowntimesScoped
+      .filter(d => sessOf.has(d.session_id) && d.dr_downtime_types?.category !== 'planned')
+      .map(d => {
+        const open = !d.ended_at && d.duration_min == null;
+        const mins = open
+          ? (d.started_at ? Math.max(0, Math.round((now - new Date(d.started_at).getTime()) / 60000)) : null)
+          : Math.round(Number(d.duration_min) || 0);
+        return { id: d.id, machine: d.machine_no, mins, open };
+      });
+  }, [tdMapFamily, tdSessionsTeamFiltered, tdDowntimesScoped]);
   // ชิ้นงานที่กำลังผลิตในกะนั้น (session.product_id มักว่าง เพราะไลน์วิ่งหลายพาร์ทต่อกะ) — ดึงจากใบงานจริง
   const tdLiveParts = useMemo(() => {
     if (!tdLiveSession) return [];
@@ -1723,8 +1755,14 @@ export default function OEEAnalytics() {
             </div>
           </div>
 
-          {/* Row: Live session + Production qty gauge */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1.4fr 1fr', gap: 16, marginBottom: 16 }}>
+          {/* Row: Live session + Production qty gauge + ผังไลน์
+              📐 27/11 (user ชี้รูป "1 เล็กลงได้มั้ย · 2 ขยับซ้าย · 3 ใส่เป็น layout ของไลน์ที่เลือก"):
+              เดิม 2 คอลัมน์ `1.4fr 1fr` ⇒ การ์ดซ้ายกว้างเกินเนื้อหา (ที่ว่างในการ์ด) และแถวเหลือที่ว่างขวา
+              ⇒ 3 คอลัมน์: ย่อใบซ้าย · ใบยอดผลิตเลื่อนมาซ้ายเอง · ที่ว่างขวากลายเป็นผังเครื่องจักรของไลน์
+              · ชี้ไลน์ไม่ได้ = กลับเป็น 2 คอลัมน์เหมือนเดิม (ห้ามเว้นช่องว่างเปล่า) */}
+          <div style={{ display: 'grid', gap: 16, marginBottom: 16,
+            gridTemplateColumns: isMobile ? 'minmax(0, 1fr)'
+              : tdMapLine ? 'minmax(0, 0.95fr) minmax(0, 0.85fr) minmax(0, 1.2fr)' : '1.4fr 1fr' }}>
             {/* 1.1 Live session */}
             <div style={{ ...s.section, marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -1808,6 +1846,24 @@ export default function OEEAnalytics() {
               </div>
             </div>
             ); })()}
+
+            {/* 3.1 🗺️ ผังเครื่องจักรของไลน์ที่เลือก — ของกลาง `<LineLensMap>` (ตัวเดียวกับ /factory-map) */}
+            {tdMapLine && (
+              <div style={{ ...s.section, marginBottom: 0, minWidth: 0 }}>
+                {/* ชื่อไลน์ยาวได้มาก (ไลน์ลูก + คำต่อท้าย) ⇒ ตัดในบรรทัดตัวเอง ชื่อเต็มอยู่ใน title
+                    · หัวข้อย่อย "ผังเครื่องจักร · เครื่องหยุดวันนี้" `<LineLensMap>` เขียนให้เองแล้ว ไม่ซ้ำ */}
+                <div style={{ ...s.title, display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+                  <span style={{ flex: 'none' }}>{trI18n('ผังไลน์')}</span>
+                  <span title={tdMapLine} style={{ fontWeight: 600, color: 'var(--muted)', minWidth: 0,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tdMapLine}</span>
+                </div>
+                <LineLensMap
+                  lineName={tdMapLine} family={tdMapFamily} parentName={tdMapParent}
+                  lens="breakdown" dtRows={tdMapDt} date={tdDate}
+                  height={isMobile ? '300px' : 'clamp(240px, 32vh, 420px)'}
+                />
+              </div>
+            )}
           </div>
 
           {/* 1.2 ⏱ ไทม์ไลน์เครื่องหยุด — "หยุดตอนไหนของวัน" (user 2026-08-26)
