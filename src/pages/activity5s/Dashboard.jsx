@@ -124,7 +124,7 @@ function MonthTable({ self, committee }) {
 /* `fill` = ตารางหลักของส่วนนั้น ยืดถึงก้นจอ (28/11 คำสั่ง user "กรอบล่างว่าง ปรับให้เต็ม · ทุกขนาดจอ")
    ความสูงวัดจริงด้วย `useFitHeight` (ห้ามเดา vh) · แถวน้อย = แถวเติมท้ายให้เส้นคอลัมน์ลากถึงขอบล่าง · แถวเยอะ = เลื่อนในกรอบ หัวค้าง */
 function SimpleTable({ cols, rows, rowKey, empty, onRow, fill = false }) {
-  const [ref, fitH] = useFitHeight(12, 240);
+  const [ref, fitH] = useFitHeight(0, 240);
   const fit = fill && fitH != null;
   const lastBorder = (i) => (i === cols.length - 1 ? 'none' : td.borderRight);
   return (
@@ -154,8 +154,9 @@ const Note = ({ children }) => <div style={{ ...panel, color: 'var(--muted)', fo
 
 /* ป้ายคอลัมน์เป็นไทยล้วน — SimpleTable แปลตอนวาด (กฎ i18n-map-label-at-declaration) */
 /* ── หน้าหลักของ Dashboard ───────────────────────────────────────────────────────────── */
-export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searchBox }) {
+export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, onLoaded }) {
   const data = useDashData(year, tick);
+  useEffect(() => { if (data) onLoaded?.(data.err || ''); }, [data, onLoaded]);   // บอกหน้าแม่ว่าโหลดรอบนี้เสร็จ (toast รีเฟรช)
   const wide = !useIsMobile(1100);   // จอกว้างพอ = กริด 5 คอลัมน์ (ขอบตารางตรงไทล์)
   const grid5 = wide ? 'repeat(5, minmax(0, 1fr))' : 'minmax(0, 1fr)';
   const [type, setType] = useState('');
@@ -208,7 +209,6 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
           </select>
         </>
       )}
-      {['auditor', 'schedule', 'team'].includes(sec) && searchBox}
       {!data && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</span>}
     </div>
   );

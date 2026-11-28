@@ -1328,4 +1328,4 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .tabbar-scroller::-webkit-scrollbar { display: none; }
 
 /* 📐 <Page top="flush"> (27/11 · มาตรฐานหน้ากิจกรรม) — หัวเพจตรงแถวบนสุดของ Main bar · จอคอมเท่านั้น */
-@media (min-width: 769px) { .page-content.page-flush-top { padding-top: 6px; } .page-content .page-content.page-flush-top { padding-top: 0; } }   /* หน้าที่ถูกฝังใน hub (Page ซ้อน) = ไม่มีขอบเหมือนเดิม */
+@media (min-width: 769px) { .page-content.page-flush-top { padding-top: 6px; padding-bottom: 10px; } .page-content .page-content.page-flush-top { padding-top: 0; padding-bottom: 0; } }   /* 28/11: ขอบล่างแคบลง (ตารางยืดถึงก้นจอได้มากขึ้น · คำสั่ง user "ขอบล่างยังว่าง") */   /* หน้าที่ถูกฝังใน hub (Page ซ้อน) = ไม่มีขอบเหมือนเดิม */

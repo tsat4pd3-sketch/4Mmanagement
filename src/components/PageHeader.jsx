@@ -101,7 +101,8 @@ const SEARCH_SEL = 'input[type="search"]';
 function findTabSearch(root) {
   const scope = root?.parentElement;
   if (!scope) return null;
-  return [...scope.querySelectorAll(SEARCH_SEL)].find(el => !root.contains(el) && el.offsetParent !== null
+  /* `data-tool-search` (28/11 · คำสั่ง user "ค้นหาไม่ต้องมีในหน้า ใช้ปุ่ม 🔍") = ช่องที่หน้าซ่อนไว้ ให้ปุ่ม 🔍 เป็นทางพิมพ์ทางเดียว ⇒ นับแม้มองไม่เห็น */
+  return [...scope.querySelectorAll(SEARCH_SEL)].find(el => !root.contains(el) && (el.offsetParent !== null || el.hasAttribute('data-tool-search'))
     && !el.closest('[role="dialog"], .modal, .modal-overlay')) || null;
 }
 function pushValue(el, v) {
@@ -170,6 +171,8 @@ const TOOL_GLYPH = { refresh: '🔄', search: '🔍', export: '📤', import: '�
 /* 📱 มือถือ (25/11 "เหมือนจอคอม"): ปุ่มเหลือไอคอน (ป้ายเต็มอยู่ใน title/aria-label) — ไม่งั้น 4 ปุ่มกินทั้งแถวจน Detail Bar เหลือ 0 */
 function ToolBar({ tools, iconOnly = false, full = false, searchSlot = null }) {
   const { tr } = useLang();
+  /* 🔄 28/11 (คำสั่ง user "กดรีเฟรชแล้วไม่รู้ว่ากด"): ปุ่มรีเฟรชหมุน 1 รอบทุกครั้งที่กด (ทุกหน้า) */
+  const [spinAt, setSpinAt] = useState(0);
   const byKey = Object.fromEntries(tools.map(t => [t.key, t]));
   const list = full
     ? TOOL_ORDER.map(k => byKey[k] || { key: k, label: TOOL_LABEL[k], disabled: true, why: 'หน้านี้ไม่ใช้ปุ่มนี้' })
@@ -177,12 +180,14 @@ function ToolBar({ tools, iconOnly = false, full = false, searchSlot = null }) {
   return (
     <span data-ph="toolbar" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 8 }}>
       {list.map(t => (t.key === 'search' && !byKey.search && searchSlot) ? <span key="search" data-tool="search" style={{ display: 'inline-flex' }}>{searchSlot}</span> : (
-        <button key={t.key} type="button" data-tool={t.key} onClick={t.disabled ? undefined : t.onClick} disabled={!!t.disabled}
+        <button key={t.key} type="button" data-tool={t.key} onClick={t.disabled ? undefined : (e) => { if (t.key === 'refresh') setSpinAt(Date.now()); t.onClick?.(e); }} disabled={!!t.disabled}
           title={tr(t.label || TOOL_LABEL[t.key]) + (t.disabled && t.why ? ` — ${tr(t.why)}` : '')} aria-label={tr(t.label || TOOL_LABEL[t.key])}
           style={{ height: 30, padding: iconOnly ? '0 8px' : '0 12px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 600, cursor: t.disabled ? 'default' : 'pointer',
             border: `1px solid ${TOOL_TONE[t.key] || 'var(--border2)'}`, background: TOOL_DIM[t.key] || 'var(--card)',
             color: TOOL_TONE[t.key] || 'var(--text)', opacity: t.disabled ? 0.4 : 1, whiteSpace: 'nowrap' }}>
-          {iconOnly ? <Icon glyph={TOOL_GLYPH[t.key]} size={16} /> : tr(t.label || TOOL_LABEL[t.key])}</button>
+          {iconOnly
+            ? <span key={t.key === 'refresh' ? spinAt : undefined} style={{ display: 'inline-flex', ...(t.key === 'refresh' && spinAt ? { animation: 'spin 0.7s ease-out 1' } : null) }}><Icon glyph={TOOL_GLYPH[t.key]} size={16} /></span>
+            : tr(t.label || TOOL_LABEL[t.key])}</button>
       ))}
     </span>
   );

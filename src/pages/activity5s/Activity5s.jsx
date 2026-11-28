@@ -5,11 +5,10 @@
    · รอบ 2 (27/11): Dashboard = กลยุทธ์ · ภาพรวม · อันดับ · ผู้ตรวจ · แผนงาน · ทีม (`Dashboard.jsx` + สูตร `dash.js`) · Edit Data = รอบถัดไป
    · ข้อมูล: ตาราง act02_* (MAIN · migration 20261127_act02_5s_main.sql) · เขียน = สิทธิ์ `act_5s:manage` (RLS has_perm คีย์เดียวกัน)
    · ปีเลือกในการ์ด (ไม่ใช้ `filters=` — มี filters แล้ว Tool Bar/Detail Bar ไม่ค้าง ตามกติกา PageHeader std) */
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import Page from '../../components/Page';
 import PageHeader from '../../components/PageHeader';
-import SearchInput from '../../components/SearchInput';
 import { toast } from '../../components/Toast';
 import { UserContext } from '../../App';
 import { supabase } from '../../supabaseClient';
@@ -57,7 +56,15 @@ export default function Activity5s() {
   const [form, setForm] = useState(null);      // { mode: 'add' | 'edit', value }
   const [busy, setBusy] = useState(false);
   const [tick, setTick] = useState(0);
+  /* รีเฟรชจากปุ่ม Tool Bar = บอกเมื่อโหลดเสร็จจริง (28/11 คำสั่ง user "กดรีเฟรชแล้วไม่รู้ว่ากด") · บันทึก/ลบ ไม่ต้องบอกซ้ำ (มี toast ของมันแล้ว) */
+  const askedRefresh = useRef(false);
   const reload = useCallback(() => setTick(t => t + 1), []);
+  const refresh = useCallback(() => { askedRefresh.current = true; setTick(t => t + 1); }, []);
+  const doneRefresh = useCallback((err) => {
+    if (!askedRefresh.current) return;
+    askedRefresh.current = false;
+    if (err) toast.error(`${tr('รีเฟรชไม่สำเร็จ')}: ${err}`); else toast.success(tr('รีเฟรชข้อมูลแล้ว'));
+  }, [tr]);
 
   /* พื้นที่ใช้ทุกส่วน (ชื่อพื้นที่ในทีม / แผนตรวจ · ตัวเลือกในฟอร์ม) */
   useEffect(() => {
@@ -77,10 +84,12 @@ export default function Activity5s() {
     if (cfg.yearly) qy = qy.eq('year', year);
     for (const [col, asc] of cfg.order) qy = qy.order(col, { ascending: asc, nullsFirst: false });
     qy.then(({ data, error }) => {
-      if (alive) setGot({ scope, rows: error ? [] : (data || []), err: error ? error.message : '' });
+      if (!alive) return;
+      setGot({ scope, rows: error ? [] : (data || []), err: error ? error.message : '' });
+      doneRefresh(error?.message);
     });
     return () => { alive = false; };
-  }, [cfg, year, tick, scope]);
+  }, [cfg, year, tick, scope, doneRefresh]);
   const loading = !!cfg && got.scope !== scope;
   const rows = useMemo(() => (got.scope === scope ? got.rows : []), [got, scope]);
   const err = areaErr || (got.scope === scope ? got.err : '');
@@ -130,7 +139,7 @@ export default function Activity5s() {
   const tableSec = !!cfg;
   /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาดเอง (กฎ i18n-map-label-at-declaration: ห้าม label: tr('…') ที่จุดประกาศ) */
   const tools = [
-    { key: 'refresh', label: 'รีเฟรช', onClick: reload },
+    { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
     { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit) },
     { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current) },
     { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current) },
@@ -146,11 +155,12 @@ export default function Activity5s() {
   return (
     <Page top="flush">
       <PageHeader layout="std" icon="♻️" title="5S" tabs={ACTIVITY_TABS} tab={tab} onTab={setTab} tools={tools} />
+      {/* 🔍 ช่องค้นหาของหน้า = ซ่อน (28/11 คำสั่ง user "ค้นหาไม่ต้องมีในหน้า ใช้ปุ่ม 🔍 บน Tool Bar") · ปุ่ม 🔍 พิมพ์ลงช่องนี้ (data-tool-search) */}
+      <input type="search" hidden data-tool-search="1" value={q} onChange={e => setQ(e.target.value)} placeholder={tr('ค้นหา…')} aria-label={tr('ค้นหา')} />
       {/* Dashboard = การ์ดย่อยวางบนพื้นหน้าเลย (28/11 คำสั่ง user "ตัดพื้นหลังการ์ด") · Setting/Edit Data = การ์ดเดิม */}
       <div data-activity-card="1" style={tab === 'dashboard' ? { display: 'flex', flexDirection: 'column', gap: 12 } : card}>
         {tab === 'dashboard' && sec && (
-          <Dashboard5s sec={sec} year={year} yearPick={yearPick} areas={areas} tick={tick} q={q}
-            searchBox={<SearchInput value={q} onChange={setQ} placeholder={tr('ค้นหา…')} />} />
+          <Dashboard5s sec={sec} year={year} yearPick={yearPick} areas={areas} tick={tick} q={q} onLoaded={doneRefresh} />
         )}
 
         {tab === 'edit' && (
@@ -171,7 +181,6 @@ export default function Activity5s() {
           <>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {cfg.yearly && yearPick}
-              <SearchInput value={q} onChange={setQ} placeholder={tr('ค้นหา…')} />
               <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{loading ? tr('กำลังโหลด…') : `${shown.length} ${tr('รายการ')}`}</span>
             </div>
             {err && <div style={{ color: 'var(--red)', fontSize: 13 }}>{err}</div>}
