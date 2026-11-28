@@ -35,9 +35,11 @@ export const ACTIVITY_TABS = [
 export const ACTIVITY_DASH_SECTIONS = [
   { key: 'strategy', label: 'กลยุทธ์' },
   { key: 'summary',  label: 'ภาพรวม' },
+  { key: 'plan',     label: 'แผนงาน' },     // 28/11 Gantt (ตาราง act_task · ของกลาง PlanGantt)
 ];
 export const ACTIVITY_SETTING_SECTIONS = [
   { key: 'strategy', label: 'กลยุทธ์' },
+  { key: 'plan',     label: 'แผนงาน' },     // 28/11 เพิ่ม/แก้/ลบแผนงาน (ของกลาง usePlanSetting)
 ];
 
 /* Edit Data — ตัวอย่างวางโครง (user เลือก 25/11) · เปลี่ยนเป็นรายการจริงตอนทำฐานข้อมูล */

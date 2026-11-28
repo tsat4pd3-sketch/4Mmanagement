@@ -12,8 +12,9 @@ import { fetchAllPages, fetchByIds } from '../../utils/fetchByIds';
 import { getWorkDate } from '../../utils/workDate';
 import StdBarChart from '../../components/StdBarChart';
 import { StrategyBook } from '../../components/StrategyBook';
+import PlanGantt from '../../components/PlanGantt';
 import { ACT_CODE, ROLES, S_GROUPS, S_GROUP_LABEL, labelOf } from './labels.js';
-import { auditorState, auditorStats, marksOf, passOf, planStatus, ranking, summarize, taskTree, teamBucket } from './dash.js';
+import { auditorState, auditorStats, marksOf, passOf, ranking, summarize, teamBucket } from './dash.js';
 
 const sel = { width: 'auto', maxWidth: 240, padding: '4px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12 };
 const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 14 };
@@ -33,7 +34,7 @@ function useDashData(year, tick) {
         fetchAllPages(() => supabase.from('act02_audit').select('act_audit, audit_no, audit_type, act_area, team, auditors, audited_at, percent_score, result, status').eq('year', year), { orderBy: 'act_audit' }),
         fetchAllPages(() => supabase.from('act02_team').select('act_team, employee_code, employee_name, role, team, act_area, status').eq('year', year), { orderBy: 'act_team' }),
         fetchAllPages(() => supabase.from('act02_audit_plan').select('act_audit_plan, month, round, team').eq('year', year), { orderBy: 'act_audit_plan' }),
-        fetchAllPages(() => supabase.from('act02_task').select('act_task, parent_id, sort_no, title, start_date, end_date, progress, owner_code, unit, done_on, note').eq('year', year), { orderBy: 'act_task' }),
+        fetchAllPages(() => supabase.from('act02_task').select('act_task, parent_id, sort_no, title, start_date, end_date, progress, owner_code, owner_name, unit, done_on, note').eq('year', year), { orderBy: 'act_task' }),
         supabase.from('act02_setting').select('setting_key, setting_value'),
       ]);
       const ids = aud.rows.filter(a => a.status === 'COMPLETED').map(a => a.act_audit);
@@ -296,22 +297,8 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, onLoa
   }
 
   if (data && sec === 'schedule') {
-    const today = getWorkDate();
-    const tree = taskTree(data.tasks);
-    const tone = { early: 'green', done: 'green', ahead: 'blue', ontrack: 'blue', behind: 'amber', overdue: 'red', late: 'red' };
-    const flat = tree.flatMap(({ row, kids }) => [{ ...row, head: true }, ...kids.map(k => ({ ...k, head: false }))]);
-    const shown = needle ? flat.filter(r => `${r.title} ${r.owner_code || ''} ${r.unit || ''}`.toLowerCase().includes(needle)) : flat;
-    body = (
-      <SimpleTable fill rows={shown} rowKey={r => r.act_task} empty={tr('ยังไม่มีแผนงาน 5S ของปีนี้')}
-        cols={[
-          { key: 'no', label: '#', width: 56, render: r => (r.head ? r.sort_no : `${tree.find(t => t.row.act_task === r.parent_id)?.row.sort_no ?? ''}.${r.sort_no}`) },
-          { key: 'title', label: 'รายการ', render: r => <span style={{ fontWeight: r.head ? 700 : 400, paddingLeft: r.head ? 0 : 16 }}>{r.title}</span> },
-          { key: 'owner', label: 'ผู้รับผิดชอบ', render: r => r.owner_code || r.unit || '-' },
-          { key: 'range', label: 'ช่วงเวลา', render: r => (r.start_date ? `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)}` : '-') },
-          { key: 'progress', label: '%', align: 'right', render: r => `${r.progress ?? 0}%` },
-          { key: 'st', label: 'สถานะ', render: r => { const s = planStatus(r, today); return s.text ? <Chip tone={tone[s.code] || 'blue'}>{tr(s.text)}</Chip> : '-'; } },
-        ]} />
-    );
+    /* แผนงานแบบ Gantt (ของกลาง · 28/11 แบบเว็บเดิม) — แก้ที่ Setting → แผนงาน */
+    body = <PlanGantt rows={data.tasks} year={year} today={getWorkDate()} query={q} empty={tr('ยังไม่มีแผนงาน 5S ของปีนี้ — เพิ่มที่ Setting → แผนงาน')} />;
   }
 
   if (data && sec === 'team') {

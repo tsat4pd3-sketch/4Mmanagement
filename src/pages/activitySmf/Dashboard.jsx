@@ -4,17 +4,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../supabaseClient';
 import { tr } from '../../utils/i18n';
-import { fmtDate } from '../../utils/dateFormat';
 import { fetchAllPages } from '../../utils/fetchByIds';
 import { getWorkDate } from '../../utils/workDate';
 import { StrategyBook } from '../../components/StrategyBook';
-import { planStatus, taskTree } from '../activity5s/dash.js';
+import PlanGantt from '../../components/PlanGantt';
 import { ACT_CODE, TARGET_TYPES, TEAM_TYPES, labelOf, roleLabel } from './labels.js';
 import { progressTone, projectSummary } from './dash.js';
 
 const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 16 };
-const th = { padding: '7px 9px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, borderBottom: '1px solid var(--border)', background: 'var(--bg3)', textAlign: 'left', position: 'sticky', top: 0 };
-const td = { padding: '6px 9px', fontSize: 13, borderTop: '1px solid var(--border)' };
 const Note = ({ children }) => <div style={{ ...panel, color: 'var(--muted)', fontSize: 13 }}>{children}</div>;
 const Chip = ({ tone, children }) => (
   <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-sm, 6px)', background: `var(--${tone}-dim)`, color: `var(--${tone})`, whiteSpace: 'nowrap' }}>{children}</span>
@@ -64,7 +61,6 @@ export default function DashboardSmf({ sec, year, yearPick, tick, q, onLoaded })
     </div>
   );
   if (!data) return head;
-  const projName = (code) => data.projects.find(p => p.code === code)?.name || code || '';
 
   if (sec === 'summary') {
     const totalHeads = sum.reduce((s, p) => s + p.heads, 0);
@@ -110,36 +106,11 @@ export default function DashboardSmf({ sec, year, yearPick, tick, q, onLoaded })
   }
 
   if (sec === 'plan') {
-    const tree = taskTree(data.tasks);
-    const tone = { early: 'green', done: 'green', ahead: 'blue', ontrack: 'blue', behind: 'amber', overdue: 'red', late: 'red' };
-    const flat = tree.flatMap(({ row, kids }) => [{ ...row, head: true }, ...kids.map(k => ({ ...k, head: false, no: `${row.sort_no}.${k.sort_no}` }))]);
-    const shown = needle ? flat.filter(r => `${r.title} ${r.owner_name || ''} ${projName(r.unit)}`.toLowerCase().includes(needle)) : flat;
+    /* แผนงานแบบ Gantt (ของกลาง · 28/11) — แก้ที่ Setting → แผนงาน */
     return (
       <>
         {head}
-        {!flat.length ? <Note>{tr('ยังไม่มีแผนงานของปีนี้ — เพิ่มที่ Setting → แผนงาน')}</Note> : (
-          <div style={{ ...panel, padding: 0, overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr>{['ข้อ', 'รายการ', 'โครงการ', 'ผู้รับผิดชอบ', 'ช่วงเวลา', '%', 'สถานะ'].map(h => <th key={h} style={{ ...th, textAlign: h === '%' ? 'right' : 'left' }}>{tr(h)}</th>)}</tr></thead>
-              <tbody>
-                {shown.map(r => {
-                  const st = planStatus(r, today);
-                  return (
-                    <tr key={r.act_task}>
-                      <td style={td}>{r.head ? r.sort_no : r.no}</td>
-                      <td style={{ ...td, fontWeight: r.head ? 700 : 400, paddingLeft: r.head ? 9 : 26 }}>{r.title}</td>
-                      <td style={td}>{r.head ? projName(r.unit) || '-' : ''}</td>
-                      <td style={td}>{r.owner_name || r.owner_code || '-'}</td>
-                      <td style={td}>{r.start_date ? `${fmtDate(r.start_date)} – ${fmtDate(r.end_date)}` : '-'}</td>
-                      <td style={{ ...td, textAlign: 'right' }}>{r.progress ?? 0}%</td>
-                      <td style={td}>{st.text ? <Chip tone={tone[st.code] || 'blue'}>{tr(st.text)}</Chip> : '-'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <PlanGantt rows={data.tasks} year={year} today={today} query={q} empty={tr('ยังไม่มีแผนงานของปีนี้ — เพิ่มที่ Setting → แผนงาน')} />
       </>
     );
   }

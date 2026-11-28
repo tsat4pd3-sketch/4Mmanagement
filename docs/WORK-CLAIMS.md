@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 23:10 · แผนงานแบบ Gantt ทุกกิจกรรม: ของกลาง `PlanGantt` + `usePlanSetting` · ตารางใหม่ `act_task` (กิจกรรมที่ยังไม่มีตารางแผนของตัวเอง) · 5S แผนงาน (Setting + Dashboard + ย้าย 31 ข้อจากเว็บเดิม) · Smart Factory Dashboard แผนงาน → Gantt · แตะ: `src/components/PlanGantt.jsx` `src/utils/planTasks.js` `src/utils/planGantt.js` `src/utils/usePlanSetting.jsx` (ใหม่) · `src/pages/Activity.jsx` · `src/utils/activityPages.js` · `src/pages/activity5s/**` · `src/pages/activitySmf/**` · migration `20261128c_act_task_main.sql` (act_task + act02_task.owner_name)
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · แผนงานแบบ Gantt ทุกกิจกรรม (แบบเว็บเดิม: 12 เดือน × 4 สัปดาห์ · แท่งแผน/ทำจริง · ส่วนช้าแดง · เส้นวันนี้ · ข้อหลักย่อ/ขยาย) — ของกลาง `src/components/PlanGantt.jsx` + สูตร `src/utils/planTasks.js` (ย้ายจาก activity5s/dash.js) `src/utils/planGantt.js` + Setting `src/utils/usePlanSetting.jsx` · 5S: Setting → แผนงาน (act02_task) + Dashboard Gantt + ย้าย 31 ข้อจากเว็บเดิม · Smart Factory: Dashboard Gantt · กิจกรรมอื่น: ตารางใหม่ `act_task` (Dashboard + Setting) · migration `20261128c_act_task_main.sql` (ลงแล้ว)
 - 2026-11-28 · smf01 · Smart Factory รอบ 2 — Edit Data: ผลงานรายเดือน (เลือกโครงการ → เป้า/ผลงาน 12 เดือน · ผลต่าง/% · upsert act03_project_month) + Work Flow Automation (ตาราง + กรองโครงการ/สถานะ · ดับเบิลคลิก = Improvement Proposal พร้อมรูป Before/After กดขยาย · เพิ่ม/แก้/ลบ · เปลี่ยนสถานะ = บันทึก act03_idea_eval) · ไฟล์ `src/pages/activitySmf/useEditSmf.jsx` `editParts.jsx` `editStyles.js` · แนบรูปใหม่ = รอบถัดไป · ไม่มี migration
 - 2026-11-28 · smf01 · ย้ายข้อมูล Smart Factory จาก activity01 (เว็บ TSAT4 Activity) → MAIN act03_*: โครงการ 4 (รวม TPM 2027 · Work Flow เป้า 12) · ทีม 29 · แผนงาน 29 (ข้อย่อย 25) · Work Flow ข้อเสนอ 4 · รูป 12 · ผลประเมิน 2 · ตรวจผลรวมตรงต้นทาง · รูปยังชี้ storage ของ activity01 (img_smf) · ไม่มี migration (ข้อมูลล้วน · รันซ้ำได้ uuid คงที่)
 - 2026-11-28 · smf01 · e-book กลยุทธ์: พลิกหน้าแบบหนังสือจริง — ไป = แผ่นเดิมยกขอบขวาพับไปซ้ายรอบสัน (เปิดเผยหน้าถัดไป) · กลับ = แผ่นก่อนหน้าพับกลับจากซ้าย · 0.9 วิ มีเงา (เดิม 0.55 วิ และทิศดูเหมือนย้อนกลับ · user ทัก) · ไฟล์ `src/components/StrategyBook.jsx` `src/index.css` (`book-turn-*`)

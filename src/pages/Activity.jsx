@@ -15,6 +15,10 @@ import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import useTabParam from '../utils/useTabParam';
 import useStrategySetting from '../utils/useStrategySetting';
+import usePlanSetting from '../utils/usePlanSetting';
+import PlanGantt from '../components/PlanGantt';
+import { getWorkDate } from '../utils/workDate';
+import { yearDisplay } from '../utils/dateFormat';
 import { useNavSubItems } from '../utils/navSubItems';
 import { canSeeded } from '../utils/permissions';
 import { ACTIVITY_TABS, ACTIVITY_DASH_SECTIONS, ACTIVITY_SETTING_SECTIONS, ACTIVITY_SAMPLE_SECTIONS, activityByPath } from '../utils/activityPages';
@@ -43,10 +47,25 @@ export default function Activity() {
   const st = useStrategySetting(code, title, canEdit);
   const [bookTick, setBookTick] = useState(0);   // รีเฟรชกลยุทธ์ฝั่ง Dashboard = วาดใหม่ (อ่านแถวใหม่)
 
+  /* แผนงาน (28/11): Setting = ตาราง + ฟอร์ม · Dashboard = Gantt · ตาราง act_task กรองด้วยรหัสกิจกรรม */
+  const THIS_YEAR = new Date().getFullYear();
+  const [year, setYear] = useState(THIS_YEAR);
+  const [planTick, setPlanTick] = useState(0);
+  const planSec = sec.key === 'plan' && (tab === 'setting' || tab === 'dashboard');
+  const yearPick = (
+    <select value={year} onChange={e => setYear(Number(e.target.value))} aria-label={tr('ปี')}
+      style={{ width: 'auto', padding: '4px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12 }}>
+      {[THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2].map(y => <option key={y} value={y}>{yearDisplay(y)}</option>)}
+    </select>
+  );
+  const plan = usePlanSetting({ dbTable: 'act_task', activity: code, year, yearPick, canEdit, tick: planTick, q: '', reload: () => setPlanTick(t => t + 1), active: planSec && !!code });
+
   const notYet = (what) => () => toast.info(`${tr(what)} — ${tr('ยังไม่เชื่อมฐานข้อมูล (หน้ากิจกรรมยังเป็นโครง)')}`);
   /* 🧰 Tool Bar ตามหน้าที่ของแต่ละส่วน (27/11 · คำสั่ง user): Dashboard = รีเฟรช · ค้นหา · Export · Edit Data = ครบ 7 ปุ่ม (ยังเป็นโครง)
      · Setting → กลยุทธ์ = รีเฟรช + เพิ่ม (อัปโหลด) · แก้ไข (เปลี่ยนไฟล์) · ลบ ของจริง */
-  const tools = strategySetting
+  const planTools = [{ key: 'refresh', label: TOOL_TH.refresh, onClick: () => setPlanTick(t => t + 1) }];
+  const tools = planSec ? (tab === 'setting' ? [...planTools, ...plan.tools] : planTools)
+    : strategySetting
     ? [{ key: 'refresh', label: TOOL_TH.refresh, onClick: st.reload }, ...st.tools]
     : tab === 'dashboard' && sec.key === 'strategy'
       ? [{ key: 'refresh', label: TOOL_TH.refresh, onClick: () => setBookTick(t => t + 1) }]
@@ -58,7 +77,15 @@ export default function Activity() {
   return (
     <Page top="flush">
       <PageHeader layout="std" icon="🎯" title={title} tabs={ACTIVITY_TABS} tab={tab} onTab={setTab} tools={tools} />
-      {tab === 'dashboard' && sec.key === 'strategy' ? (
+      {planSec ? (
+        tab === 'setting'
+          ? <div data-activity-card="1" style={card}>{plan.body}</div>
+          : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div>{yearPick}</div>
+              {plan.loading ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
+                : <PlanGantt rows={plan.rows} year={year} today={getWorkDate()} empty={tr('ยังไม่มีแผนงานของปีนี้ — เพิ่มที่ Setting → แผนงาน')} />}
+            </div>
+      ) : tab === 'dashboard' && sec.key === 'strategy' ? (
         <StrategyBook key={bookTick} code={code} title={title} />
       ) : strategySetting ? (
         <div data-activity-card="1" style={card}>{st.body}</div>

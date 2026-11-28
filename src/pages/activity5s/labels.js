@@ -52,6 +52,7 @@ export const SETTING_SECTIONS = [
   { key: 'team',      label: 'ทีม' },
   { key: 'checklist', label: 'หัวข้อตรวจ' },
   { key: 'plan',      label: 'แผนตรวจ' },
+  { key: 'task',      label: 'แผนงาน' },     // 28/11 แผนงานกิจกรรม (act02_task · Gantt ที่ Dashboard) — คนละอันกับแผนตรวจ
 ];
 
 export const labelOf = (list, v) => list.find(x => x.value === v)?.label ?? v ?? '';

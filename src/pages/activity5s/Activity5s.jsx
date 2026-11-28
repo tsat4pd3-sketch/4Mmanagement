@@ -24,6 +24,7 @@ import { ACT_CODE, DASH_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labe
 import Dashboard5s from './Dashboard';
 import { FormModal, Table5s } from './setting';
 import useStrategySetting from '../../utils/useStrategySetting';
+import usePlanSetting from '../../utils/usePlanSetting';
 import { SECTIONS, missingField, stamp } from './sections';
 
 const THIS_YEAR = new Date().getFullYear();
@@ -156,11 +157,21 @@ export default function Activity5s() {
     setPicked(null); reload();
   };
 
+  const years = [THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
+  const yearPick = (
+    <select style={sel} value={year} onChange={e => setYear(Number(e.target.value))} aria-label={tr('ปี')}>
+      {years.map(y => <option key={y} value={y}>{yearDisplay(y)}</option>)}
+    </select>
+  );
+  /* Setting → แผนงาน (act02_task) — ของกลาง usePlanSetting (ตาราง + ฟอร์ม) */
+  const taskSec = tab === 'setting' && sec === 'task';
+  const plan = usePlanSetting({ dbTable: 'act02_task', year, yearPick, canEdit, tick, q, reload, onLoaded: taskSec ? doneRefresh : undefined, active: taskSec, noPermText: 'ไม่มีสิทธิ์แก้ 5S' });
+
   /* Tool Bar: ปุ่มที่ใช้ไม่ได้ในส่วนนี้ = จาง (ไม่ส่ง / disabled) · ไม่มีสิทธิ์ = จาง */
   const tableSec = !!cfg;
   /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาดเอง (กฎ i18n-map-label-at-declaration: ห้าม label: tr('…') ที่จุดประกาศ) */
   const strategySec = tab === 'setting' && sec === 'strategy';
-  const tools = strategySec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: st.reload }, ...st.tools] : [
+  const tools = taskSec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: refresh }, ...plan.tools] : strategySec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: st.reload }, ...st.tools] : [
     { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
     /* ปุ่มจาง = บอกเหตุผลที่ title เสมอ (28/11: user กดแล้วไม่รู้ว่าทำไมแก้ไม่ได้ — ที่จริงคือไม่มีสิทธิ์) */
     { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit), why: !tableSec ? 'ส่วนนี้ไม่มีตารางให้เพิ่ม' : 'ไม่มีสิทธิ์แก้ 5S' },
@@ -168,12 +179,6 @@ export default function Activity5s() {
     { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ 5S' : 'คลิกเลือกแถวในตารางก่อน' },
   ];
 
-  const years = [THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
-  const yearPick = (
-    <select style={sel} value={year} onChange={e => setYear(Number(e.target.value))} aria-label={tr('ปี')}>
-      {years.map(y => <option key={y} value={y}>{yearDisplay(y)}</option>)}
-    </select>
-  );
 
   return (
     <Page top="flush">
@@ -194,6 +199,7 @@ export default function Activity5s() {
         )}
 
         {tab === 'setting' && sec === 'strategy' && st.body}
+        {taskSec && plan.body}
 
         {cfg && (
           <>
