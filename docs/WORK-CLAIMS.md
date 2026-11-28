@@ -21,6 +21,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- smf01 · เริ่ม 2026-11-28 18:20 · กลยุทธ์ PDF (16:9 ≤5 หน้า) ทุกกิจกรรม: Setting อัปโหลด + Dashboard e-book · กิจกรรมอื่น Dashboard = กลยุทธ์·ภาพรวม · 5S ถอด "เกณฑ์ผ่าน" ใส่ "กลยุทธ์" · เส้นใต้แถวแท็บ std (ไม่ลากใต้ Tool Bar) · แตะ: `src/components/StrategyBook.jsx` (ใหม่) · `src/pages/Activity.jsx` · `src/utils/activityPages.js` (+code) · `src/components/PageHeader.jsx` · `src/pages/activity5s/**` · `package.json` (+pdfjs-dist) · `regressionGuards.test.mjs` (UPLOAD_SITES +1) · ตาราง act_strategy · bucket act-public
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
