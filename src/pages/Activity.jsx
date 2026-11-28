@@ -34,8 +34,9 @@ export default function Activity() {
   const [sp] = useSearchParams();
   const sections = useMemo(() => (SECTIONS_BY_TAB[tab] || ACTIVITY_SAMPLE_SECTIONS).map(s => ({ key: s.key, label: tr(s.label) })), [tab, tr]);
   useNavSubItems(pathname, tab, 'sec', sections, { all: false });
-  /* Dashboard เปิดมาที่ "ภาพรวม" (กลยุทธ์อยู่ซ้ายสุดแต่ไม่ใช่หน้าแรก — แบบเดียวกับ 5S) */
-  const sec = sections.find(s => s.key === sp.get('sec')) || (tab === 'dashboard' ? sections.find(s => s.key === 'summary') : null) || sections[0];
+  /* Dashboard เปิดมาที่ "กลยุทธ์" (28/11: user อัป PDF แล้วเปิด Dashboard ไม่เห็น — ภาพรวมของกิจกรรมพวกนี้ยังไม่มีข้อมูล ⇒ หน้าแรกต้องเป็นของที่มีจริง)
+     · 5S เปิดที่ภาพรวม (มีข้อมูลใบตรวจ) — หน้าของ 5S แยกไฟล์ */
+  const sec = sections.find(s => s.key === sp.get('sec')) || sections[0];
   const tabMeta = ACTIVITY_TABS.find(t => t.key === tab) || ACTIVITY_TABS[0];
   const canEdit = canSeeded('act_5s', 'manage', role);
   const strategySetting = tab === 'setting' && sec.key === 'strategy';
