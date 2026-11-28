@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 12:35 · ตัดเส้นขอบล่าง/ขวาของแผ่นเนื้อหา (ทุกหน้า) · ตาราง 5S Dashboard ยืดถึงก้นจอทุกขนาดจอ (useFitHeight) · แตะ: `src/index.css` (.app-sheet) · `src/pages/activity5s/**`
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · `.app-sheet` ตัดเส้นขอบล่าง/ขวา + มุมโค้ง (ทุกหน้า) · 5S Dashboard อันดับ/ผู้ตรวจ/แผนงาน: ตารางยืดถึงก้นจอด้วย `useFitHeight` (วัดจริง ทุกขนาดจอ · แถวเติมให้เส้นคอลัมน์ลากถึงล่าง · หน้าไม่เลื่อนเอง) · ไฟล์หลัก `src/index.css` `src/pages/activity5s/Dashboard.jsx` · ไม่มี migration
 - 2026-11-28 · smf01 · หัวเพจ std จอคอม: แท็บ Detail Bar ขนาด sm · ตัดเส้นใต้ทั้งแถว · Tool Bar ชิดขวาสุด (หมวดค้างทั้งก้อน) · ตัวกรอง 5S เล็กลง · ของกลางใหม่ `src/components/StdBarChart.jsx` กราฟแท่งมาตรฐานแบบ Core (UI §6.9.0) ใช้ใน 5S ภาพรวม · ไม่มี migration
 - 2026-11-28 · smf01 · หน้ากิจกรรมหัวเพจกลับเป็น 2 แถวแบบ Core (ถอดแบบแถวเดียวออกจาก PageHeader) · 5S Dashboard ภาพรวม: ไทล์ + กราฟ + ตารางลงกริด 5 คอลัมน์ชุดเดียว (กราฟกว้าง 3 · ตาราง 2) ⇒ ขอบตารางตรงไทล์ · ตารางสูงเท่ากราฟ · ไฟล์หลัก `src/components/PageHeader.jsx` `src/pages/activity5s/Dashboard.jsx` `docs/UI-CONVENTIONS.md` · ไม่มี migration
 - 2026-11-28 · smf01 · หน้ากิจกรรม: หัวเพจแถวเดียว (ชื่อ+breadcrumb+Detail Bar+Tool Bar · สูง 76 → 38px) · `.app-sheet` ตัดเส้นขอบบน ชิดขอบจอ (ทุกหน้า) · 5S Dashboard: ตัดพื้นการ์ดนอก · แท่งกราฟ/วงโดนัทสีอ่อนลง (เติมโปร่ง + ขอบทึบ) · ไฟล์หลัก `src/components/PageHeader.jsx` `src/index.css` `src/pages/activity5s/*` `docs/UI-CONVENTIONS.md` · ไม่มี migration

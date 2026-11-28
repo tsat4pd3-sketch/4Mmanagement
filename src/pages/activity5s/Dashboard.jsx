@@ -4,6 +4,7 @@
    · ข้อมูลไม่พอ = เขียนบนจอ (ไม่มีใบตรวจ / ไม่มีเอกสาร) · ไม่มีใบในเดือนนั้น = "-" ไม่ใช่ 0 */
 import { useEffect, useMemo, useState } from 'react';
 import useIsMobile from '../../utils/useIsMobile';
+import useFitHeight from '../../utils/useFitHeight';
 import { supabase } from '../../supabaseClient';
 import { tr } from '../../utils/i18n';
 import { monthsShort, yearDisplay, fmtDate } from '../../utils/dateFormat';
@@ -120,18 +121,26 @@ function MonthTable({ self, committee }) {
   );
 }
 
-function SimpleTable({ cols, rows, rowKey, empty, onRow }) {
+/* `fill` = ตารางหลักของส่วนนั้น ยืดถึงก้นจอ (28/11 คำสั่ง user "กรอบล่างว่าง ปรับให้เต็ม · ทุกขนาดจอ")
+   ความสูงวัดจริงด้วย `useFitHeight` (ห้ามเดา vh) · แถวน้อย = แถวเติมท้ายให้เส้นคอลัมน์ลากถึงขอบล่าง · แถวเยอะ = เลื่อนในกรอบ หัวค้าง */
+function SimpleTable({ cols, rows, rowKey, empty, onRow, fill = false }) {
+  const [ref, fitH] = useFitHeight(12, 240);
+  const fit = fill && fitH != null;
+  const lastBorder = (i) => (i === cols.length - 1 ? 'none' : td.borderRight);
   return (
-    <div style={{ ...panel, padding: 0, overflow: 'auto', maxHeight: '62vh' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div ref={fill ? ref : undefined} style={{ ...panel, padding: 0, overflow: 'auto', ...(fit ? { height: fitH } : { maxHeight: fill ? '62vh' : '50vh' }) }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', ...(fit ? { height: '100%' } : null) }}>
         <thead><tr>{cols.map((c, i) => <th key={c.key} style={{ ...th, textAlign: c.align || 'left', width: c.width, borderRight: i === cols.length - 1 ? 'none' : th.borderRight }}>{tr(c.label)}</th>)}</tr></thead>
         <tbody>
           {rows.map((r, ri) => (
-            <tr key={rowKey(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? 'pointer' : undefined }}>
-              {cols.map((c, i) => <td key={c.key} style={{ ...td, textAlign: c.align || 'left', borderRight: i === cols.length - 1 ? 'none' : td.borderRight }}>{c.render ? c.render(r, ri) : r[c.key]}</td>)}
+            <tr key={rowKey(r)} onClick={onRow ? () => onRow(r) : undefined} style={{ cursor: onRow ? 'pointer' : undefined, height: 1 }}>
+              {cols.map((c, i) => <td key={c.key} style={{ ...td, textAlign: c.align || 'left', borderRight: lastBorder(i) }}>{c.render ? c.render(r, ri) : r[c.key]}</td>)}
             </tr>
           ))}
-          {!rows.length && <tr><td colSpan={cols.length} style={{ ...td, color: 'var(--muted)', padding: 16 }}>{empty}</td></tr>}
+          {!rows.length && <tr style={{ height: 1 }}><td colSpan={cols.length} style={{ ...td, color: 'var(--muted)', padding: 16, verticalAlign: 'top' }}>{empty}</td></tr>}
+          {fit && rows.length > 0 && (
+            <tr aria-hidden="true">{cols.map((c, i) => <td key={c.key} style={{ ...td, padding: 0, borderRight: lastBorder(i) }} />)}</tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -249,7 +258,7 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
           {['factory', 'office'].map(kind => (
             <div key={kind} style={{ flex: '1 1 420px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{kind === 'factory' ? tr('โรงงาน') : tr('สำนักงาน')}</div>
-              <SimpleTable rows={rank[kind]} rowKey={r => r.id} empty={tr('ยังไม่มีผลตรวจ')}
+              <SimpleTable fill rows={rank[kind]} rowKey={r => r.id} empty={tr('ยังไม่มีผลตรวจ')}
                 cols={[
                   { key: 'no', label: 'ลำดับ', width: 56, align: 'right', render: (_r, i) => i + 1 },
                   { key: 'name', label: 'พื้นที่', render: r => `${r.code} ${r.name}` },
@@ -277,7 +286,7 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
           <Tile label={tr('% การมีส่วนร่วมเฉลี่ย')} value={aud.avgParticipation ?? '-'} unit="%" />
           <Tile label={`${tr('ผ่านเกณฑ์')} (≥ ${pass.committee}%)`} value={`${aud.passed} / ${aud.total}`} unit={tr('คน')} />
         </div>
-        <SimpleTable rows={rows} rowKey={r => r.code} empty={aud.total ? tr('ไม่พบผู้ตรวจตามตัวกรอง') : tr('ยังไม่มีผู้ตรวจของปีนี้ (ตั้งที่ Setting → ทีม บทบาท "ทีมตรวจ")')} onRow={setPicked}
+        <SimpleTable fill rows={rows} rowKey={r => r.code} empty={aud.total ? tr('ไม่พบผู้ตรวจตามตัวกรอง') : tr('ยังไม่มีผู้ตรวจของปีนี้ (ตั้งที่ Setting → ทีม บทบาท "ทีมตรวจ")')} onRow={setPicked}
           cols={[
             { key: 'code', label: 'รหัส', render: r => <span style={{ fontFamily: 'monospace', fontWeight: 700 }}>{r.code}</span> },
             { key: 'name', label: 'ชื่อ - นามสกุล', render: r => r.name || '-' },
@@ -299,7 +308,7 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
     const flat = tree.flatMap(({ row, kids }) => [{ ...row, head: true }, ...kids.map(k => ({ ...k, head: false }))]);
     const shown = needle ? flat.filter(r => `${r.title} ${r.owner_code || ''} ${r.unit || ''}`.toLowerCase().includes(needle)) : flat;
     body = (
-      <SimpleTable rows={shown} rowKey={r => r.act_task} empty={tr('ยังไม่มีแผนงาน 5S ของปีนี้')}
+      <SimpleTable fill rows={shown} rowKey={r => r.act_task} empty={tr('ยังไม่มีแผนงาน 5S ของปีนี้')}
         cols={[
           { key: 'no', label: '#', width: 56, render: r => (r.head ? r.sort_no : `${tree.find(t => t.row.act_task === r.parent_id)?.row.sort_no ?? ''}.${r.sort_no}`) },
           { key: 'title', label: 'รายการ', render: r => <span style={{ fontWeight: r.head ? 700 : 400, paddingLeft: r.head ? 0 : 16 }}>{r.title}</span> },
