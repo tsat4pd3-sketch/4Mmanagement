@@ -54,7 +54,7 @@ function useDashData(year, tick) {
 function Donut({ percent }) {
   const turn = Math.max(0, Math.min(100, percent || 0)) * 3.6;
   return (
-    <span style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: `conic-gradient(var(--accent) ${turn}deg, var(--bg3) 0)` }}>
+    <span style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0, display: 'grid', placeItems: 'center', background: `conic-gradient(var(--green-line) ${turn}deg, var(--bg3) 0)` }}>
       <span style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--card)' }} />
     </span>
   );
@@ -97,7 +97,7 @@ function ScoreChart({ title, kind, months, marks, color, year }) {
             <ReferenceLine key={i} y={m.value} stroke={m.place === 'office' ? 'var(--amber)' : 'var(--red)'} strokeDasharray="5 4"
               label={{ value: `${m.place ? placeName(m.place) + ' ' : ''}${m.value}%`, position: 'insideTopRight', fill: 'var(--muted)', fontSize: 11 }} />
           ))}
-          <Bar {...chartAnim()} dataKey="value" fill={color} radius={[4, 4, 0, 0]} maxBarSize={34} />
+          <Bar {...chartAnim()} dataKey="value" fill={color} fillOpacity={0.45} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={34} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -242,7 +242,7 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
           <div style={{ flex: '3 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <ScoreChart title="Self Audit Score" kind="Self Audit" months={sum.self} marks={marksOf(pass, 'self', areaType)} color="var(--accent)" year={year} />
+            <ScoreChart title="Self Audit Score" kind="Self Audit" months={sum.self} marks={marksOf(pass, 'self', areaType)} color="var(--green)" year={year} />
             <ScoreChart title="Committee Audit Score" kind="Committee Audit" months={sum.committee} marks={marksOf(pass, 'committee', areaType)} color="var(--blue)" year={year} />
           </div>
           <div style={{ flex: '2 1 340px', minWidth: 0 }}>

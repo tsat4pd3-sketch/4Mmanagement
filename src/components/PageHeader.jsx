@@ -327,12 +327,16 @@ export default function PageHeader({
     );
   }
 
+  const stdOneRow = std && !isMobile && !inHub && compact;   // ชื่อหน้า + breadcrumb แถวเดียว (ดูคอมเมนต์ที่แถวชื่อหน้า)
+  /* 📐 28/11 (คำสั่ง user "ส่วนหัวกินพื้นที่เยอะ ย่อ ขยับขึ้นอีก"): หน้ากิจกรรม (`layout="std"` + แท็บอยู่ Sub bar) = **แถวเดียวทั้งหัว**
+     ชื่อหน้า + breadcrumb (ตัด … ได้) ซ้าย → Detail Bar → Tool Bar ขวา · หน้าที่มี actions/sub = 2 แถวแบบเดิม */
+  const stdMerge = stdOneRow && tabsViaMenu && !!detailItems && !actions && !sub;
   /* breadcrumb — ปกติอยู่บนสุด · หัวเพจกะทัดรัด (24/11 · คำสั่ง user) = ใต้ชื่อหน้า เหนือแถบแท็บ */
   const crumbs = breadcrumb && navItem && !inHub ? (
         <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)',
           /* 📱 มือถือโหมดกะทัดรัด: breadcrumb บรรทัดเดียว ตัด … (ชื่อหมวดยาวพับ 2 บรรทัด = หัวเพจที่ค้างบนสูงเกิน 25% จอ · ด่าน mobilesweep)
              ชื่อหน้า/แท็บยังเห็นครบ (ชื่อหน้าอยู่แถวบน · แท็บอยู่แถบแท็บ) · ชี้ดูชื่อหมวดเต็มได้ที่ title */
-          ...(isMobile && compact ? { flexWrap: 'nowrap', overflow: 'hidden', whiteSpace: 'nowrap' } : null) }}>
+          ...((isMobile && compact) || stdMerge ? { flexWrap: 'nowrap', overflow: 'hidden', whiteSpace: 'nowrap' } : null) }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
           }}><Icon glyph="🏠" size={12} style={{ marginRight: 4 }} />{tr('หน้าหลัก')}</button>
@@ -345,7 +349,6 @@ export default function PageHeader({
         </div>
   ) : null;
 
-  const stdOneRow = std && !isMobile && !inHub && compact;   // ชื่อหน้า + breadcrumb แถวเดียว (ดูคอมเมนต์ที่แถวชื่อหน้า)
   /* 📍 แถว Detail Bar รายการพื้นที่ (SAP) — std + แท็บในหน้า = แถวที่ 2 ใต้แท็บ (ไม่ถือ Tool Bar) */
   const detailRow = detailItems ? (
       <div data-detailbar="1" className="ph-chrome">
@@ -373,7 +376,19 @@ export default function PageHeader({
         ...(isMobile ? { paddingLeft: 50 } : null) } : null) }}>
       {!compact && crumbs}
 
-      {(!inHub || sub || actions) && (
+      {stdMerge && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 0 }}>
+          <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: '0 1 auto', maxWidth: '34%', overflow: 'hidden' }}>
+            <h2 style={{ margin: 0, fontSize: 20, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'nowrap', flexShrink: 0, whiteSpace: 'nowrap' }}>
+              {icon && <Icon glyph={icon} size={19} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}{tr(title)}
+            </h2>
+            <div style={{ minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap' }}>{crumbs}</div>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>{detailRow}</div>
+        </div>
+      )}
+
+      {!stdMerge && (!inHub || sub || actions) && (
       <div className="ph-chrome" style={{
         display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
         justifyContent: 'space-between', paddingRight: (inHub || sticky) ? 0 : 52,   // กัน 🔔 ทับ (UI §7) — ใน hub หัวของแม่กันให้แล้ว · sticky = รากเว้นให้แล้ว
@@ -428,7 +443,7 @@ export default function PageHeader({
           {toolBar || <HeaderSearch rootRef={rootRef} tabKey={String(tab ?? '')} />}
         </div>
       )}
-      {detailItems && !(std && tabsInPage) && detailRow}
+      {detailItems && !(std && tabsInPage) && !stdMerge && detailRow}
 
       {tabsInPage && renderTabs()}
       {/* 📐 std + แท็บอยู่ในหน้า (27/11): แท็บ = Detail Bar แถวแรก (ถือ Tool Bar) · รายการพื้นที่ SAP ตามมาเป็นแถวที่ 2 */}

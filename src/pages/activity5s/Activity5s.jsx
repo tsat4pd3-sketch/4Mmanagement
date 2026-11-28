@@ -146,7 +146,8 @@ export default function Activity5s() {
   return (
     <Page top="flush">
       <PageHeader layout="std" icon="♻️" title="5S" tabs={ACTIVITY_TABS} tab={tab} onTab={setTab} tools={tools} />
-      <div data-activity-card="1" style={card}>
+      {/* Dashboard = การ์ดย่อยวางบนพื้นหน้าเลย (28/11 คำสั่ง user "ตัดพื้นหลังการ์ด") · Setting/Edit Data = การ์ดเดิม */}
+      <div data-activity-card="1" style={tab === 'dashboard' ? { display: 'flex', flexDirection: 'column', gap: 12 } : card}>
         {tab === 'dashboard' && sec && (
           <Dashboard5s sec={sec} year={year} yearPick={yearPick} areas={areas} tick={tick} q={q}
             searchBox={<SearchInput value={q} onChange={setQ} placeholder={tr('ค้นหา…')} />} />

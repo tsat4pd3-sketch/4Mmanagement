@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 10:45 · หัวเพจกิจกรรมแถวเดียว (ชื่อ+breadcrumb+Detail Bar+Tool Bar) · ตัดเส้นขอบบนของแผ่นเนื้อหา · 5S Dashboard ตัดพื้นการ์ดนอก + สีกราฟอ่อนลง · แตะ: `src/components/PageHeader.jsx` (stdMerge) · `src/index.css` (.app-sheet ขอบบน) · `src/pages/activity5s/**`
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · หน้ากิจกรรม: หัวเพจแถวเดียว (ชื่อ+breadcrumb+Detail Bar+Tool Bar · สูง 76 → 38px) · `.app-sheet` ตัดเส้นขอบบน ชิดขอบจอ (ทุกหน้า) · 5S Dashboard: ตัดพื้นการ์ดนอก · แท่งกราฟ/วงโดนัทสีอ่อนลง (เติมโปร่ง + ขอบทึบ) · ไฟล์หลัก `src/components/PageHeader.jsx` `src/index.css` `src/pages/activity5s/*` `docs/UI-CONVENTIONS.md` · ไม่มี migration
 - 2026-11-27 · หลัก · แท็บ "ภาพรวมวันนี้" `/oee-analytics`: การ์ดกะเลิกเหลือที่ว่างกลางใบ (`space-between` + กล่องข้อความยืด/หดได้) · **ไม่ได้เจาะไลน์ = โชว์ผังรวมโรงงาน** ผ่าน `<FactoryMiniMap>` (ข้อมูลกรอบชุดเดียวกับ `/factory-map`) ระบายสีตาม OEE วันนี้รายไลน์ · กดกรอบ = เจาะเข้าผังเครื่องจักรของไลน์นั้น · เพิ่ม prop `height` (optional) ให้ `FactoryMiniMap` — ไม่ส่ง = พฤติกรรมเดิมเป๊ะ (TV/Andon/ManpowerBoard ไม่กระทบ) · ไฟล์หลัก `src/pages/OEEAnalytics.jsx` `src/components/FactoryMiniMap.jsx` `docs/modules/oee.md` · ไม่มี migration
 - 2026-11-27 · หลัก · แก้ข้อความบนจอที่ผิด 3 จุด (RFQ: ส่ง CRD ไม่แจ้ง IEC ต้องกด "ส่งให้ IEC ประเมิน" · คัมบัง: ชี้ Stock Management › รับของเข้าคลัง / ตั้งค่า › กฎรับเข้า · DailyReport: ตกลง/ยกเลิก) + sync เอกสาร 19 ไฟล์ใน docs/modules กับโค้ด + ตัวตรวจ WI ค้นบนข้อความที่จอโชว์/ไฟล์ของเล่ม/ตาม lazy import · ไฟล์หลัก `src/utils/mktRfq.js` `src/pages/Rfq.jsx` `src/pages/HeijunkaKanban.jsx` `src/pages/DailyReport.jsx` `src/i18n/en.js` `docs/wi/kit/wi_check.mjs` `docs/modules/*.md` · ไม่มี migration
 - 2026-11-27 · smf01 · Sub bar: แถวหัวของเมนูที่มีข้อย่อย (กิจกรรม 9 ตัว + หน้าที่มีแท็บทุกหน้า) = ปุ่มพับ ลูกศรอยู่หน้าชื่อแทนไอคอน · กดชื่อ = ซ่อน/ขยาย ไม่เด้งหน้า (เข้าหน้าผ่านข้อย่อย) · ไฟล์หลัก `src/App.jsx` (navRow/subNav) `src/index.css` `docs/UI-CONVENTIONS.md` §6.8.1 · ไม่มี migration

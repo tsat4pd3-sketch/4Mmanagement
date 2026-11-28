@@ -766,7 +766,8 @@ html[data-perf="lite"] .lift-card:hover { box-shadow: var(--shadow-sm); }
    เนื้อหาหลักเป็นแผ่นมุมโค้งลอยบน "กรอบ" สีเดียวกับราง · pill ของหมวดที่เปิดอยู่บนรางใช้สีเดียวกับแผ่นและยื่นไปชนแผ่น ⇒ อ่านเป็น "แท็บที่ติดกับหน้า"
    desktop เท่านั้น — มือถือ/TV ไม่มีขอบ ไม่มีมุม (จอเต็มเหมือนเดิม) · สีทั้งหมด = token เดิม (--bg · --rail-*) ไม่มีสีใหม่ */
 .app-frame { background: linear-gradient(180deg, var(--rail-top), var(--rail-bot)); }
-.app-sheet { background: var(--bg); border-radius: 16px 0 0 16px; border: 1px solid var(--border); border-left: none; margin: 8px 0 8px 0; min-height: calc(100vh - 16px - var(--tvbar-h, 0px)) !important; }
+/* 28/11 (คำสั่ง user "ขอบบนตัดออก · หัวเพจขยับขึ้น"): แผ่นชิดขอบบนจอ ไม่มีเส้นขอบบน */
+.app-sheet { background: var(--bg); border-radius: 0 0 0 16px; border: 1px solid var(--border); border-left: none; border-top: none; margin: 0 0 8px 0; min-height: calc(100vh - 8px - var(--tvbar-h, 0px)) !important; }
 @media (max-width: 768px) { .app-sheet { border-radius: 0; margin: 0; border: none; } }
 body.esm-tv-shell .app-sheet { border-radius: 0; margin: 0; border: none; }
 /* ✨ แท่ง active "นีออน" (24/11 · รีล Sidebar v2 — ทดลอง) — เงาสีเดียวกับ accent offset 0 = "สัญญาณ" ไม่ใช่ "ของลอย"
@@ -1327,4 +1328,4 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .tabbar-scroller::-webkit-scrollbar { display: none; }
 
 /* 📐 <Page top="flush"> (27/11 · มาตรฐานหน้ากิจกรรม) — หัวเพจตรงแถวบนสุดของ Main bar · จอคอมเท่านั้น */
-@media (min-width: 769px) { .page-content.page-flush-top { padding-top: 10px; } .page-content .page-content.page-flush-top { padding-top: 0; } }   /* หน้าที่ถูกฝังใน hub (Page ซ้อน) = ไม่มีขอบเหมือนเดิม */
+@media (min-width: 769px) { .page-content.page-flush-top { padding-top: 6px; } .page-content .page-content.page-flush-top { padding-top: 0; } }   /* หน้าที่ถูกฝังใน hub (Page ซ้อน) = ไม่มีขอบเหมือนเดิม */
