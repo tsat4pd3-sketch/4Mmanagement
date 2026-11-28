@@ -54,3 +54,37 @@ export const labelOf = (list, v) => list.find(x => x.value === v)?.label ?? v ??
 
 /* team_key = act03|ปี|รหัส|บทบาท|unit (ไม่ซ้ำ — คนเดียวกันมีได้หลายบทบาท/หลายโครงการ) */
 export const teamKey = (r) => ['act03', r.year, r.employee_code, r.role, r.unit || '-'].join('|');
+
+/* ── Edit Data (รอบ 2 · 28/11) ── */
+export const EDIT_SECTIONS = [
+  { key: 'month',    label: 'ผลงานรายเดือน' },
+  { key: 'workflow', label: 'Work Flow Automation' },
+];
+
+/* Work Flow Automation — ตัวเลือกชุดเดียวกับเว็บเดิม (act-workflow.js) · ค่าที่เก็บ = ภาษาอังกฤษ (ข้อมูลที่ย้ายมาใช้ค่านี้) */
+export const WF_STATUS = [
+  { value: 'Idea',        label: 'Idea (แนวคิด)',             tone: 'muted' },
+  { value: 'Prototype',   label: 'Prototype (ต้นแบบ)',        tone: 'amber' },
+  { value: 'Testing',     label: 'Testing (ทดสอบ)',           tone: 'blue' },
+  { value: 'Implemented', label: 'Implemented (ใช้งานจริง)', tone: 'green' },
+];
+export const WF_BENEFITS = [
+  { value: 'Reduce Paper',                  label: 'ลดการใช้กระดาษ' },
+  { value: 'Reduce Working Time',           label: 'ลดเวลาการทำงาน' },
+  { value: 'Reduce Process Steps',          label: 'ลดขั้นตอนการทำงาน' },
+  { value: 'Reduce Manpower',               label: 'ลดกำลังคน' },
+  { value: 'Reduce Human Error',            label: 'ลดความผิดพลาด' },
+  { value: 'Reduce Waiting Time',           label: 'ลดเวลารอคอย' },
+  { value: 'Improve Data Accessibility',    label: 'เข้าถึงข้อมูลได้ง่ายขึ้น' },
+  { value: 'Improve Tracking & Monitoring', label: 'ติดตามสถานะได้ดีขึ้น' },
+];
+export const WF_FREQUENCY = ['ทุกวัน (Daily)', 'หลายครั้งต่อวัน', 'ทุกสัปดาห์ (Weekly)', 'ทุกเดือน (Monthly)', 'อื่นๆ'];
+export const WF_DIFFICULTY = ['Easy', 'Medium', 'Hard'];
+export const WF_BUDGET = ['Free', 'Low', 'Medium', 'High'];
+const TECH_COMMON = ['Web Application', 'Mobile Application', 'Digital Form', 'QR Code', 'Workflow Approval', 'Auto Notification', 'Dashboard', 'AI / OCR', 'IoT', 'Other'];
+/** เทคโนโลยีตามโครงการ (เว็บเดิมแยก oee / vision / อื่น) */
+export const wfTechOptions = (code) => (code === 'oee'
+  ? ['Smart OEE System', 'IoT Sensors & Gateway', 'PLC / Machine Data Logging', 'Real-time OEE Dashboard', 'Auto Downtime Alert / Line Notify', 'Digital Checklist & Maintenance Form', 'Web Application', 'Mobile Application', 'Other']
+  : code === 'vision'
+    ? ['Vision Inspection Camera', 'AI / Deep Learning Object Detection', 'OCR / Barcode / 2D DataMatrix Scanner', 'Defect Sorting & Auto Reject System', 'Edge Computing Box', 'Real-time Inspection Dashboard', 'Web Application', 'Other']
+    : TECH_COMMON);

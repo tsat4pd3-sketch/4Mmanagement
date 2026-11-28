@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 22:50 · Smart Factory รอบ 2: Edit Data = ผลงานรายเดือน (act03_project_month) + Work Flow Automation (act03_idea/_image/_eval · ดู/เพิ่ม/แก้/ลบ/ประเมิน) · แตะ: `src/pages/activitySmf/**`
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · Smart Factory รอบ 2 — Edit Data: ผลงานรายเดือน (เลือกโครงการ → เป้า/ผลงาน 12 เดือน · ผลต่าง/% · upsert act03_project_month) + Work Flow Automation (ตาราง + กรองโครงการ/สถานะ · ดับเบิลคลิก = Improvement Proposal พร้อมรูป Before/After กดขยาย · เพิ่ม/แก้/ลบ · เปลี่ยนสถานะ = บันทึก act03_idea_eval) · ไฟล์ `src/pages/activitySmf/useEditSmf.jsx` `editParts.jsx` `editStyles.js` · แนบรูปใหม่ = รอบถัดไป · ไม่มี migration
 - 2026-11-28 · smf01 · ย้ายข้อมูล Smart Factory จาก activity01 (เว็บ TSAT4 Activity) → MAIN act03_*: โครงการ 4 (รวม TPM 2027 · Work Flow เป้า 12) · ทีม 29 · แผนงาน 29 (ข้อย่อย 25) · Work Flow ข้อเสนอ 4 · รูป 12 · ผลประเมิน 2 · ตรวจผลรวมตรงต้นทาง · รูปยังชี้ storage ของ activity01 (img_smf) · ไม่มี migration (ข้อมูลล้วน · รันซ้ำได้ uuid คงที่)
 - 2026-11-28 · smf01 · e-book กลยุทธ์: พลิกหน้าแบบหนังสือจริง — ไป = แผ่นเดิมยกขอบขวาพับไปซ้ายรอบสัน (เปิดเผยหน้าถัดไป) · กลับ = แผ่นก่อนหน้าพับกลับจากซ้าย · 0.9 วิ มีเงา (เดิม 0.55 วิ และทิศดูเหมือนย้อนกลับ · user ทัก) · ไฟล์ `src/components/StrategyBook.jsx` `src/index.css` (`book-turn-*`)
 - 2026-11-28 · smf01 · Smart Factory (ยกจากเว็บ TSAT4 Activity "SMF") รอบ 1: ตาราง `act03_project` `act03_team` `act03_task` `act03_project_month` `act03_idea` `act03_idea_image` `act03_idea_eval` (RLS `act_smf:manage` · role manager) + โครงการตั้งต้น 2026 ×3 · หน้า `src/pages/activitySmf/**` (route /activity-smart ใน App.jsx): Setting = กลยุทธ์ · โครงการ · ทีม · แผนงาน (คัดลอกทีม/โครงการจากปีก่อนได้) · Dashboard = กลยุทธ์ · ภาพรวม (การ์ดต่อโครงการ) · แผนงาน · ทีม · ใช้ `Table5s`/`FormModal` ของ 5S (เพิ่ม date · person codeKey/nameKey · options ตามค่าในฟอร์ม · allowEmpty) · Edit Data (ผลงานรายเดือน · Work Flow) + ย้ายข้อมูลจริงจาก activity01 = รอบถัดไป · migration `20261128b_act03_smf_main.sql` (ลงแล้วผ่าน MCP)

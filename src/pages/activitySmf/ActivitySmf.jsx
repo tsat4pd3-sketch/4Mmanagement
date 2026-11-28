@@ -1,7 +1,7 @@
 /* ══ 🏭 กิจกรรม Smart Factory (/activity-smart) — ยกจากเว็บ TSAT4 Activity "SMF" (2026-11-28 · คำสั่ง user · loop smf01) ══
    โครงเดียวกับ 5S (`pages/activity5s`): Dashboard / Edit Data / Setting สลับที่ Sub Bar (`?tab=`) · Detail Bar = `?sec=`
    · รอบ 1: Setting = กลยุทธ์ · โครงการ · ทีม · แผนงาน · Dashboard = กลยุทธ์ · ภาพรวม · แผนงาน · ทีม
-   · รอบถัดไป: Edit Data = ผลงานรายเดือน (act03_project_month) + Work Flow Automation (act03_idea …) · ย้ายข้อมูลจริงจาก activity01
+   · รอบ 2 (28/11): Edit Data = ผลงานรายเดือน (act03_project_month) + Work Flow Automation (act03_idea …) — `useEditSmf.jsx` · ข้อมูลจริงย้ายจาก activity01 แล้ว
    · ข้อมูล: ตาราง act03_* (MAIN · migration 20261128b_act03_smf_main.sql) · เขียน = สิทธิ์ `act_smf:manage` (RLS has_perm คีย์เดียวกัน)
    · ตาราง/ฟอร์มใช้ของ 5S (`Table5s` · `FormModal`) — ห้ามก๊อปแยก */
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
@@ -22,9 +22,10 @@ import { yearDisplay } from '../../utils/dateFormat';
 import useLang from '../../utils/useLang';
 import { FormModal, Table5s } from '../activity5s/setting';
 import { missingField } from '../activity5s/sections';
-import { ACT_CODE, DASH_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labels.js';
+import { ACT_CODE, DASH_SECTIONS, EDIT_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labels.js';
 import { sectionsFor, stamp } from './sections.js';
 import DashboardSmf from './Dashboard';
+import useEditSmf from './useEditSmf';
 
 const THIS_YEAR = new Date().getFullYear();
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, minHeight: '60vh' };
@@ -41,7 +42,7 @@ export default function ActivitySmf() {
   const [sp] = useSearchParams();
 
   const sections = useMemo(() => {
-    const list = tab === 'setting' ? SETTING_SECTIONS : tab === 'dashboard' ? DASH_SECTIONS : [];
+    const list = tab === 'setting' ? SETTING_SECTIONS : tab === 'dashboard' ? DASH_SECTIONS : EDIT_SECTIONS;
     return list.map(s => ({ key: s.key, label: tr(s.label) }));
   }, [tab, tr]);
   useNavSubItems(pathname, tab, 'sec', sections, { all: false });
@@ -163,22 +164,26 @@ export default function ActivitySmf() {
     setPicked(null); reload();
   };
 
-  const tableSec = !!cfg;
-  const strategySec = tab === 'setting' && sec === 'strategy';
-  /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาด · ปุ่มจาง = บอกเหตุผลที่ title */
-  const tools = strategySec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: st.reload }, ...st.tools] : [
-    { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
-    { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit), why: !tableSec ? 'ส่วนนี้ไม่มีตารางให้เพิ่ม' : 'ไม่มีสิทธิ์แก้ Smart Factory' },
-    { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ Smart Factory' : 'คลิกเลือกแถวในตารางก่อน' },
-    { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ Smart Factory' : 'คลิกเลือกแถวในตารางก่อน' },
-  ];
-
   const years = [THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
   const yearPick = (
     <select style={sel} value={year} onChange={e => setYear(Number(e.target.value))} aria-label={tr('ปี')}>
       {years.map(y => <option key={y} value={y}>{yearDisplay(y)}</option>)}
     </select>
   );
+
+  /* Edit Data (รอบ 2): ผลงานรายเดือน + Work Flow Automation */
+  const ed = useEditSmf({ sec, year, yearPick, canEdit, tick, q, onLoaded: tab === 'edit' ? doneRefresh : undefined, reload });
+
+  const tableSec = !!cfg;
+  const strategySec = tab === 'setting' && sec === 'strategy';
+  /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาด · ปุ่มจาง = บอกเหตุผลที่ title */
+  const tools = tab === 'edit' ? [{ key: 'refresh', label: 'รีเฟรช', onClick: refresh }, ...ed.tools] : strategySec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: st.reload }, ...st.tools] : [
+    { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
+    { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit), why: !tableSec ? 'ส่วนนี้ไม่มีตารางให้เพิ่ม' : 'ไม่มีสิทธิ์แก้ Smart Factory' },
+    { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ Smart Factory' : 'คลิกเลือกแถวในตารางก่อน' },
+    { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ Smart Factory' : 'คลิกเลือกแถวในตารางก่อน' },
+  ];
+
 
   return (
     <Page top="flush">
@@ -188,12 +193,7 @@ export default function ActivitySmf() {
       <div data-activity-card="1" style={tab === 'dashboard' ? { display: 'flex', flexDirection: 'column', gap: 12 } : card}>
         {tab === 'dashboard' && sec && <DashboardSmf sec={sec} year={year} yearPick={yearPick} tick={tick} q={q} onLoaded={doneRefresh} />}
 
-        {tab === 'edit' && (
-          <>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Smart Factory · Edit Data</div>
-            <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ยังไม่มีข้อมูลบนหน้านี้ — ผลงานรายเดือน + Work Flow Automation ทำในรอบถัดไป')}</div>
-          </>
-        )}
+        {tab === 'edit' && ed.body}
 
         {strategySec && st.body}
 
