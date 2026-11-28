@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 20:10 · e-book กลยุทธ์: เกือบเต็มจอ · แถบควบคุมเดียว (‹ หน้า n/N › ⛶) · พลิกหน้าแบบกระดาษ · แตะ: `src/components/StrategyBook.jsx` · `src/index.css` (keyframes book-flip)
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · e-book กลยุทธ์ (`StrategyBook`): หน้าใหญ่เกือบเต็มจอ (วัดจริง `useFitHeight` · เต็มจอ = สูงเต็มจอ) · ไม่มีกรอบการ์ด/รูปย่อ · แถบควบคุมเดียว ‹ หน้า n/N › ⛶ · พลิกหน้าแบบกระดาษ (keyframes `book-flip-next/prev` ใน index.css · ปิดเมื่อ reduced-motion/จอ lite) · คลิกครึ่งขวา/ซ้ายของหน้า = ไป/กลับ · ไม่มี migration
 - 2026-11-28 · smf01 · กิจกรรมอื่น (ไม่ใช่ 5S): Dashboard เปิดมาที่ "กลยุทธ์" (เดิมเปิดที่ภาพรวมซึ่งยังว่าง ⇒ user อัป PDF แล้วคิดว่าไม่แสดง) · ไฟล์ `src/pages/Activity.jsx`
 - 2026-11-28 · smf01 · กลยุทธ์ PDF ทุกกิจกรรม: ของกลาง `src/components/StrategyBook.jsx` (e-book) · `src/utils/useStrategySetting.jsx` (อัปโหลด/เปลี่ยน/ลบ) · `src/utils/strategyPdf.js` (ตรวจ 16:9 · ≤5 หน้า · ≤20 MB) · +`pdfjs-dist` 6.5.438 (โหลดแบบ lazy) · กิจกรรมอื่น Dashboard = กลยุทธ์ · ภาพรวม / Setting = กลยุทธ์ (`Activity.jsx` · `ACTIVITIES[].code`) · 5S Setting: ถอด "เกณฑ์ผ่าน" ใส่ "กลยุทธ์" (ค่าเกณฑ์เดิมยังอยู่ในฐาน) · เส้นใต้ Detail Bar เฉพาะช่วงแท็บ ไม่ลากใต้ Tool Bar · UPLOAD_SITES +1 · ไม่มี migration (ใช้ act_strategy/act-public เดิม)
 - 2026-11-28 · smf01 · 5S Setting ทีม: ช่องพนักงานเลือกจากทะเบียน `employees` ผ่าน `<PersonSelect>` (เติมรหัส + ชื่อให้ · ห้ามพิมพ์ชื่อลอย) · ปุ่ม "คัดลอกจากปีที่แล้ว" (คนที่ใช้งานของปีก่อน · คนที่มีแล้วข้าม · ถามยืนยันพร้อมจำนวน) · ⚠️ ทีม 2026: 29/63 คนยังไม่อยู่ในทะเบียน employees ของ ESM (แถวเดิมใช้ได้ แต่เพิ่มใหม่ต้องมีในทะเบียนก่อน) · ไฟล์หลัก `src/pages/activity5s/*` · ปุ่มจางบอกเหตุผล + จอบอก "ดูอย่างเดียว" เมื่อไม่มีสิทธิ์ · migration `20261128_act02_5s_perm_manager.sql` (role manager ได้ `act_5s:manage` · ลงแล้วผ่าน MCP · คำสั่ง user)

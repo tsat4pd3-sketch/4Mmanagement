@@ -9,22 +9,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { tr } from '../utils/i18n';
 import { pagesOf, useStrategy } from '../utils/strategyPdf';
+import useFitHeight from '../utils/useFitHeight';
 
-const btn = { width: 40, height: 40, borderRadius: '50%', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text)', cursor: 'pointer', fontSize: 20, lineHeight: 1, display: 'grid', placeItems: 'center', boxShadow: 'var(--shadow-sm)' };
+const ctl = { width: 34, height: 34, borderRadius: 'var(--r-md)', border: 'none', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 20, lineHeight: 1, display: 'grid', placeItems: 'center' };
 
-/** e-book: หน้าเดียว 16:9 · ◀ ▶ / ปุ่มลูกศรคีย์บอร์ด / รูปย่อ · เต็มจอ */
+/** e-book (28/11 คำสั่ง user "ให้เกือบเต็มจอ · กดไป-กลับเหมือนเปิดกระดาษหนังสือ"):
+    หน้าเดียว 16:9 ใหญ่สุดเท่าที่จอเหลือ (วัดจริงด้วย useFitHeight · เต็มจอ = สูงเต็มจอ) · แถบควบคุมเดียวใต้หน้า ‹ หน้า n / N › ⛶
+    · พลิกหน้า = หน้าใหม่หมุนออกจากสันหนังสือ (ไป = สันซ้าย · กลับ = สันขวา · keyframes `book-flip-*` ใน index.css · ปิดเมื่อ reduced-motion)
+    · ลูกศรคีย์บอร์ด ← → พลิกได้ */
 export function Book({ url, title }) {
   const [got, setGot] = useState({ url: null, list: [], err: '' });
-  const [at, setAt] = useState({ url: null, n: 0 });
+  const [at, setAt] = useState({ url: null, n: 0, dir: 0 });
+  const [isFull, setFull] = useState(false);
   const box = useRef(null);
+  const [fitRef, fitH] = useFitHeight(0, 260);
   useEffect(() => {
     let alive = true;
     pagesOf(url).then(list => alive && setGot({ url, list, err: '' }), () => alive && setGot({ url, list: [], err: 'เปิดเอกสาร PDF ไม่ได้' }));
     return () => { alive = false; };
   }, [url]);
+  useEffect(() => {
+    const on = () => setFull(document.fullscreenElement === box.current);
+    document.addEventListener('fullscreenchange', on);
+    return () => document.removeEventListener('fullscreenchange', on);
+  }, []);
   const list = got.url === url ? got.list : [];
   const cur = at.url === url ? at.n : 0;
-  const go = useCallback((n) => { if (n >= 0 && n < list.length) setAt({ url, n }); }, [list.length, url]);
+  const go = useCallback((n) => { if (n >= 0 && n < list.length && n !== cur) setAt({ url, n, dir: n > cur ? 1 : -1 }); }, [list.length, url, cur]);
   useEffect(() => {
     const onKey = (e) => {
       if (e.target?.closest?.('input, textarea, select, [role="dialog"], .modal')) return;
@@ -34,38 +45,34 @@ export function Book({ url, title }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [cur, go]);
-  if (got.url !== url) return <div style={{ padding: 32, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังเปิดเอกสาร…')}</div>;
-  if (got.err || !list.length) return <div style={{ padding: 16, color: 'var(--red)', fontSize: 13 }}>{tr('เปิดเอกสาร PDF ไม่ได้')}</div>;
+  const BAR = 46;   // แถบควบคุมใต้หน้า
+  const pageH = isFull ? window.innerHeight - BAR - 24 : (fitH != null ? fitH - BAR : null);
+  const pageW = pageH != null ? `min(100%, ${Math.max(320, Math.floor(pageH * 16 / 9))}px)` : 'min(100%, 1100px)';
   const full = () => (document.fullscreenElement ? document.exitFullscreen() : box.current?.requestFullscreen?.());
-  const wide = { width: '100%', maxWidth: 'min(1280px, calc((100vh - 300px) * 16 / 9))', margin: '0 auto' };
+  const dir = at.url === url ? at.dir : 0;
+  const ready = got.url === url && !got.err && list.length > 0;
+  /* 🔴 กล่องนอกต้องเป็นตัวเดิมตลอด (useFitHeight วัด element ตัวแรกที่ผูก ref) — สลับเฉพาะเนื้อหาข้างใน */
   return (
-    <div ref={box} style={{ display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'center', background: 'var(--bg)' }}>
-      <div style={{ ...wide, position: 'relative' }}>
-        {[-1, 1].map(d => {
-          const off = d < 0 ? cur === 0 : cur === list.length - 1;
-          return (
-            <button key={d} type="button" aria-label={tr(d < 0 ? 'หน้าก่อน' : 'หน้าถัดไป')} onClick={() => go(cur + d)} disabled={off}
-              style={{ ...btn, position: 'absolute', top: '50%', transform: 'translateY(-50%)', [d < 0 ? 'left' : 'right']: 10, zIndex: 1, opacity: off ? 0 : 1, cursor: off ? 'default' : 'pointer' }}>
-              {d < 0 ? '‹' : '›'}
-            </button>
-          );
-        })}
-        <img key={cur} src={list[cur]} alt={`${title} ${tr('หน้า')} ${cur + 1}`}
-          style={{ display: 'block', width: '100%', aspectRatio: '16 / 9', objectFit: 'contain', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', boxShadow: 'var(--shadow-sm)', }} />
-      </div>
-      <div style={{ ...wide, display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto', padding: '2px 0' }}>
-          {list.map((src, i) => (
-            <button key={i} type="button" aria-label={`${tr('หน้า')} ${i + 1}`} aria-current={i === cur ? 'page' : undefined} onClick={() => go(i)}
-              style={{ width: 88, flexShrink: 0, padding: 0, borderRadius: 'var(--r-sm, 6px)', overflow: 'hidden', cursor: 'pointer', background: 'var(--card)',
-                border: `2px solid ${i === cur ? 'var(--accent)' : 'var(--border)'}`, opacity: i === cur ? 1 : 0.7 }}>
-              <img src={src} alt="" style={{ display: 'block', width: '100%', aspectRatio: '16 / 9', objectFit: 'cover' }} />
-            </button>
-          ))}
+    <div ref={(el) => { box.current = el; fitRef.current = el; }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6, background: 'var(--bg)', ...(isFull ? { padding: 12 } : null) }}>
+      {!ready ? (
+        <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: got.url === url ? 'var(--red)' : 'var(--muted)' }}>
+          {tr(got.url === url ? 'เปิดเอกสาร PDF ไม่ได้' : 'กำลังเปิดเอกสาร…')}
         </div>
-        <span style={{ fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{cur + 1} / {list.length}</span>
-        <button type="button" className="pg-btn" onClick={full} title={tr('เต็มจอ')}>⛶ {tr('เต็มจอ')}</button>
-      </div>
+      ) : (
+        <>
+          <div style={{ width: pageW, perspective: 2400 }}>
+            <img key={`${cur}|${dir}`} className="book-page" src={list[cur]} alt={`${title} ${tr('หน้า')} ${cur + 1}`} onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); go(e.clientX - r.left > r.width / 2 ? cur + 1 : cur - 1); }}
+              style={{ display: 'block', width: '100%', aspectRatio: '16 / 9', objectFit: 'contain', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', boxShadow: 'var(--shadow-md)', cursor: 'pointer',
+                ...(dir ? { transformOrigin: dir > 0 ? 'left center' : 'right center', animation: `${dir > 0 ? 'book-flip-next' : 'book-flip-prev'} .55s cubic-bezier(.2,.7,.2,1)` } : null) }} />
+          </div>
+          <div style={{ height: BAR - 6, display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: 'var(--text2)' }}>
+            <button type="button" style={{ ...ctl, opacity: cur === 0 ? 0.3 : 1 }} disabled={cur === 0} onClick={() => go(cur - 1)} aria-label={tr('หน้าก่อน')}>‹</button>
+            <span style={{ minWidth: 76, textAlign: 'center' }}>{tr('หน้า')} {cur + 1} / {list.length}</span>
+            <button type="button" style={{ ...ctl, opacity: cur === list.length - 1 ? 0.3 : 1 }} disabled={cur === list.length - 1} onClick={() => go(cur + 1)} aria-label={tr('หน้าถัดไป')}>›</button>
+            <button type="button" style={{ ...ctl, fontSize: 16, marginLeft: 8 }} onClick={full} aria-label={tr(isFull ? 'ออกจากเต็มจอ' : 'เต็มจอ')} title={tr(isFull ? 'ออกจากเต็มจอ' : 'เต็มจอ')}>⛶</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -79,6 +86,6 @@ export function StrategyBook({ code, title }) {
   if (s.loading) return <div style={note}>{tr('กำลังโหลด…')}</div>;
   if (s.err) return <div style={{ ...note, color: 'var(--red)' }}>{s.err}</div>;
   if (!s.row) return <div style={note}>{tr('ยังไม่มีเอกสารกลยุทธ์ — ผู้ดูแลกิจกรรมอัปโหลด PDF (16:9 ไม่เกิน 5 หน้า) ที่ Setting → กลยุทธ์')}</div>;
-  return <div style={panel}><Book url={s.row.url} title={title} /></div>;
+  return <Book url={s.row.url} title={title} />;   // ไม่มีกรอบการ์ด — หน้ากระดาษวางบนพื้นหน้าเลย (แบบเว็บกิจกรรมเดิม)
 }
 
