@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 20:40 · Smart Factory (ยกจากเว็บ TSAT4 Activity) รอบ 1: ตาราง act03_* + สิทธิ์ act_smf:manage · Setting (กลยุทธ์ · โครงการ · ทีม · แผนงาน) · Dashboard (กลยุทธ์ · ภาพรวม · แผนงาน · ทีม) · แตะ: `src/pages/activitySmf/**` (ใหม่) · `src/App.jsx` (route /activity-smart) · migration `20261128b_act03_smf_main.sql` · ตาราง act03_* · permission_catalog/role_permissions (act_smf:manage)
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · Smart Factory (ยกจากเว็บ TSAT4 Activity "SMF") รอบ 1: ตาราง `act03_project` `act03_team` `act03_task` `act03_project_month` `act03_idea` `act03_idea_image` `act03_idea_eval` (RLS `act_smf:manage` · role manager) + โครงการตั้งต้น 2026 ×3 · หน้า `src/pages/activitySmf/**` (route /activity-smart ใน App.jsx): Setting = กลยุทธ์ · โครงการ · ทีม · แผนงาน (คัดลอกทีม/โครงการจากปีก่อนได้) · Dashboard = กลยุทธ์ · ภาพรวม (การ์ดต่อโครงการ) · แผนงาน · ทีม · ใช้ `Table5s`/`FormModal` ของ 5S (เพิ่ม date · person codeKey/nameKey · options ตามค่าในฟอร์ม · allowEmpty) · Edit Data (ผลงานรายเดือน · Work Flow) + ย้ายข้อมูลจริงจาก activity01 = รอบถัดไป · migration `20261128b_act03_smf_main.sql` (ลงแล้วผ่าน MCP)
 - 2026-11-28 · smf01 · e-book กลยุทธ์ (`StrategyBook`): หน้าใหญ่เกือบเต็มจอ (วัดจริง `useFitHeight` · เต็มจอ = สูงเต็มจอ) · ไม่มีกรอบการ์ด/รูปย่อ · แถบควบคุมเดียว ‹ หน้า n/N › ⛶ · พลิกหน้าแบบกระดาษ (keyframes `book-flip-next/prev` ใน index.css · ปิดเมื่อ reduced-motion/จอ lite) · คลิกครึ่งขวา/ซ้ายของหน้า = ไป/กลับ · ไม่มี migration
 - 2026-11-28 · smf01 · กิจกรรมอื่น (ไม่ใช่ 5S): Dashboard เปิดมาที่ "กลยุทธ์" (เดิมเปิดที่ภาพรวมซึ่งยังว่าง ⇒ user อัป PDF แล้วคิดว่าไม่แสดง) · ไฟล์ `src/pages/Activity.jsx`
 - 2026-11-28 · smf01 · กลยุทธ์ PDF ทุกกิจกรรม: ของกลาง `src/components/StrategyBook.jsx` (e-book) · `src/utils/useStrategySetting.jsx` (อัปโหลด/เปลี่ยน/ลบ) · `src/utils/strategyPdf.js` (ตรวจ 16:9 · ≤5 หน้า · ≤20 MB) · +`pdfjs-dist` 6.5.438 (โหลดแบบ lazy) · กิจกรรมอื่น Dashboard = กลยุทธ์ · ภาพรวม / Setting = กลยุทธ์ (`Activity.jsx` · `ACTIVITIES[].code`) · 5S Setting: ถอด "เกณฑ์ผ่าน" ใส่ "กลยุทธ์" (ค่าเกณฑ์เดิมยังอยู่ในฐาน) · เส้นใต้ Detail Bar เฉพาะช่วงแท็บ ไม่ลากใต้ Tool Bar · UPLOAD_SITES +1 · ไม่มี migration (ใช้ act_strategy/act-public เดิม)

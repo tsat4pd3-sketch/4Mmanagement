@@ -42,7 +42,7 @@ export function Table5s({ cfg, rows, ctx, selected, onSelect, onOpen, empty }) {
 const lab = { fontSize: 12, color: 'var(--muted)', marginBottom: 4, display: 'block' };
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13 };
 
-export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, areas }) {
+export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, areas = [] }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
   const shown = cfg.fields.filter(f => !f.showIf || f.showIf(value));
   return (
@@ -56,16 +56,17 @@ export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, a
               {f.type === 'select' ? (
                 <select style={inp} value={value[f.key] ?? ''} onChange={e => set(f.key, e.target.value)}>
                   {!f.required && <option value="">-</option>}
-                  {f.options.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
+                  {(typeof f.options === 'function' ? f.options(value) : f.options).map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                 </select>
               ) : f.type === 'person' ? (
                 /* 👤 เลือกจากทะเบียนพนักงาน (UI §5.1.2 picker กลาง) — เก็บรหัส + ชื่อ snapshot · คนเดิมที่ไม่อยู่ในทะเบียนยังโชว์ชื่อเดิม */
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <PersonSelect source="employees" allowFree={false} value={value.employee_name || ''} disabled={mode === 'edit' && f.lockOnEdit}
-                      onChange={(p) => onChange(v => ({ ...v, employee_code: p.employee_code || '', employee_name: p.employee_code ? p.name : '' }))} />
+                    {/* ชื่อคอลัมน์ปลายทางกำหนดได้ (codeKey/nameKey · ค่าเดิม = employee_code/employee_name) — ใช้ร่วมกับกิจกรรมอื่น เช่น เจ้าของงานในแผนงาน */}
+                    <PersonSelect source="employees" allowFree={false} value={value[f.nameKey || 'employee_name'] || ''} disabled={mode === 'edit' && f.lockOnEdit}
+                      onChange={(p) => onChange(v => ({ ...v, [f.codeKey || 'employee_code']: p.employee_code || '', [f.nameKey || 'employee_name']: p.employee_code ? p.name : '' }))} />
                   </div>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: value.employee_code ? 'var(--text)' : 'var(--muted)', minWidth: 64 }}>{value.employee_code || '-'}</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: value[f.codeKey || 'employee_code'] ? 'var(--text)' : 'var(--muted)', minWidth: 64 }}>{value[f.codeKey || 'employee_code'] || '-'}</span>
                 </div>
               ) : f.type === 'area' ? (
                 <select style={inp} value={value[f.key] ?? ''} onChange={e => set(f.key, e.target.value)}>
@@ -77,7 +78,7 @@ export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, a
                   {monthsShort().map((m, i) => <option key={m} value={String(i + 1)}>{m}</option>)}
                 </select>
               ) : (
-                <input style={{ ...inp, fontFamily: f.key.endsWith('_code') ? 'monospace' : undefined }} type={f.type === 'number' ? 'number' : 'text'}
+                <input style={{ ...inp, fontFamily: f.key.endsWith('_code') ? 'monospace' : undefined }} type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
                   value={value[f.key] ?? ''} disabled={mode === 'edit' && f.lockOnEdit} placeholder={f.placeholder ? tr(f.placeholder) : undefined}
                   onChange={e => set(f.key, e.target.value)} />
               )}

@@ -128,7 +128,7 @@ export const SECTIONS = {
 
 /* ช่องที่ต้องกรอกยังว่าง → ข้อความ · ครบ → null */
 export function missingField(cfg, value) {
-  const f = cfg.fields.filter(x => (!x.showIf || x.showIf(value)) && x.required).find(x => String(value[x.key] ?? '').trim() === '');
+  const f = cfg.fields.filter(x => (!x.showIf || x.showIf(value)) && x.required && !x.allowEmpty).find(x => String(value[x.key] ?? '').trim() === '');
   return f ? `${tr('กรอก')} "${tr(f.label)}" ${tr('ก่อน')}` : null;
 }
 
