@@ -54,8 +54,9 @@ export const SECTIONS = {
       { key: 'status', label: 'สถานะ', render: statusCell },
     ],
     fields: [
-      { key: 'employee_code', label: 'รหัสพนักงาน', required: true, placeholder: '7 หลัก', lookupName: true },
-      { key: 'employee_name', label: 'ชื่อ - นามสกุล' },
+      /* 28/11 (คำสั่ง user "ชื่อลิงก์มาจากฐานข้อมูลรายชื่อพนักงาน"): เลือกจากทะเบียน employees ผ่าน <PersonSelect> ช่องเดียว
+         ⇒ เติมรหัส + ชื่อให้เอง · ห้ามพิมพ์ชื่อลอย (คนนอกทะเบียน = เพิ่มที่ทะเบียนพนักงานก่อน) */
+      { key: 'employee_code', label: 'พนักงาน', type: 'person', required: true, wide: true },
       { key: 'role', label: 'บทบาท', type: 'select', options: ROLES, required: true },
       { key: 'unit', label: 'หน่วยงาน', type: 'select', options: UNITS, showIf: (f) => ['admin', 'chairman', 'vice'].includes(f.role) },
       { key: 'team', label: 'ทีมตรวจ', type: 'select', options: AUDIT_TEAMS.map(t => ({ value: t, label: t })), showIf: (f) => f.role === 'auditor', required: true },
@@ -71,7 +72,7 @@ export const SECTIONS = {
       };
       return { ...row, team_key: teamKey(row) };
     },
-    check: (f) => (/^\d{7}$/.test(f.employee_code.trim()) ? null : 'รหัสพนักงาน 7 หลัก'),
+    check: (f) => (/^\d{7}$/.test(f.employee_code.trim()) ? null : 'เลือกพนักงานจากทะเบียน (รหัส 7 หลัก)'),
     name: (r) => `${r.employee_code} ${r.employee_name || ''}`.trim(),
     search: (r, ctx) => `${r.employee_code} ${r.employee_name || ''} ${tr(labelOf(ROLES, r.role))} ${r.team || ''} ${ctx.areaName(r.act_area)}`,
   },

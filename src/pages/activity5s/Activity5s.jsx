@@ -20,7 +20,7 @@ import { checkWrite, checkWriteRows } from '../../utils/dbWrite';
 import { askConfirm } from '../../utils/askConfirm';
 import { yearDisplay } from '../../utils/dateFormat';
 import useLang from '../../utils/useLang';
-import { DASH_SECTIONS, PERM, SETTING_SECTIONS } from './labels';
+import { DASH_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labels';
 import Dashboard5s from './Dashboard';
 import { FormModal, Table5s, TargetForm } from './setting';
 import { SECTIONS, missingField, stamp } from './sections';
@@ -126,6 +126,25 @@ export default function Activity5s() {
     setForm(null); setPicked(res.data?.[0]?.[cfg.key] ?? null); reload();
   };
 
+  /* 👥 ตั้งทีมปีใหม่ (28/11 คำสั่ง user "แต่ละปีมีการจัดตั้งทีม"): คัดลอกคนที่ "ใช้งาน" ของปีก่อนมาปีนี้ · คนที่มีอยู่แล้ว (team_key ซ้ำ) ข้าม
+     · ถามยืนยันพร้อมจำนวนก่อนเขียน · แก้/ลบรายคนต่อได้ตามปกติ */
+  const copyPrevTeam = async () => {
+    const prev = year - 1;
+    const { data, error } = await supabase.from('act02_team').select('employee_code, employee_name, role, team, act_area, unit, status').eq('year', prev).eq('status', 'Active');
+    if (error) { toast.error(`${tr('อ่านทีมปีก่อนไม่ได้')}: ${error.message}`); return; }
+    const have = new Set(rows.map(r => r.team_key));
+    const add = (data || []).map(r => ({ ...r, year })).map(r => ({ ...r, team_key: teamKey(r), ...stamp() })).filter(r => !have.has(r.team_key));
+    if (!data?.length) { toast.info(`${tr('ปี')} ${yearDisplay(prev)} ${tr('ยังไม่มีทีม')}`); return; }
+    if (!add.length) { toast.info(tr('ทุกคนของปีก่อนอยู่ในปีนี้แล้ว')); return; }
+    if (!await askConfirm(`${tr('คัดลอกทีมจากปี')} ${yearDisplay(prev)} ${tr('มาปี')} ${yearDisplay(year)} ${add.length} ${tr('คน')} ?`)) return;
+    setBusy(true);
+    const res = await supabase.from('act02_team').insert(add).select('act_team');
+    setBusy(false);
+    if (!checkWrite(res, tr('คัดลอกทีม'))) return;
+    toast.success(`${tr('คัดลอกทีมแล้ว')} ${res.data?.length ?? add.length} ${tr('คน')}`);
+    reload();
+  };
+
   const remove = async () => {
     if (!current) return;
     if (!await askConfirm(`${tr('ลบ')} "${cfg.name(current, ctx)}" ?`)) return;
@@ -140,9 +159,10 @@ export default function Activity5s() {
   /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาดเอง (กฎ i18n-map-label-at-declaration: ห้าม label: tr('…') ที่จุดประกาศ) */
   const tools = [
     { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
-    { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit) },
-    { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current) },
-    { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current) },
+    /* ปุ่มจาง = บอกเหตุผลที่ title เสมอ (28/11: user กดแล้วไม่รู้ว่าทำไมแก้ไม่ได้ — ที่จริงคือไม่มีสิทธิ์) */
+    { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit), why: !tableSec ? 'ส่วนนี้ไม่มีตารางให้เพิ่ม' : 'ไม่มีสิทธิ์แก้ 5S' },
+    { key: 'edit', label: 'แก้ไข', onClick: () => current && openEdit(current), disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ 5S' : 'คลิกเลือกแถวในตารางก่อน' },
+    { key: 'delete', label: 'ลบ', onClick: remove, disabled: !(tableSec && canEdit && current), why: !canEdit ? 'ไม่มีสิทธิ์แก้ 5S' : 'คลิกเลือกแถวในตารางก่อน' },
   ];
 
   const years = [THIS_YEAR + 1, THIS_YEAR, THIS_YEAR - 1, THIS_YEAR - 2];
@@ -181,8 +201,18 @@ export default function Activity5s() {
           <>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {cfg.yearly && yearPick}
+              {sec === 'team' && canEdit && (
+                <button className="pg-btn" onClick={copyPrevTeam} disabled={busy || loading} title={tr('คัดลอกคนที่ใช้งานของปีก่อนมาปีนี้ (คนที่มีแล้วข้าม)')}>
+                  📋 {tr('คัดลอกจากปีที่แล้ว')}
+                </button>
+              )}
               <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{loading ? tr('กำลังโหลด…') : `${shown.length} ${tr('รายการ')}`}</span>
             </div>
+            {!canEdit && (
+              <div style={{ fontSize: 12, color: 'var(--amber)' }}>
+                {tr('ดูอย่างเดียว — บัญชีนี้ยังไม่มีสิทธิ์แก้ข้อมูล 5S (สิทธิ์ "act_5s:manage" · ผู้ดูแลระบบเปิดให้ที่หน้าสิทธิ์)')}
+              </div>
+            )}
             {err && <div style={{ color: 'var(--red)', fontSize: 13 }}>{err}</div>}
             <Table5s cfg={cfg} rows={shown} ctx={ctx} selected={picked} onSelect={setPicked}
               onOpen={(r) => canEdit && openEdit(r)} empty={loading ? tr('กำลังโหลด…') : tr('ยังไม่มีรายการ')} />

@@ -1,9 +1,10 @@
 /* ══ ♻️ 5S → Setting — ตาราง + ฟอร์มของแต่ละส่วน (ยกจากระบบ Core 27/11 · loop smf01) ══════════════════════════
    ส่วน: พื้นที่ (act02_area) · ทีม (act02_team) · หัวข้อตรวจ (act02_checklist) · แผนตรวจ (act02_audit_plan) · เกณฑ์ผ่าน (act02_setting)
    · หน้า (Activity5s.jsx) ถือ state: แถวที่เลือก · ป๊อปอัป · ปี · คำค้น — ไฟล์นี้บอกว่าแต่ละส่วนมีคอลัมน์/ช่องอะไร
-   · คนในทีมเก็บรหัส + ชื่อเอง (ไม่ผูก employees — คนสำนักงานบางคนไม่อยู่ใน employees ของ ESM) · พิมพ์รหัสแล้วเติมชื่อจาก employees ให้ถ้ามี */
+   · คนในทีม = เลือกจากทะเบียน employees (<PersonSelect> · 28/11) เก็บรหัส + ชื่อ snapshot (ไม่ผูก FK — แถวเก่าที่คนไม่อยู่ในทะเบียนยังอยู่ได้) */
 import { useEffect, useState } from 'react';
 import { supabase } from '../../supabaseClient';
+import PersonSelect from '../../components/PersonSelect';
 import { tr } from '../../utils/i18n';
 import { monthsShort, yearDisplay } from '../../utils/dateFormat';
 import { toast } from '../../components/Toast';
@@ -48,17 +49,6 @@ const inp = { width: '100%', padding: '7px 9px', borderRadius: 'var(--ctl-r)', b
 
 export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, areas }) {
   const set = (k, v) => onChange({ ...value, [k]: v });
-  /* ทีม: พิมพ์รหัส 7 หลักแล้วเติมชื่อจาก employees ให้ (ไม่มีใน employees = กรอกชื่อเอง) */
-  const code = value.employee_code;
-  useEffect(() => {
-    let alive = true;
-    if (!cfg.fields.some(f => f.lookupName) || !/^\d{7}$/.test(code || '') || value.employee_name) return undefined;
-    supabase.from('employees').select('name').eq('employee_id_code', code).maybeSingle().then(({ data, error }) => {
-      if (alive && !error && data?.name) onChange(v => ({ ...v, employee_name: v.employee_name || data.name }));
-    });
-    return () => { alive = false; };
-  }, [code]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const shown = cfg.fields.filter(f => !f.showIf || f.showIf(value));
   return (
     <div className="overlay">
@@ -73,6 +63,15 @@ export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, a
                   {!f.required && <option value="">-</option>}
                   {f.options.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                 </select>
+              ) : f.type === 'person' ? (
+                /* 👤 เลือกจากทะเบียนพนักงาน (UI §5.1.2 picker กลาง) — เก็บรหัส + ชื่อ snapshot · คนเดิมที่ไม่อยู่ในทะเบียนยังโชว์ชื่อเดิม */
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <PersonSelect source="employees" allowFree={false} value={value.employee_name || ''} disabled={mode === 'edit' && f.lockOnEdit}
+                      onChange={(p) => onChange(v => ({ ...v, employee_code: p.employee_code || '', employee_name: p.employee_code ? p.name : '' }))} />
+                  </div>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 13, color: value.employee_code ? 'var(--text)' : 'var(--muted)', minWidth: 64 }}>{value.employee_code || '-'}</span>
+                </div>
               ) : f.type === 'area' ? (
                 <select style={inp} value={value[f.key] ?? ''} onChange={e => set(f.key, e.target.value)}>
                   <option value="">-</option>
