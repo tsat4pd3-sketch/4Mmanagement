@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 11:45 · หัวเพจ std: แท็บ/ตัวกรองเล็กลง · ตัดเส้นใต้แถว Detail Bar · Tool Bar ชิดขวา · กราฟแท่งมาตรฐาน (ของกลาง `StdBarChart` แบบ Core) ใช้ใน 5S · แตะ: `src/components/PageHeader.jsx` · `src/components/StdBarChart.jsx` (ใหม่) · `src/pages/activity5s/**` · `docs/UI-CONVENTIONS.md`
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · หัวเพจ std จอคอม: แท็บ Detail Bar ขนาด sm · ตัดเส้นใต้ทั้งแถว · Tool Bar ชิดขวาสุด (หมวดค้างทั้งก้อน) · ตัวกรอง 5S เล็กลง · ของกลางใหม่ `src/components/StdBarChart.jsx` กราฟแท่งมาตรฐานแบบ Core (UI §6.9.0) ใช้ใน 5S ภาพรวม · ไม่มี migration
 - 2026-11-28 · smf01 · หน้ากิจกรรมหัวเพจกลับเป็น 2 แถวแบบ Core (ถอดแบบแถวเดียวออกจาก PageHeader) · 5S Dashboard ภาพรวม: ไทล์ + กราฟ + ตารางลงกริด 5 คอลัมน์ชุดเดียว (กราฟกว้าง 3 · ตาราง 2) ⇒ ขอบตารางตรงไทล์ · ตารางสูงเท่ากราฟ · ไฟล์หลัก `src/components/PageHeader.jsx` `src/pages/activity5s/Dashboard.jsx` `docs/UI-CONVENTIONS.md` · ไม่มี migration
 - 2026-11-28 · smf01 · หน้ากิจกรรม: หัวเพจแถวเดียว (ชื่อ+breadcrumb+Detail Bar+Tool Bar · สูง 76 → 38px) · `.app-sheet` ตัดเส้นขอบบน ชิดขอบจอ (ทุกหน้า) · 5S Dashboard: ตัดพื้นการ์ดนอก · แท่งกราฟ/วงโดนัทสีอ่อนลง (เติมโปร่ง + ขอบทึบ) · ไฟล์หลัก `src/components/PageHeader.jsx` `src/index.css` `src/pages/activity5s/*` `docs/UI-CONVENTIONS.md` · ไม่มี migration
 - 2026-11-27 · หลัก · แท็บ "ภาพรวมวันนี้" `/oee-analytics`: การ์ดกะเลิกเหลือที่ว่างกลางใบ (`space-between` + กล่องข้อความยืด/หดได้) · **ไม่ได้เจาะไลน์ = โชว์ผังรวมโรงงาน** ผ่าน `<FactoryMiniMap>` (ข้อมูลกรอบชุดเดียวกับ `/factory-map`) ระบายสีตาม OEE วันนี้รายไลน์ · กดกรอบ = เจาะเข้าผังเครื่องจักรของไลน์นั้น · เพิ่ม prop `height` (optional) ให้ `FactoryMiniMap` — ไม่ส่ง = พฤติกรรมเดิมเป๊ะ (TV/Andon/ManpowerBoard ไม่กระทบ) · ไฟล์หลัก `src/pages/OEEAnalytics.jsx` `src/components/FactoryMiniMap.jsx` `docs/modules/oee.md` · ไม่มี migration

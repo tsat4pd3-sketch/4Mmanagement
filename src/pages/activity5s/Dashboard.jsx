@@ -4,18 +4,16 @@
    · ข้อมูลไม่พอ = เขียนบนจอ (ไม่มีใบตรวจ / ไม่มีเอกสาร) · ไม่มีใบในเดือนนั้น = "-" ไม่ใช่ 0 */
 import { useEffect, useMemo, useState } from 'react';
 import useIsMobile from '../../utils/useIsMobile';
-import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase } from '../../supabaseClient';
 import { tr } from '../../utils/i18n';
 import { monthsShort, yearDisplay, fmtDate } from '../../utils/dateFormat';
 import { fetchAllPages, fetchByIds } from '../../utils/fetchByIds';
 import { getWorkDate } from '../../utils/workDate';
-import { axisTick, tooltipProps, CHART_MARGIN } from '../../utils/chartAxis';
-import { chartAnim } from '../../utils/motion';
+import StdBarChart from '../../components/StdBarChart';
 import { ACT_CODE, ROLES, S_GROUPS, S_GROUP_LABEL, labelOf } from './labels.js';
 import { auditorState, auditorStats, marksOf, passOf, planStatus, ranking, summarize, taskTree, teamBucket } from './dash.js';
 
-const sel = { width: 'auto', maxWidth: 260, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13 };
+const sel = { width: 'auto', maxWidth: 240, padding: '4px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12 };
 const panel = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 14 };
 const th = { padding: '7px 9px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, borderBottom: '1px solid var(--border)', borderRight: '1px solid var(--border)', background: 'var(--bg3)', position: 'sticky', top: 0 };
 const td = { padding: '6px 9px', fontSize: 13, borderTop: '1px solid var(--border)', borderRight: '1px solid var(--border)' };
@@ -75,33 +73,18 @@ function Tile({ label, value, unit, mark }) {
 
 const tiles = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 190px), 1fr))', gap: 10, alignContent: 'start' };
 
-function ScoreChart({ title, kind, months, marks, color, year }) {
+function ScoreChart({ title, kind, months, marks, color }) {
   const names = monthsShort();
-  const data = months.map(m => ({ name: names[m.month - 1], value: m.percent, n: m.audits }));
   const placeName = (p) => (p === 'factory' ? tr('โรงงาน') : tr('สำนักงาน'));
+  const data = months.map(m => ({ name: names[m.month - 1], value: m.percent, inner: m.audits ? `${m.audits} ${tr('ใบ')}` : '' }));
   return (
-    <div style={panel}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{title}</span>
-        <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-          {kind} · {tr('% เฉลี่ยของเดือน')} · {yearDisplay(year)} ·{' '}
-          {marks.map(m => `${tr('เกณฑ์')}${m.place ? ` ${placeName(m.place)}` : ''} ${m.value}%`).join(' · ')}
-        </span>
-      </div>
-      <ResponsiveContainer width="100%" height={220}>
-        <BarChart data={data} margin={{ ...CHART_MARGIN, top: 14 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-          <XAxis dataKey="name" tick={axisTick()} interval={0} />
-          <YAxis width="auto" domain={[0, 100]} ticks={[0, 20, 40, 60, 80, 100]} tick={axisTick()} unit="%" />
-          <Tooltip {...tooltipProps()} formatter={(v, _k, it) => [v == null ? '-' : `${Number(v).toFixed(2)}% · ${it.payload.n} ${tr('ใบ')}`, kind]} />
-          {marks.map((m, i) => (
-            <ReferenceLine key={i} y={m.value} stroke={m.place === 'office' ? 'var(--amber)' : 'var(--red)'} strokeDasharray="5 4"
-              label={{ value: `${m.place ? placeName(m.place) + ' ' : ''}${m.value}%`, position: 'insideTopRight', fill: 'var(--muted)', fontSize: 11 }} />
-          ))}
-          <Bar {...chartAnim()} dataKey="value" fill={color} fillOpacity={0.45} stroke={color} strokeWidth={1} radius={[4, 4, 0, 0]} maxBarSize={34} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
+    <StdBarChart title={title} data={data} color={color} unit="%" digits={2} yMax={100} yTicks={[0, 25, 50, 75, 100]}
+      yTitle={tr('คะแนน (%)')} seriesLabel={`${kind} ${tr('% เฉลี่ยของเดือน')}`}
+      targets={marks.map(m => ({
+        value: m.value,
+        label: `Target${m.place ? ` ${placeName(m.place)}` : ''} ${Number(m.value).toFixed(2)}%`,
+        legend: `${tr('เกณฑ์ผ่าน')} ${kind}${m.place ? ` ${placeName(m.place)}` : ''} ${Number(m.value).toFixed(2)}%`,
+      }))} />
   );
 }
 
@@ -247,8 +230,8 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: grid5, gap: 12, alignItems: 'stretch' }}>
           <div style={{ gridColumn: wide ? 'span 3' : undefined, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <ScoreChart title="Self Audit Score" kind="Self Audit" months={sum.self} marks={marksOf(pass, 'self', areaType)} color="var(--green)" year={year} />
-            <ScoreChart title="Committee Audit Score" kind="Committee Audit" months={sum.committee} marks={marksOf(pass, 'committee', areaType)} color="var(--blue)" year={year} />
+            <ScoreChart title="Self Audit Score" kind="Self Audit" months={sum.self} marks={marksOf(pass, 'self', areaType)} color="var(--green)" />
+            <ScoreChart title="Committee Audit Score" kind="Committee Audit" months={sum.committee} marks={marksOf(pass, 'committee', areaType)} color="var(--blue)" />
           </div>
           <div style={{ gridColumn: wide ? 'span 2' : undefined, minWidth: 0, display: 'flex' }}>
             <MonthTable self={sum.self} committee={sum.committee} />

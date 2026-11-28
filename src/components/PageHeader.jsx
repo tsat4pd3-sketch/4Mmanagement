@@ -354,6 +354,8 @@ export default function PageHeader({
           value={detailCur || (detail.all ? '__all' : String(detailItems[0].key))}
           onChange={(k) => setUrl({ [detail.query]: k === '__all' ? null : k }, { replace: true })}
           arrows={std ? 'always' : undefined}
+          /* 28/11 (คำสั่ง user "ตัวอักษรเล็กลง · ลบเส้นล่าง"): std จอคอม = แท็บขนาด sm · ไม่มีเส้นใต้ทั้งแถว (เส้นใต้แท็บที่เลือกยังอยู่) */
+          {...(std && !isMobile ? { size: 'sm', style: { borderBottom: 'none' } } : null)}
           after={(std && (isMobile || tabsInPage)) ? undefined : (toolBar || <HeaderSearch rootRef={rootRef} tabKey={String(tab ?? '')} />)} />
         {/* 📱 std บนมือถือ: Tool Bar 7 ปุ่มไม่พอที่ในแถวเดียวกับ Detail Bar (Detail Bar เหลือกว้าง 0) ⇒ ลงแถวถัดไปชิดขวา ลำดับปุ่มเดิม */}
         {std && isMobile && !tabsInPage && toolBar && (
@@ -369,7 +371,9 @@ export default function PageHeader({
           (เจอจริง 20/10: รายงาน 19 มุมมอง ซึ่งส่วนใหญ่เป็น false positive จากเหตุนี้) */
     <div data-ph-root="1" ref={rootRef} style={{ display: 'flex', flexDirection: 'column', gap: stdOneRow ? 6 : 10, marginBottom: 'var(--ph-mb, 12px)',
       /* 📌 sticky: พื้นทึบกันเนื้อหาทะลุ · z ต่ำกว่าแผงเมนู (997+) / กระดิ่ง (1200) · เว้นขวาพ้น 🔔 ให้แถบแท็บ (ชื่อหน้าย้ายมาเว้นที่นี่แทน) */
-      ...(sticky ? { position: 'sticky', top: stickTop, zIndex: 50, background: 'var(--bg)', paddingRight: 52,
+      ...(sticky ? { position: 'sticky', top: stickTop, zIndex: 50, background: 'var(--bg)',
+        /* 28/11: ค้างทั้งก้อน (กิจกรรม) จอคอม = Tool Bar ชิดขวาสุด — 🔔 ลอยอยู่ระดับแถวชื่อหน้า ไม่ทับแถว Tool Bar */
+        paddingRight: fullSticky && !isMobile ? 0 : 52,
         ...(isMobile ? { paddingLeft: 50 } : null) } : null) }}>
       {!compact && crumbs}
 

@@ -28,7 +28,7 @@ import { SECTIONS, missingField, stamp } from './sections';
 
 const THIS_YEAR = new Date().getFullYear();
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-sm)', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, minHeight: '60vh' };
-const sel = { width: 'auto', padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 13 };
+const sel = { width: 'auto', padding: '4px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 12 };
 
 export default function Activity5s() {
   const { tr } = useLang();
