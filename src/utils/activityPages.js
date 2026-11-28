@@ -9,17 +9,18 @@
 
 export const ACTIVITY_GROUP = 'กิจกรรม';
 
-/* path ต้องตรงกับ `to:` ใน NAV_ITEMS (App.jsx) + PAGE_GROUPS (/permissions) — มีด่าน activityPages.test.mjs */
+/* `code` = รหัสในตาราง `act_activity` (act01–act09 · คีย์ของ act_strategy ฯลฯ · 28/11)
+   path ต้องตรงกับ `to:` ใน NAV_ITEMS (App.jsx) + PAGE_GROUPS (/permissions) — มีด่าน activityPages.test.mjs */
 export const ACTIVITIES = [
-  { key: '100p',     path: '/activity-100p',     label: '100P' },
-  { key: '5s',       path: '/activity-5s',       label: '5S' },
-  { key: 'smart',    path: '/activity-smart',    label: 'Smart Factory' },
-  { key: 'kyt',      path: '/activity-kyt',      label: 'KYT' },
-  { key: 'kaizen',   path: '/activity-kaizen',   label: 'Kaizen' },   // คนละหน้ากับ /improvements เดิม (user เลือก 25/11 "หน้าใหม่ว่างแบบเดียวกัน")
-  { key: 'qcc',      path: '/activity-qcc',      label: 'QCC' },
-  { key: 'lean',     path: '/activity-lean',     label: 'Lean' },
-  { key: 'cfo',      path: '/activity-cfo',      label: 'CFO' },
-  { key: 'cfp',      path: '/activity-cfp',      label: 'CFP' },
+  { key: '100p',     path: '/activity-100p',     code: 'act01', label: '100P' },
+  { key: '5s',       path: '/activity-5s',       code: 'act02', label: '5S' },
+  { key: 'smart',    path: '/activity-smart',    code: 'act03', label: 'Smart Factory' },
+  { key: 'kyt',      path: '/activity-kyt',      code: 'act04', label: 'KYT' },
+  { key: 'kaizen',   path: '/activity-kaizen',   code: 'act05', label: 'Kaizen' },   // คนละหน้ากับ /improvements เดิม (user เลือก 25/11 "หน้าใหม่ว่างแบบเดียวกัน")
+  { key: 'qcc',      path: '/activity-qcc',      code: 'act06', label: 'QCC' },
+  { key: 'lean',     path: '/activity-lean',     code: 'act07', label: 'Lean' },
+  { key: 'cfo',      path: '/activity-cfo',      code: 'act08', label: 'CFO' },
+  { key: 'cfp',      path: '/activity-cfp',      code: 'act09', label: 'CFP' },
 ];
 
 /* 3 ส่วนของทุกกิจกรรม = ข้อย่อยใน Sub Bar (`?tab=`) — แท็บแรก = ค่าตั้งต้น */
@@ -29,7 +30,17 @@ export const ACTIVITY_TABS = [
   { key: 'setting',   label: 'Setting' },
 ];
 
-/* Detail Bar — ตัวอย่างวางโครง (user เลือก 25/11) · เปลี่ยนเป็นรายการจริงตอนทำฐานข้อมูล */
+/* Detail Bar ของแต่ละส่วน (28/11 คำสั่ง user "กิจกรรมหน้าอื่นๆ จะมี 2 หน้าก่อน กลยุทธ์ ภาพรวม")
+   Dashboard = กลยุทธ์ (PDF e-book) · ภาพรวม · Setting = กลยุทธ์ (อัปโหลด PDF) · Edit Data = ตัวอย่างวางโครงเดิม */
+export const ACTIVITY_DASH_SECTIONS = [
+  { key: 'strategy', label: 'กลยุทธ์' },
+  { key: 'summary',  label: 'ภาพรวม' },
+];
+export const ACTIVITY_SETTING_SECTIONS = [
+  { key: 'strategy', label: 'กลยุทธ์' },
+];
+
+/* Edit Data — ตัวอย่างวางโครง (user เลือก 25/11) · เปลี่ยนเป็นรายการจริงตอนทำฐานข้อมูล */
 export const ACTIVITY_SAMPLE_SECTIONS = [
   { key: 'xxx', label: 'XXX' },
   { key: 'yyy', label: 'YYY' },

@@ -20,9 +20,10 @@ import { checkWrite, checkWriteRows } from '../../utils/dbWrite';
 import { askConfirm } from '../../utils/askConfirm';
 import { yearDisplay } from '../../utils/dateFormat';
 import useLang from '../../utils/useLang';
-import { DASH_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labels';
+import { ACT_CODE, DASH_SECTIONS, PERM, SETTING_SECTIONS, teamKey } from './labels';
 import Dashboard5s from './Dashboard';
-import { FormModal, Table5s, TargetForm } from './setting';
+import { FormModal, Table5s } from './setting';
+import useStrategySetting from '../../utils/useStrategySetting';
 import { SECTIONS, missingField, stamp } from './sections';
 
 const THIS_YEAR = new Date().getFullYear();
@@ -34,6 +35,7 @@ export default function Activity5s() {
   const { pathname } = useLocation();
   const { role } = useContext(UserContext);
   const canEdit = canSeeded(PERM[0], PERM[1], role);
+  const st = useStrategySetting(ACT_CODE, '5S', canEdit);   // Setting → กลยุทธ์ (PDF) · ของกลางเดียวกับกิจกรรมอื่น
   const [tab, setTab] = useTabParam(ACTIVITY_TABS.map(t => t.key), ACTIVITY_TABS[0].key);
   const [sp] = useSearchParams();
 
@@ -157,7 +159,8 @@ export default function Activity5s() {
   /* Tool Bar: ปุ่มที่ใช้ไม่ได้ในส่วนนี้ = จาง (ไม่ส่ง / disabled) · ไม่มีสิทธิ์ = จาง */
   const tableSec = !!cfg;
   /* ป้ายเป็นไทยล้วน — ToolBar แปลตอนวาดเอง (กฎ i18n-map-label-at-declaration: ห้าม label: tr('…') ที่จุดประกาศ) */
-  const tools = [
+  const strategySec = tab === 'setting' && sec === 'strategy';
+  const tools = strategySec ? [{ key: 'refresh', label: 'รีเฟรช', onClick: st.reload }, ...st.tools] : [
     { key: 'refresh', label: 'รีเฟรช', onClick: refresh },
     /* ปุ่มจาง = บอกเหตุผลที่ title เสมอ (28/11: user กดแล้วไม่รู้ว่าทำไมแก้ไม่ได้ — ที่จริงคือไม่มีสิทธิ์) */
     { key: 'add', label: 'เพิ่ม', onClick: openAdd, disabled: !(tableSec && canEdit), why: !tableSec ? 'ส่วนนี้ไม่มีตารางให้เพิ่ม' : 'ไม่มีสิทธิ์แก้ 5S' },
@@ -190,12 +193,7 @@ export default function Activity5s() {
           </>
         )}
 
-        {tab === 'setting' && sec === 'target' && (
-          <>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>{yearPick}</div>
-            <TargetForm year={year} canEdit={canEdit} />
-          </>
-        )}
+        {tab === 'setting' && sec === 'strategy' && st.body}
 
         {cfg && (
           <>

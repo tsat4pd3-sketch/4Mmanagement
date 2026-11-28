@@ -1,15 +1,10 @@
 /* ══ ♻️ 5S → Setting — ตาราง + ฟอร์มของแต่ละส่วน (ยกจากระบบ Core 27/11 · loop smf01) ══════════════════════════
-   ส่วน: พื้นที่ (act02_area) · ทีม (act02_team) · หัวข้อตรวจ (act02_checklist) · แผนตรวจ (act02_audit_plan) · เกณฑ์ผ่าน (act02_setting)
+   ส่วน: พื้นที่ (act02_area) · ทีม (act02_team) · หัวข้อตรวจ (act02_checklist) · แผนตรวจ (act02_audit_plan) · กลยุทธ์ = ของกลาง `useStrategySetting` (28/11 แทนเกณฑ์ผ่าน)
    · หน้า (Activity5s.jsx) ถือ state: แถวที่เลือก · ป๊อปอัป · ปี · คำค้น — ไฟล์นี้บอกว่าแต่ละส่วนมีคอลัมน์/ช่องอะไร
    · คนในทีม = เลือกจากทะเบียน employees (<PersonSelect> · 28/11) เก็บรหัส + ชื่อ snapshot (ไม่ผูก FK — แถวเก่าที่คนไม่อยู่ในทะเบียนยังอยู่ได้) */
-import { useEffect, useState } from 'react';
-import { supabase } from '../../supabaseClient';
 import PersonSelect from '../../components/PersonSelect';
 import { tr } from '../../utils/i18n';
-import { monthsShort, yearDisplay } from '../../utils/dateFormat';
-import { toast } from '../../components/Toast';
-import { checkWrite } from '../../utils/dbWrite';
-import { stamp } from './sections';
+import { monthsShort } from '../../utils/dateFormat';
 
 /* ── ตาราง (คลิกแถว = เลือก · ดับเบิลคลิก = แก้ไข) ─────────────────────────────────────────── */
 const th = { textAlign: 'left', padding: '8px 10px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--bg3)' };
@@ -94,53 +89,6 @@ export function FormModal({ cfg, mode, value, onChange, onSave, onClose, busy, a
           <button className="pg-btn" onClick={onSave} disabled={busy} style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>{busy ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ── เกณฑ์ผ่านรายปี: Self Audit / Committee Audit (%) · act02_setting pass_self:<ปี> / pass_committee:<ปี> ── */
-export function TargetForm({ year, canEdit }) {
-  const [vals, setVals] = useState({ self: '', committee: '' });
-  const [loaded, setLoaded] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  useEffect(() => {
-    let alive = true;
-    supabase.from('act02_setting').select('setting_key, setting_value').then(({ data, error }) => {
-      if (!alive) return;
-      if (error) { setErr(error.message); return; }
-      const m = new Map((data || []).map(r => [r.setting_key, r.setting_value]));
-      const base = m.get('pass_percent') ?? '80';
-      const v = { self: m.get(`pass_self:${year}`) ?? m.get('pass_self') ?? base, committee: m.get(`pass_committee:${year}`) ?? m.get('pass_committee') ?? base };
-      setVals(v); setLoaded(v); setErr('');
-    });
-    return () => { alive = false; };
-  }, [year]);
-
-  const ok = (v) => v !== '' && Number(v) >= 0 && Number(v) <= 100;
-  const save = async () => {
-    if (!ok(vals.self) || !ok(vals.committee)) { toast.error(tr('เกณฑ์ผ่าน 0–100%')); return; }
-    setBusy(true);
-    const res = await supabase.from('act02_setting').upsert([
-      { setting_key: `pass_self:${year}`, setting_value: String(Number(vals.self)), ...stamp() },
-      { setting_key: `pass_committee:${year}`, setting_value: String(Number(vals.committee)), ...stamp() },
-    ], { onConflict: 'setting_key' }).select('setting_key');
-    setBusy(false);
-    if (!checkWrite(res, tr('บันทึกเกณฑ์ผ่าน'))) return;
-    if (!res.data?.length) { toast.error(tr('บันทึกไม่ติด (0 แถว) — อาจไม่มีสิทธิ์แก้ 5S')); return; }
-    setLoaded(vals); toast.success(`${tr('บันทึกเกณฑ์ผ่านปี')} ${yearDisplay(year)} ${tr('แล้ว')}`);
-  };
-  const dirty = loaded && (loaded.self !== vals.self || loaded.committee !== vals.committee);
-  if (err) return <div style={{ color: 'var(--red)', fontSize: 13 }}>{err}</div>;
-  return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end' }}>
-      {[['self', 'Self Audit (%)'], ['committee', 'Committee Audit (%)']].map(([k, label]) => (
-        <div key={k} style={{ width: 200 }}>
-          <label style={lab}>{label}</label>
-          <input style={inp} type="number" min="0" max="100" value={vals[k]} disabled={!canEdit} onChange={e => setVals(v => ({ ...v, [k]: e.target.value }))} />
-        </div>
-      ))}
-      {canEdit && <button className="pg-btn" onClick={save} disabled={busy || !dirty} style={{ background: 'var(--accent)', color: 'var(--accent-ink)' }}>{busy ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>}
     </div>
   );
 }

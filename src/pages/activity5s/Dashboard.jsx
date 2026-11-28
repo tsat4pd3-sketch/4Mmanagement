@@ -11,6 +11,7 @@ import { monthsShort, yearDisplay, fmtDate } from '../../utils/dateFormat';
 import { fetchAllPages, fetchByIds } from '../../utils/fetchByIds';
 import { getWorkDate } from '../../utils/workDate';
 import StdBarChart from '../../components/StdBarChart';
+import { StrategyBook } from '../../components/StrategyBook';
 import { ACT_CODE, ROLES, S_GROUPS, S_GROUP_LABEL, labelOf } from './labels.js';
 import { auditorState, auditorStats, marksOf, passOf, planStatus, ranking, summarize, taskTree, teamBucket } from './dash.js';
 
@@ -28,22 +29,21 @@ function useDashData(year, tick) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const [aud, team, plans, tasks, settings, strat] = await Promise.all([
+      const [aud, team, plans, tasks, settings] = await Promise.all([
         fetchAllPages(() => supabase.from('act02_audit').select('act_audit, audit_no, audit_type, act_area, team, auditors, audited_at, percent_score, result, status').eq('year', year), { orderBy: 'act_audit' }),
         fetchAllPages(() => supabase.from('act02_team').select('act_team, employee_code, employee_name, role, team, act_area, status').eq('year', year), { orderBy: 'act_team' }),
         fetchAllPages(() => supabase.from('act02_audit_plan').select('act_audit_plan, month, round, team').eq('year', year), { orderBy: 'act_audit_plan' }),
         fetchAllPages(() => supabase.from('act02_task').select('act_task, parent_id, sort_no, title, start_date, end_date, progress, owner_code, unit, done_on, note').eq('year', year), { orderBy: 'act_task' }),
         supabase.from('act02_setting').select('setting_key, setting_value'),
-        supabase.from('act_strategy').select('url, file_name, pages').eq('activity', ACT_CODE).maybeSingle(),
       ]);
       const ids = aud.rows.filter(a => a.status === 'COMPLETED').map(a => a.act_audit);
       const grp = ids.length
         ? await fetchByIds(ids, (part) => supabase.from('act02_audit_group').select('act_audit, s_group, percent').in('act_audit', part), { orderBy: 'act_audit' })
         : { rows: [], error: null, truncated: false };
       if (!alive) return;
-      const err = aud.error || team.error || plans.error || tasks.error || grp.error || settings.error?.message || strat.error?.message
+      const err = aud.error || team.error || plans.error || tasks.error || grp.error || settings.error?.message
         || ((aud.truncated || grp.truncated) ? tr('ข้อมูลเยอะเกินเพดาน — โหลดได้ไม่ครบ') : '');
-      setGot({ key, audits: aud.rows, groups: grp.rows, team: team.rows, plans: plans.rows, tasks: tasks.rows, settings: settings.data || [], strategy: strat.data || null, err });
+      setGot({ key, audits: aud.rows, groups: grp.rows, team: team.rows, plans: plans.rows, tasks: tasks.rows, settings: settings.data || [], err });
     })();
     return () => { alive = false; };
   }, [year, key]);
@@ -218,13 +218,7 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, onLoa
   );
 
   let body = null;
-  if (data && sec === 'strategy') {
-    body = data.strategy?.url ? (
-      <div style={{ ...panel, padding: 0, overflow: 'hidden' }}>
-        <iframe title={tr('กลยุทธ์ 5S')} src={data.strategy.url} style={{ width: '100%', aspectRatio: '16 / 9', border: 'none', display: 'block', background: 'var(--bg3)' }} />
-      </div>
-    ) : <Note>{tr('ยังไม่มีเอกสารกลยุทธ์ 5S (PDF 16:9 ไม่เกิน 5 หน้า) — ส่วนอัปโหลดที่ Setting → กลยุทธ์ ทำในรอบถัดไป')}</Note>;
-  }
+  if (sec === 'strategy') body = <StrategyBook key={tick} code={ACT_CODE} title="5S" />;   // ของกลาง (PDF e-book) · ไม่ต้องรอข้อมูลใบตรวจ
 
   if (data && sec === 'summary') {
     body = (

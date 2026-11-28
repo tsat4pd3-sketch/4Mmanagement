@@ -44,12 +44,14 @@ export const DASH_SECTIONS = [
   { key: 'schedule', label: 'แผนงาน' },
   { key: 'team',     label: 'ทีม' },
 ];
+/* 28/11 (คำสั่ง user "เกณฑ์ผ่าน เปลี่ยนเป็น กลยุทธ์"): กลยุทธ์ = อัปโหลด PDF 16:9 ≤ 5 หน้า (ของกลาง useStrategySetting) · อยู่หน้าแรกแบบ Dashboard
+   · เกณฑ์ผ่าน (act02_setting pass_self/pass_committee) ยังอยู่ในฐาน — Dashboard อ่านค่าเดิม แต่ไม่มีหน้าแก้แล้ว */
 export const SETTING_SECTIONS = [
+  { key: 'strategy',  label: 'กลยุทธ์' },
   { key: 'area',      label: 'พื้นที่' },
   { key: 'team',      label: 'ทีม' },
   { key: 'checklist', label: 'หัวข้อตรวจ' },
   { key: 'plan',      label: 'แผนตรวจ' },
-  { key: 'target',    label: 'เกณฑ์ผ่าน' },
 ];
 
 export const labelOf = (list, v) => list.find(x => x.value === v)?.label ?? v ?? '';

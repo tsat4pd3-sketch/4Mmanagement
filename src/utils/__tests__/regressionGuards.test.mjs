@@ -12034,6 +12034,7 @@ const UPLOAD_SITES = {
 
   /* ── สายรูปจุดตรวจ/เฟรมหมุน — WebP 2000px/0.35MB ───────────────────────── */
   'src/pages/PMSetup.jsx':             { n: 2, via: 'compressPhotoImage (เฟรมหมุน + รูปจุดตรวจ)', tokens: ['compressPhotoImage'] },
+  'src/utils/useStrategySetting.jsx': { n: 1, via: 'PDF กลยุทธ์กิจกรรม (ไม่ใช่รูป ⇒ ไม่บีบ) · ตรวจก่อนอัป ≤ 20 MB · ≤ 5 หน้า · 16:9 (assertStrategyPdf) · 28/11 smf01', tokens: ['assertStrategyPdf'] },
   'src/components/QaPointsEditor.jsx': { n: 2, via: 'imageCompression 2560px (แผ่น Drawing) + compressPhotoImage (รูปโคลสอัพจุดตรวจ)', tokens: ['imageCompression', 'compressPhotoImage'] },
 
   /* ── สายรูปหลักฐาน/รูปงาน — resizeImage หรือ ImageCropModal ─────────────── */

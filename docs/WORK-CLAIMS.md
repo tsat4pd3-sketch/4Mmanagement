@@ -21,13 +21,13 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
-- smf01 · เริ่ม 2026-11-28 18:20 · กลยุทธ์ PDF (16:9 ≤5 หน้า) ทุกกิจกรรม: Setting อัปโหลด + Dashboard e-book · กิจกรรมอื่น Dashboard = กลยุทธ์·ภาพรวม · 5S ถอด "เกณฑ์ผ่าน" ใส่ "กลยุทธ์" · เส้นใต้แถวแท็บ std (ไม่ลากใต้ Tool Bar) · แตะ: `src/components/StrategyBook.jsx` (ใหม่) · `src/pages/Activity.jsx` · `src/utils/activityPages.js` (+code) · `src/components/PageHeader.jsx` · `src/pages/activity5s/**` · `package.json` (+pdfjs-dist) · `regressionGuards.test.mjs` (UPLOAD_SITES +1) · ตาราง act_strategy · bucket act-public
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
 
 ## บันทึก (ใหม่อยู่บนสุด)
 
+- 2026-11-28 · smf01 · กลยุทธ์ PDF ทุกกิจกรรม: ของกลาง `src/components/StrategyBook.jsx` (e-book) · `src/utils/useStrategySetting.jsx` (อัปโหลด/เปลี่ยน/ลบ) · `src/utils/strategyPdf.js` (ตรวจ 16:9 · ≤5 หน้า · ≤20 MB) · +`pdfjs-dist` 6.5.438 (โหลดแบบ lazy) · กิจกรรมอื่น Dashboard = กลยุทธ์ · ภาพรวม / Setting = กลยุทธ์ (`Activity.jsx` · `ACTIVITIES[].code`) · 5S Setting: ถอด "เกณฑ์ผ่าน" ใส่ "กลยุทธ์" (ค่าเกณฑ์เดิมยังอยู่ในฐาน) · เส้นใต้ Detail Bar เฉพาะช่วงแท็บ ไม่ลากใต้ Tool Bar · UPLOAD_SITES +1 · ไม่มี migration (ใช้ act_strategy/act-public เดิม)
 - 2026-11-28 · smf01 · 5S Setting ทีม: ช่องพนักงานเลือกจากทะเบียน `employees` ผ่าน `<PersonSelect>` (เติมรหัส + ชื่อให้ · ห้ามพิมพ์ชื่อลอย) · ปุ่ม "คัดลอกจากปีที่แล้ว" (คนที่ใช้งานของปีก่อน · คนที่มีแล้วข้าม · ถามยืนยันพร้อมจำนวน) · ⚠️ ทีม 2026: 29/63 คนยังไม่อยู่ในทะเบียน employees ของ ESM (แถวเดิมใช้ได้ แต่เพิ่มใหม่ต้องมีในทะเบียนก่อน) · ไฟล์หลัก `src/pages/activity5s/*` · ปุ่มจางบอกเหตุผล + จอบอก "ดูอย่างเดียว" เมื่อไม่มีสิทธิ์ · migration `20261128_act02_5s_perm_manager.sql` (role manager ได้ `act_5s:manage` · ลงแล้วผ่าน MCP · คำสั่ง user)
 - 2026-11-28 · smf01 · Tool Bar: ปุ่มรีเฟรชหมุน 1 รอบทุกครั้งที่กด (ทุกหน้า) · ปุ่ม 🔍 พิมพ์ลงช่องค้นหาที่ซ่อนได้ (`data-tool-search`) · 5S: เอาช่องค้นหาในหน้าออก (ใช้ปุ่ม 🔍) · toast "รีเฟรชข้อมูลแล้ว" เมื่อโหลดเสร็จ · หน้า flush ขอบล่าง 10px + ตารางชิดก้นจอ (ช่องล่าง 44 → 18px) · ไฟล์หลัก `src/components/PageHeader.jsx` `src/index.css` `src/pages/activity5s/*` · ไม่มี migration
 - 2026-11-28 · smf01 · `.app-sheet` ตัดเส้นขอบล่าง/ขวา + มุมโค้ง (ทุกหน้า) · 5S Dashboard อันดับ/ผู้ตรวจ/แผนงาน: ตารางยืดถึงก้นจอด้วย `useFitHeight` (วัดจริง ทุกขนาดจอ · แถวเติมให้เส้นคอลัมน์ลากถึงล่าง · หน้าไม่เลื่อนเอง) · ไฟล์หลัก `src/index.css` `src/pages/activity5s/Dashboard.jsx` · ไม่มี migration

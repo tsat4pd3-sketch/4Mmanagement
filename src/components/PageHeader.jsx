@@ -333,6 +333,7 @@ export default function PageHeader({
   }
 
   const stdOneRow = std && !isMobile && !inHub && compact;   // ชื่อหน้า + breadcrumb แถวเดียว (ดูคอมเมนต์ที่แถวชื่อหน้า)
+  const stdLine = std && !isMobile && !tabsInPage;   // 28/11: Detail Bar มีเส้นใต้เฉพาะช่วงแท็บ · Tool Bar อยู่นอกเส้น
   /* breadcrumb — ปกติอยู่บนสุด · หัวเพจกะทัดรัด (24/11 · คำสั่ง user) = ใต้ชื่อหน้า เหนือแถบแท็บ */
   const crumbs = breadcrumb && navItem && !inHub ? (
         <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)',
@@ -353,15 +354,16 @@ export default function PageHeader({
 
   /* 📍 แถว Detail Bar รายการพื้นที่ (SAP) — std + แท็บในหน้า = แถวที่ 2 ใต้แท็บ (ไม่ถือ Tool Bar) */
   const detailRow = detailItems ? (
-      <div data-detailbar="1" className="ph-chrome">
+      <div data-detailbar="1" className="ph-chrome" style={stdLine ? { display: 'flex', alignItems: 'center', gap: 8 } : undefined}>
         <TabBar scroller
           tabs={[...(detail.all ? [{ key: '__all', label: tr('ทั้งหมด') }] : []), ...detailItems.map(it => ({ key: String(it.key), label: it.label, title: it.label }))]}
           value={detailCur || (detail.all ? '__all' : String(detailItems[0].key))}
           onChange={(k) => setUrl({ [detail.query]: k === '__all' ? null : k }, { replace: true })}
           arrows={std ? 'always' : undefined}
-          /* 28/11 (คำสั่ง user "ตัวอักษรเล็กลง · ลบเส้นล่าง"): std จอคอม = แท็บขนาด sm · ไม่มีเส้นใต้ทั้งแถว (เส้นใต้แท็บที่เลือกยังอยู่) */
-          {...(std && !isMobile ? { size: 'sm', style: { borderBottom: 'none' } } : null)}
-          after={(std && (isMobile || tabsInPage)) ? undefined : (toolBar || <HeaderSearch rootRef={rootRef} tabKey={String(tab ?? '')} />)} />
+          /* 28/11 (คำสั่ง user): std จอคอม = แท็บขนาด sm · เส้นใต้ลากเฉพาะช่วงแท็บ (◀ … ▶) **ไม่ลากใต้ Tool Bar** ⇒ Tool Bar แยกออกนอก TabBar (ดู stdLine) */
+          {...(stdLine ? { size: 'sm', style: { borderBottom: '1px solid var(--border)', flex: 1, minWidth: 0 } } : null)}
+          after={stdLine || (std && (isMobile || tabsInPage)) ? undefined : (toolBar || <HeaderSearch rootRef={rootRef} tabKey={String(tab ?? '')} />)} />
+        {stdLine && toolBar}
         {/* 📱 std บนมือถือ: Tool Bar 7 ปุ่มไม่พอที่ในแถวเดียวกับ Detail Bar (Detail Bar เหลือกว้าง 0) ⇒ ลงแถวถัดไปชิดขวา ลำดับปุ่มเดิม */}
         {std && isMobile && !tabsInPage && toolBar && (
           <div data-ph="toolbar-row" style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 6 }}>{toolBar}</div>
