@@ -3,6 +3,7 @@
    · โหลดรายปี: ใบตรวจ (act02_audit) + คะแนนราย ส (วิว act02_audit_group ทีละ 120 ใบ) + ทีม + แผนตรวจ + แผนงาน + เกณฑ์ผ่าน
    · ข้อมูลไม่พอ = เขียนบนจอ (ไม่มีใบตรวจ / ไม่มีเอกสาร) · ไม่มีใบในเดือนนั้น = "-" ไม่ใช่ 0 */
 import { useEffect, useMemo, useState } from 'react';
+import useIsMobile from '../../utils/useIsMobile';
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { supabase } from '../../supabaseClient';
 import { tr } from '../../utils/i18n';
@@ -107,8 +108,8 @@ function ScoreChart({ title, kind, months, marks, color, year }) {
 function MonthTable({ self, committee }) {
   const names = monthsShort();
   return (
-    <div style={{ ...panel, padding: 0, overflow: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+    <div style={{ ...panel, padding: 0, overflow: 'auto', flex: 1, minWidth: 0 }}>
+      <table style={{ width: '100%', height: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
         <colgroup><col style={{ width: '24%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /><col style={{ width: '19%' }} /></colgroup>
         <thead>
           <tr>
@@ -163,6 +164,8 @@ const Note = ({ children }) => <div style={{ ...panel, color: 'var(--muted)', fo
 /* ── หน้าหลักของ Dashboard ───────────────────────────────────────────────────────────── */
 export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searchBox }) {
   const data = useDashData(year, tick);
+  const wide = !useIsMobile(1100);   // จอกว้างพอ = กริด 5 คอลัมน์ (ขอบตารางตรงไทล์)
+  const grid5 = wide ? 'repeat(5, minmax(0, 1fr))' : 'minmax(0, 1fr)';
   const [type, setType] = useState('');
   const [areaType, setAreaType] = useState('');
   const [area, setArea] = useState('');
@@ -235,17 +238,19 @@ export default function Dashboard5s({ sec, year, yearPick, areas, tick, q, searc
     body = (
       <>
         {noAudit}
-        <div style={{ ...tiles, gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))' }}>
+        {/* กริด 5 คอลัมน์ชุดเดียวกัน (28/11 คำสั่ง user "ขอบตารางให้ตรงรอบข้าง"): ไทล์ 5 ใบ · กราฟกว้าง 3 · ตารางกว้าง 2
+            ⇒ ขอบซ้าย/ขวาของตารางตรงกับไทล์ใบที่ 4/5 · ตารางสูงเท่ากราฟ 2 อัน (stretch) · จอแคบ = เรียงลงคอลัมน์เดียว */}
+        <div style={{ display: 'grid', gridTemplateColumns: wide ? grid5 : 'repeat(auto-fit, minmax(min(100%, 180px), 1fr))', gap: 12, alignContent: 'start' }}>
           {sum.groups.map((g, i) => (
             <Tile key={g.group} label={`ส${i + 1} ${tr(S_GROUP_LABEL[g.group])} · ${tr('เฉลี่ยทั้งปี')}`} value={f1(g.percent)} unit="%" mark={<Donut percent={g.percent} />} />
           ))}
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'stretch' }}>
-          <div style={{ flex: '3 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: grid5, gap: 12, alignItems: 'stretch' }}>
+          <div style={{ gridColumn: wide ? 'span 3' : undefined, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
             <ScoreChart title="Self Audit Score" kind="Self Audit" months={sum.self} marks={marksOf(pass, 'self', areaType)} color="var(--green)" year={year} />
             <ScoreChart title="Committee Audit Score" kind="Committee Audit" months={sum.committee} marks={marksOf(pass, 'committee', areaType)} color="var(--blue)" year={year} />
           </div>
-          <div style={{ flex: '2 1 340px', minWidth: 0 }}>
+          <div style={{ gridColumn: wide ? 'span 2' : undefined, minWidth: 0, display: 'flex' }}>
             <MonthTable self={sum.self} committee={sum.committee} />
           </div>
         </div>
