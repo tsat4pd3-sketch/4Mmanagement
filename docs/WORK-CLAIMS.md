@@ -21,6 +21,7 @@ ESM มีคนทำงาน 2 loop พร้อมกัน → **ต้อ�
 ## กำลังทำอยู่
 
 <!-- - <loop> · เริ่ม YYYY-MM-DD HH:MM · <งาน> · แตะ: <ไฟล์ / หน้า / ตาราง> -->
+- smf01 · เริ่ม 2026-11-28 20:40 · Smart Factory (ยกจากเว็บ TSAT4 Activity) รอบ 1: ตาราง act03_* + สิทธิ์ act_smf:manage · Setting (กลยุทธ์ · โครงการ · ทีม · แผนงาน) · Dashboard (กลยุทธ์ · ภาพรวม · แผนงาน · ทีม) · แตะ: `src/pages/activitySmf/**` (ใหม่) · `src/App.jsx` (route /activity-smart) · migration `20261128b_act03_smf_main.sql` · ตาราง act03_* · permission_catalog/role_permissions (act_smf:manage)
 - หลัก · เริ่ม 2026-11-27 22:19 · ปรับหน้าออกแบบใบงาน e-Workflow ให้ใช้ง่าย (ซ่อนช่องเทคนิค · พรีวิวผู้รับงาน · ผู้อนุมัติภาษาคน · จัดลำดับ 4 ขั้น · ช่อง Cost Center / หลายเครื่อง) · แตะ: `src/pages/WorkflowDesigner.jsx` `src/utils/wfSchema.js` `src/components/WfFormFields.jsx` `docs/modules/e-workflow.md` · migration: function `wf_check_data` + ใหม่ `wf_preview_step` (Main)
 
 ## ต้องคุยกัน
